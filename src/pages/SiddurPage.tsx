@@ -736,6 +736,7 @@ export function SiddurPage() {
         profileId={profileId}
         canManageWeek={isSadran}
         onOpenChange={(open) => !open && setSelectedGroupId(null)}
+        myRequests={myRequestsQuery.data ?? []}
       />
 
       <ConfirmDialog {...rideMoves.collisionDialog} />

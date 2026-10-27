@@ -1,8 +1,8 @@
 import { supabase } from "@/integrations/supabase/client";
 import { rpc, toAppError } from "@/lib/rpc";
 
-import { waitlistGroupRowSchema } from "./schema";
-import type { WaitlistGroup } from "./types";
+import { waitlistGroupHoldSchema, waitlistGroupRowSchema } from "./schema";
+import type { WaitlistGroup, WaitlistGroupHold } from "./types";
 
 /**
  * Contested waiting-list groups (REQ §13.75, DATA_MODEL.md §7.4a). This is
@@ -42,4 +42,16 @@ export async function resolveWaitlistGroup(groupId: string, requestIds: string[]
 /** Sadran-only: drops the group, every member stays `waitlisted`/`WAITLISTED_NO_CAR`. */
 export async function cancelWaitlistGroup(groupId: string, expectedVersion: number): Promise<void> {
   await rpc("cancel_waitlist_group", { p_group_id: groupId, p_expected_version: expectedVersion });
+}
+
+/** REQ §13.157: the member (or the Sadran) adds a waitlisted request to the open discussion it overlaps. */
+export async function joinWaitlistDiscussion(requestId: string): Promise<{ group_id: string }> {
+  const result = await rpc("join_waitlist_discussion", { p_request_id: requestId });
+  return result as unknown as { group_id: string };
+}
+
+/** REQ §13.157: per open group, the cars it holds and each car's free gap around it. */
+export async function fetchWaitlistGroupHolds(departmentId: string, weekStart: string): Promise<WaitlistGroupHold[]> {
+  const data = await rpc("waitlist_group_holds", { p_department_id: departmentId, p_week_start: weekStart });
+  return ((data ?? []) as unknown[]).map((row) => waitlistGroupHoldSchema.parse(row));
 }

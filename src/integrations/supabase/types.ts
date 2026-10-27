@@ -4362,6 +4362,7 @@ export type Database = {
           boosters: number
           child_seats: number
           chosen: boolean | null
+          companions: string[]
           created_at: string
           depart_at: string
           department_id: string
@@ -4380,6 +4381,7 @@ export type Database = {
           boosters?: number
           child_seats?: number
           chosen?: boolean | null
+          companions?: string[]
           created_at?: string
           depart_at: string
           department_id: string
@@ -4398,6 +4400,7 @@ export type Database = {
           boosters?: number
           child_seats?: number
           chosen?: boolean | null
+          companions?: string[]
           created_at?: string
           depart_at?: string
           department_id?: string
@@ -6223,6 +6226,10 @@ export type Database = {
         }
         Returns: undefined
       }
+      join_waitlist_discussion: {
+        Args: { p_request_id: string }
+        Returns: Json
+      }
       join_waitlist_group: { Args: { p_request_id: string }; Returns: string }
       joinable_rides_for_request: {
         Args: { p_request_id: string }
@@ -7108,10 +7115,22 @@ export type Database = {
         Args: { r: Database["public"]["Tables"]["requests"]["Row"] }
         Returns: string
       }
+      waitlist_group_holds: {
+        Args: { p_department_id: string; p_week_start: string }
+        Returns: {
+          car_id: string
+          gap_from: string
+          gap_until: string
+          group_id: string
+          held_from: string
+          held_until: string
+        }[]
+      }
       waitlist_group_leave: {
         Args: { p_request_id: string }
         Returns: undefined
       }
+      waitlist_group_offer: { Args: { p_request_id: string }; Returns: string }
       week_board_rides: {
         Args: { p_department_id: string; p_week_start: string }
         Returns: {

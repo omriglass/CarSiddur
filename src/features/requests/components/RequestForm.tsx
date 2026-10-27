@@ -32,6 +32,7 @@ import { siddurKeys } from "@/features/siddur/queryKeys";
 import { paths } from "@/app/routes";
 import { useSaveReservationMutation } from "@/features/planning/hooks";
 import { he, t, tv } from "@/i18n/he";
+import { showErrorToast } from "@/lib/rpc";
 import { dateKey, formatTime, weekdayIndex } from "@/lib/time";
 import { DEFAULT_HOP_MINUTES } from "@/lib/rideRoute";
 import { cn } from "@/lib/utils";
@@ -102,6 +103,9 @@ import { RepeatWeeklyField } from "./requestForm/RepeatWeeklyField";
 import { readNoAutoDialogs } from "@/features/member/useNoAutoDialogs";
 import { SentenceFields } from "./requestForm/sentence/SentenceFields";
 import { roundTripTooShort } from "../tooShort";
+import { useJoinWaitlistDiscussionMutation, useWaitlistGroupHoldsQuery, useWaitlistGroupsQuery } from "@/features/waitlist/hooks";
+import { fitsJoinWindow, groupJoinWindow } from "@/features/waitlist/summary";
+import { GroupSummary } from "@/features/waitlist/components/GroupSummary";
 import { STAGE_ONE_FIELDS, isStageOneField } from "./requestForm/sentence/sentenceModel";
 
 export interface JoinRidePrefill {
@@ -175,6 +179,8 @@ interface RequestFormProps {
   dayPrefill?: string;
   /** Published-day request: join the freed-slot notification queue. */
   waitlist?: boolean;
+  /** REQ §13.157: `/requests/new?group=<id>` — filed to join that open discussion: hours limited to its free gap, joins on submit. */
+  joinGroupId?: string;
   /**
    * Repeating-request-suggestion prefill (`/requests/new?template=<id>`, UX_FLOWS §3.3/§3.4,
    * REQ §76) — weekly variant only, mutually exclusive with `joinRide`/`slotPrefill` in
@@ -317,6 +323,7 @@ export function RequestForm({
   slotPrefill,
   dayPrefill,
   waitlist = false,
+  joinGroupId,
   templateSuggestion,
   quickContext,
   onDone,
@@ -758,7 +765,7 @@ export function RequestForm({
         && !(initial?.seriesId && r.seriesId === initial.seriesId),
     );
     return findOverlappingRequest({ departAt, returnAt }, candidates, initial?.id);
-  }, [day, tripShape, values.departTime, values.returnTime, values.timeMode, values.tripType, values.returnDay, values.windowHours, values.windowStart, values.windowEnd, myRequestsQuery.data, departmentId, initial?.id, initial?.seriesId, overlapRequesterId]);
+  }, [day, tripShape, values.departTime, values.returnTime, values.timeMode, values.tripType, values.returnDay, values.windowHours, values.windowStart, values.windowEnd, myRequestsQuery.data, departmentId, initial, overlapRequesterId]);
 
   // Quick-variant-only: free-window pre-validation (server RPC remains the sole authority).
   const departTimeSafe = values.departTime || "08:00";
@@ -822,6 +829,14 @@ export function RequestForm({
   // join" or "stay on the waiting list". State (not a ref): it's only ever set from an event
   // handler and read from another, never during render.
   const [joinableRides, setJoinableRides] = useState<JoinableRideRow[] | null>(null);
+  // REQ §13.157: an open discussion this request could join (`group_offer`), asked after submitting.
+  const [groupOffer, setGroupOffer] = useState<{ requestId: string; groupId: string; proceed: () => void } | null>(null);
+  const waitlistGroupsQuery = useWaitlistGroupsQuery(departmentId, joinGroupId || groupOffer ? weekStart : undefined);
+  const groupHoldsQuery = useWaitlistGroupHoldsQuery(departmentId, weekStart, !!joinGroupId);
+  const joinDiscussionMutation = useJoinWaitlistDiscussionMutation(departmentId, weekStart);
+  const joinGroup = joinGroupId ? (waitlistGroupsQuery.data ?? []).find((group) => group.id === joinGroupId) ?? null : null;
+  const joinWindow = joinGroupId ? groupJoinWindow(joinGroupId, groupHoldsQuery.data ?? []) : null;
+  const offeredGroup = groupOffer ? (waitlistGroupsQuery.data ?? []).find((group) => group.id === groupOffer.groupId) ?? null : null;
   const [afterJoinableDialog, setAfterJoinableDialog] = useState<() => void>(() => () => {});
   // The just-filed (now waitlisted) request's own people, captured at submit time so
   // "הצטרפות לנסיעה" can add them straight onto the chosen ride (item 4, REQ §13.85) without
@@ -851,6 +866,13 @@ export function RequestForm({
 
   async function submitChecked(formValues: RequestFormValues) {
     overlapConfirmedRef.current = false;
+    if (joinGroup && joinWindow) {
+      const times = buildPayload(formValues, {});
+      if (!fitsJoinWindow(times.depart_at, times.return_at, joinGroup, joinWindow)) {
+        toast.error(tv("waitlist.formOutsideHours", { from: formatTime(new Date(joinWindow.from)), until: formatTime(new Date(joinWindow.until)) }));
+        return;
+      }
+    }
     if (mode === "edit" && isUnchangedEdit(formValues, baselineSignature, { anchorSync: anchorSyncActive })) {
       finishUnchanged();
       return;
@@ -1137,6 +1159,23 @@ export function RequestForm({
         else navigate(paths.my());
       };
 
+      // REQ §13.157: no car, but an open discussion on these hours — filed from its "הצטרפות לדיון" it joins at once,
+      // otherwise the member chooses: join / stay on the waiting list / cancel.
+      if (result?.group_offer && requestId) {
+        if (result.group_offer === joinGroupId) {
+          try {
+            await joinDiscussionMutation.mutateAsync(requestId);
+            toast.success(he.waitlist.joined);
+          } catch (error) {
+            showErrorToast(error);
+          }
+          proceed();
+          return;
+        }
+        setGroupOffer({ requestId, groupId: result.group_offer, proceed });
+        return;
+      }
+
       // F4 (docs/TODO.md, owner A8-A10): a waitlisted outcome only ever happens against a
       // published/live week (try_auto_approve()/enter_waiting_list() already ran, same gate
       // `toastSubmitOutcome`'s `waitlisted` branch uses) — offer nearby joinable rides before
@@ -1167,6 +1206,27 @@ export function RequestForm({
       if (submittedWeek) refreshAfterSubmit(payload, null, { broad: true });
       setSubmitError(variant === "quick" || variant === "carNow" ? t("quickRequest.submitError") : t("request.submitError"));
     }
+  }
+
+  /** REQ §13.157: the answer to "יש דיון פתוח על השעות האלה" — join it, or cancel the just-filed request. */
+  async function answerGroupOffer(answer: "join" | "cancel") {
+    const offer = groupOffer;
+    if (!offer) return;
+    try {
+      if (answer === "join") {
+        await joinDiscussionMutation.mutateAsync(offer.requestId);
+        toast.success(he.waitlist.joined);
+      } else {
+        const version = await fetchRequestVersion(offer.requestId);
+        if (version != null) await withdrawMutation.mutateAsync({ requestId: offer.requestId, expectedVersion: version });
+        toast.success(he.waitlist.offerCancelled);
+      }
+    } catch (error) {
+      if (answer === "join") showErrorToast(error);
+      return;
+    }
+    setGroupOffer(null);
+    offer.proceed();
   }
 
   /** REQ §13.101 g (QM7): cancel the member's own overlapping request/ride, then submit. */
@@ -1290,6 +1350,12 @@ export function RequestForm({
         </div>
       ) : null}
       {waitlist ? <div className="rounded-md border-s-4 border-amber-500 bg-amber-50 p-3 text-sm text-amber-900">{t("request.waitlistBanner")}</div> : null}
+      {joinGroup ? (
+        <div className="space-y-1 rounded-md border-s-4 border-amber-500 bg-amber-50 p-3 text-sm text-amber-900" data-testid="join-group-banner">
+          <p>{he.waitlist.formBanner} <GroupSummary members={joinGroup.members} /></p>
+          {joinWindow ? <p>{tv("waitlist.formHours", { from: formatTime(new Date(joinWindow.from)), until: formatTime(new Date(joinWindow.until)) })}</p> : null}
+        </div>
+      ) : null}
 
       {isSentence ? (
         <SentenceFields
@@ -1660,6 +1726,25 @@ export function RequestForm({
         if (values) void performSubmit(values);
       }}
     />
+    <ConfirmDialog
+      open={!!groupOffer}
+      onOpenChange={(open) => { if (!open && groupOffer) { const next = groupOffer.proceed; setGroupOffer(null); next(); } }}
+      title={he.waitlist.offerTitle}
+      description={he.waitlist.offerBody}
+      confirmLabel={he.waitlist.join}
+      cancelLabel={he.waitlist.offerStay}
+      loading={joinDiscussionMutation.isPending || withdrawMutation.isPending}
+      onConfirm={() => void answerGroupOffer("join")}
+      extraAction={
+        <Button type="button" variant="ghost" className="w-full sm:w-auto" data-testid="group-offer-cancel"
+          disabled={joinDiscussionMutation.isPending || withdrawMutation.isPending} onClick={() => void answerGroupOffer("cancel")}>
+          {he.waitlist.offerCancel}
+        </Button>
+      }
+    >
+      {offeredGroup ? <p className="text-sm font-medium"><GroupSummary members={offeredGroup.members} /></p> : null}
+      <p className="text-sm text-muted-foreground">{he.waitlist.offerChance}</p>
+    </ConfirmDialog>
     <JoinableRidesDialog
       open={!!joinableRides}
       onOpenChange={(open) => { if (!open) { setJoinableRides(null); setJoinRequestContext(null); afterJoinableDialog(); } }}

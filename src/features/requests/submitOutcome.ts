@@ -46,6 +46,9 @@ export function toastSubmitOutcome(result: SubmitRequestResult | null | undefine
     return true;
   }
 
+  // REQ §13.157: no car but an open discussion to join — the form's question says it all.
+  if (result.group_offer) return true;
+
   if (result.car_was_free) {
     toast.success(tv("quickRequest.successCarWasFree", { car: ctx.carName(result.car_id) }));
     return true;

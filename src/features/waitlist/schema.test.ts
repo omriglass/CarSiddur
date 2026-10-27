@@ -34,7 +34,7 @@ const row = {
 
 describe("waitlistGroupMemberSchema", () => {
   it("parses a valid member row", () => {
-    expect(waitlistGroupMemberSchema.parse(member)).toEqual(member);
+    expect(waitlistGroupMemberSchema.parse(member)).toEqual({ ...member, companions: [] });
   });
 
   it("accepts chosen: true/false once resolved", () => {

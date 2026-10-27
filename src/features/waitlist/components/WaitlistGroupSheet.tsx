@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 
 import { ConfirmDialog } from "@/components/ConfirmDialog";
@@ -7,13 +8,16 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Sheet, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { paths } from "@/app/routes";
 import { he, tv } from "@/i18n/he";
 import { weekdayLabel } from "@/lib/dayLabels";
 import { showErrorToast } from "@/lib/rpc";
 import { formatTime } from "@/lib/time";
 
-import { useCancelWaitlistGroupMutation, useResolveWaitlistGroupMutation } from "../hooks";
+import { useCancelWaitlistGroupMutation, useJoinWaitlistDiscussionMutation, useResolveWaitlistGroupMutation, useWaitlistGroupHoldsQuery } from "../hooks";
 import { orderedSelection } from "../orderedSelection";
+import { groupJoinWindow, myJoinableRequest, type JoinableRequest } from "../summary";
+import { GroupSummary } from "./GroupSummary";
 import type { WaitlistGroup } from "../types";
 
 interface WaitlistGroupSheetProps {
@@ -25,6 +29,8 @@ interface WaitlistGroupSheetProps {
   /** `can_manage_week` — the Sadran (or admin) of this week; also gates the "בטל/י את הדיון" action. */
   canManageWeek: boolean;
   onOpenChange: (open: boolean) => void;
+  /** REQ §13.157: the viewer's own requests — one overlapping waiting request joins in one tap. */
+  myRequests?: readonly JoinableRequest[];
 }
 
 /**
@@ -33,15 +39,20 @@ interface WaitlistGroupSheetProps {
  * and picks the driver among the ticked; the rest stay on the waiting list.
  * Follows `RideDetailSheet.tsx`'s bottom-sheet pattern.
  */
-export function WaitlistGroupSheet({ group, departmentId, weekStart, profileId, canManageWeek, onOpenChange }: WaitlistGroupSheetProps) {
+export function WaitlistGroupSheet({ group, departmentId, weekStart, profileId, canManageWeek, onOpenChange, myRequests = [] }: WaitlistGroupSheetProps) {
+  const navigate = useNavigate();
   const [ticked, setTicked] = useState<Set<string>>(new Set());
   const [driverId, setDriverId] = useState<string | null>(null);
   const [confirmResolve, setConfirmResolve] = useState(false);
   const [confirmCancel, setConfirmCancel] = useState(false);
   const resolveMutation = useResolveWaitlistGroupMutation(departmentId, weekStart);
   const cancelMutation = useCancelWaitlistGroupMutation(departmentId, weekStart);
+  const joinMutation = useJoinWaitlistDiscussionMutation(departmentId, weekStart);
 
   const canResolve = !!group && (canManageWeek || group.members.some((member) => member.profile_id === profileId));
+  const holdsQuery = useWaitlistGroupHoldsQuery(departmentId, weekStart, !!group && !canResolve);
+  const joinWindow = group ? groupJoinWindow(group.id, holdsQuery.data ?? []) : null;
+  const mineToJoin = group && !canResolve ? myJoinableRequest(group, myRequests, profileId) : null;
   const tickedIds = group ? group.members.map((member) => member.request_id).filter((id) => ticked.has(id)) : [];
   // "Defaulting to the first ticked" (brief): re-derived every render instead of an effect, same
   // idiom `SiddurPage`'s notification-deep-link handling uses for "adjust state for freshly
@@ -84,6 +95,26 @@ export function WaitlistGroupSheet({ group, departmentId, weekStart, profileId, 
     }
   }
 
+  async function handleJoinWithMine() {
+    if (!mineToJoin) return;
+    try {
+      await joinMutation.mutateAsync(mineToJoin.id);
+      toast.success(he.waitlist.joined);
+    } catch (error) {
+      showErrorToast(error);
+    }
+  }
+
+  function handleJoinNew() {
+    if (!group || !joinWindow) return;
+    const from = Math.max(Date.parse(group.starts_at), Date.parse(joinWindow.from));
+    const until = Math.min(Date.parse(group.ends_at), Date.parse(joinWindow.until));
+    handleOpenChange(false);
+    navigate(paths.requests.new({
+      week: weekStart, day: group.day, time: formatTime(new Date(from)), end: formatTime(new Date(until)), group: group.id,
+    }));
+  }
+
   async function handleCancel() {
     if (!group) return;
     try {
@@ -115,6 +146,7 @@ export function WaitlistGroupSheet({ group, departmentId, weekStart, profileId, 
                   {weekdayLabel(`${group.day}T12:00:00Z`)} ·{" "}
                   <span dir="ltr">{formatTime(new Date(group.starts_at))}–{formatTime(new Date(group.ends_at))}</span> · {destinations}
                 </p>
+                <p className="font-medium"><GroupSummary members={group.members} /></p>
 
                 <ul className="space-y-3">
                   {group.members.map((member) => (
@@ -166,7 +198,21 @@ export function WaitlistGroupSheet({ group, departmentId, weekStart, profileId, 
                     ) : null}
                   </>
                 ) : (
-                  <p className="text-muted-foreground">{he.waitlist.readOnlyHint}</p>
+                  <div className="space-y-2">
+                    <p className="text-muted-foreground">{he.waitlist.readOnlyHint}</p>
+                    <p className="text-muted-foreground">{he.waitlist.joinHint}</p>
+                    {mineToJoin?.departAt && mineToJoin.returnAt ? (
+                      <Button className="w-full" size="lg" data-testid="waitlist-join-mine" disabled={joinMutation.isPending} onClick={() => void handleJoinWithMine()}>
+                        {tv("waitlist.joinWithMine", { start: formatTime(new Date(mineToJoin.departAt)), end: formatTime(new Date(mineToJoin.returnAt)) })}
+                      </Button>
+                    ) : joinWindow ? (
+                      <Button className="w-full" size="lg" data-testid="waitlist-join" onClick={handleJoinNew}>
+                        {he.waitlist.join}
+                      </Button>
+                    ) : holdsQuery.isSuccess ? (
+                      <p className="text-muted-foreground">{he.waitlist.joinNoHours}</p>
+                    ) : null}
+                  </div>
                 )}
               </div>
             </>

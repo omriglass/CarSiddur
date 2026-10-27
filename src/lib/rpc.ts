@@ -38,6 +38,7 @@ export type ErrorCode =
   | "series_week_not_open"
   | "car_now_week_not_live"
   | "day_not_published"
+  | "waitlist_group_unavailable"
   | "series_edit_not_supported"
   | "series_car_unavailable"
   | "handover_not_possible"
@@ -346,6 +347,7 @@ const MESSAGE_TO_CODE: Record<string, ErrorCode> = {
   // REQ §13.100 (QB16): "car now" outside a live/published week (submit_request).
   car_now_week_not_live: "car_now_week_not_live",
   day_not_published: "day_not_published",
+  waitlist_group_unavailable: "waitlist_group_unavailable",
   series_edit_not_supported: "series_edit_not_supported",
   series_car_unavailable: "series_car_unavailable",
   handover_not_possible: "handover_not_possible",
@@ -492,6 +494,7 @@ const CODE_TO_MESSAGE: Record<ErrorCode, string> = {
   series_week_not_open: he.errors.seriesWeekNotOpen,
   car_now_week_not_live: he.errors.carNowWeekNotLive,
   day_not_published: he.errors.dayNotPublished,
+  waitlist_group_unavailable: he.errors.waitlistGroupUnavailable,
   series_edit_not_supported: he.errors.seriesEditNotSupported,
   series_car_unavailable: he.errors.seriesCarUnavailable,
   handover_not_possible: he.errors.handoverNotPossible,

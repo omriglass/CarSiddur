@@ -1,5 +1,6 @@
--- R15B10 (owner 2026-10-27): an open contested group ("בדיון") holds its window. A newcomer whose ride would overlap an
--- undecided member's window gets no car the member could take: it is waitlisted and joins the group. A newcomer clear
+-- R15B10 / REQ §13.157 (owner 2026-10-27): an open contested group ("בדיון") holds its window. A newcomer whose ride would
+-- overlap an undecided member's window gets no car the member could take: it is waitlisted and offered the group
+-- (`group_offer`), joining only through join_waitlist_discussion. A newcomer clear
 -- of every member's window (incl. the turnaround) is still auto-approved on the same car.
 -- Transactional, far-future week, seeded נבו department; one shared car (...040) is left free.
 begin;
@@ -36,6 +37,7 @@ begin
     (d + time '08:00') at time zone 'Asia/Jerusalem', (d + time '12:00') at time zone 'Asia/Jerusalem', 1, now(), 'submitted')
   returning id into q;
   insert into hold_ids values ('a', q);
+  insert into public.request_companions(request_id, profile_id) values (q, sadran);
   insert into public.requests(department_id, week_start, requester_id, filed_by, destination_id, ride_type_id,
     trip_shape, depart_at, return_at, adults, submitted_at, status)
   values (dept, w, member2, member2, dest, ride_type, 'round_trip',
@@ -53,6 +55,9 @@ begin
   select id into g from public.waitlist_groups where department_id = dept and week_start = w and day = w+1 and status = 'open';
   assert g is not null, 'fixture: the two overlapping requests must form an open group';
   insert into hold_ids values ('g', g);
+  assert (select m->'companions' = '["סדרן נבו"]'::jsonb from public.v_waitlist_groups v, jsonb_array_elements(v.members) m
+          where v.id = g and (m->>'request_id')::uuid = (select id from hold_ids where k = 'a')),
+    'the sheet summary gets each member''s companions by name';
 end $$;
 reset role;
 select set_config('request.jwt.claims', '', true);
@@ -79,19 +84,50 @@ begin
                                  and r.ends_at > (d + time '06:00') at time zone 'Asia/Jerusalem')),
     'fixture: car ...040 is still free under the group';
 
-  -- 1) a newcomer overlapping the members' windows joins the group instead of taking the car
+  -- 1) a newcomer overlapping the members' windows gets no car and is OFFERED the group (REQ §13.157), not added
   insert into public.requests(department_id, week_start, requester_id, filed_by, destination_id, ride_type_id,
     trip_shape, depart_at, return_at, adults, submitted_at, status)
   values (dept, w, newcomer, newcomer, dest, ride_type, 'round_trip',
     (d + time '11:00') at time zone 'Asia/Jerusalem', (d + time '13:00') at time zone 'Asia/Jerusalem', 1, now(), 'submitted')
   returning id into q;
   res := public.try_auto_approve(q);
-  assert res ->> 'status' = 'waitlisted' and res ->> 'reason' = 'WAITLISTED_CONTESTED',
-    format('1) R15B10: the newcomer must join the open group, got %s', res);
-  assert exists (select 1 from public.waitlist_group_members where group_id = g and request_id = q and chosen is null),
-    '1) the newcomer is an undecided member of the group';
+  assert res ->> 'status' = 'waitlisted' and (res ->> 'group_offer')::uuid = g,
+    format('1) R15B10/§13.157: the newcomer is waitlisted and offered the open group, got %s', res);
+  assert not exists (select 1 from public.waitlist_group_members where group_id = g and request_id = q),
+    '1) §13.157: nobody is added to a discussion without saying so';
   assert not exists (select 1 from public.rides where car_id = '00000000-0000-0000-0000-000000000040' and status <> 'cancelled'
                      and week_start = w), '1) the group''s car stays free';
+  perform set_config('request.jwt.claims', jsonb_build_object('sub', '00000000-0000-0000-0000-000000000103', 'role', 'authenticated')::text, true);
+  -- the holds (read as a department member): car ...040 for the members' 08:00-14:00, free gap the whole day
+  assert (select count(*) from public.waitlist_group_holds(dept, w) h where h.group_id = g
+          and h.car_id = '00000000-0000-0000-0000-000000000040'
+          and h.held_from = (d + time '08:00') at time zone 'Asia/Jerusalem' and h.held_until = (d + time '14:00') at time zone 'Asia/Jerusalem'
+          and h.gap_from = (d + time '06:00') at time zone 'Asia/Jerusalem' and h.gap_until = (d + time '23:59') at time zone 'Asia/Jerusalem') = 1,
+    format('1) waitlist_group_holds lists car ...040 with the members'' hours and its free gap, got %s',
+      (select jsonb_agg(to_jsonb(h)) from public.waitlist_group_holds(dept, w) h));
+  -- someone else cannot join it for them
+  perform set_config('request.jwt.claims', jsonb_build_object('sub', '00000000-0000-0000-0000-000000000103', 'role', 'authenticated')::text, true);
+  begin
+    perform public.join_waitlist_discussion(q);
+    raise exception '1) FAILED: another member joined the newcomer';
+  exception when insufficient_privilege then null;
+  end;
+  -- the newcomer says yes
+  perform set_config('request.jwt.claims', jsonb_build_object('sub', newcomer, 'role', 'authenticated')::text, true);
+  res := public.join_waitlist_discussion(q);
+  assert (res ->> 'group_id')::uuid = g, format('1) join_waitlist_discussion joins the group, got %s', res);
+  assert exists (select 1 from public.waitlist_group_members where group_id = g and request_id = q and chosen is null),
+    '1) the newcomer is now an undecided member';
+  assert (select status_reason = 'WAITLISTED_CONTESTED' from public.requests where id = q), '1) the request reads contested';
+  assert exists (select 1 from public.notifications where event = 'waitlist_contested' and data->>'variant' = 'joined'
+                 and (data->>'group_id')::uuid = g), '1) the group is told someone joined';
+  begin
+    perform public.join_waitlist_discussion(q);
+    raise exception '1) FAILED: joined twice';
+  exception when raise_exception then
+    if sqlerrm <> 'waitlist_group_unavailable' then raise; end if;
+  end;
+  perform set_config('request.jwt.claims', '', true);
 
   -- 2) a newcomer clear of every member's window (and turnaround) still gets the car
   insert into public.requests(department_id, week_start, requester_id, filed_by, destination_id, ride_type_id,

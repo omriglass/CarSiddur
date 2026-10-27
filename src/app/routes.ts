@@ -89,7 +89,7 @@ export const paths = {
      * waitlist checkbox. `end` ("להיות בבית עד") and `car` (preferred car) come with `day`/`time` from a two-tap span
      * on a grid (owner 2026-10-11).
      */
-    new: (params: { ride?: string; week?: string; day?: string; time?: string; end?: string; car?: string; waitlist?: boolean; template?: string } = {}) =>
+    new: (params: { ride?: string; week?: string; day?: string; time?: string; end?: string; car?: string; waitlist?: boolean; template?: string; group?: string } = {}) =>
       withQuery("/requests/new", {
         ride: params.ride,
         week: params.week,
@@ -99,6 +99,7 @@ export const paths = {
         car: params.car,
         waitlist: params.waitlist ? "1" : undefined,
         template: params.template,
+        group: params.group,
       }),
     edit: (requestId: string) => `/requests/${requestId}/edit`,
   },

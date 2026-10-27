@@ -272,7 +272,8 @@ do $$
 declare
   dept uuid := '00000000-0000-0000-0000-000000000001';
   sadran uuid := '00000000-0000-0000-0000-000000000102';
-  m1 uuid := '00000000-0000-0000-0000-000000000103';
+  -- A fresh member: the seeded ones hold rides / requests today, which made this fail for most of the day.
+  m1 uuid := gen_random_uuid();
   haifa uuid := '00000000-0000-0000-0000-000000000011';
   typ uuid := '00000000-0000-0000-0000-000000000021';
   w date := public.current_week_start();
@@ -291,7 +292,10 @@ begin
   perform set_config('app.in_publish','on',true);
   update public.weeks set phase='live',published_version_id=pub,published_days=array[w,w+1,w+2,w+3,w+4,w+5,w+6] where department_id=dept and week_start=w;
   perform set_config('app.in_publish','off',true);
-  update public.profiles set does_not_drive = false where id = m1;
+  perform set_config('request.jwt.claims', '', true);
+  insert into auth.users(id, email, raw_user_meta_data) values (m1, m1::text || '@test11.test', '{}');
+  update public.profiles set approval_status = 'approved', full_name = 'TEST 11', does_not_drive = false where id = m1;
+  insert into public.department_members(department_id, profile_id, role) values (dept, m1, 'member');
   perform set_config('request.jwt.claims',jsonb_build_object('sub',m1,'role','authenticated')::text,true);
   res := public.submit_request(jsonb_build_object('department_id',dept,'week_start',w,'ride_type_id',typ,'adults',1,'destination_id',haifa,
     'trip_type','round_trip','depart_at',dep,'return_at',dep+interval '1 hour'));

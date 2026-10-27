@@ -19,6 +19,8 @@ export const waitlistGroupMemberSchema = z.object({
   destination: z.string(),
   /** R2Q1 c: the member's own origin when not the department home; absent until the view exposes it. */
   origin_name: z.string().nullish(),
+  /** REQ §13.157: who rides with them (companions, then children), for the sheet's one-line summary. */
+  companions: z.array(z.string()).default([]),
   chosen: z.boolean().nullable(),
 });
 
@@ -38,4 +40,14 @@ export const waitlistGroupRowSchema = z.object({
   created_at: z.string(),
   updated_at: z.string(),
   members: z.array(waitlistGroupMemberSchema),
+});
+
+/** `waitlist_group_holds()` row (REQ §13.157): a car an open group holds and the car's free gap around it. */
+export const waitlistGroupHoldSchema = z.object({
+  group_id: z.string(),
+  car_id: z.string(),
+  held_from: z.string(),
+  held_until: z.string(),
+  gap_from: z.string(),
+  gap_until: z.string(),
 });

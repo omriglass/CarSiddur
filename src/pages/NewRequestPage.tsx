@@ -41,6 +41,8 @@ export function NewRequestPage() {
   const waitlist = searchParams.get("waitlist") === "1";
   // Repeating-request suggestion prefill (UX_FLOWS §3.4, REQ §76).
   const templateId = searchParams.get("template") ?? undefined;
+  // REQ §13.157: "הצטרפות לדיון" from a "בדיון" block.
+  const joinGroupId = searchParams.get("group") ?? undefined;
 
   const profileQuery = useProfile();
   const departmentsQuery = useMyDepartments();
@@ -99,6 +101,7 @@ export function NewRequestPage() {
           slotPrefill={!joinRideId && dayParam && timeParam ? { day: dayParam, departTime: timeParam, returnTime: endParam, carId: carParam } : undefined}
           dayPrefill={!joinRideId && dayParam && !timeParam ? dayParam : undefined}
           waitlist={waitlist}
+          joinGroupId={joinGroupId}
           templateSuggestion={templateSuggestion}
           onDone={overlay ? close : undefined}
         />

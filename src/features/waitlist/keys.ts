@@ -2,4 +2,5 @@
 export const waitlistKeys = {
   all: ["waitlist"] as const,
   groups: (departmentId: string, weekStart: string) => [...waitlistKeys.all, departmentId, weekStart] as const,
+  holds: (departmentId: string, weekStart: string) => [...waitlistKeys.all, departmentId, weekStart, "holds"] as const,
 };

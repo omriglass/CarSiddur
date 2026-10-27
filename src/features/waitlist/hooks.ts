@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { QueryClient } from "@tanstack/react-query";
 
 
-import { cancelWaitlistGroup, fetchWaitlistGroups, resolveWaitlistGroup } from "./api";
+import { cancelWaitlistGroup, fetchWaitlistGroupHolds, fetchWaitlistGroups, joinWaitlistDiscussion, resolveWaitlistGroup } from "./api";
 import { waitlistKeys } from "./keys";
 import { invalidateWeekData } from "@/features/rides/invalidateWeek";
 
@@ -12,6 +12,15 @@ export function useWaitlistGroupsQuery(departmentId: string | undefined, weekSta
     queryKey: waitlistKeys.groups(departmentId ?? "", weekStart ?? ""),
     queryFn: () => fetchWaitlistGroups(departmentId as string, weekStart as string),
     enabled: !!departmentId && !!weekStart,
+  });
+}
+
+/** REQ §13.157: cars held by the week's open groups (the siddur's free hints, the join form's hours). */
+export function useWaitlistGroupHoldsQuery(departmentId: string | undefined, weekStart: string | undefined, enabled = true) {
+  return useQuery({
+    queryKey: waitlistKeys.holds(departmentId ?? "", weekStart ?? ""),
+    queryFn: () => fetchWaitlistGroupHolds(departmentId as string, weekStart as string),
+    enabled: enabled && !!departmentId && !!weekStart,
   });
 }
 
@@ -26,6 +35,7 @@ function invalidateAfterResolution(
   weekStart: string,
 ) {
   void queryClient.invalidateQueries({ queryKey: waitlistKeys.groups(departmentId, weekStart) });
+  void queryClient.invalidateQueries({ queryKey: waitlistKeys.holds(departmentId, weekStart) });
   void invalidateWeekData(queryClient, departmentId, weekStart);
 }
 
@@ -42,6 +52,15 @@ export function useCancelWaitlistGroupMutation(departmentId: string, weekStart: 
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (vars: { groupId: string; expectedVersion: number }) => cancelWaitlistGroup(vars.groupId, vars.expectedVersion),
+    onSuccess: () => invalidateAfterResolution(queryClient, departmentId, weekStart),
+  });
+}
+
+/** REQ §13.157: join the open discussion this waitlisted request overlaps. */
+export function useJoinWaitlistDiscussionMutation(departmentId: string, weekStart: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (requestId: string) => joinWaitlistDiscussion(requestId),
     onSuccess: () => invalidateAfterResolution(queryClient, departmentId, weekStart),
   });
 }

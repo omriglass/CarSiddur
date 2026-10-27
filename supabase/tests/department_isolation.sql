@@ -296,6 +296,9 @@ begin
     format('select public.resolve_waitlist_group(%L, array[%L]::uuid[], (select version from public.waitlist_groups where id = %L))', group_b, req_b_wl1, group_b));
   perform pg_temp.expect_refused('waitlist.cancel_waitlist_group',
     format('select public.cancel_waitlist_group(%L, (select version from public.waitlist_groups where id = %L))', group_b, group_b));
+  -- REQ §13.157: joining a discussion and reading its held cars are department-scoped.
+  perform pg_temp.expect_refused('waitlist.join_waitlist_discussion', format('select public.join_waitlist_discussion(%L)', req_b_wl1));
+  perform pg_temp.expect_refused('waitlist.waitlist_group_holds', format('select * from public.waitlist_group_holds(%L, %L)', dept_b, week_b));
 
   -----------------------------------------------------------------------
   -- R1 regression (`20260924110000_apply_solver_result_department_scope.sql`): sadran_a
@@ -384,7 +387,7 @@ declare
     'publication_readiness','publication_conflicts','publish_siddur','record_solver_preview','form_waitlist_groups',
     'publish_scores_fingerprint','sadran_contact_of','fairness_stats','department_stats','joinable_rides_for_request',
     'planning_month','typical_usage','save_reservation',
-    'create_policy_version','set_policy_active','policy_week_alignment','resolve_waitlist_group','cancel_waitlist_group',
+    'create_policy_version','set_policy_active','policy_week_alignment','resolve_waitlist_group','cancel_waitlist_group','join_waitlist_discussion','waitlist_group_holds',
     'place_travel_for_week','car_start_locations','set_my_default_origin','route_minutes_preview','request_notes',
     'my_co_guardians','set_ride_driver','withdraw_duplicate_request','restore_duplicate_request','place_on_own_car','child_request_overlaps',
     'mark_car_move','shorten_series','join_drop_off_legs','place_series_on_car',

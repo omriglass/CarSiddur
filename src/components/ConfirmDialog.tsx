@@ -28,6 +28,8 @@ interface ConfirmDialogProps {
   confirmDisabled?: boolean;
   /** Offers only "cancel" (the action is not available in this situation). */
   hideConfirm?: boolean;
+  /** A third action, stacked last on phones (after confirm and cancel). */
+  extraAction?: ReactNode;
   onConfirm: () => void;
   className?: string;
 }
@@ -54,6 +56,7 @@ export function ConfirmDialog({
   loading = false,
   confirmDisabled = false,
   hideConfirm = false,
+  extraAction,
   onConfirm,
   className,
 }: ConfirmDialogProps) {
@@ -66,6 +69,7 @@ export function ConfirmDialog({
         </DialogHeader>
         {children}
         <DialogFooter>
+          {extraAction}
           <Button
             type="button"
             variant="outline"

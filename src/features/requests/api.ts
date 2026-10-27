@@ -858,6 +858,8 @@ export interface SubmitRequestResult {
    * result so the UI can say "no waiting list needed" rather than the ordinary success toast.
    */
   car_was_free?: boolean;
+  /** REQ §13.157: no car, but an open discussion this request could join — the form asks (join / stay / cancel). */
+  group_offer?: string;
   /** R11B1: an edit that changes nothing (also on the probe) — the server touched nothing and asks nothing. */
   unchanged?: boolean;
   /**

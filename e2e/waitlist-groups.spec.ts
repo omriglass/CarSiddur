@@ -8,7 +8,9 @@ import {
   SUPABASE_URL,
   newSignedInPage,
   serviceRoleClient,
+  submitRequestForm,
 } from "./helpers";
+import { PLACES, chooseDestination, setClassicForm } from "./request-form";
 
 // Contested waiting-list groups (REQ §13.75, UX_FLOWS.md §3.5/§4.2, owner decision 2026-09-10):
 // two members file overlapping round-trip requests for a day where only one shared car is
@@ -146,7 +148,7 @@ test.describe("waitlist groups", { tag: ["@waitlist", "@publication"] }, () => {
     expect(dayGroupsAfter?.length ?? 0).toBe(0);
   });
 
-  test("a non-participant sees a read-only hint for an open discussion block", async ({ browser }) => {
+  test("a non-participant sees a read-only hint, joins by choice from the block, and a newcomer is asked first", async ({ browser }) => {
     const service = serviceRoleClient();
     const { weekStart, day } = uniqueFutureWeek(2);
     // Every seeded account is either a participant candidate (member1/member2) or has
@@ -195,10 +197,50 @@ test.describe("waitlist groups", { tag: ["@waitlist", "@publication"] }, () => {
         await discussionCard.click();
         await expect(outsider.page.getByText(he.waitlist.readOnlyHint)).toBeVisible();
         await expect(outsider.page.getByRole("checkbox")).toHaveCount(0);
+
+        // REQ §13.157: the one-line summary, and "הצטרפות לדיון" opens the form limited to the held car's hours; filing it joins.
+        await expect(outsider.page.getByTestId("waitlist-group-summary")).toContainText("E2E waitlist group destination 2");
+        await outsider.page.getByTestId("waitlist-join").click();
+        await expect(outsider.page).toHaveURL(new RegExp(`/requests/new\\?.*group=`));
+        await expect(outsider.page.getByTestId("join-group-banner")).toBeVisible();
+        await chooseDestination(outsider.page, PLACES.haifa.name);
+        await submitRequestForm(outsider.page);
+        await expect(outsider.page.getByText(he.waitlist.joined)).toBeVisible({ timeout: 10_000 });
+        const { data: joinedRows } = await service.from("waitlist_group_members").select("request_id, requests!inner(requester_id)")
+          .eq("week_start", weekStart).eq("profile_id", bystanderId);
+        expect(joinedRows ?? []).toHaveLength(1);
       } finally {
         await outsider.context.close();
       }
+
+      // REQ §13.157: a request filed the ordinary way over the discussion's hours asks first; "ביטול הבקשה" withdraws it.
+      await setClassicForm(SEEDED_USERS.admin.email, false);
+      const admin = await newSignedInPage(browser, SEEDED_USERS.admin);
+      try {
+        await admin.page.setViewportSize({ width: 390, height: 844 });
+        await admin.page.goto(`/requests/new?week=${weekStart}&day=${day}&time=07:30&end=08:30`);
+        await chooseDestination(admin.page, PLACES.haifa.name);
+        await submitRequestForm(admin.page);
+        const offer = admin.page.getByRole("dialog", { name: he.waitlist.offerTitle });
+        await expect(offer).toBeVisible({ timeout: 10_000 });
+        await offer.getByTestId("group-offer-cancel").click();
+        await expect(admin.page.getByText(he.waitlist.offerCancelled)).toBeVisible();
+        const { data: adminRequests } = await service.from("requests").select("status").eq("week_start", weekStart).eq("requester_id", ADMIN_ID);
+        expect((adminRequests ?? []).map((r) => r.status)).toEqual(["withdrawn"]);
+        const { data: adminRows } = await service.from("waitlist_group_members").select("id").eq("week_start", weekStart).eq("profile_id", ADMIN_ID);
+        expect(adminRows ?? []).toHaveLength(0);
+      } finally {
+        await admin.context.close();
+        await setClassicForm(SEEDED_USERS.admin.email, true);
+      }
     } finally {
+      const { data: bystanderRequests } = await service.from("requests").select("id").eq("requester_id", bystanderId);
+      const bystanderRequestIds = (bystanderRequests ?? []).map((r) => r.id);
+      if (bystanderRequestIds.length > 0) {
+        await service.from("waitlist_group_members").delete().in("request_id", bystanderRequestIds);
+        await service.from("requests").delete().in("id", bystanderRequestIds);
+      }
+      await service.from("notifications").delete().eq("recipient_id", bystanderId);
       await service.from("department_members").delete().eq("profile_id", bystanderId);
       await service.from("profiles").delete().eq("id", bystanderId);
       await service.auth.admin.deleteUser(bystanderId);

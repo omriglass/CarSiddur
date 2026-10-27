@@ -9603,6 +9603,33 @@ end $$;
 ALTER FUNCTION "public"."join_other_ride"("p_request_id" "uuid", "p_ride_id" "uuid", "p_expected_version" integer) OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."join_waitlist_discussion"("p_request_id" "uuid") RETURNS "jsonb"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  v_req public.requests%rowtype; v_actor uuid := (select auth.uid());
+  v_prev text := coalesce(nullif(current_setting('app.waitlist_join_confirmed', true), ''), 'off'); v_group uuid;
+begin
+  select * into v_req from public.requests where id = p_request_id;
+  if v_req.id is null then raise exception 'not_found' using errcode = 'P0002'; end if;
+  if v_actor is null or not (v_req.requester_id = v_actor or v_req.filed_by = v_actor
+                             or public.can_manage_week(v_req.department_id, v_req.week_start)) then
+    raise exception 'not_authorized' using errcode = '42501';
+  end if;
+  perform set_config('app.waitlist_join_confirmed', 'on', true);
+  v_group := public.join_waitlist_group(p_request_id);
+  perform set_config('app.waitlist_join_confirmed', v_prev, true);
+  if v_group is null then
+    raise exception 'waitlist_group_unavailable' using errcode = 'P0001';
+  end if;
+  return jsonb_build_object('group_id', v_group);
+end $$;
+
+
+ALTER FUNCTION "public"."join_waitlist_discussion"("p_request_id" "uuid") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."join_waitlist_group"("p_request_id" "uuid") RETURNS "uuid"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -9613,10 +9640,10 @@ begin
   select * into v_req from public.requests where id = p_request_id;
   if v_req.id is null or v_req.trip_shape <> 'round_trip' or v_req.status <> 'waitlisted'
      or v_req.depart_at is null or v_req.return_at is null
-     or v_req.series_id is not null                      -- REQ §13.77: series are never grouped
-     or v_req.trip_type <> 'round_trip'                  -- REQ §13.100 a: only members who need a car
-     or public.request_legs_covered(p_request_id)        -- ...and who hold no ride yet
-     or not public.request_has_free_car_at_origin(p_request_id, false) then   -- REQ §13.102 (a): a car must be where they start
+     or v_req.series_id is not null
+     or v_req.trip_type <> 'round_trip'
+     or public.request_legs_covered(p_request_id)
+     or not public.request_has_free_car_at_origin(p_request_id, false) then
     return null;
   end if;
   if exists (select 1 from public.waitlist_group_members m
@@ -9631,22 +9658,13 @@ begin
 
   v_turnaround := make_interval(mins => coalesce(public.required_turnaround_minutes(v_req.department_id, v_req.week_start), 30));
 
-  select g.id into v_group
-  from public.waitlist_groups g
-  where g.department_id = v_req.department_id and g.week_start = v_req.week_start
-    and g.day = v_day and g.status = 'open'
-    and tstzrange(g.starts_at, g.ends_at + v_turnaround, '[)')
-        && tstzrange(v_req.depart_at, v_req.return_at + v_turnaround, '[)')
-  order by g.starts_at, g.id limit 1
-  for update;
-
-  if v_group is not null
-     and not (public.request_has_free_car_at_origin(p_request_id, true)
-              or exists (select 1 from public.waitlist_group_members gm
-                         where gm.group_id = v_group and gm.chosen is null and public.request_has_free_car_at_origin(gm.request_id, true))) then
-    return null;
-  end if;
+  v_group := public.waitlist_group_offer(p_request_id);
   if v_group is not null then
+    -- REQ §13.157: joining an existing discussion is the member's choice.
+    if coalesce(current_setting('app.waitlist_join_confirmed', true), 'off') <> 'on' then
+      return null;
+    end if;
+    perform 1 from public.waitlist_groups where id = v_group for update;
     insert into public.waitlist_group_members (group_id, request_id, profile_id, department_id, week_start,
       depart_at, return_at, adults, child_seats, boosters, destination, origin_name)
     select v_group, v_req.id, v_req.requester_id, v_req.department_id, v_req.week_start,
@@ -9668,6 +9686,15 @@ begin
 
     perform public.notify_waitlist_contested(v_group, 'joined', v_req.requester_id);
     return v_group;
+  end if;
+
+  -- An overlapping open group this request cannot join: no pairing beside it.
+  if exists (select 1 from public.waitlist_groups g
+             where g.department_id = v_req.department_id and g.week_start = v_req.week_start
+               and g.day = v_day and g.status = 'open'
+               and tstzrange(g.starts_at, g.ends_at + v_turnaround, '[)')
+                   && tstzrange(v_req.depart_at, v_req.return_at + v_turnaround, '[)')) then
+    return null;
   end if;
 
   select q.id into v_other
@@ -19386,6 +19413,7 @@ declare
   v_driver uuid;
   v_pref uuid;
   v_status public.ride_status;
+  v_offer uuid;
 begin
   select * into v_req from public.requests where id = p_request_id for update;
   if v_req.id is null or v_req.status not in ('submitted', 'waitlisted') then
@@ -19507,6 +19535,11 @@ begin
     -- round-trip-only no-op for a one-way leg, so this stays safe to call unconditionally.
     if public.join_waitlist_group(p_request_id) is not null then
       return jsonb_build_object('status', 'waitlisted', 'reason', 'WAITLISTED_CONTESTED');
+    end if;
+    -- REQ §13.157: an open group this request could join is offered, never joined for them.
+    v_offer := public.waitlist_group_offer(p_request_id);
+    if v_offer is not null then
+      return jsonb_build_object('status', 'waitlisted', 'reason', 'WAITLISTED_NO_CAR', 'group_offer', v_offer);
     end if;
     return jsonb_build_object('status', 'waitlisted', 'reason', 'WAITLISTED_NO_CAR');
   end if;
@@ -20362,6 +20395,47 @@ end $$;
 ALTER FUNCTION "public"."waitlist_cause"("r" "public"."requests") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."waitlist_group_holds"("p_department_id" "uuid", "p_week_start" "date") RETURNS TABLE("group_id" "uuid", "car_id" "uuid", "held_from" timestamp with time zone, "held_until" timestamp with time zone, "gap_from" timestamp with time zone, "gap_until" timestamp with time zone)
+    LANGUAGE "plpgsql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare v_ta interval;
+begin
+  if not (public.member_of(p_department_id) or public.is_admin()) then
+    raise exception 'not_authorized' using errcode = '42501';
+  end if;
+  v_ta := make_interval(mins => coalesce(public.required_turnaround_minutes(p_department_id, p_week_start), 30));
+  return query
+  with held as (
+    select g.id as gid, g.day, c.id as cid, min(q.depart_at) as h_from, max(q.return_at) as h_until
+    from public.waitlist_groups g
+    join public.waitlist_group_members gm on gm.group_id = g.id and gm.chosen is null
+    join public.requests q on q.id = gm.request_id and q.status = 'waitlisted' and q.origin_id is not null
+    join public.cars c on c.department_id = g.department_id and c.type = 'shared' and c.status = 'active'
+    where g.department_id = p_department_id and g.week_start = p_week_start and g.status = 'open'
+      and public.car_location_at(c.id, q.depart_at) = q.origin_id
+      and public.car_fits(c.id, q.adults, q.child_seats, q.boosters)
+      and public.car_takes_luggage(c.id, case when q.has_luggage and q.luggage_waived_at is null then 1 else 0 end)
+      and not exists (select 1 from public.rides r where r.car_id = c.id and r.status <> 'cancelled' and not r.planning_conflict
+                      and tstzrange(r.starts_at, r.blocked_until, '[)') && tstzrange(q.depart_at, q.return_at + v_ta, '[)'))
+      and not exists (select 1 from public.car_maintenance_blocks b where b.car_id = c.id
+                      and tstzrange(b.starts_at, b.ends_at, '[)') && tstzrange(q.depart_at, q.return_at, '[)'))
+    group by g.id, g.day, c.id)
+  select h.gid, h.cid, h.h_from, h.h_until,
+    greatest(((h.day + time '06:00') at time zone 'Asia/Jerusalem'),
+             coalesce((select max(r.blocked_until) from public.rides r where r.car_id = h.cid and r.status <> 'cancelled'
+                       and not r.planning_conflict and r.blocked_until <= h.h_from), '-infinity'::timestamptz)),
+    least(((h.day + time '23:59') at time zone 'Asia/Jerusalem'),
+          coalesce((select min(r.starts_at) - v_ta from public.rides r where r.car_id = h.cid and r.status <> 'cancelled'
+                    and not r.planning_conflict and r.starts_at >= h.h_until), 'infinity'::timestamptz))
+  from held h
+  order by h.gid, h.cid;
+end $$;
+
+
+ALTER FUNCTION "public"."waitlist_group_holds"("p_department_id" "uuid", "p_week_start" "date") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."waitlist_group_leave"("p_request_id" "uuid") RETURNS "void"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -20411,6 +20485,25 @@ end $$;
 ALTER FUNCTION "public"."waitlist_group_leave"("p_request_id" "uuid") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."waitlist_group_member_companions"() RETURNS "trigger"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+begin
+  new.companions := coalesce((
+    select array_agg(x.name order by x.ord, x.name) from (
+      select p.full_name as name, 1 as ord from public.request_companions rc join public.profiles p on p.id = rc.profile_id
+      where rc.request_id = new.request_id and p.full_name is not null
+      union all
+      select c.full_name, 2 from public.request_children rch join public.children c on c.id = rch.child_id
+      where rch.request_id = new.request_id and c.full_name is not null) x), '{}');
+  return new;
+end $$;
+
+
+ALTER FUNCTION "public"."waitlist_group_member_companions"() OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."waitlist_group_membership_sync"() RETURNS "trigger"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -20424,6 +20517,53 @@ end $$;
 
 
 ALTER FUNCTION "public"."waitlist_group_membership_sync"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."waitlist_group_offer"("p_request_id" "uuid") RETURNS "uuid"
+    LANGUAGE "plpgsql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  v_req record; v_day date; v_turnaround interval; v_group uuid;
+begin
+  select * into v_req from public.requests where id = p_request_id;
+  if v_req.id is null or v_req.trip_shape <> 'round_trip' or v_req.status <> 'waitlisted'
+     or v_req.depart_at is null or v_req.return_at is null
+     or v_req.series_id is not null                      -- REQ §13.77: series are never grouped
+     or v_req.trip_type <> 'round_trip'                  -- REQ §13.100 a: only members who need a car
+     or public.request_legs_covered(p_request_id)        -- ...and who hold no ride yet
+     or not public.request_has_free_car_at_origin(p_request_id, false) then   -- REQ §13.102 (a): a car must be where they start
+    return null;
+  end if;
+  if exists (select 1 from public.waitlist_group_members m
+             where m.request_id = p_request_id and m.chosen is null) then
+    return null;
+  end if;
+  v_day := (v_req.depart_at at time zone 'Asia/Jerusalem')::date;
+  if not public.is_day_public(v_req.department_id, v_req.week_start, v_day) then
+    return null;
+  end if;
+  v_turnaround := make_interval(mins => coalesce(public.required_turnaround_minutes(v_req.department_id, v_req.week_start), 30));
+
+  select g.id into v_group
+  from public.waitlist_groups g
+  where g.department_id = v_req.department_id and g.week_start = v_req.week_start
+    and g.day = v_day and g.status = 'open'
+    and tstzrange(g.starts_at, g.ends_at + v_turnaround, '[)')
+        && tstzrange(v_req.depart_at, v_req.return_at + v_turnaround, '[)')
+  order by g.starts_at, g.id limit 1;
+
+  if v_group is not null
+     and not (public.request_has_free_car_at_origin(p_request_id, true)
+              or exists (select 1 from public.waitlist_group_members gm
+                         where gm.group_id = v_group and gm.chosen is null and public.request_has_free_car_at_origin(gm.request_id, true))) then
+    return null;
+  end if;
+  return v_group;
+end $$;
+
+
+ALTER FUNCTION "public"."waitlist_group_offer"("p_request_id" "uuid") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."week_board_rides"("p_department_id" "uuid", "p_week_start" "date") RETURNS SETOF "public"."v_board_rides"
@@ -23025,6 +23165,7 @@ CREATE TABLE IF NOT EXISTS "public"."waitlist_group_members" (
     "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
     "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
     "origin_name" "text",
+    "companions" "text"[] DEFAULT '{}'::"text"[] NOT NULL,
     CONSTRAINT "waitlist_group_members_order_ck" CHECK (("return_at" > "depart_at"))
 );
 
@@ -24367,7 +24508,7 @@ CREATE OR REPLACE VIEW "public"."v_waitlist_groups" WITH ("security_invoker"='tr
     "g"."version",
     "g"."created_at",
     "g"."updated_at",
-    COALESCE("jsonb_agg"("jsonb_build_object"('request_id', "m"."request_id", 'profile_id', "m"."profile_id", 'name', "p"."full_name", 'depart_at', "m"."depart_at", 'return_at', "m"."return_at", 'adults', "m"."adults", 'child_seats', "m"."child_seats", 'boosters', "m"."boosters", 'destination', "m"."destination", 'chosen', "m"."chosen", 'origin_name', "m"."origin_name") ORDER BY "m"."created_at", "m"."id") FILTER (WHERE ("m"."id" IS NOT NULL)), '[]'::"jsonb") AS "members"
+    COALESCE("jsonb_agg"("jsonb_build_object"('request_id', "m"."request_id", 'profile_id', "m"."profile_id", 'name', "p"."full_name", 'depart_at', "m"."depart_at", 'return_at', "m"."return_at", 'adults', "m"."adults", 'child_seats', "m"."child_seats", 'boosters', "m"."boosters", 'destination', "m"."destination", 'chosen', "m"."chosen", 'origin_name', "m"."origin_name", 'companions', "to_jsonb"("m"."companions")) ORDER BY "m"."created_at", "m"."id") FILTER (WHERE ("m"."id" IS NOT NULL)), '[]'::"jsonb") AS "members"
    FROM (("public"."waitlist_groups" "g"
      LEFT JOIN "public"."waitlist_group_members" "m" ON (("m"."group_id" = "g"."id")))
      LEFT JOIN "public"."profiles" "p" ON (("p"."id" = "m"."profile_id")))
@@ -25028,6 +25169,10 @@ CREATE OR REPLACE TRIGGER "templates_preferred_car" BEFORE INSERT OR UPDATE OF "
 
 
 CREATE OR REPLACE TRIGGER "templates_public_details" BEFORE INSERT OR UPDATE OF "ride_description", "guest_passenger_names", "companion_ids", "adults", "child_seats", "boosters", "requester_id", "department_id" ON "public"."request_templates" FOR EACH ROW EXECUTE FUNCTION "public"."normalize_public_request_details"();
+
+
+
+CREATE OR REPLACE TRIGGER "waitlist_group_member_companions" BEFORE INSERT ON "public"."waitlist_group_members" FOR EACH ROW EXECUTE FUNCTION "public"."waitlist_group_member_companions"();
 
 
 
@@ -28328,6 +28473,12 @@ GRANT ALL ON FUNCTION "public"."join_other_ride"("p_request_id" "uuid", "p_ride_
 
 
 
+REVOKE ALL ON FUNCTION "public"."join_waitlist_discussion"("p_request_id" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."join_waitlist_discussion"("p_request_id" "uuid") TO "service_role";
+GRANT ALL ON FUNCTION "public"."join_waitlist_discussion"("p_request_id" "uuid") TO "authenticated";
+
+
+
 REVOKE ALL ON FUNCTION "public"."join_waitlist_group"("p_request_id" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."join_waitlist_group"("p_request_id" "uuid") TO "service_role";
 
@@ -29823,14 +29974,30 @@ GRANT ALL ON FUNCTION "public"."waitlist_cause"("r" "public"."requests") TO "aut
 
 
 
+REVOKE ALL ON FUNCTION "public"."waitlist_group_holds"("p_department_id" "uuid", "p_week_start" "date") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."waitlist_group_holds"("p_department_id" "uuid", "p_week_start" "date") TO "service_role";
+GRANT ALL ON FUNCTION "public"."waitlist_group_holds"("p_department_id" "uuid", "p_week_start" "date") TO "authenticated";
+
+
+
 REVOKE ALL ON FUNCTION "public"."waitlist_group_leave"("p_request_id" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."waitlist_group_leave"("p_request_id" "uuid") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."waitlist_group_member_companions"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."waitlist_group_member_companions"() TO "service_role";
 
 
 
 REVOKE ALL ON FUNCTION "public"."waitlist_group_membership_sync"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."waitlist_group_membership_sync"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."waitlist_group_membership_sync"() TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."waitlist_group_offer"("p_request_id" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."waitlist_group_offer"("p_request_id" "uuid") TO "service_role";
 
 
 

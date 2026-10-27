@@ -1,6 +1,7 @@
 import { useCars, useMaintenanceBlocks, useTurnaroundMinutes } from "@/features/fleet/hooks";
 import { effectiveWeekSettings } from "@/lib/weekSettings";
 import { toInstant } from "@/features/requests/mapper";
+import { useWaitlistGroupHoldsQuery } from "@/features/waitlist/hooks";
 
 import { computeCarFreeWindows, type CarFreeWindow } from "./freeWindows";
 import { useBoardRides, useCarLocations, useWeeks } from "./hooks";
@@ -51,6 +52,8 @@ export function useDayFreeWindows(
   const carLocationsQuery = useCarLocations(departmentId, weekStart);
   const maintenanceQuery = useMaintenanceBlocks(departmentId);
   const turnaroundQuery = useTurnaroundMinutes(departmentId);
+  // REQ §13.157 (owner 2026-10-27): a car an open "בדיון" group holds is not shown as free during its hours.
+  const holdsQuery = useWaitlistGroupHoldsQuery(departmentId, weekStart);
   // REQ §13.108 D1: the week's `settings_overrides.turnaround_minutes` wins over the department's (same as SQL `required_turnaround_minutes`).
   const weeksQuery = useWeeks(departmentId);
   const weekRow = weeksQuery.data?.find((w) => w.week_start === weekStart) ?? null;
@@ -73,7 +76,8 @@ export function useDayFreeWindows(
           carId: c.id,
           rides: (boardRidesQuery.data ?? [])
             .filter((r) => r.car_id === c.id && r.starts_at && r.ends_at)
-            .map((r) => ({ startsAt: r.starts_at as string, endsAt: r.ends_at as string })),
+            .map((r) => ({ startsAt: r.starts_at as string, endsAt: r.ends_at as string }))
+            .concat((holdsQuery.data ?? []).filter((h) => h.car_id === c.id).map((h) => ({ startsAt: h.held_from, endsAt: h.held_until }))),
           maintenanceBlocks: (maintenanceQuery.data ?? [])
             .filter((b) => b.car_id === c.id)
             .map((b) => ({ startsAt: b.starts_at, endsAt: b.ends_at })),
