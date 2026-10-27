@@ -2319,6 +2319,7 @@ Owner decision, REQ §13.75 / CLAUDE.md consistency decision 25. Purpose: the Sa
 | `20260910091700_waitlist_notification_templates.sql` | inbox + push copy for both events and every variant (mirrored in `supabase/seed.sql`) |
 | `20260910091800_publish_forms_waitlist_groups.sql` | `publication_readiness()` splits `incompleteAssignments` out of `unresolvedRequests`; `publish_siddur()` calls `form_waitlist_groups()` per published day and no longer blocks on `unresolvedRequests` |
 | `20260910091900_link_auto_approve_to_waitlist_groups.sql` | `try_auto_approve()`'s no-car branch calls `join_waitlist_group()` |
+| `20261029101000_waitlist_group_holds_window.sql` | R15B10 (REQ §13.156 g): `car_held_by_waitlist_group(car, from, until, request)` (internal) — true when an open group's undecided member (not the request itself, nor a member of that group) could take the car for a window overlapping `[from, until)`; `try_auto_approve()` skips such cars, so the newcomer is waitlisted and joins the group |
 
 Design notes worth keeping:
 

@@ -5884,6 +5884,15 @@ export type Database = {
         }
         Returns: boolean
       }
+      car_held_by_waitlist_group: {
+        Args: {
+          p_car_id: string
+          p_from: string
+          p_request_id: string
+          p_until: string
+        }
+        Returns: boolean
+      }
       car_location_at: { Args: { _at: string; _car: string }; Returns: string }
       car_location_excluding: {
         Args: { _at: string; _car: string; _exclude: string }

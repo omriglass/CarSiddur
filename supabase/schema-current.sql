@@ -5917,6 +5917,38 @@ $$;
 ALTER FUNCTION "public"."car_fits"("_car" "uuid", "_adults" integer, "_child_seats" integer, "_boosters" integer) OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."car_held_by_waitlist_group"("p_car_id" "uuid", "p_from" timestamp with time zone, "p_until" timestamp with time zone, "p_request_id" "uuid") RETURNS boolean
+    LANGUAGE "plpgsql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare v_dept uuid; v_week date; v_ta interval;
+begin
+  select department_id, week_start into v_dept, v_week from public.requests where id = p_request_id;
+  if v_dept is null then return false; end if;
+  v_ta := make_interval(mins => coalesce(public.required_turnaround_minutes(v_dept, v_week), 30));
+  return exists (
+    select 1
+    from public.waitlist_groups g
+    join public.waitlist_group_members gm on gm.group_id = g.id and gm.chosen is null and gm.request_id <> p_request_id
+    join public.requests q on q.id = gm.request_id and q.status = 'waitlisted'
+    where g.department_id = v_dept and g.week_start = v_week and g.status = 'open'
+      -- a member of this group competes inside it, never against its own group
+      and not exists (select 1 from public.waitlist_group_members me
+                      where me.group_id = g.id and me.request_id = p_request_id and me.chosen is null)
+      and tstzrange(q.depart_at, q.return_at + v_ta, '[)') && tstzrange(p_from, p_until, '[)')
+      and q.origin_id is not null and public.car_location_at(p_car_id, q.depart_at) = q.origin_id
+      and public.car_fits(p_car_id, q.adults, q.child_seats, q.boosters)
+      and public.car_takes_luggage(p_car_id, case when q.has_luggage and q.luggage_waived_at is null then 1 else 0 end)
+      and not exists (select 1 from public.rides r where r.car_id = p_car_id and r.status <> 'cancelled' and not r.planning_conflict
+                      and tstzrange(r.starts_at, r.blocked_until, '[)') && tstzrange(q.depart_at, q.return_at + v_ta, '[)'))
+      and not exists (select 1 from public.car_maintenance_blocks b where b.car_id = p_car_id
+                      and tstzrange(b.starts_at, b.ends_at, '[)') && tstzrange(q.depart_at, q.return_at, '[)')));
+end $$;
+
+
+ALTER FUNCTION "public"."car_held_by_waitlist_group"("p_car_id" "uuid", "p_from" timestamp with time zone, "p_until" timestamp with time zone, "p_request_id" "uuid") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."car_issues_protect_resolution_fields"() RETURNS "trigger"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -19427,6 +19459,8 @@ begin
           and tstzrange(b.starts_at, b.ends_at, '[)') && tstzrange(v_req.depart_at, v_end + v_turnaround, '[)')
       )
       and (not v_is_one_way or public.car_week_end_ok(c.id, v_end, v_req.destination_id))   -- REQ §13.136 c: no next ride -> the base
+      -- R15B10: a car an open contested group's member could take stays theirs; the newcomer joins the group instead.
+      and not public.car_held_by_waitlist_group(c.id, v_req.depart_at, v_end + v_turnaround, p_request_id)
     order by c.id limit 1;
     v_preferred_ok := v_car.id is not null;
   end if;
@@ -19451,6 +19485,8 @@ begin
           and tstzrange(b.starts_at, b.ends_at, '[)') && tstzrange(v_req.depart_at, v_end + v_turnaround, '[)')
       )
       and (not v_is_one_way or public.car_week_end_ok(c.id, v_end, v_req.destination_id))   -- REQ §13.136 c: no next ride -> the base
+      -- R15B10: a car an open contested group's member could take stays theirs; the newcomer joins the group instead.
+      and not public.car_held_by_waitlist_group(c.id, v_req.depart_at, v_end + v_turnaround, p_request_id)
     order by c.id limit 1;
   end if;
 
@@ -27731,6 +27767,11 @@ GRANT ALL ON FUNCTION "public"."car_care_recipients"("_car_id" "uuid") TO "servi
 
 REVOKE ALL ON FUNCTION "public"."car_fits"("_car" "uuid", "_adults" integer, "_child_seats" integer, "_boosters" integer) FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."car_fits"("_car" "uuid", "_adults" integer, "_child_seats" integer, "_boosters" integer) TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."car_held_by_waitlist_group"("p_car_id" "uuid", "p_from" timestamp with time zone, "p_until" timestamp with time zone, "p_request_id" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."car_held_by_waitlist_group"("p_car_id" "uuid", "p_from" timestamp with time zone, "p_until" timestamp with time zone, "p_request_id" "uuid") TO "service_role";
 
 
 

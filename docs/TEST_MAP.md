@@ -122,7 +122,7 @@ the sentence layout (REQ §13.110: `requestForm/sentence/**`, `timeAnchors.ts`, 
 
 **Automated**:
 - Vitest: `npx vitest run src/features/waitlist src/features/requests/joinableRides.test.ts`
-- SQL: `waitlist_groups.sql`, `joinable_rides.sql`, `withdraw_settles.sql`, `waitlist_cause.sql` (R13B17: the member's waiting reason names the blocker — large trunk, child seats, seats, not at the origin)
+- SQL: `waitlist_groups.sql`, `waitlist_group_hold.sql` (R15B10: an open group holds its window against a newcomer), `joinable_rides.sql`, `withdraw_settles.sql`, `waitlist_cause.sql` (R13B17: the member's waiting reason names the blocker — large trunk, child seats, seats, not at the origin)
 - Playwright: `npx playwright test --grep "@waitlist"`
 
 **QA script**:

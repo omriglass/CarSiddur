@@ -239,6 +239,7 @@
         "supabase/migrations/**/*joinable_rides*",
         "supabase/migrations/**/*join_radius*",
         "supabase/tests/waitlist_groups.sql",
+        "supabase/tests/waitlist_group_hold.sql",
         "supabase/tests/joinable_rides.sql",
         "supabase/tests/withdraw_settles.sql",
         "e2e/waitlist-groups.spec.ts",
@@ -251,6 +252,7 @@
       ],
       "sql": [
         "waitlist_groups.sql",
+        "waitlist_group_hold.sql",
         "joinable_rides.sql",
         "withdraw_settles.sql",
         "waitlist_cause.sql"
