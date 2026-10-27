@@ -125,7 +125,7 @@ begin
           join public.requests q on q.id = rr.request_id where q.series_id = (edited ->> 'series_id')::uuid and rd.status <> 'cancelled'),
     '(d) the edited series keeps its car';
 
-  -- (e) every shared car is busy on a new last day: the edit would lose the booking
+  -- (e) every shared car is busy on a new last day: the edit would lose the booking, so it is refused (REQ §13.158)
   perform set_config('request.jwt.claims', '{}', true);
   for c in select id from public.cars where department_id = dept and type = 'shared' and status = 'active' loop
     insert into public.rides(department_id, week_start, car_id, starts_at, ends_at, origin_id, destination_id, driver_id, status, created_by)
@@ -140,16 +140,15 @@ begin
   asked := public.submit_series_request(base || jsonb_build_object('series_id', (edited ->> 'series_id')::uuid,
     'depart_at', ((w + 1) + time '09:00') at time zone 'Asia/Jerusalem',
     'return_at', ((w + 5) + time '17:00') at time zone 'Asia/Jerusalem'));
-  assert asked ->> 'needs_confirmation' = 'release_to_waitlist', '(e) an unconfirmed edit asks first';
+  assert asked ->> 'edit_refused' = 'no_car', '(e) the edit is refused';
   assert (select bool_and(status = 'assigned') from public.requests where series_id = (edited ->> 'series_id')::uuid),
-    '(e) an unconfirmed edit changes nothing';
+    '(e) a refused edit changes nothing';
   confirmed := public.submit_series_request(base || jsonb_build_object('series_id', (edited ->> 'series_id')::uuid, 'confirm_release', true,
     'depart_at', ((w + 1) + time '09:00') at time zone 'Asia/Jerusalem',
     'return_at', ((w + 5) + time '17:00') at time zone 'Asia/Jerusalem'));
-  assert (select bool_and(status = 'withdrawn') from public.requests where series_id = (edited ->> 'series_id')::uuid),
-    '(e) a confirmed edit releases the old series';
-  assert (select bool_and(status = 'waitlisted') from public.requests where series_id = (confirmed ->> 'series_id')::uuid),
-    '(e) the new span waits for a car';
+  assert confirmed ->> 'edit_refused' = 'no_car'
+    and (select bool_and(status = 'assigned') from public.requests where series_id = (edited ->> 'series_id')::uuid),
+    '(e) confirm_release cannot give the car up either';
 end $$;
 
 -- (f) R13B5: open week — a series the Sadran placed (draft) keeps its car through a member's edit when the car is free.

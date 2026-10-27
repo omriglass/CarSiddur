@@ -230,7 +230,7 @@ begin
   assert res->>'status'='assigned' and res ? 'ride_id' and (res->>'ride_id')::uuid<>rid, format('edit published: moved, got %s',res);
   assert (select status::text from public.rides where id=rid)='cancelled', 'edit published: the old booking is released';
   rid:=(res->>'ride_id')::uuid;
-  -- (f) nothing free at the new time: ask first, change nothing
+  -- (f) nothing free at the new time: REQ §13.158 refuses the edit and changes nothing, confirmed or not
   perform set_config('request.jwt.claims',jsonb_build_object('sub',sadran,'role','authenticated')::text,true);
   insert into public.rides(department_id,week_start,car_id,starts_at,ends_at,origin_id,destination_id,driver_id,status,is_pinned,pin_reason,created_by)
     select dept,w,c,dt+interval '12 hours',dt+interval '13 hours',home,home,sadran,'confirmed',true,'SADRAN_MANUAL',sadran
@@ -239,14 +239,15 @@ begin
   res:=public.submit_request(jsonb_build_object('request_id',q1,'expected_version',(select version from public.requests where id=q1),
     'department_id',dept,'week_start',w,'destination_id',dest,'ride_type_id',typ,
     'depart_at',dt+interval '12 hours','return_at',dt+interval '13 hours','trip_type','round_trip','adults',1));
-  assert res->>'needs_confirmation'='release_to_waitlist' and (res->>'drives_others')::boolean=false, format('edit published: asks first, got %s',res);
+  assert res->>'edit_refused'='no_car' and not (res ? 'needs_confirmation'), format('edit published: refused, got %s',res);
   assert (select status::text from public.rides where id=rid)='confirmed' and (select status::text from public.requests where id=q1)='assigned'
-    and (select depart_at from public.requests where id=q1)=dt+interval '4 hours', 'edit published: needs_confirmation changes nothing';
+    and (select depart_at from public.requests where id=q1)=dt+interval '4 hours', 'edit published: a refused edit changes nothing';
   res:=public.submit_request(jsonb_build_object('request_id',q1,'expected_version',(select version from public.requests where id=q1),'confirm_release',true,
     'department_id',dept,'week_start',w,'destination_id',dest,'ride_type_id',typ,
     'depart_at',dt+interval '12 hours','return_at',dt+interval '13 hours','trip_type','round_trip','adults',1));
-  assert res->>'status'='waitlisted', format('edit published: confirmed -> waiting list, got %s',res);
-  assert (select status::text from public.rides where id=rid)='cancelled', 'edit published: old booking released on confirmation';
+  assert res->>'edit_refused'='no_car', format('edit published: confirm_release cannot give the car up, got %s',res);
+  assert (select status::text from public.rides where id=rid)='confirmed' and (select status::text from public.requests where id=q1)='assigned',
+    'edit published: the booking is kept';
   -- a member who drives others is always asked, and the passengers keep a needs-driver ride
   perform set_config('request.jwt.claims',jsonb_build_object('sub',sadran,'role','authenticated')::text,true);
   delete from public.rides where department_id=dept and week_start=w and pin_reason='SADRAN_MANUAL' and starts_at>=dt+interval '12 hours' and starts_at<dt+interval '24 hours';
@@ -412,7 +413,7 @@ begin
   assert not exists(select 1 from public.notifications where recipient_id=m1 and data->>'variant'='edit_waitlisted'
     and data->>'request_id'=q1::text), 'drop-off edit: no "waiting for a car" notice';
 
-  -- every shared car taken at the new time: asked first; confirmed -> waiting list (unchanged behaviour)
+  -- every shared car taken at the new time: refused, confirmed or not (REQ §13.158)
   perform set_config('request.jwt.claims',jsonb_build_object('sub',sadran,'role','authenticated')::text,true);
   insert into public.rides(department_id,week_start,car_id,starts_at,ends_at,origin_id,destination_id,driver_id,status,is_pinned,pin_reason,created_by)
     select dept,w,c.id,dt+interval '1 day',dt+interval '1 day 4 hours',home,home,sadran,'confirmed',true,'SADRAN_MANUAL',sadran
@@ -421,12 +422,13 @@ begin
   res:=public.submit_request(jsonb_build_object('request_id',q1,'expected_version',(select version from public.requests where id=q1),
     'department_id',dept,'week_start',w,'destination_id',dest,'ride_type_id',typ,
     'depart_at',dt+interval '1 day 1 hour','return_at',dt+interval '1 day 2 hours','trip_type','drop_off','adults',1));
-  assert res->>'needs_confirmation'='release_to_waitlist', format('drop-off edit, no car: asks first, got %s',res);
-  assert (select status::text from public.requests where id=q1)='assigned', 'drop-off edit, no car: the question changes nothing';
+  assert res->>'edit_refused'='no_car', format('drop-off edit, no car: refused, got %s',res);
+  assert (select status::text from public.requests where id=q1)='assigned', 'drop-off edit, no car: nothing changes';
   res:=public.submit_request(jsonb_build_object('request_id',q1,'expected_version',(select version from public.requests where id=q1),'confirm_release',true,
     'department_id',dept,'week_start',w,'destination_id',dest,'ride_type_id',typ,
     'depart_at',dt+interval '1 day 1 hour','return_at',dt+interval '1 day 2 hours','trip_type','drop_off','adults',1));
-  assert res->>'status'='waitlisted', format('drop-off edit, no car: confirmed -> waiting list, got %s',res);
+  assert res->>'edit_refused'='no_car' and (select status::text from public.requests where id=q1)='assigned',
+    format('drop-off edit, no car: confirm_release cannot give the car up, got %s',res);
 
   raise notice 'placement_features.sql: published-day drop-off edit assertions passed';
 end $$;

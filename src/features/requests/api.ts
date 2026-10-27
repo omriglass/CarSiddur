@@ -863,16 +863,19 @@ export interface SubmitRequestResult {
   /** R11B1: an edit that changes nothing (also on the probe) — the server touched nothing and asks nothing. */
   unchanged?: boolean;
   /**
-   * REQ §13.101 f (QM5): an edit of a published/live-day request found no free car at the new
-   * hours — nothing was changed; resubmit with `confirm_release: true` to release the current
-   * ride and move the request to the waiting list. `drives_others`: the member drives others.
+   * REQ §13.158: an edit of a booked published/live-day request that no car takes at the new hours is refused and
+   * changes nothing — `discussion` when an open waiting-list discussion holds the car then (`group_offer` = that
+   * group), else `no_car`.
+   */
+  edit_refused?: "discussion" | "no_car";
+  /**
+   * REQ §13.101 f: a car takes the new hours, but the member drives others who would be left without a driver —
+   * nothing was changed; resubmit with `confirm_release: true` to go ahead.
    */
   needs_confirmation?: "release_to_waitlist";
   drives_others?: boolean;
   /** R14U4: with `needs_confirmation`: the other people on the ride the member drives (names). */
   affected_names?: string[];
-  /** With `needs_confirmation`: a car is free at the new hours — asked only because the member drives others. */
-  would_place?: boolean;
   /** REQ §13.101 g (QM7): the member's own rides/requests overlapping the submitted one. */
   overlaps?: { request_id: string | null; ride_id: string | null }[];
   /** With `probe_only`: the edit would release the member's current car (R2B20). */

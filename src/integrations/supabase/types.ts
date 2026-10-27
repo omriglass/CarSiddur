@@ -7115,6 +7115,15 @@ export type Database = {
         Args: { r: Database["public"]["Tables"]["requests"]["Row"] }
         Returns: string
       }
+      waitlist_group_holding: {
+        Args: {
+          p_car_id: string
+          p_from: string
+          p_request_id: string
+          p_until: string
+        }
+        Returns: string
+      }
       waitlist_group_holds: {
         Args: { p_department_id: string; p_week_start: string }
         Returns: {

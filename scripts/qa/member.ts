@@ -201,10 +201,15 @@ async function cmdEdit(args: Args): Promise<void> {
   };
   if (payload.preferred_car_id && flag(args, "car")) throw new UsageError("--car takes a car id here (members do not see the board); omit it to keep the preference");
   let result = await requests.submitRequest(payload) as unknown as requests.SubmitRequestResult;
-  // R13B19: a published/live-day edit that would lose the booking changed nothing yet — the form asks, so does the CLI.
+  // REQ §13.158: an edit never costs the car — no car at the new hours refuses it, nothing changed.
+  if (result.edit_refused) {
+    console.log(`NOT edited ${short(id)}: refused (${result.edit_refused}${result.group_offer ? ` group=${short(result.group_offer)}` : ""}) — no car takes the new hours; the booking is kept`);
+    return;
+  }
+  // R13B19: a car takes the new hours but the member drives others — the form asks, so does the CLI.
   if (result.needs_confirmation) {
     if (!has(args, "confirm-release")) {
-      console.log(`NOT edited ${short(id)}: the server asks first (${result.needs_confirmation}, drives_others=${!!result.drives_others}, would_place=${!!result.would_place}) — nothing changed; rerun with --confirm-release to release the current ride`);
+      console.log(`NOT edited ${short(id)}: the server asks first (${result.needs_confirmation}, drives_others=${!!result.drives_others}) — nothing changed; rerun with --confirm-release to leave the passengers without a driver`);
       return;
     }
     result = await requests.submitRequest({ ...payload, confirm_release: true }) as unknown as requests.SubmitRequestResult;

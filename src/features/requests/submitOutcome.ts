@@ -112,19 +112,20 @@ export function toastSeriesSubmitOutcome(result: SubmitSeriesRequestResult | nul
 }
 
 /**
- * REQ §13.101 f (QM5): the server answers an edit of a published/live-day request that has no
- * free car at the new hours with `needs_confirmation` instead of changing anything. Returns the
- * data the confirmation dialog needs, or `null` for an ordinary outcome.
+ * REQ §13.101 f: a car takes the edited hours but the member drives others who would be left without a driver — the
+ * server changed nothing and asks (`needs_confirmation`). Returns the names for the dialog, or `null` otherwise.
  */
-export function releaseConfirmation(
-  result: SubmitRequestResult | null | undefined,
-): { drivesOthers: boolean; wouldPlace: boolean; names: string[] } | null {
+export function releaseConfirmation(result: SubmitRequestResult | null | undefined): { names: string[] } | null {
   if (result?.needs_confirmation !== "release_to_waitlist") return null;
-  return {
-    drivesOthers: result.drives_others === true,
-    wouldPlace: result.would_place === true,
-    names: affectedNames(result),
-  };
+  return { names: affectedNames(result) };
+}
+
+/** REQ §13.158: a refused edit (nothing changed, the booking kept) — the reason and the discussion holding the car. */
+export function editRefusal(
+  result: SubmitRequestResult | null | undefined,
+): { reason: "discussion" | "no_car"; groupId: string | null } | null {
+  if (!result?.edit_refused) return null;
+  return { reason: result.edit_refused, groupId: result.group_offer ?? null };
 }
 
 /** R14U4: the other people on a ride the member drives (empty when they drive nobody), from a probe or a release answer. */

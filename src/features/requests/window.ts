@@ -33,8 +33,8 @@ export function isOnUnpublishedDay(request: { window?: RequestWindow | null; dep
 /**
  * Draft solver placements remain editable until the submission deadline. On a published/live
  * week a single-day request is editable too (REQ §13.101 f, QM5) until its day has passed;
- * `submit_request` then answers `needs_confirmation: "release_to_waitlist"` when the new hours
- * have no free car. A multi-day series is edited as a whole on the same terms (REQ §13.142,
+ * `submit_request` then answers `edit_refused` (nothing changed) when no car takes the new hours —
+ * an edit never costs the car (REQ §13.158). A multi-day series is edited as a whole on the same terms (REQ §13.142,
  * `submit_series_request` with `series_id`; R13B3).
  */
 export function canEditRequest(request: {

@@ -85,7 +85,7 @@ import { isSeriesSubmission, seriesSpanDays } from "../series";
 import { extraAdultsFromStored, payloadSeatCounts, unnamedChildSeatsFromStored } from "../seatCounts";
 import { overlapNames } from "../overlapNames";
 import { childOverlapMessage } from "../childOverlap";
-import { affectedNames, releaseConfirmation, shouldOfferJoinableRides, toastSeriesSubmitOutcome, toastSubmitOutcome } from "../submitOutcome";
+import { affectedNames, editRefusal, releaseConfirmation, shouldOfferJoinableRides, toastSeriesSubmitOutcome, toastSubmitOutcome } from "../submitOutcome";
 import { shouldSuggestChildcare } from "../childcareType";
 import { suggestionToFormValues } from "../templatePrefill";
 import { canUseDrivingTripTypes, tripTypeToLegacyFields } from "../tripType";
@@ -823,7 +823,9 @@ export function RequestForm({
   const [pendingChildOverlap, setPendingChildOverlap] = useState<{ values: RequestFormValues; rows: ChildOverlapRow[] } | null>(null);
   // R2B20 / REQ §102 f: an open-week edit the probe says would lose the member's current car.
   const [pendingLose, setPendingLose] = useState<{ values: RequestFormValues; names: string[] } | null>(null);
-  const [pendingRelease, setPendingRelease] = useState<{ values: RequestFormValues; drivesOthers: boolean; wouldPlace: boolean; names: string[] } | null>(null);
+  const [pendingRelease, setPendingRelease] = useState<{ values: RequestFormValues; names: string[] } | null>(null);
+  // REQ §13.158: the edit was refused (no car at the new hours) — nothing changed, the member stays on the form.
+  const [editRefused, setEditRefused] = useState<{ reason: "discussion" | "no_car"; groupId: string | null } | null>(null);
   // F4 (docs/TODO.md, owner A8-A10): a `waitlisted` outcome with nearby joinable rides holds off
   // the normal onDone/navigate — `afterJoinableDialog` runs it once the member picks "ask to
   // join" or "stay on the waiting list". State (not a ref): it's only ever set from an event
@@ -831,12 +833,13 @@ export function RequestForm({
   const [joinableRides, setJoinableRides] = useState<JoinableRideRow[] | null>(null);
   // REQ §13.157: an open discussion this request could join (`group_offer`), asked after submitting.
   const [groupOffer, setGroupOffer] = useState<{ requestId: string; groupId: string; proceed: () => void } | null>(null);
-  const waitlistGroupsQuery = useWaitlistGroupsQuery(departmentId, joinGroupId || groupOffer ? weekStart : undefined);
+  const waitlistGroupsQuery = useWaitlistGroupsQuery(departmentId, joinGroupId || groupOffer || editRefused?.groupId ? weekStart : undefined);
   const groupHoldsQuery = useWaitlistGroupHoldsQuery(departmentId, weekStart, !!joinGroupId);
   const joinDiscussionMutation = useJoinWaitlistDiscussionMutation(departmentId, weekStart);
   const joinGroup = joinGroupId ? (waitlistGroupsQuery.data ?? []).find((group) => group.id === joinGroupId) ?? null : null;
   const joinWindow = joinGroupId ? groupJoinWindow(joinGroupId, groupHoldsQuery.data ?? []) : null;
   const offeredGroup = groupOffer ? (waitlistGroupsQuery.data ?? []).find((group) => group.id === groupOffer.groupId) ?? null : null;
+  const refusingGroup = editRefused?.groupId ? (waitlistGroupsQuery.data ?? []).find((group) => group.id === editRefused.groupId) ?? null : null;
   const [afterJoinableDialog, setAfterJoinableDialog] = useState<() => void>(() => () => {});
   // The just-filed (now waitlisted) request's own people, captured at submit time so
   // "הצטרפות לנסיעה" can add them straight onto the chosen ride (item 4, REQ §13.85) without
@@ -1053,7 +1056,12 @@ export function RequestForm({
         // on each day's ride, not just the first.
         const raw = await submitSeriesMutation.mutateAsync(payload);
         const seriesResult = raw as unknown as SubmitSeriesRequestResult | null;
-        // REQ §13.142: an edit that would lose a booking changed nothing yet — ask, then resubmit with `confirm_release`.
+        // REQ §13.158: an edit never costs the car — a refused one changed nothing.
+        const seriesRefusal = editRefusal(raw as unknown as SubmitRequestResult | null);
+        if (seriesRefusal) {
+          setEditRefused(seriesRefusal);
+          return;
+        }
         const seriesRelease = releaseConfirmation(raw as unknown as SubmitRequestResult | null);
         if (seriesRelease) {
           setPendingRelease({ values: formValues, ...seriesRelease });
@@ -1088,7 +1096,14 @@ export function RequestForm({
         return;
       }
 
-      // REQ §13.101 f (QM5): nothing changed yet — ask, then resubmit with `confirm_release`.
+      // REQ §13.158: no car takes the new hours — the edit is refused and the booking kept.
+      const refusal = editRefusal(result);
+      if (refusal) {
+        setEditRefused(refusal);
+        return;
+      }
+      // REQ §13.101 f: a car takes the new hours but the member's passengers lose their driver — ask, then resubmit
+      // with `confirm_release`.
       const release = releaseConfirmation(result);
       if (release) {
         setPendingRelease({ values: formValues, ...release });
@@ -1662,8 +1677,8 @@ export function RequestForm({
     <ConfirmDialog
       open={!!pendingRelease}
       onOpenChange={(open) => { if (!open) setPendingRelease(null); }}
-      title={t(pendingRelease?.wouldPlace ? "request.releaseKeepPassengersTitle" : "request.releaseTitle")}
-      description={t(pendingRelease?.wouldPlace ? "request.releaseKeepPassengersBody" : "request.releaseBody")}
+      title={t("request.releaseKeepPassengersTitle")}
+      description={t("request.releaseKeepPassengersBody")}
       loading={submitMutation.isPending}
       onConfirm={() => {
         const pending = pendingRelease;
@@ -1671,10 +1686,20 @@ export function RequestForm({
         if (pending) void performSubmit(pending.values, { confirmRelease: true });
       }}
     >
-      {pendingRelease?.drivesOthers && !pendingRelease.wouldPlace ? <p className="text-sm">{t("request.releaseDrivesOthers")}</p> : null}
       {pendingRelease && pendingRelease.names.length > 0 ? (
         <p className="text-sm">{tv("request.releaseAffected", { names: pendingRelease.names.join(", ") })}</p>
       ) : null}
+    </ConfirmDialog>
+    <ConfirmDialog
+      open={!!editRefused}
+      onOpenChange={(open) => { if (!open) setEditRefused(null); }}
+      title={t(editRefused?.reason === "discussion" ? "request.editRefusedDiscussionTitle" : "request.editRefusedTitle")}
+      description={t(editRefused?.reason === "discussion" ? "request.editRefusedDiscussionBody" : "request.editRefusedBody")}
+      cancelLabel={t("request.editRefusedBack")}
+      hideConfirm
+      onConfirm={() => setEditRefused(null)}
+    >
+      {refusingGroup ? <p className="text-sm font-medium" data-testid="edit-refused-group"><GroupSummary members={refusingGroup.members} /></p> : null}
     </ConfirmDialog>
     <ConfirmDialog
       open={!!pendingOverlapSubmit}

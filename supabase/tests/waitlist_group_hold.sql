@@ -139,6 +139,36 @@ begin
   assert res ->> 'status' = 'assigned' and (res ->> 'car_id')::uuid = '00000000-0000-0000-0000-000000000040',
     format('2) a request clear of the group must still be auto-approved, got %s', res);
 
+  -- 2b) REQ §13.158: an edit never costs the car. Leaving half an hour earlier, still clear of the group: moved.
+  perform set_config('request.jwt.claims', jsonb_build_object('sub', newcomer, 'role', 'authenticated')::text, true);
+  res := public.submit_request(jsonb_build_object('request_id', q, 'expected_version', (select version from public.requests where id = q),
+    'department_id', dept, 'week_start', w, 'destination_id', dest, 'ride_type_id', ride_type, 'trip_type', 'round_trip', 'adults', 1,
+    'depart_at', (d + time '17:30') at time zone 'Asia/Jerusalem', 'return_at', (d + time '20:00') at time zone 'Asia/Jerusalem'));
+  assert res ->> 'status' = 'assigned', format('2b) an edit clear of the group is placed, got %s', res);
+  -- 2c) reaching into the hours the discussion holds the car: refused, nothing changes
+  res := public.submit_request(jsonb_build_object('request_id', q, 'expected_version', (select version from public.requests where id = q),
+    'department_id', dept, 'week_start', w, 'destination_id', dest, 'ride_type_id', ride_type, 'trip_type', 'round_trip', 'adults', 1,
+    'depart_at', (d + time '13:00') at time zone 'Asia/Jerusalem', 'return_at', (d + time '20:00') at time zone 'Asia/Jerusalem'));
+  assert res ->> 'edit_refused' = 'discussion' and (res ->> 'group_offer')::uuid = g,
+    format('2c) an edit into the discussion''s hours is refused naming the discussion, got %s', res);
+  assert (select status = 'assigned' and depart_at = (d + time '17:30') at time zone 'Asia/Jerusalem' from public.requests where id = q)
+    and exists (select 1 from public.ride_requests rr join public.rides r on r.id = rr.ride_id
+                where rr.request_id = q and r.status <> 'cancelled' and r.car_id = '00000000-0000-0000-0000-000000000040'),
+    '2c) the refused edit keeps the booking as it was';
+  res := public.submit_request(jsonb_build_object('request_id', q, 'expected_version', (select version from public.requests where id = q),
+    'confirm_release', true,
+    'department_id', dept, 'week_start', w, 'destination_id', dest, 'ride_type_id', ride_type, 'trip_type', 'round_trip', 'adults', 1,
+    'depart_at', (d + time '13:00') at time zone 'Asia/Jerusalem', 'return_at', (d + time '20:00') at time zone 'Asia/Jerusalem'));
+  assert res ->> 'edit_refused' = 'discussion', format('2c) confirm_release cannot give the car up, got %s', res);
+  perform set_config('request.jwt.claims', '', true);
+  -- 2d) the editor's own old booking still occupies its car for the hold (keeping or shrinking hours is never blocked)
+  perform set_config('app.edit_kept_rides', jsonb_build_array(jsonb_build_object('car', '00000000-0000-0000-0000-000000000040',
+    'from', (d + time '13:00') at time zone 'Asia/Jerusalem', 'until', (d + time '15:00') at time zone 'Asia/Jerusalem'))::text, true);
+  assert not public.car_held_by_waitlist_group('00000000-0000-0000-0000-000000000040',
+    (d + time '13:00') at time zone 'Asia/Jerusalem', (d + time '15:00') at time zone 'Asia/Jerusalem', q),
+    '2d) a car the editor already held in those hours is not held against the editor';
+  perform set_config('app.edit_kept_rides', '', true);
+
   -- 3) the helper never holds a car against the group's own members
   assert not public.car_held_by_waitlist_group('00000000-0000-0000-0000-000000000040',
     (d + time '08:00') at time zone 'Asia/Jerusalem', (d + time '12:30') at time zone 'Asia/Jerusalem',

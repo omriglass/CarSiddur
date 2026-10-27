@@ -1670,14 +1670,15 @@ begin
 
     v_lost := v_was_booked and exists (
       select 1 from public.requests q where q.id = any(v_new_ids) and q.status not in ('assigned', 'merged'));
-    if v_probe or (v_lost and not v_confirm) then
+    -- REQ §13.158: an edit never costs the car — a booked series that would not be placed again is not changed.
+    if v_probe or v_lost then
       raise exception 'series_edit_rollback';
     end if;
   exception when raise_exception then
     if sqlerrm <> 'series_edit_rollback' then raise; end if;
     perform set_config('app.series_prefer_car', '', true);
     if v_probe then return jsonb_build_object('would_lose_booking', v_lost); end if;
-    return jsonb_build_object('needs_confirmation', 'release_to_waitlist', 'drives_others', false, 'would_place', false);
+    return jsonb_build_object('ok', false, 'edit_refused', 'no_car', 'unchanged', false);
   end;
 
   return v_new || jsonb_build_object('replaced_series_id', v_old);
@@ -5918,32 +5919,11 @@ ALTER FUNCTION "public"."car_fits"("_car" "uuid", "_adults" integer, "_child_sea
 
 
 CREATE OR REPLACE FUNCTION "public"."car_held_by_waitlist_group"("p_car_id" "uuid", "p_from" timestamp with time zone, "p_until" timestamp with time zone, "p_request_id" "uuid") RETURNS boolean
-    LANGUAGE "plpgsql" STABLE SECURITY DEFINER
+    LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
-declare v_dept uuid; v_week date; v_ta interval;
-begin
-  select department_id, week_start into v_dept, v_week from public.requests where id = p_request_id;
-  if v_dept is null then return false; end if;
-  v_ta := make_interval(mins => coalesce(public.required_turnaround_minutes(v_dept, v_week), 30));
-  return exists (
-    select 1
-    from public.waitlist_groups g
-    join public.waitlist_group_members gm on gm.group_id = g.id and gm.chosen is null and gm.request_id <> p_request_id
-    join public.requests q on q.id = gm.request_id and q.status = 'waitlisted'
-    where g.department_id = v_dept and g.week_start = v_week and g.status = 'open'
-      -- a member of this group competes inside it, never against its own group
-      and not exists (select 1 from public.waitlist_group_members me
-                      where me.group_id = g.id and me.request_id = p_request_id and me.chosen is null)
-      and tstzrange(q.depart_at, q.return_at + v_ta, '[)') && tstzrange(p_from, p_until, '[)')
-      and q.origin_id is not null and public.car_location_at(p_car_id, q.depart_at) = q.origin_id
-      and public.car_fits(p_car_id, q.adults, q.child_seats, q.boosters)
-      and public.car_takes_luggage(p_car_id, case when q.has_luggage and q.luggage_waived_at is null then 1 else 0 end)
-      and not exists (select 1 from public.rides r where r.car_id = p_car_id and r.status <> 'cancelled' and not r.planning_conflict
-                      and tstzrange(r.starts_at, r.blocked_until, '[)') && tstzrange(q.depart_at, q.return_at + v_ta, '[)'))
-      and not exists (select 1 from public.car_maintenance_blocks b where b.car_id = p_car_id
-                      and tstzrange(b.starts_at, b.ends_at, '[)') && tstzrange(q.depart_at, q.return_at, '[)')));
-end $$;
+  select public.waitlist_group_holding(p_car_id, p_from, p_until, p_request_id) is not null
+$$;
 
 
 ALTER FUNCTION "public"."car_held_by_waitlist_group"("p_car_id" "uuid", "p_from" timestamp with time zone, "p_until" timestamp with time zone, "p_request_id" "uuid") OWNER TO "postgres";
@@ -18147,6 +18127,7 @@ declare
   v_member_flow boolean;
   -- REQ §13.135 (c): a private car chosen in the form (the car's owner is the filer, the requester or who filed it).
   v_own_car uuid; v_own_turnaround int; v_own_by text;
+  v_hold_group uuid;
 begin
   -- REQ §13.127: an edit without `requester_id` keeps the stored requester (the editor may be anyone related).
   if v_request_id is not null and nullif(payload ->> 'requester_id', '') is null then
@@ -18311,7 +18292,8 @@ begin
     -- REQ §13.102 (f), R2B20: the form asks before saving whether an edit would lose the current booking.
     if v_probe_only then
       return jsonb_build_object('probe_only', true, 'request_id', v_request_id, 'unchanged', v_unchanged, 'placement_neutral', v_neutral,
-        'would_lose_booking', not v_unchanged and not v_neutral and (v_existing.status in ('assigned', 'merged', 'proposed') or exists (
+        -- REQ §13.158: a published/live-day edit never loses its booking (it is placed or refused).
+        'would_lose_booking', not v_published_edit and not v_unchanged and not v_neutral and (v_existing.status in ('assigned', 'merged', 'proposed') or exists (
           select 1 from public.ride_requests rr join public.rides r on r.id = rr.ride_id
           where rr.request_id = v_request_id and r.status <> 'cancelled')),
         'drives_others', coalesce((public.request_booking_info(v_request_id) ->> 'drives_others')::boolean, false),
@@ -18348,23 +18330,39 @@ begin
     end if;
     if v_published_edit then
       v_booking := public.request_booking_info(v_request_id);
-      if (v_booking ->> 'has_booking')::boolean and not v_confirm then
+      if (v_booking ->> 'has_booking')::boolean and coalesce(current_setting('app.edit_probe_inner', true), 'off') <> 'on' then
         -- Probe: run the whole edit (release + new placement) in a subtransaction. A clean move onto a
-        -- free car (nobody left behind) is kept; anything else is rolled back and the member is asked.
+        -- free car is kept (with others on the ride only once the member confirmed); anything else is rolled back.
         begin
+          perform set_config('app.edit_probe_inner', 'on', true);
           v_probe := public.submit_request(payload || jsonb_build_object('confirm_release', true));
-          if coalesce(v_probe ->> 'status', '') = 'assigned' and not (v_booking ->> 'drives_others')::boolean then
+          perform set_config('app.edit_probe_inner', 'off', true);
+          if coalesce(v_probe ->> 'status', '') = 'assigned' and (v_confirm or not (v_booking ->> 'drives_others')::boolean) then
             return v_probe;
           end if;
           raise exception 'release_probe_rollback' using errcode = 'PXRP1';
         exception when sqlstate 'PXRP1' then
           null;
         end;
-        -- would_place: the probe found a car (only asked because the member drives others).
-        return jsonb_build_object('needs_confirmation', 'release_to_waitlist', 'unchanged', false,
-          'drives_others', (v_booking ->> 'drives_others')::boolean,
-          'would_place', coalesce(v_probe ->> 'status', '') = 'assigned',
-          'affected_names', coalesce(v_booking -> 'affected_names', '[]'::jsonb));
+        if coalesce(v_probe ->> 'status', '') = 'assigned' then
+          -- the new hours fit a car, but the member drives others who would be left without a driver: ask
+          return jsonb_build_object('needs_confirmation', 'release_to_waitlist', 'unchanged', false,
+            'drives_others', true, 'would_place', true,
+            'affected_names', coalesce(v_booking -> 'affected_names', '[]'::jsonb));
+        end if;
+        -- REQ §13.158: an edit never costs the member the car. No car takes the new hours, so nothing changes;
+        -- `discussion` when an open waiting-list discussion holds the car in those hours (try_auto_approve's offer).
+        v_hold_group := coalesce(nullif(v_probe ->> 'group_offer', '')::uuid, (
+          select public.waitlist_group_holding(c.id, v_depart_at,
+            coalesce(v_return_at, v_depart_at) + make_interval(mins => coalesce(public.required_turnaround_minutes(v_department_id, v_week_start), 30)), v_request_id)
+          from public.cars c
+          where c.department_id = v_department_id and c.status = 'active' and c.type = 'shared'
+            and public.waitlist_group_holding(c.id, v_depart_at,
+              coalesce(v_return_at, v_depart_at) + make_interval(mins => coalesce(public.required_turnaround_minutes(v_department_id, v_week_start), 30)), v_request_id) is not null
+          order by c.id limit 1));
+        return jsonb_build_object('ok', false, 'edit_refused', case when v_hold_group is not null then 'discussion' else 'no_car' end,
+          'group_offer', v_hold_group, 'request_id', v_request_id, 'unchanged', false, 'status', v_existing.status,
+          'warnings', '[]'::jsonb, 'overlaps', '[]'::jsonb);
       end if;
     end if;
   end if;
@@ -18459,6 +18457,10 @@ begin
     select r.car_id into v_old_edit_car from public.ride_requests rr join public.rides r on r.id = rr.ride_id
     where rr.request_id = v_request_id and r.status <> 'cancelled' order by r.starts_at limit 1;
     perform set_config('app.edit_prefer_car', coalesce(v_old_edit_car::text, ''), true);
+    -- REQ §13.158: the old booking keeps counting against waiting-list holds (car_held_by_waitlist_group).
+    perform set_config('app.edit_kept_rides', coalesce((select jsonb_agg(jsonb_build_object('car', r.car_id, 'from', r.starts_at, 'until', r.blocked_until))
+      from public.ride_requests rr join public.rides r on r.id = rr.ride_id
+      where rr.request_id = v_request_id and r.status <> 'cancelled' and r.car_id is not null), '[]'::jsonb)::text, true);
     perform public.release_request_booking(v_request_id);
     perform set_config('app.system_status_transition', 'on', true);
     update public.requests set status = 'submitted', status_reason = null where id = v_request_id;
@@ -18929,6 +18931,7 @@ begin
 
   -- R2B20: a post-publish edit that was placed straight away is confirmed to the member.
   perform set_config('app.edit_prefer_car', '', true);
+  perform set_config('app.edit_kept_rides', '', true);
   if v_published_edit and coalesce(v_auto_result->>'status', '') = 'assigned' then
     -- R3B14: when the car changed, the confirmation says old -> new including the car.
     if v_old_edit_car is not null and (v_auto_result->>'car_id') is not null and (v_auto_result->>'car_id')::uuid <> v_old_edit_car then
@@ -20393,6 +20396,44 @@ end $$;
 
 
 ALTER FUNCTION "public"."waitlist_cause"("r" "public"."requests") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."waitlist_group_holding"("p_car_id" "uuid", "p_from" timestamp with time zone, "p_until" timestamp with time zone, "p_request_id" "uuid") RETURNS "uuid"
+    LANGUAGE "plpgsql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare v_dept uuid; v_week date; v_ta interval; v_group uuid;
+begin
+  select department_id, week_start into v_dept, v_week from public.requests where id = p_request_id;
+  if v_dept is null then return null; end if;
+  v_ta := make_interval(mins => coalesce(public.required_turnaround_minutes(v_dept, v_week), 30));
+  select g.id into v_group
+    from public.waitlist_groups g
+    join public.waitlist_group_members gm on gm.group_id = g.id and gm.chosen is null and gm.request_id <> p_request_id
+    join public.requests q on q.id = gm.request_id and q.status = 'waitlisted'
+    where g.department_id = v_dept and g.week_start = v_week and g.status = 'open'
+      -- a member of this group competes inside it, never against its own group
+      and not exists (select 1 from public.waitlist_group_members me
+                      where me.group_id = g.id and me.request_id = p_request_id and me.chosen is null)
+      and tstzrange(q.depart_at, q.return_at + v_ta, '[)') && tstzrange(p_from, p_until, '[)')
+      and q.origin_id is not null and public.car_location_at(p_car_id, q.depart_at) = q.origin_id
+      and public.car_fits(p_car_id, q.adults, q.child_seats, q.boosters)
+      and public.car_takes_luggage(p_car_id, case when q.has_luggage and q.luggage_waived_at is null then 1 else 0 end)
+      and not exists (select 1 from public.rides r where r.car_id = p_car_id and r.status <> 'cancelled' and not r.planning_conflict
+                      and tstzrange(r.starts_at, r.blocked_until, '[)') && tstzrange(q.depart_at, q.return_at + v_ta, '[)'))
+      -- REQ §13.158: during an edit the editor's own old booking still occupies its car — a car that was not free for
+      -- the member before the edit is not held against the editor (keeping or shrinking one's hours is never blocked).
+      and not exists (select 1 from jsonb_array_elements(coalesce(nullif(current_setting('app.edit_kept_rides', true), ''), '[]')::jsonb) k
+                      where (k ->> 'car')::uuid = p_car_id
+                        and tstzrange((k ->> 'from')::timestamptz, (k ->> 'until')::timestamptz, '[)') && tstzrange(q.depart_at, q.return_at + v_ta, '[)'))
+      and not exists (select 1 from public.car_maintenance_blocks b where b.car_id = p_car_id
+                      and tstzrange(b.starts_at, b.ends_at, '[)') && tstzrange(q.depart_at, q.return_at, '[)'))
+  order by g.starts_at, g.id limit 1;
+  return v_group;
+end $$;
+
+
+ALTER FUNCTION "public"."waitlist_group_holding"("p_car_id" "uuid", "p_from" timestamp with time zone, "p_until" timestamp with time zone, "p_request_id" "uuid") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."waitlist_group_holds"("p_department_id" "uuid", "p_week_start" "date") RETURNS TABLE("group_id" "uuid", "car_id" "uuid", "held_from" timestamp with time zone, "held_until" timestamp with time zone, "gap_from" timestamp with time zone, "gap_until" timestamp with time zone)
@@ -29971,6 +30012,11 @@ GRANT SELECT("reserved_at") ON TABLE "public"."requests" TO "authenticated";
 REVOKE ALL ON FUNCTION "public"."waitlist_cause"("r" "public"."requests") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."waitlist_cause"("r" "public"."requests") TO "service_role";
 GRANT ALL ON FUNCTION "public"."waitlist_cause"("r" "public"."requests") TO "authenticated";
+
+
+
+REVOKE ALL ON FUNCTION "public"."waitlist_group_holding"("p_car_id" "uuid", "p_from" timestamp with time zone, "p_until" timestamp with time zone, "p_request_id" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."waitlist_group_holding"("p_car_id" "uuid", "p_from" timestamp with time zone, "p_until" timestamp with time zone, "p_request_id" "uuid") TO "service_role";
 
 
 

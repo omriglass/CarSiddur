@@ -12,7 +12,8 @@ import {
 // REQ §13.101 (f)/(h) (R11B1), §13.112 (e) "placement-neutral save": editing a request in the sentence form.
 //  - a save that changes nothing is a no-op: toast "לא בוצעו שינויים", the version does not move;
 //  - on a published day an assigned request edited only in its note keeps its ride and status (no "השינוי יוריד אותך מהרכב");
-//  - a time change on the same request still asks the published-day confirmation, and "cancel" leaves everything as it was.
+//  - REQ §13.158: a time change no car takes is refused ("אין רכב פנוי בשעות החדשות") and leaves everything as it was —
+//    an edit never costs the car.
 test.use({ viewport: { width: 390, height: 844 } });
 
 test.describe("request edits", { tag: ["@request-form"] }, () => {
@@ -44,7 +45,7 @@ test.describe("request edits", { tag: ["@request-form"] }, () => {
     }
   });
 
-  test("published day: a note-only edit keeps the booking, a time change asks for confirmation", async ({ page }) => {
+  test("published day: a note-only edit keeps the booking, a time change no car takes is refused", async ({ page }) => {
     const service = serviceRoleClient();
     const week = FIXTURE_WEEKS.publishedEdit;
     const day = dayOfWeek(week, 1);
@@ -52,6 +53,7 @@ test.describe("request edits", { tag: ["@request-form"] }, () => {
     await admin.auth.signOut();
     let requestId: string | undefined;
     let rideId: string | undefined;
+    const blockerIds: string[] = [];
     try {
       const carId = await sharedCarIdByName(service, "יונדאי 1");
       requestId = await insertRequest(service, day, {
@@ -88,7 +90,20 @@ test.describe("request edits", { tag: ["@request-form"] }, () => {
         expect(stillThere).toMatchObject({ status: "confirmed", car_id: carId });
       });
 
-      await test.step("a time change asks before giving the car up; cancelling changes nothing", async () => {
+      await test.step("a time change no car takes is refused; nothing changes", async () => {
+        // every shared car is taken 08:00-09:30, so leaving at 09:00 fits none (the member's own car included)
+        const { data: cars, error: carsError } = await service.from("cars").select("id")
+          .eq("department_id", NEVO_DEPARTMENT_ID).eq("type", "shared").eq("status", "active");
+        if (carsError) throw carsError;
+        for (const car of cars ?? []) {
+          const { data: blocker, error: blockerError } = await service.from("rides").insert({
+            department_id: NEVO_DEPARTMENT_ID, week_start: week, car_id: car.id as string, driver_id: PROFILE_IDS.sadran, created_by: PROFILE_IDS.sadran,
+            starts_at: winterAt(day, "08:00"), ends_at: winterAt(day, "09:30"), blocked_until: winterAt(day, "09:30"),
+            origin_id: PLACES.home.id, destination_id: PLACES.home.id, status: "confirmed", notes: "E2E edit refusal blocker",
+          }).select("id").single();
+          if (blockerError) throw blockerError;
+          blockerIds.push(blocker.id as string);
+        }
         await page.goto(paths.requests.edit(requestId as string));
         await expect(page.getByTestId("request-sentence")).toBeVisible();
         await page.getByTestId("chip-out").click();
@@ -96,10 +111,13 @@ test.describe("request edits", { tag: ["@request-form"] }, () => {
         await page.getByRole("button", { name: he.requestSentence.sheetDone, exact: true }).click();
         await saveEditedRequest(page);
 
-        const confirmation = page.getByRole("dialog").filter({ hasText: he.request.loseBookingTitle });
-        await expect(confirmation).toBeVisible();
-        await confirmation.getByRole("button", { name: he.common.cancel, exact: true }).click();
-        await expect(confirmation).toHaveCount(0);
+        const refusal = page.getByRole("dialog").filter({ hasText: he.request.editRefusedTitle });
+        await expect(refusal).toBeVisible();
+        await expect(refusal).toContainText(he.request.editRefusedBody);
+        await refusal.getByRole("button", { name: he.request.editRefusedBack, exact: true }).click();
+        await expect(refusal).toHaveCount(0);
+        // back on the form (still editing), nothing saved
+        await expect(page).toHaveURL(new RegExp(`/requests/${requestId}/edit`));
 
         const { data: request } = await service.from("requests").select("status, depart_at").eq("id", requestId as string).single();
         expect(request!.status).toBe("assigned");
@@ -108,6 +126,7 @@ test.describe("request edits", { tag: ["@request-form"] }, () => {
         expect(links).toEqual([{ ride_id: rideId }]);
       });
     } finally {
+      if (blockerIds.length > 0) await service.from("rides").delete().in("id", blockerIds);
       if (requestId) await deleteRequests(service, [requestId]);
       // The empty publication snapshot is immutable, so the week row itself may stay behind; its rows are removed.
       await removeWeek(service, week);

@@ -5,7 +5,7 @@ import { tv } from "@/i18n/he";
 const mocks = vi.hoisted(() => ({ toast: vi.fn(), success: vi.fn(), warning: vi.fn() }));
 vi.mock("sonner", () => ({ toast: Object.assign(mocks.toast, { success: mocks.success, warning: mocks.warning }) }));
 
-import { affectedNames, releaseConfirmation, shouldOfferJoinableRides, toastSeriesSubmitOutcome, toastSubmitOutcome } from "./submitOutcome";
+import { affectedNames, editRefusal, releaseConfirmation, shouldOfferJoinableRides, toastSeriesSubmitOutcome, toastSubmitOutcome } from "./submitOutcome";
 import type { SubmitRequestResult, SubmitSeriesRequestResult } from "./api";
 import { t } from "@/i18n/he";
 
@@ -133,14 +133,25 @@ describe("shouldOfferJoinableRides", () => {
 
 describe("releaseConfirmation", () => {
   const base = { request_id: "r", is_late: false, warnings: [] };
-  it("maps a needs_confirmation result", () => {
-    expect(releaseConfirmation({ ...base, needs_confirmation: "release_to_waitlist", drives_others: true })).toEqual({ drivesOthers: true, wouldPlace: false, names: [] });
-    expect(releaseConfirmation({ ...base, needs_confirmation: "release_to_waitlist", affected_names: ["x"] })).toEqual({ drivesOthers: false, wouldPlace: false, names: [] });
-    expect(releaseConfirmation({ ...base, needs_confirmation: "release_to_waitlist", drives_others: true, would_place: true, affected_names: ["Dana", " "] })).toEqual({ drivesOthers: true, wouldPlace: true, names: ["Dana"] });
+  it("maps a needs_confirmation result to the passengers' names", () => {
+    expect(releaseConfirmation({ ...base, needs_confirmation: "release_to_waitlist", affected_names: ["x"] })).toEqual({ names: [] });
+    expect(releaseConfirmation({ ...base, needs_confirmation: "release_to_waitlist", drives_others: true, affected_names: ["Dana", " "] })).toEqual({ names: ["Dana"] });
   });
   it("is null for an ordinary result", () => {
     expect(releaseConfirmation({ ...base, status: "assigned" })).toBeNull();
     expect(releaseConfirmation(null)).toBeNull();
+  });
+});
+
+describe("editRefusal", () => {
+  const base = { request_id: "r", is_late: false, warnings: [] };
+  it("maps a refused edit with its reason and the holding discussion (REQ §13.158)", () => {
+    expect(editRefusal({ ...base, edit_refused: "discussion", group_offer: "g" })).toEqual({ reason: "discussion", groupId: "g" });
+    expect(editRefusal({ ...base, edit_refused: "no_car" })).toEqual({ reason: "no_car", groupId: null });
+  });
+  it("is null for an ordinary result", () => {
+    expect(editRefusal({ ...base, status: "assigned" })).toBeNull();
+    expect(editRefusal(undefined)).toBeNull();
   });
 });
 
