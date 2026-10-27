@@ -8,7 +8,7 @@
 // GitHub environment settings itself.
 //
 // Usage:
-//   node scripts/release.mjs [--dry-run] [--yes-remote] [--yes]
+//   node scripts/release.mjs [--dry-run] [--yes-remote] [--yes] [--minor]
 //                             [--skip-check] [--status] [--tag <name>]
 //
 //   --dry-run      Print the plan (computed tag, pending migrations, edge
@@ -20,7 +20,11 @@
 //                   without --dry-run) the script refuses, prints the plan,
 //                   and exits 1 having touched nothing.
 //   --yes          Skip the per-step y/N confirmation prompts. Never implied
-//                   by --yes-remote; the two are independent.
+//                   by --yes-remote; the two are independent. It does not
+//                   answer the "no מה חדש" question — that needs --minor.
+//   --minor        Answers "no מה חדש found. Is this a minor release?" up
+//                   front. Without it, a release with no new changelog entry
+//                   asks (and with --yes, refuses) — REQ §13.139 (a).
 //   --skip-check   Skip `npm run check` (discouraged — logs a warning).
 //   --status       Print last tag, commits since, pending migrations (needs
 //                   --yes-remote) and edge functions changed since the tag,
@@ -101,7 +105,7 @@ function jerusalemDate(now = new Date()) {
 }
 
 function parseArgs(argv) {
-  const args = { dryRun: false, yesRemote: false, yes: false, skipCheck: false, status: false, alias: null };
+  const args = { dryRun: false, yesRemote: false, yes: false, minor: false, skipCheck: false, status: false, alias: null };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--tag" || a.startsWith("--tag=")) {
@@ -118,6 +122,9 @@ function parseArgs(argv) {
         break;
       case "--yes":
         args.yes = true;
+        break;
+      case "--minor":
+        args.minor = true;
         break;
       case "--skip-check":
         args.skipCheck = true;
@@ -158,11 +165,12 @@ function aliasExists(alias, { askOrigin }) {
 }
 
 function printUsage() {
-  console.log(`Usage: node scripts/release.mjs [--dry-run] [--yes-remote] [--yes] [--skip-check] [--status] [--tag <name>]
+  console.log(`Usage: node scripts/release.mjs [--dry-run] [--yes-remote] [--yes] [--minor] [--skip-check] [--status] [--tag <name>]
 
   --dry-run      Print the plan only; touches nothing remote or destructive.
   --yes-remote   Confirms this run may touch the hosted Supabase project and push the release tag.
   --yes          Skip y/N confirmation prompts (still requires --yes-remote for a real run).
+  --minor        No "מה חדש" entry on purpose: skips the "is this a minor release?" question (needed with --yes).
   --skip-check   Skip 'npm run check' (discouraged).
   --status       Print last tag / commits since / pending migrations / changed functions, then exit.
   --tag <name>   Also create an alias tag of your own (e.g. v1.2) on the same commit, AFTER the automatic tag.`);
@@ -296,6 +304,9 @@ function printPlan(args = {}) {
   console.log(`Next release tag would be: ${tagName}`);
   const changelog = checkChangelog(tag);
   console.log(`Changelog ("מה חדש", REQ §13.139): ${!changelog.ok ? "WRONG (would abort at step 1) — " : changelog.minor ? "NONE — " : "OK — "}${changelog.message}`);
+  if (changelog.ok && changelog.minor && !args.minor) {
+    console.log(`  A real run would ask: "No מה חדש found. Is this a minor release?" (answer up front with --minor).`);
+  }
   if (args.alias) {
     const where = aliasExists(args.alias, { askOrigin: false });
     console.log(`Alias tag (--tag): ${args.alias}${where ? ` — ALREADY EXISTS ${where === "local" ? "locally" : "on origin"} (would abort at step 1)` : ""}`);
@@ -403,6 +414,13 @@ async function main() {
   // REQ §13.139 (a): a new "מה חדש" entry must be the top one (skill: write-changelog); no entry = a quiet minor release.
   const changelog = checkChangelog(lastTag());
   if (!changelog.ok) return fail(changelog.message);
+  if (changelog.minor && !args.minor) {
+    // Owner 2026-10-27: a forgotten entry must not slip out as a quiet release — ask, and never assume it under --yes.
+    if (args.yes) return fail(`no "מה חדש" entry since the last release — pass --minor to confirm a minor release, or add an entry (write-changelog skill).`);
+    if (!(await confirm('No "מה חדש" found. Is this a minor release?', args))) {
+      return fail(`aborted: add the "מה חדש" entry at the top of src/i18n/he.changelog.ts (write-changelog skill), commit, push, and run again.`);
+    }
+  }
   console.log(`${changelog.minor ? "MINOR" : "OK"}: ${changelog.message}`);
   stepDone("preflight");
 

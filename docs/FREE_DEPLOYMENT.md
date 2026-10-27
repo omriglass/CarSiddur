@@ -169,7 +169,8 @@ npm run release -- --yes-remote   # flags go after "--" or npm swallows them; ad
 
 **Changelog first, unless minor (REQ §13.139).** Before an announced release, add the "מה חדש" entry at the top of
 `src/i18n/he.changelog.ts` (skill `/write-changelog`). A minor release (small fixes, UI touch-ups) has no entry: the
-preflight prints `MINOR` and goes on, and nobody is told. It refuses only a new entry that is not the top one
+preflight asks "No מה חדש found. Is this a minor release?" (`--minor` answers it up front; with `--yes` and no
+`--minor` it refuses), then prints `MINOR` and goes on, and nobody is told. It refuses only a new entry that is not the top one
 (`scripts/changelog-check.mjs`); `--dry-run` shows the check. Members get it as a quiet inbox message the first time
 they open the new version — never a push.
 
