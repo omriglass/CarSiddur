@@ -75,10 +75,6 @@ export function useBoardPolicyScores({ departmentId, weekStart, homeDestinationI
       }
     }
     return scores;
-    // `rows` bundles several already-memoized query results into one fresh object
-    // literal per `BoardScreen` render, so depending on it directly would recompute
-    // on every render regardless of whether any of its fields actually changed —
-    // this hook is cheap enough (milliseconds) that this is an acceptable tradeoff
-    // for not having to keep this dependency list in sync with `SolverContextRows`.
+    // `rows` is memoized by the caller on its fields (`useBoardData`, O28-8), so this reruns only when the data changed.
   }, [departmentId, weekStart, homeDestinationId, policyOptions, rows]);
 }

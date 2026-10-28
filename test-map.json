@@ -470,6 +470,8 @@
       "title": "Board (Sadran) — drag/drop, reservations, policy chip/score",
       "paths": [
         "src/features/sadran/board/**",
+        "src/lib/time.ts",
+        "src/lib/time.test.ts",
         "src/features/sadran/applySolve.ts",
         "src/features/sadran/applySolve.test.ts",
         "src/features/sadran/unmetStatuses.ts",
@@ -551,6 +553,7 @@
       "vitest": [
         "src/lib/smallTrunk.test.ts",
         "src/lib/luggageWaiver.test.ts",
+        "src/lib/time.test.ts",
         "src/features/sadran/board",
         "src/features/sadran/applySolve.test.ts",
         "src/features/sadran/unmetStatuses.test.ts",
@@ -1220,7 +1223,13 @@
       "title": "Live updates: change counters, version check, Realtime",
       "paths": [
         "src/features/liveSync/**",
+        "src/lib/tabId.ts",
+        "src/lib/tabId.test.ts",
+        "src/lib/ownRefresh.ts",
+        "src/lib/ownRefresh.test.ts",
+        "src/integrations/supabase/client.ts",
         "supabase/migrations/**/*week_change*",
+        "supabase/migrations/**/*wcs*",
         "supabase/tests/week_change_seq.sql",
         "e2e/live-sync.spec.ts",
         "src/pages/SiddurPage.tsx",
@@ -1230,7 +1239,9 @@
         "supabase/config.toml"
       ],
       "vitest": [
-        "src/features/liveSync"
+        "src/features/liveSync",
+        "src/lib/tabId.test.ts",
+        "src/lib/ownRefresh.test.ts"
       ],
       "sql": [
         "week_change_seq.sql"
@@ -1246,7 +1257,8 @@
         "Two Sadran tabs on the same board: a change in one shows in the other (REQ item 149 a)",
         "A change on an unpublished day does not refresh members' screens; publishing does (REQ item 149 c)",
         "Block the websocket (network devtools): changes still show within ~15 s (REQ item 149 b)",
-        "Leave a tab in the background > 30 s: its Realtime connection closes; bring it back: it reconnects and catches up (REQ item 149 e)"
+        "Leave a tab in the background > 30 s: its Realtime connection closes; bring it back: it reconnects and catches up (REQ item 149 e)",
+        "One change on the board (add a passenger, move a ride): the network tab shows the week reloaded once, not twice; a second Sadran tab still updates (O28-8)"
       ]
     },
     {

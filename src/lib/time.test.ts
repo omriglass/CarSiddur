@@ -64,3 +64,28 @@ describe("weekdayIndex", () => {
     expect(weekdayIndex(new Date("2027-01-16T22:30:00Z"))).toBe(0);
   });
 });
+
+describe("wall-clock helpers match date-fns-tz (O28-8 cached formatter)", () => {
+  // Every 15 minutes across both 2026 switches (27.3 spring forward, 25.10 fall back) and an ordinary day.
+  const days = ["2026-03-26T18:00:00Z", "2026-10-24T18:00:00Z", "2026-11-01T18:00:00Z"];
+  const instants = days.flatMap((start) =>
+    Array.from({ length: 4 * 36 }, (_, i) => new Date(Date.parse(start) + i * 15 * 60_000)),
+  );
+
+  it("dateKey, weekdayIndex and formatTime agree for Date, number and ISO-string input", () => {
+    for (const instant of instants) {
+      const iso = instant.toISOString();
+      const expectedKey = formatInTimeZone(instant, TZ, "yyyy-MM-dd");
+      expect(dateKey(instant)).toBe(expectedKey);
+      expect(dateKey(instant.getTime())).toBe(expectedKey);
+      expect(dateKey(iso)).toBe(expectedKey);
+      expect(dateKey(iso.replace("Z", "+00:00"))).toBe(expectedKey);
+      expect(weekdayIndex(iso)).toBe(Number(formatInTimeZone(instant, TZ, "i")) % 7);
+      expect(formatTime(instant)).toBe(formatInTimeZone(instant, TZ, "HH:mm"));
+    }
+  });
+
+  it("still refuses an invalid instant", () => {
+    expect(() => dateKey("not a date")).toThrow(RangeError);
+  });
+});

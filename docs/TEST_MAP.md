@@ -269,7 +269,7 @@ migration `*my_rides_week_view*`; `supabase/tests/request_anchors.sql` (TEST 8).
 
 **Paths**: `src/features/sadran/board/**`, `applySolve.ts`(+test), `unmetStatuses.ts`(+test),
 `deviations/**`, `export/**`, `api.ts`, `hooks.ts`, `keys.ts`; `src/components/WeekGrid.tsx`,
-`weekGridCars.ts`; `src/solver/**` (shared fan-out); `src/i18n/he.sadran.ts`; migrations matching
+`weekGridCars.ts`; `src/lib/time.ts`(+test — the board's hot date helpers, O28-8); `src/solver/**` (shared fan-out); `src/i18n/he.sadran.ts`; migrations matching
 `*board*`, `*coordinator*`, `*ride_edit*`, `*day_readiness*`, `*car_chain*`, `*car_swap*`, or
 content-matching `v_board_rides`/`publish_siddur`; `src/components/CarSwapDialog.tsx`(+test),
 `WeekGrid.carSwap.test.tsx`, `src/features/carSwap/**`; `e2e/board.spec.ts`, `board-mobile.spec.ts`,
@@ -647,10 +647,10 @@ migrations matching `*maintenance*`; `supabase/tests/scheduled_maintenance.sql`;
 
 ### live-sync — Live updates: change counters, version check, Realtime
 
-**Paths**: `src/features/liveSync/**` (`watcher.ts` state machine, `invalidation.ts` lean key set, `useWeekChangeWatch.ts`, `api.ts`, `realtime.ts`), migrations matching `*week_change*`, `supabase/tests/week_change_seq.sql`, `e2e/live-sync.spec.ts`, the screens that mount the watch (`SiddurPage.tsx`, `HomePage.tsx`, `BoardScreen.tsx`, `PublishScreen.tsx`), `supabase/config.toml` (`[realtime]`).
+**Paths**: `src/features/liveSync/**` (`watcher.ts` state machine, `invalidation.ts` lean key set, `useWeekChangeWatch.ts`, `api.ts`, `realtime.ts`), `src/lib/tabId.ts` / `src/lib/ownRefresh.ts` + `src/integrations/supabase/client.ts` (O28-8: a page skips the second reload its own broadcast would cause), migrations matching `*week_change*` / `*wcs*`, `supabase/tests/week_change_seq.sql`, `e2e/live-sync.spec.ts`, the screens that mount the watch (`SiddurPage.tsx`, `HomePage.tsx`, `BoardScreen.tsx`, `PublishScreen.tsx`), `supabase/config.toml` (`[realtime]`).
 
 **Automated**:
-- Vitest: `src/features/liveSync` — timings with fake timers (60 s live / 15 s without, 30 s hidden disconnect, immediate check on visible/online, 500 ms broadcast debounce, 0–3 s member jitter, backoff + one refusal report) and the exact lean key set per scope.
+- Vitest: `src/features/liveSync` — timings with fake timers (60 s live / 15 s without, 30 s hidden disconnect, immediate check on visible/online, 500 ms broadcast debounce, 0–3 s member jitter, backoff + one refusal report, 3 s grace for the page's own broadcast) and the exact lean key set per scope; `src/lib/tabId.test.ts`, `src/lib/ownRefresh.test.ts`.
 - SQL: `week_change_seq.sql` — one bump per transaction (90 statements; one statement over 90 rows; a real `publish_siddur`), unpublished day / draft ride → `seq` only, published day / flush / phase change → `public_seq`, catalogs → department counter, rolled-back subtransaction → nothing, RLS and grants on the counters, and (D2) the Realtime messages and `realtime.messages` authorization.
 - Playwright: `@live-sync` (`e2e/live-sync.spec.ts`).
 
@@ -660,6 +660,7 @@ migrations matching `*maintenance*`; `supabase/tests/scheduled_maintenance.sql`;
 3. A change on an unpublished day does not refresh members' screens; publishing that day does.
 4. Block the websocket (devtools → network → block `/realtime/`): changes still appear within ~15 s.
 5. Leave a tab in the background for more than 30 s, change something elsewhere, bring the tab back: it catches up at once.
+6. One change on the board (add a passenger, move a ride): the network tab shows the week reloaded once, not twice; a second Sadran tab still updates.
 
 **REQ**: item 149.
 

@@ -3,6 +3,7 @@ import type { Query, QueryClient } from "@tanstack/react-query";
 import { requestsKeys } from "@/features/requests/queryKeys";
 import { sadranKeys } from "@/features/sadran/keys";
 import { siddurKeys } from "@/features/siddur/queryKeys";
+import { noteOwnRefresh } from "@/lib/ownRefresh";
 
 /** `siddur` query families keyed by `(departmentId, weekStart)` at positions 2 and 3. */
 const WEEK_KEYED_SIDDUR = new Set<unknown>(["boardRides", "carLocations", "weekExport"]);
@@ -26,6 +27,8 @@ export function isSiddurQueryAffectedByWeek(query: Pick<Query, "queryKey">, depa
  * `byId`/`companions`/`freedOffers` fresh. Callers add feature-specific keys (waitlist, inbox).
  */
 export function invalidateWeekData(queryClient: QueryClient, departmentId: string, weekStart: string): Promise<unknown> {
+  // O28-8: this refetch already holds the change, so its own live-sync broadcast need not reload the week again.
+  noteOwnRefresh(departmentId, weekStart);
   return Promise.all([
     queryClient.invalidateQueries({ queryKey: sadranKeys.week(departmentId, weekStart) }),
     // REQ item 108 (M1): the server's merge verdicts/windows are not week-keyed; any ride or request change can alter them.

@@ -320,8 +320,18 @@ begin
     '10: the public payload carries public_seq';
   assert exists (select 1 from realtime.messages where topic = t_sad and (payload ->> 'seq')::bigint = pg_temp.seq(dept, wn)),
     '10: the sadran payload carries seq';
-  assert (select bool_and(private and event = 'changed' and extension = 'broadcast' and (payload - 'id') ?| array['seq'] and (payload - 'id' - 'seq') = '{}'::jsonb)
-            from realtime.messages where topic in (t_pub, t_sad)), '10: private, tiny payload, no row data';
+  assert (select bool_and(private and event = 'changed' and extension = 'broadcast' and (payload - 'id') ?| array['seq'] and (payload - 'id' - 'seq' - 'tab') = '{}'::jsonb)
+            from realtime.messages where topic in (t_pub, t_sad)), '10: private, tiny payload (seq, tab), no row data';
+  assert not exists (select 1 from realtime.messages where topic in (t_pub, t_sad) and payload ->> 'tab' is not null),
+    '10: a change without an x-tab-id header broadcasts tab = null';
+  -- O28-8: a change made by a page names that page (its x-tab-id header), so the page skips its own second reload.
+  perform set_config('request.headers', '{"x-tab-id":"wcs-tab-1"}', true);
+  update public.rides set notes = 'wcs broadcast tab' where department_id = dept and week_start = wn;
+  perform pg_temp.flush();
+  perform set_config('request.headers', '', true);
+  assert exists (select 1 from realtime.messages where topic = t_sad and payload ->> 'tab' = 'wcs-tab-1'
+                   and (payload ->> 'seq')::bigint = pg_temp.seq(dept, wn)),
+    '10: the broadcast carries the changing page''s x-tab-id';
   raise notice 'week_change_seq.sql: broadcasts passed';
 end $$;
 

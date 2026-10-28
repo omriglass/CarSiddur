@@ -410,24 +410,44 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
     carStartLocationsQuery.isLoading ||
     placeTravelQuery.isLoading ||
     seatConfigsQuery.isLoading;
-  const boardScoreRows: SolverContextRows | null =
-    boardScoreRowsLoading || !departmentSettingsQuery.data
-      ? null
-      : {
-          departmentSettings: departmentSettingsQuery.data,
-          allRequests: requestsQuery.data ?? [],
-          cars: carsQuery.data ?? [],
-          destinations: destinationsQuery.data ?? [],
-          rideTypes: rideTypesQuery.data ?? [],
-          maintenanceBlocks: maintenanceQuery.data ?? [],
-          boardRides: ridesQuery.data ?? [],
-          seatConfigsFlat: seatConfigsQuery.data ?? [],
-          fairness: fairnessStatsQuery.data ?? [],
-          mileageKmByCarId: mileageStatsQuery.data ?? {},
-          carStartLocationsByCarId: carStartLocationsQuery.data ?? {},
-          travel: placeTravelQuery.data ?? [],
-          weekRow: weekRowQuery.data,
-        };
+  // O28-8: one bundle per change of its data, not per render — the scores (every policy option) are
+  // recomputed only when something they read changed, never on a drag or a day switch.
+  const boardScoreRows = useMemo<SolverContextRows | null>(
+    () =>
+      boardScoreRowsLoading || !departmentSettingsQuery.data
+        ? null
+        : {
+            departmentSettings: departmentSettingsQuery.data,
+            allRequests: requestsQuery.data ?? [],
+            cars: carsQuery.data ?? [],
+            destinations: destinationsQuery.data ?? [],
+            rideTypes: rideTypesQuery.data ?? [],
+            maintenanceBlocks: maintenanceQuery.data ?? [],
+            boardRides: ridesQuery.data ?? [],
+            seatConfigsFlat: seatConfigsQuery.data ?? [],
+            fairness: fairnessStatsQuery.data ?? [],
+            mileageKmByCarId: mileageStatsQuery.data ?? {},
+            carStartLocationsByCarId: carStartLocationsQuery.data ?? {},
+            travel: placeTravelQuery.data ?? [],
+            weekRow: weekRowQuery.data,
+          },
+    [
+      boardScoreRowsLoading,
+      departmentSettingsQuery.data,
+      requestsQuery.data,
+      carsQuery.data,
+      destinationsQuery.data,
+      rideTypesQuery.data,
+      maintenanceQuery.data,
+      ridesQuery.data,
+      seatConfigsQuery.data,
+      fairnessStatsQuery.data,
+      mileageStatsQuery.data,
+      carStartLocationsQuery.data,
+      placeTravelQuery.data,
+      weekRowQuery.data,
+    ],
+  );
   const boardPolicyScores = useBoardPolicyScores({
     departmentId,
     weekStart,

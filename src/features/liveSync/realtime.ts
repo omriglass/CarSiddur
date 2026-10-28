@@ -6,7 +6,8 @@ import type { ChannelHandlers, WatchScope } from "./watcher";
 
 /**
  * Private Realtime broadcast channels for the change watch (REQ item 149, D2). Topic
- * `week:<department>:<week>:<public|sadran>`, event `changed`, payload `{ seq }` — sent by the
+ * `week:<department>:<week>:<public|sadran>`, event `changed`, payload `{ seq, tab }` (`tab` = the changing page's
+ * `x-tab-id`, O28-8) — sent by the
  * database at commit (`_wcs_flush()`), joined only when RLS on `realtime.messages` allows it
  * (`realtime_topic_authorized`). supabase-js multiplexes every channel of the tab over one socket
  * and closes the socket when the last channel is removed.
@@ -32,12 +33,18 @@ function seqOf(payload: unknown): number | null {
   return typeof seq === "number" ? seq : null;
 }
 
+function tabOf(payload: unknown): string | null {
+  const tab = (payload as { tab?: unknown } | null | undefined)?.tab;
+  return typeof tab === "string" ? tab : null;
+}
+
 function open(topic: string): SharedChannel {
   const channel = supabase.channel(topic, { config: { private: true } });
   const entry: SharedChannel = { channel, listeners: new Set(), status: "connecting" };
   channel.on("broadcast", { event: "changed" }, (message) => {
     const seq = seqOf(message.payload);
-    for (const listener of entry.listeners) listener.onChange(seq);
+    const tab = tabOf(message.payload);
+    for (const listener of entry.listeners) listener.onChange(seq, tab);
   });
   // Private channels need the user's JWT on the socket before joining.
   void supabase.realtime

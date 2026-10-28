@@ -7,6 +7,7 @@ import {
   HIDDEN_DISCONNECT_MS,
   LIVE_POLL_MS,
   MEMBER_JITTER_MS,
+  OWN_CHANGE_GRACE_MS,
   RETRY_BASE_MS,
   resetWatcherSession,
   type ChannelHandlers,
@@ -230,6 +231,47 @@ describe("ChangeWatcher live channels", () => {
     h.setRows({ seq: 3 });
     await vi.advanceTimersByTimeAsync(LIVE_POLL_MS);
     expect(h.invalidated).toHaveLength(1);
+    watcher.stop();
+  });
+
+  it("reloads nothing for this page's own change once the page refetched it, and still records its counter (O28-8)", async () => {
+    const h = harness();
+    let refreshed = false;
+    h.deps.isOwnTab = (tab) => tab === "me";
+    h.deps.ownChangeRefreshed = () => refreshed;
+    const watcher = new ChangeWatcher(target("sadran"), h.deps);
+    watcher.start();
+    await flush();
+    ch(h, 0).handlers.onStatus("live");
+    // The broadcast arrives before the call's own response; the page refetches a moment later.
+    ch(h, 0).handlers.onChange(2, "me");
+    await vi.advanceTimersByTimeAsync(800);
+    refreshed = true;
+    await vi.advanceTimersByTimeAsync(OWN_CHANGE_GRACE_MS);
+    expect(h.invalidated).toEqual([]);
+    h.setRows({ seq: 2 });
+    await vi.advanceTimersByTimeAsync(LIVE_POLL_MS);
+    expect(h.invalidated).toEqual([]);
+    // Someone else's change still reloads after the usual debounce.
+    ch(h, 0).handlers.onChange(3, "other");
+    await vi.advanceTimersByTimeAsync(BROADCAST_DEBOUNCE_MS);
+    expect(h.invalidated).toEqual([{ weeks: [WEEK], department: false }]);
+    watcher.stop();
+  });
+
+  it("reloads after the grace period when the page did not refetch its own change (O28-8)", async () => {
+    const h = harness();
+    h.deps.isOwnTab = (tab) => tab === "me";
+    h.deps.ownChangeRefreshed = () => false;
+    const watcher = new ChangeWatcher(target("sadran"), h.deps);
+    watcher.start();
+    await flush();
+    ch(h, 0).handlers.onStatus("live");
+    ch(h, 0).handlers.onChange(2, "me");
+    await vi.advanceTimersByTimeAsync(OWN_CHANGE_GRACE_MS - 1);
+    expect(h.invalidated).toEqual([]);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(h.invalidated).toEqual([{ weeks: [WEEK], department: false }]);
     watcher.stop();
   });
 

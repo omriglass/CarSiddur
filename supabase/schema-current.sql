@@ -3614,10 +3614,16 @@ declare
   v_dept uuid; v_week date; v_pub boolean;
   v_seq bigint; v_public_seq bigint;
   v_topic text;
+  v_tab text;
 begin
   perform set_config('app.wcs_state', '', true);
   perform set_config('app.wcs_registered', '', true);
   delete from public.week_change_pending where id = new.id;
+  begin
+    v_tab := left(nullif(current_setting('request.headers', true), '')::json ->> 'x-tab-id', 64);
+  exception when others then
+    v_tab := null;
+  end;
   for k in select key, value from jsonb_each_text(v_state) order by key loop
     begin
       v_dept := split_part(k.key, '|', 2)::uuid;
@@ -3632,9 +3638,9 @@ begin
               updated_at = now()
         returning c.seq, c.public_seq into v_seq, v_public_seq;
         v_topic := 'week:' || v_dept::text || ':' || v_week::text;
-        perform realtime.send(jsonb_build_object('seq', v_seq), 'changed', v_topic || ':sadran', true);
+        perform realtime.send(jsonb_build_object('seq', v_seq, 'tab', v_tab), 'changed', v_topic || ':sadran', true);
         if v_pub then
-          perform realtime.send(jsonb_build_object('seq', v_public_seq), 'changed', v_topic || ':public', true);
+          perform realtime.send(jsonb_build_object('seq', v_public_seq, 'tab', v_tab), 'changed', v_topic || ':public', true);
         end if;
       else
         insert into public.department_change_seq as c (department_id, seq)

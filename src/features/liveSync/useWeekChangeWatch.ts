@@ -4,6 +4,8 @@ import { useQueryClient } from "@tanstack/react-query";
 import { errorToReport, reportClientError } from "@/features/diagnostics/reportClientError";
 
 import { registerWatch } from "@/lib/counterGate";
+import { refreshedRecently } from "@/lib/ownRefresh";
+import { tabId } from "@/lib/tabId";
 
 import { fetchWeekChangeSeqs } from "./api";
 import { invalidateWatchedChange } from "./invalidation";
@@ -65,16 +67,18 @@ export function useWeekChangeWatch(
         subscribe: (dept, week, watchScope, handlers) =>
           subscribeWeekTopic(dept, week, watchScope, {
             onStatus: handlers.onStatus,
-            onChange: (seq) => {
+            onChange: (seq, tab) => {
               broadcastCount += 1;
               document.documentElement.dataset.liveSyncBroadcasts = String(broadcastCount);
-              handlers.onChange(seq);
+              handlers.onChange(seq, tab);
             },
           }),
         // Once per page session (watcher.ts): shows on /admin/errors when the plan's connection limit is hit.
         reportRefusal: (detail) => reportClientError(errorToReport(`realtime_channel_refused: ${detail}`, "liveSync")),
         onLiveState: markLive,
         invalidate: (change) => void invalidateWatchedChange(client, departmentId, scope, change),
+        isOwnTab: (tab) => tab === tabId(),
+        ownChangeRefreshed: (week) => refreshedRecently(departmentId, week),
         isVisible: () => document.visibilityState === "visible",
         random: Math.random,
       },

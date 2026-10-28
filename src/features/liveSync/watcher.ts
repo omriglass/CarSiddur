@@ -6,7 +6,8 @@
  * live channel is joined, every 15 s otherwise (no channel, refused, failed, timed out, closed). When a
  * counter moved, the screen's lean set of queries is invalidated. Live channels (Realtime broadcast,
  * one per watched week) only lower the latency: a broadcast is debounced 500 ms and invalidates the
- * same set. Member screens add a random 0–3 s before invalidating, so a publish does not make every
+ * same set — except the broadcast of this page's own change (O28-8): it waits `OWN_CHANGE_GRACE_MS` (the broadcast
+ * often arrives before the call's own response) and reloads only if the page did not refetch that week itself. Member screens add a random 0–3 s before invalidating, so a publish does not make every
  * open phone re-read at the same instant. 30 s after the tab is hidden, its channels are closed (a
  * forgotten tab does not hold one of the plan's 200 connections); on visible the check runs at once
  * and the channels reopen. A refused/failed channel retries with exponential backoff (5 s → 5 min).
@@ -27,8 +28,8 @@ export interface SeqRow {
 export type ChannelStatus = "live" | "failed";
 
 export interface ChannelHandlers {
-  /** A broadcast arrived: the topic's counter is now `seq`. */
-  onChange(seq: number | null): void;
+  /** A broadcast arrived: the topic's counter is now `seq`; `tab` = the page that made the change (O28-8). */
+  onChange(seq: number | null, tab?: string | null): void;
   /** Joined, or refused / errored / timed out / closed by the server. */
   onStatus(status: ChannelStatus, detail?: string): void;
 }
@@ -43,6 +44,10 @@ export interface WatcherDeps {
   /** Opens one live channel for a week; returns its close function. Absent = version check only. */
   subscribe?(departmentId: string, weekStart: string, scope: WatchScope, handlers: ChannelHandlers): () => void;
   invalidate(change: WatchChange): void;
+  /** O28-8: was this broadcast's change made by this page (`lib/tabId.ts`)? */
+  isOwnTab?(tab: string | null): boolean;
+  /** O28-8: has this page refetched the week after its own change (`lib/ownRefresh.ts`)? Then its broadcast reloads nothing. */
+  ownChangeRefreshed?(week: string): boolean;
   isVisible(): boolean;
   random(): number;
   /** Called at most once per page session for a refused/failed channel (the caller reports it). */
@@ -63,6 +68,7 @@ export const LIVE_POLL_MS = 60_000;
 export const FALLBACK_POLL_MS = 15_000;
 export const HIDDEN_DISCONNECT_MS = 30_000;
 export const BROADCAST_DEBOUNCE_MS = 500;
+export const OWN_CHANGE_GRACE_MS = 3_000;
 export const MEMBER_JITTER_MS = 3_000;
 export const RETRY_BASE_MS = 5_000;
 export const RETRY_MAX_MS = 5 * 60_000;
@@ -105,6 +111,7 @@ export class ChangeWatcher {
   private pollTimer: Timer | null = null;
   private hiddenTimer: Timer | null = null;
   private invalidateTimer: Timer | null = null;
+  private readonly ownChangeTimers = new Set<Timer>();
   private pendingWeeks = new Set<string>();
   private pendingDepartment = false;
   private checking = false;
@@ -131,6 +138,8 @@ export class ChangeWatcher {
     this.clear("pollTimer");
     this.clear("hiddenTimer");
     this.clear("invalidateTimer");
+    for (const timer of this.ownChangeTimers) clearTimeout(timer);
+    this.ownChangeTimers.clear();
     for (const channel of this.channels.values()) this.closeChannel(channel);
     this.channels.clear();
     this.emitLive();
@@ -273,9 +282,13 @@ export class ChangeWatcher {
     this.channels.set(week, channel);
     let current = true;
     channel.close = subscribe(this.target.departmentId, week, this.target.scope, {
-      onChange: (seq) => {
+      onChange: (seq, tab) => {
         if (!current || this.stopped) return;
         if (seq !== null) this.observe(weekKey(this.target, week), seq);
+        if (this.deps.isOwnTab?.(tab ?? null) && this.deps.ownChangeRefreshed) {
+          this.awaitOwnRefresh(week);
+          return;
+        }
         this.queueInvalidate([week], false, BROADCAST_DEBOUNCE_MS);
       },
       onStatus: (status, detail) => {
@@ -303,6 +316,16 @@ export class ChangeWatcher {
       current = false;
       close?.();
     };
+  }
+
+  /** O28-8: this page's own change — reload only if the page has not refetched the week itself by the end of the grace period. */
+  private awaitOwnRefresh(week: string): void {
+    const timer = setTimeout(() => {
+      this.ownChangeTimers.delete(timer);
+      if (this.stopped || this.deps.ownChangeRefreshed?.(week)) return;
+      this.queueInvalidate([week], false, 0);
+    }, OWN_CHANGE_GRACE_MS);
+    this.ownChangeTimers.add(timer);
   }
 
   private emitLive(): void {
