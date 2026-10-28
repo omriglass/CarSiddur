@@ -1,5 +1,5 @@
 import * as PopoverPrimitive from "@radix-ui/react-popover";
-import { useCallback, useContext, useState } from "react";
+import { useCallback, useContext, useEffect, useRef, useState } from "react";
 
 import { Input } from "@/components/ui/input";
 import { SheetPortalContext } from "@/components/SheetPortalContext";
@@ -65,6 +65,18 @@ export function TimeField15({ value, min, max, onChange, disabled, ...rest }: Ti
   const portalContainer = useContext(SheetPortalContext);
 
   const [inlineOpen, setInlineOpen] = useState(false);
+  const inlineRef = useRef<HTMLDivElement>(null);
+
+  // A tap outside the field closes the inline lists. Focus alone cannot tell: a tap on a list button or on the
+  // dialog's empty space moves focus to the dialog itself (Safari), so before this they stayed open for good.
+  useEffect(() => {
+    if (!inlineOpen) return;
+    function onPointerDown(event: PointerEvent) {
+      if (!inlineRef.current?.contains(event.target as Node)) setInlineOpen(false);
+    }
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => document.removeEventListener("pointerdown", onPointerDown);
+  }, [inlineOpen]);
 
   // R3B19: the list opens on the current hour. A STABLE callback ref, so it runs on mount only — an inline ref re-ran on every
   // re-render (the input's blur-commit just before a tap re-renders the form) and snapped the list back to the selected hour
@@ -118,6 +130,7 @@ export function TimeField15({ value, min, max, onChange, disabled, ...rest }: Ti
   if (portalContainer) {
     return (
       <div
+        ref={inlineRef}
         className="space-y-1"
         onBlur={(event) => {
           // Safari never focuses a tapped <button>: focus goes to the nearest focusable ancestor (the sheet itself),

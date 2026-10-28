@@ -146,6 +146,19 @@ describe("inside a sheet or dialog", () => {
     document.body.removeChild(other);
   });
 
+  it("closes the lists on a tap outside the field (a dialog's empty space keeps focus on the dialog)", () => {
+    render(
+      <SheetPortalContext.Provider value={document.body}>
+        <TimeField15 value="08:00" onChange={vi.fn()} aria-label="time" />
+      </SheetPortalContext.Provider>,
+    );
+    fireEvent.click(screen.getByLabelText("time"));
+    fireEvent.pointerDown(screen.getByRole("button", { name: "10" }));
+    expect(screen.getAllByRole("listbox")).toHaveLength(2);
+    fireEvent.pointerDown(document.body);
+    expect(screen.queryAllByRole("listbox")).toHaveLength(0);
+  });
+
   it("commits a time typed on the iPhone number pad (no colon)", () => {
     const onChange = vi.fn();
     render(
