@@ -20,6 +20,7 @@ import type { CarHandoverNotes } from "@/features/rides/carHandover";
 
 import { enteredTimeLabels, type EnteredTimeLabels } from "../enteredTimes";
 import { canEditRequest, isOnUnpublishedDay } from "../window";
+import { repeatEveryLabel } from "../repeatEvery";
 import { whoText } from "../whoLabel";
 import { DriverlessRideActions } from "./DriverlessRideActions";
 import { RequestLink } from "./RequestLink";
@@ -198,7 +199,7 @@ export function RequestRow({
       {row.templateId ? (
         <p className="flex items-center gap-1 text-xs text-muted-foreground">
           <Repeat className="size-3.5" aria-hidden="true" />
-          {he.request.repeating}
+          {(row.repeatEveryWeeks ?? 1) > 1 ? tv("request.repeatingEvery", { every: repeatEveryLabel(row.repeatEveryWeeks) }) : he.request.repeating}
         </p>
       ) : null}
       {legStateLine(row) ? (

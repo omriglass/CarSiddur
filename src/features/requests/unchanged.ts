@@ -26,6 +26,7 @@ export function editSignature(values: RequestFormValues, options: EditSignatureO
     extraAdults: values.extraAdults ?? 0,
     legacyChildSeats: values.legacyChildSeats ?? 0,
     repeatWeekly: !!values.repeatWeekly,
+    repeatEveryWeeks: values.repeatWeekly ? (values.repeatEveryWeeks ?? 1) : null,
   });
 }
 

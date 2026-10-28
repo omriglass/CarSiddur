@@ -130,4 +130,54 @@ begin
     '(g) refused calls must not have changed the template';
 end $$;
 
+
+-- (h) REQ §13.159: repeat every N weeks. The template is suggested only in weeks on its cycle, counted from the week of
+-- the request saved as repeating; a save without a gap keeps it; a gap outside 1–8 is refused.
+do $$
+declare
+  dept uuid := '00000000-0000-0000-0000-000000000001';
+  member1 uuid := '00000000-0000-0000-0000-000000000103';
+  dest uuid := '00000000-0000-0000-0000-000000000011';
+  typ uuid := '00000000-0000-0000-0000-000000000021';
+  e0 date := public.current_week_start() + 798;
+  r0 uuid; r1 uuid; template uuid;
+begin
+  insert into public.weeks(department_id, week_start, phase, open_at, close_at, publish_at)
+    select dept, e0 + 7 * i, 'open', now() - interval '1 day', now() + interval '1 day', now() + interval '2 days'
+      from generate_series(0, 4) i;
+  perform set_config('request.jwt.claims', jsonb_build_object('sub', member1, 'role', 'authenticated')::text, true);
+  insert into public.requests(department_id, week_start, requester_id, filed_by, destination_id, ride_type_id,
+    trip_shape, depart_at, return_at, submitted_at, status)
+  values (dept, e0, member1, member1, dest, typ, 'round_trip',
+    ((e0 + 3) + time '09:00') at time zone 'Asia/Jerusalem', ((e0 + 3) + time '12:00') at time zone 'Asia/Jerusalem', now(), 'submitted')
+  returning id into r0;
+
+  template := public.save_request_template(r0, 2::smallint);
+  assert (select repeat_every_weeks = 2 and repeat_anchor_week = e0 from public.request_templates where id = template),
+    '(h) FAILED: the gap and the cycle''s first week must be stored';
+  assert (select array_agg(week_start order by week_start) from public.v_request_template_suggestions
+           where template_id = template and week_start between e0 and e0 + 28) = array[e0 + 14, e0 + 28],
+    '(h) FAILED: every 2 weeks must be suggested only in weeks 2 and 4 after the first';
+
+  perform public.save_request_template(r0);
+  assert (select repeat_every_weeks from public.request_templates where id = template) = 2,
+    '(h) FAILED: a save without a gap must keep the template''s gap';
+
+  begin
+    perform public.save_request_template(r0, 9::smallint);
+    raise exception '(h) FAILED: a gap of 9 weeks was accepted';
+  exception when raise_exception then if sqlerrm <> 'invalid_repeat_every_weeks' then raise; end if; end;
+
+  -- A request filed from the template a week off the cycle (by hand) restarts the cycle from its own week.
+  insert into public.requests(department_id, week_start, requester_id, filed_by, destination_id, ride_type_id,
+    trip_shape, depart_at, return_at, submitted_at, status, template_id)
+  values (dept, e0 + 7, member1, member1, dest, typ, 'round_trip',
+    ((e0 + 10) + time '09:00') at time zone 'Asia/Jerusalem', ((e0 + 10) + time '12:00') at time zone 'Asia/Jerusalem', now(), 'submitted', template)
+  returning id into r1;
+  perform public.save_request_template(r1, 3::smallint);
+  assert (select array_agg(week_start order by week_start) from public.v_request_template_suggestions
+           where template_id = template and week_start between e0 and e0 + 28) = array[e0 + 28],
+    '(h) FAILED: every 3 weeks from the second week must be suggested only in week 4 after the first';
+end $$;
+
 rollback;

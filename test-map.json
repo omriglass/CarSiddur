@@ -180,6 +180,7 @@
         "Submit a multi-day series via the \"return another day?\" toggle; confirm one card, 3 linked legs (REQ §13.77)",
         "Withdraw a series request; confirm cascading withdraw of all legs (REQ §13.77)",
         "Submit with repeat-weekly on; confirm next-week suggestion, snooze, stop repeating (REQ §13.76)",
+        "Repeat on, tap 'שינוי', pick 'שבועיים': /my reads 'חוזר כל שבועיים'; the suggestion shows two weeks later, not next week (REQ §13.159)",
         "Submit a late single-day request; confirm accepted but flagged (REQ §13.6)"
       ]
     },

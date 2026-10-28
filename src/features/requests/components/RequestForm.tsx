@@ -1133,7 +1133,7 @@ export function RequestForm({
             // templates belong to the requester
           } else if (formValues.repeatWeekly) {
             templateChanged = true;
-            await saveTemplateMutation.mutateAsync(requestId);
+            await saveTemplateMutation.mutateAsync({ requestId, everyWeeks: formValues.repeatEveryWeeks ?? 1 });
             if (mode === "new") toast.success(t("request.repeatSaved"));
           } else if (existingTemplateId) {
             templateChanged = true;

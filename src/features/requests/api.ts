@@ -152,6 +152,8 @@ export interface MyRequestRow {
   acceptedAwaitingOthers?: boolean;
   /** Links to `request_templates` (DATA_MODEL §3.6) when this request came from — or was marked as — a repeating request. */
   templateId: string | null;
+  /** REQ §13.159: the repeat's gap in weeks (1 when not repeating, or the template is not the reader's own). */
+  repeatEveryWeeks?: number;
   /** Multi-day request ("series", REQ §13.77) — `null` for an ordinary single-day request. */
   seriesId: string | null;
   /** 1-based position of this leg within its series. */
@@ -169,6 +171,7 @@ const SELECT = `
   duration_locked, flex_return_late, fallback, served_by_alternative, plan_b_parent_id,
   alternative:request_alternatives(drop_place_id, drop_place_text, arrive_by, pickup, pickup_at, original_main, drop_place:destinations!request_alternatives_place_fk(name), pickup_place_id, pickup_place_text, pickup_place:destinations!request_alternatives_pickup_place_fk(name)),
   preferred_car:cars!requests_preferred_car_id_fkey(name),
+  template:request_templates!requests_template_id_fkey(repeat_every_weeks),
   window:weeks(phase, open_at, close_at, published_days),
   destination:destinations!requests_destination_id_fkey(name),
   origin:destinations!requests_origin_id_fkey(name),
@@ -266,6 +269,7 @@ interface RawRequestRow {
   trip_type: TripType;
   keep_car_at_destination?: boolean;
   template_id: string | null;
+  template?: { repeat_every_weeks: number } | null;
   series_id: string | null;
   series_index: number | null;
   series_count: number | null;
@@ -414,6 +418,7 @@ function mapRow(row: RawRequestRow, profileId?: string): MyRequestRow {
     version: row.version,
     freedSlotOptOut: row.freed_slot_opt_out,
     templateId: row.template_id,
+    repeatEveryWeeks: row.template?.repeat_every_weeks ?? 1,
     seriesId: row.series_id,
     seriesIndex: row.series_index,
     seriesCount: row.series_count,
@@ -515,6 +520,8 @@ export interface RequestEditRow {
   changedSinceSolve: boolean;
   /** Links to `request_templates` (DATA_MODEL §3.6) — drives the edit form's "repeat weekly" switch default. */
   templateId: string | null;
+  /** REQ §13.159: the linked template's gap in weeks. */
+  templateEveryWeeks?: number;
 }
 
 const EDIT_SELECT = `
@@ -527,7 +534,7 @@ const EDIT_SELECT = `
   adults, child_seats, boosters, has_luggage,
   flex_depart_early, flex_depart_late, flex_return_early, flex_return_late, ride_description, guest_passenger_names, changed_since_solve, preferred_car_id, template_id, series_id,
   preferred_car:cars!requests_preferred_car_id_fkey(name),
-  template:request_templates!requests_template_id_fkey(schedule),
+  template:request_templates!requests_template_id_fkey(schedule, repeat_every_weeks),
   destination:destinations!requests_destination_id_fkey(name),
   origin:destinations!requests_origin_id_fkey(name),
   stops:request_stops(leg, position, place_id, place_text, place:destinations(name)),
@@ -619,7 +626,7 @@ export async function fetchRequestRowById(requestId: string): Promise<RequestEdi
     guest_passenger_names: string[];
     changed_since_solve: boolean;
     template_id: string | null;
-    template?: { schedule: "weekly" | "dated" } | null;
+    template?: { schedule: "weekly" | "dated"; repeat_every_weeks: number } | null;
     destination: { name: string } | null;
     origin: { name: string } | null;
     stops: { leg: "out" | "return"; position: number; active?: boolean; place_id: string | null; place_text: string | null; place: { name: string } | null }[];
@@ -688,6 +695,7 @@ export async function fetchRequestRowById(requestId: string): Promise<RequestEdi
     // REQ §13.154: a request filed from a reservation is not a repeating one — its "repeat weekly" switch starts off and
     // turning it off never touches the reservation.
     templateId: row.template?.schedule === "dated" ? null : row.template_id,
+    templateEveryWeeks: row.template?.repeat_every_weeks ?? 1,
   };
 }
 
@@ -1225,6 +1233,8 @@ export interface TemplateSuggestion {
   schedule?: "weekly" | "dated";
   /** REQ §13.154: a multi-day reservation's last day (`yyyy-MM-dd`); null = one day. */
   plannedUntil?: string | null;
+  /** REQ §13.159: a repeating request's gap in weeks (1–8). */
+  repeatEveryWeeks?: number;
 }
 
 function mapTemplateSuggestion(row: TemplateSuggestionRow): TemplateSuggestion {
@@ -1273,6 +1283,7 @@ function mapTemplateSuggestion(row: TemplateSuggestionRow): TemplateSuggestion {
     notes: row.notes,
     schedule: row.schedule ?? "weekly",
     plannedUntil: row.planned_until ?? null,
+    repeatEveryWeeks: row.repeat_every_weeks ?? 1,
   };
 }
 
@@ -1283,7 +1294,7 @@ const TEMPLATE_SUGGESTION_SELECT = `
   depart_at, return_at, depart_anchor, arrive_by, return_anchor, leave_dest_at, one_way_car_mode, needs_car_at_destination, adults, child_seats, boosters,
   child_ids, companion_ids, has_luggage, flex_depart_early, flex_depart_late, flex_return_early,
   flex_return_late, duration_locked, preferred_car_id, ride_description, guest_passenger_names, notes, stops,
-  schedule, planned_date, planned_until
+  schedule, planned_date, planned_until, repeat_every_weeks
 `;
 
 /** Repeating-request suggestions for the caller's own open week(s) (REQ §76, DATA_MODEL §3.6). */
@@ -1298,8 +1309,8 @@ export async function fetchTemplateSuggestions(): Promise<TemplateSuggestion[]> 
 }
 
 /** Creates or updates the caller's template from one of their own requests, linking it back. */
-export async function saveRequestTemplate(requestId: string): Promise<string> {
-  return rpc("save_request_template", { p_request_id: requestId });
+export async function saveRequestTemplate(requestId: string, everyWeeks?: number): Promise<string> {
+  return rpc("save_request_template", { p_request_id: requestId, ...(everyWeeks ? { p_every_weeks: everyWeeks } : {}) });
 }
 
 /** "Not this week" — suggestions for this template resume the following week. */

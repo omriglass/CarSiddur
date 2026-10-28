@@ -430,7 +430,7 @@ export function useSaveRequestTemplateMutation(options: { deferInvalidation?: bo
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (requestId: string) => saveRequestTemplate(requestId),
+    mutationFn: ({ requestId, everyWeeks }: { requestId: string; everyWeeks?: number }) => saveRequestTemplate(requestId, everyWeeks),
     onSuccess: () => {
       if (options.deferInvalidation) return;
       queryClient.invalidateQueries({ queryKey: requestsKeys.templateSuggestions(profileId) });

@@ -2945,6 +2945,8 @@ export type Database = {
           planned_date: string | null
           planned_until: string | null
           preferred_car_id: string | null
+          repeat_anchor_week: string | null
+          repeat_every_weeks: number
           requester_id: string
           return_anchor: Database["public"]["Enums"]["time_anchor"]
           return_dow: number | null
@@ -2996,6 +2998,8 @@ export type Database = {
           planned_date?: string | null
           planned_until?: string | null
           preferred_car_id?: string | null
+          repeat_anchor_week?: string | null
+          repeat_every_weeks?: number
           requester_id: string
           return_anchor?: Database["public"]["Enums"]["time_anchor"]
           return_dow?: number | null
@@ -3047,6 +3051,8 @@ export type Database = {
           planned_date?: string | null
           planned_until?: string | null
           preferred_car_id?: string | null
+          repeat_anchor_week?: string | null
+          repeat_every_weeks?: number
           requester_id?: string
           return_anchor?: Database["public"]["Enums"]["time_anchor"]
           return_dow?: number | null
@@ -5097,6 +5103,7 @@ export type Database = {
           planned_date: string | null
           planned_until: string | null
           preferred_car_id: string | null
+          repeat_every_weeks: number | null
           return_anchor: Database["public"]["Enums"]["time_anchor"] | null
           return_at: string | null
           return_dow: number | null
@@ -6896,7 +6903,10 @@ export type Database = {
         }[]
       }
       sadranim_of: { Args: { _dept: string; _week: string }; Returns: string[] }
-      save_request_template: { Args: { p_request_id: string }; Returns: string }
+      save_request_template: {
+        Args: { p_every_weeks?: number; p_request_id: string }
+        Returns: string
+      }
       save_reservation: {
         Args: {
           p_child_ids?: string[]

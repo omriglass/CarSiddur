@@ -76,6 +76,7 @@ export function suggestionToFormValues(row: TemplateSuggestion, weekStart: strin
     guestNames: row.guestPassengerNames.join("\n"),
     // REQ §13.154: a reservation used (or edited) is a one-off — it never starts repeating by itself.
     repeatWeekly: row.schedule !== "dated",
+    repeatEveryWeeks: row.repeatEveryWeeks ?? 1,
     // REQ §13.154: a multi-day reservation comes back with its last day.
     ...(row.plannedUntil && row.returnAt ? { returnDay: dayFromInstant(row.returnAt) } : {}),
   };

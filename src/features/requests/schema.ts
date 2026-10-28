@@ -221,6 +221,8 @@ export const requestFormSchema = z
      * of `../mapper.ts`'s payload mapping, same pattern as `durationHours` above.
      */
     repeatWeekly: z.boolean(),
+    /** REQ §13.159: the repeat's gap in weeks (1–8), sent with `save_request_template`; absent = every week. */
+    repeatEveryWeeks: z.number().int().min(1).max(8).optional(),
     /**
      * REQ §13.127 (a), sentence layout, new requests: "אני" in the who chip. `false` files the ride for the first named
      * department member (`onBehalf.ts`); absent/true = the filer is the requester. Never sent as such (`requester_id` is).
@@ -443,6 +445,7 @@ export const templateSuggestionRowSchema = z.object({
   schedule: z.enum(["weekly", "dated"]).nullish(),
   planned_date: z.string().nullish(),
   planned_until: z.string().nullish(),
+  repeat_every_weeks: z.number().int().nullish(),
 });
 
 export type TemplateSuggestionRow = z.infer<typeof templateSuggestionRowSchema>;

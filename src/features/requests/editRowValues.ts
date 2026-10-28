@@ -81,5 +81,6 @@ export function editRowToFormValues(row: RequestEditRow, weekStart: string, comp
     rideDescription: row.rideDescription ?? "",
     guestNames: (row.guestPassengerNames ?? []).join("\n"),
     repeatWeekly: !!row.templateId,
+    repeatEveryWeeks: row.templateId ? (row.templateEveryWeeks ?? 1) : 1,
   };
 }

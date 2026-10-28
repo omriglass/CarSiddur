@@ -16205,7 +16205,7 @@ $$;
 ALTER FUNCTION "public"."sadranim_of"("_dept" "uuid", "_week" "date") OWNER TO "postgres";
 
 
-CREATE OR REPLACE FUNCTION "public"."save_request_template"("p_request_id" "uuid") RETURNS "uuid"
+CREATE OR REPLACE FUNCTION "public"."save_request_template"("p_request_id" "uuid", "p_every_weeks" smallint DEFAULT NULL::smallint) RETURNS "uuid"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
@@ -16227,6 +16227,7 @@ begin
   select * into q from public.requests where id = p_request_id for update;
   if q is null then raise exception 'request_not_found' using errcode = 'P0001'; end if;
   if q.requester_id <> (select auth.uid()) then raise exception 'not_authorized' using errcode = 'P0001'; end if;
+  if p_every_weeks is not null and p_every_weeks not between 1 and 8 then raise exception 'invalid_repeat_every_weeks' using errcode = 'P0001'; end if;
 
   if q.depart_at is not null then
     v_depart_dow := extract(dow from (q.depart_at at time zone 'Asia/Jerusalem'));
@@ -16273,7 +16274,8 @@ begin
       notes = q.notes, preferred_car_id = q.preferred_car_id,
       ride_description = q.ride_description, guest_passenger_names = q.guest_passenger_names,
       companion_ids = v_companion_ids, child_ids = v_child_ids, stops = v_stops,
-      source_request_id = q.id, is_active = true, stopped_at = null
+      source_request_id = q.id, is_active = true, stopped_at = null,
+      repeat_every_weeks = coalesce(p_every_weeks, repeat_every_weeks), repeat_anchor_week = q.week_start
     where id = v_template_id;
   else
     insert into public.request_templates (
@@ -16284,7 +16286,7 @@ begin
       adults, child_seats, boosters, has_luggage,
       flex_depart_early, flex_depart_late, flex_return_early, flex_return_late, duration_locked,
       notes, preferred_car_id, ride_description, guest_passenger_names, companion_ids, child_ids, stops,
-      source_request_id
+      source_request_id, repeat_every_weeks, repeat_anchor_week
     ) values (
       q.requester_id, q.department_id, q.destination_id, q.destination_text, q.origin_id, q.origin_text, q.trip_type,
       q.ride_type_id, q.trip_shape,
@@ -16293,7 +16295,7 @@ begin
       q.adults, q.child_seats, q.boosters, q.has_luggage,
       q.flex_depart_early, q.flex_depart_late, q.flex_return_early, q.flex_return_late, q.duration_locked,
       q.notes, q.preferred_car_id, q.ride_description, q.guest_passenger_names, v_companion_ids, v_child_ids, v_stops,
-      q.id
+      q.id, coalesce(p_every_weeks, 1), q.week_start
     ) returning id into v_template_id;
   end if;
 
@@ -16306,7 +16308,7 @@ end;
 $$;
 
 
-ALTER FUNCTION "public"."save_request_template"("p_request_id" "uuid") OWNER TO "postgres";
+ALTER FUNCTION "public"."save_request_template"("p_request_id" "uuid", "p_every_weeks" smallint) OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."save_reservation"("p_payload" "jsonb", "p_companion_ids" "uuid"[] DEFAULT '{}'::"uuid"[], "p_child_ids" "uuid"[] DEFAULT '{}'::"uuid"[], "p_id" "uuid" DEFAULT NULL::"uuid") RETURNS "uuid"
@@ -22196,6 +22198,8 @@ CREATE TABLE IF NOT EXISTS "public"."request_templates" (
     "planned_date" "date",
     "planned_until" "date",
     "cancelled_at" timestamp with time zone,
+    "repeat_every_weeks" smallint DEFAULT 1 NOT NULL,
+    "repeat_anchor_week" "date",
     CONSTRAINT "request_templates_adults_ck" CHECK (("adults" >= 1)),
     CONSTRAINT "request_templates_arrive_by_anchor_ck" CHECK ((("arrive_by_time" IS NULL) OR ("depart_anchor" = 'arrive'::"public"."time_anchor"))),
     CONSTRAINT "request_templates_arrive_by_qh_ck" CHECK ((("arrive_by_time" IS NULL) OR (((EXTRACT(minute FROM "arrive_by_time"))::integer % 15) = 0))),
@@ -22215,6 +22219,8 @@ CREATE TABLE IF NOT EXISTS "public"."request_templates" (
     CONSTRAINT "request_templates_origin_ck" CHECK ((("origin_id" IS NOT NULL) OR ("origin_text" IS NOT NULL))),
     CONSTRAINT "request_templates_planned_ck" CHECK ((("schedule" = 'dated'::"public"."template_schedule") = ("planned_date" IS NOT NULL))),
     CONSTRAINT "request_templates_planned_until_ck" CHECK ((("planned_until" IS NULL) OR (("planned_date" IS NOT NULL) AND ("planned_until" > "planned_date") AND ("planned_until" <= ("planned_date" + 30))))),
+    CONSTRAINT "request_templates_repeat_anchor_week_sunday_ck" CHECK ((("repeat_anchor_week" IS NULL) OR (EXTRACT(dow FROM "repeat_anchor_week") = (0)::numeric))),
+    CONSTRAINT "request_templates_repeat_every_weeks_ck" CHECK ((("repeat_every_weeks" >= 1) AND ("repeat_every_weeks" <= 8))),
     CONSTRAINT "request_templates_return_ck" CHECK ((("return_dow" IS NULL) = ("trip_shape" = 'one_way_to'::"public"."trip_shape"))),
     CONSTRAINT "request_templates_return_dow_ck" CHECK ((("return_dow" IS NULL) OR (("return_dow" >= 0) AND ("return_dow" <= 6)))),
     CONSTRAINT "request_templates_snoozed_until_week_sunday_ck" CHECK ((("snoozed_until_week" IS NULL) OR (EXTRACT(dow FROM "snoozed_until_week") = (0)::numeric)))
@@ -22938,7 +22944,8 @@ CREATE OR REPLACE VIEW "public"."v_request_template_suggestions" WITH ("security
     "tpl"."keep_car_at_destination",
     "tpl"."schedule",
     "tpl"."planned_date",
-    "tpl"."planned_until"
+    "tpl"."planned_until",
+    "tpl"."repeat_every_weeks"
    FROM (( SELECT "existing_1"."template_id",
             "existing_1"."department_id",
             "existing_1"."week_start",
@@ -23014,7 +23021,7 @@ CREATE OR REPLACE VIEW "public"."v_request_template_suggestions" WITH ("security
                     "t_1"."guest_passenger_names",
                     "t_1"."notes"
                    FROM ((("public"."request_templates" "t_1"
-                     JOIN "public"."weeks" "w" ON ((("w"."department_id" = "t_1"."department_id") AND ("w"."phase" = 'open'::"public"."week_phase") AND (("t_1"."schedule" = 'weekly'::"public"."template_schedule") OR ("w"."week_start" = ("t_1"."planned_date" - (EXTRACT(dow FROM "t_1"."planned_date"))::integer))))))
+                     JOIN "public"."weeks" "w" ON ((("w"."department_id" = "t_1"."department_id") AND ("w"."phase" = 'open'::"public"."week_phase") AND ((("t_1"."schedule" = 'weekly'::"public"."template_schedule") AND (("t_1"."repeat_every_weeks" = 1) OR (((("w"."week_start" - COALESCE("t_1"."repeat_anchor_week", "w"."week_start")) / 7) % ("t_1"."repeat_every_weeks")::integer) = 0))) OR ("w"."week_start" = ("t_1"."planned_date" - (EXTRACT(dow FROM "t_1"."planned_date"))::integer))))))
                      LEFT JOIN "public"."destinations" "dst" ON (("dst"."id" = "t_1"."destination_id")))
                      JOIN "public"."ride_types" "rt" ON (("rt"."id" = "t_1"."ride_type_id")))
                   WHERE (("t_1"."requester_id" = ( SELECT "auth"."uid"() AS "uid")) AND "t_1"."is_active" AND ("t_1"."cancelled_at" IS NULL) AND (("t_1"."snoozed_until_week" IS NULL) OR ("t_1"."snoozed_until_week" <= "w"."week_start")) AND (NOT (EXISTS ( SELECT 1
@@ -29486,9 +29493,9 @@ GRANT ALL ON FUNCTION "public"."sadranim_of"("_dept" "uuid", "_week" "date") TO 
 
 
 
-REVOKE ALL ON FUNCTION "public"."save_request_template"("p_request_id" "uuid") FROM PUBLIC;
-GRANT ALL ON FUNCTION "public"."save_request_template"("p_request_id" "uuid") TO "authenticated";
-GRANT ALL ON FUNCTION "public"."save_request_template"("p_request_id" "uuid") TO "service_role";
+REVOKE ALL ON FUNCTION "public"."save_request_template"("p_request_id" "uuid", "p_every_weeks" smallint) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."save_request_template"("p_request_id" "uuid", "p_every_weeks" smallint) TO "service_role";
+GRANT ALL ON FUNCTION "public"."save_request_template"("p_request_id" "uuid", "p_every_weeks" smallint) TO "authenticated";
 
 
 

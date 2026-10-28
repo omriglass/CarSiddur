@@ -175,6 +175,16 @@ export const heMember = {
     repeatWeekly: "בקשה חוזרת (כל שבוע)",
     repeatWeeklyHint: "נציע לך את הבקשה הזאת בכל שבוע שנפתח; ההגשה עצמה נשארת בידיך",
     repeatSaved: "הבקשה תוצע לך גם בשבועות הבאים",
+    /** REQ §13.159: the repeat's gap, shown once the switch is on; "שינוי" opens the 1–8 week selector. */
+    repeatTitle: "בקשה חוזרת",
+    repeatEvery: "כל {{weeks}}",
+    repeatEveryPrefix: "כל",
+    repeatWeeksOne: "שבוע",
+    repeatWeeksTwo: "שבועיים",
+    repeatWeeksMany: "{{n}} שבועות",
+    repeatChange: "שינוי",
+    repeatEveryHint: "נציע לך את הבקשה הזאת {{every}}, החל מהשבוע הזה; ההגשה עצמה נשארת בידיך",
+    repeatingEvery: "חוזר {{every}}",
     /** R9M3: confirmation when the server's own outcome toast stays silent. */
     submitSent: "הבקשה נשלחה לסדרן/ית",
     submitSaved: "השינויים נשמרו",
