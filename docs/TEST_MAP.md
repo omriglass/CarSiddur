@@ -324,7 +324,7 @@ matching `*proposal*`; `e2e/proposal.spec.ts`, `proposal-retry.spec.ts`, `board-
 `one-way-consent.spec.ts`, `sadran.spec.ts`, `plan-b-cycle.spec.ts` (REQ §13.112 a/f: the `alternative` proposal, its token page and application).
 
 **Automated**:
-- Vitest: `npx vitest run src/features/proposals src/features/sadran/proposals`
+- Vitest: `npx vitest run src/features/proposals src/features/sadran/proposals src/pages/ProposalTokenPage.test.tsx`
 - SQL: `proposal_day_boundary.sql`, `proposal_replacement.sql`, `withdraw_settles.sql`, `proposals_offline.sql` (REQ §13.138 a/b/d: "כן, כבר סיכמנו" on any day, `send_draft_proposals`), `held_notices.sql` (REQ §13.138 c/e/g/h: board notices held, flushed once with the final result, publish block, reminder), `proposal_dependencies.sql` (REQ §13.138 f: waiting proposals, withdrawal when the blocker is declined, swaps applied together), `qa_run14_proposals.sql` (R14B5: an accepted shift on an unpublished day is told, a re-offer reads from the booked time, declining it keeps the booking; R14B8: `outcome_hidden` on an unpublished day), `qa_run13_proposals.sql` (R13B11: a הקפצה shift with both times places both legs; R13B14: a ride placed on an unpublished day is a draft; R13B18: a merge of a leg the request does not have is refused), `proposal_links_ended.sql` (REQ §13.160, O28-1/3/4: withdrawing keeps the link's token and answering it is refused, housekeeping scrambles ended tokens once after 30 days; a withdrawn/expired offer leaves every inbox with its pending push, the replacement stays quiet while the earlier offer was never opened; archiving a week withdraws its drafts)
 - Playwright: `npx playwright test --grep "@proposals"`
 

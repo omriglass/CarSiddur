@@ -620,6 +620,7 @@
         "e2e/one-way-consent.spec.ts",
         "e2e/sadran.spec.ts",
         "src/pages/ProposalTokenPage.tsx",
+        "src/pages/ProposalTokenPage.test.tsx",
         "supabase/migrations/**/*proposals_status_guard*",
         "e2e/plan-b-cycle.spec.ts",
         "e2e/proposal-merge-view.spec.ts",
@@ -635,7 +636,8 @@
       ],
       "vitest": [
         "src/features/proposals",
-        "src/features/sadran/proposals"
+        "src/features/sadran/proposals",
+        "src/pages/ProposalTokenPage.test.tsx"
       ],
       "sql": [
         "proposal_day_boundary.sql",
