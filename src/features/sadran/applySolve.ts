@@ -208,6 +208,12 @@ export interface SolverContext {
   /** `'full'` only: the non-pinned board rides this re-solve may replace (for `computeFullResolveDiff`). */
   replaceableRides: BoardRide[];
   boardRides: BoardRide[];
+  /**
+   * Hardening 2026-10-29: `solver_state_fingerprint` read *before* the solver input. Sent as the payload's
+   * `state_fingerprint`; `apply_solver_result` refuses it as `stale_input` when the week changed meanwhile (another
+   * Sadran's auto-fill or edit), instead of applying a solve made on an older state.
+   */
+  stateFingerprint?: string;
 }
 
 /**
@@ -516,6 +522,8 @@ export function buildSolverContextFromData(params: GatherSolverContextParams, ro
  * nine rows in their own query cache already.
  */
 export async function gatherSolverContext(params: GatherSolverContextParams): Promise<SolverContext> {
+  // First, before any input row: a change committed after this read makes the apply stale (apply_solver_result).
+  const stateFingerprint = await api.fetchSolverStateFingerprint(params.departmentId, params.weekStart);
   const [departmentSettings, allRequests, cars, destinations, rideTypes, maintenanceBlocks, boardRides, weekRow] =
     await Promise.all([
       api.fetchDepartmentSettings(params.departmentId),
@@ -540,7 +548,7 @@ export async function gatherSolverContext(params: GatherSolverContextParams): Pr
     api.fetchPlaceTravelForWeek(params.departmentId, params.weekStart),
   ]);
 
-  return buildSolverContextFromData(params, {
+  const context = buildSolverContextFromData(params, {
     departmentSettings,
     allRequests,
     cars,
@@ -556,6 +564,7 @@ export async function gatherSolverContext(params: GatherSolverContextParams): Pr
     proposals,
     weekRow,
   });
+  return { ...context, stateFingerprint };
 }
 
 export function runSolve(input: SolverInput): SolverOutput {
@@ -636,6 +645,8 @@ export interface ApplyPayload {
    * supabase/migrations/20260907093100_apply_solver_result_remaining_mode.sql).
    */
   mode: "full" | "remaining";
+  /** `solver_state_fingerprint` read before the input; a mismatch at apply time is `stale_input` (hardening 2026-10-29). */
+  state_fingerprint?: string;
 }
 
 /**
@@ -681,8 +692,10 @@ export function buildApplyPayload(params: {
   requestsById: Map<string, RequestRow>;
   /** See `ApplyPayload.mode`. Defaults to `'full'` (every existing caller before this bug-fix pass meant full). */
   mode?: "full" | "remaining";
+  /** `SolverContext.stateFingerprint` - the state the solve was made on (hardening 2026-10-29). */
+  stateFingerprint?: string;
 }): ApplyPayload {
-  const { output, weekStartMs, policyVersionId, startedAtMs, finishedAtMs, inputHash, requestsById, mode = "full" } = params;
+  const { output, weekStartMs, policyVersionId, startedAtMs, finishedAtMs, inputHash, requestsById, mode = "full", stateFingerprint } = params;
 
   const solverAssignments = output.assignments.filter((a) => a.source === "solver");
   // A ride whose both ends are free text (a series leg starting where the previous free-text leg left the car)
@@ -752,6 +765,7 @@ export function buildApplyPayload(params: {
     rides,
     request_statuses: requestStatuses,
     mode,
+    ...(stateFingerprint ? { state_fingerprint: stateFingerprint } : {}),
   };
 }
 

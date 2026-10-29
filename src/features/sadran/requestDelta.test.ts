@@ -71,6 +71,17 @@ describe("requestDelta", () => {
     expect(plain.return).toMatchObject({ got: at("12:30"), beyondFlex: true });
   });
 
+  it("judges a return leg riding on someone else's round trip by that ride's end, never its start (QA 2026-10-29)", () => {
+    const dropOff = request({ trip_type: "drop_off", depart_at: at("13:15"), original_depart_at: at("13:15"), return_at: at("14:45"), original_return_at: at("14:45") });
+    const out = ride({ id: "rOut", origin_id: "home", destination_id: "home", starts_at: at("12:30"), ends_at: at("17:30") },
+      [{ request_id: "host1", role: "driver", leg: "both", car_mode: "keep", requester: "רועי" }, { request_id: "q1", role: "passenger", leg: "out", car_mode: "passenger", requester: "רותם" }]);
+    const back = ride({ id: "rBack", origin_id: "home", destination_id: "home", starts_at: at("10:30"), ends_at: at("15:00") },
+      [{ request_id: "host2", role: "driver", leg: "both", car_mode: "keep", requester: "ניר" }, { request_id: "q1", role: "passenger", leg: "return", car_mode: "passenger", requester: "רותם" }]);
+    const delta = requestDelta(dropOff, [out, back]);
+    expect(delta.depart?.got).toBe(at("12:30"));
+    expect(delta.return?.got).toBe(at("15:00"));
+  });
+
   it("lists people added to the ride and the request's people missing from it", () => {
     const people = [
       { key: "a", source: "driver", request_id: "q1", ride_passenger_id: null, person_id: "p1", child_id: null, display_name: "רותם", seat_kind: "adult", added_by: null, removable: false },

@@ -90,6 +90,7 @@ async function main(): Promise<void> {
     inputHash: hashSolverInput(context.input),
     requestsById: context.requestsById,
     mode: "full",
+    stateFingerprint: context.stateFingerprint,
   });
 
   let applied: unknown = null;

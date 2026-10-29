@@ -68,6 +68,15 @@ begin
     format('(a) the closed request is closed, got %s', (select status::text||'/'||status_reason from public.requests where id=q2));
   assert res->'closed' ? q2::text and res->'waitlisted' ? q1::text, format('(a) result lists both, got %s', res);
   assert not exists (select 1 from public.ride_requests where ride_id=rA), '(a) nobody stays linked to the cancelled ride';
+  -- concurrency QA 2026-10-29: another Sadran's stale board merging onto the just-cancelled ride hears "ride not found",
+  -- not "not authorized" (20261029105400)
+  begin
+    perform public.create_proposal(q1, rA, 'merge', jsonb_build_object('ride_id', rA, 'legs',
+      jsonb_build_array(jsonb_build_object('ride_id', rA, 'leg', 'both'))), null, null, 'sadran');
+    raise exception 'merge onto a cancelled ride unexpectedly created';
+  exception when others then
+    assert sqlerrm='ride_not_found', format('(a) a merge onto the cancelled ride is ride_not_found, got %s', sqlerrm);
+  end;
   -- exactly one notice each: m1 "back on the waiting list", m2 "closed" with the reason - never both
   select count(*) into n from public.notifications where recipient_id in (m1,m2);
   assert n-n0=2, format('(a) two notices in all (one per member), got %s', n-n0);

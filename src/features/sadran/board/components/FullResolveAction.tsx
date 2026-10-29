@@ -69,7 +69,8 @@ export function FullResolveAction({ departmentId, weekStart, homeDestinationId, 
       }
       setPreview({ diff, payload: buildApplyPayload({ output, weekStartMs: context.weekStartMs,
         policyVersionId: context.policyVersionId, startedAtMs, finishedAtMs,
-        inputHash: hashSolverInput(context.input), requestsById: context.requestsById, mode: "full" }) });
+        inputHash: hashSolverInput(context.input), requestsById: context.requestsById, mode: "full",
+        stateFingerprint: context.stateFingerprint }) });
     } catch (error) {
       showErrorToast(error);
     } finally { setLoading(false); }

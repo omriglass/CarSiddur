@@ -369,6 +369,7 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
         // constraint, never re-solved — `apply_solver_result` must only add
         // this payload's new rides, never delete anything.
         mode: "remaining",
+        stateFingerprint: context.stateFingerprint,
       });
       const summary = await applySolverResultMutation.mutateAsync({
         departmentId,

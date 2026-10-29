@@ -169,7 +169,11 @@ export function requestDelta(
     const wantsReturn = (entry.leg === "return" || entry.leg === "both") && !!askedReturn;
     if (wantsReturn && !ret) {
       const alight = guest ? stopEta(points, request.id, "alight", "return") : null;
-      const separatePickup = entry.leg === "return" && !oneWayFrom;
+      // A pickup ride (it starts away from where it ends) is judged by its start; a return leg riding on someone's round
+      // trip (same start and end place, e.g. a הקפצה's way back on another member's ride) comes back with that ride's end
+      // (concurrency QA 2026-10-29: its start made the change log read "12:30–10:30").
+      const roundRide = !!ride.origin_id && ride.origin_id === ride.destination_id;
+      const separatePickup = entry.leg === "return" && !oneWayFrom && !roundRide;
       const rideTime = separatePickup && !(ride.is_chauffeur || entry.car_mode === "chauffeur") ? ride.starts_at : ride.ends_at;
       const got = alight ?? rideTime;
       if (got) ret = timeDelta(request, "return", askedReturn as string, got, rideId, !!alight);

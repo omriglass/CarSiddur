@@ -4762,6 +4762,13 @@ begin
   end if;
 
   perform set_config('app.audit_reason', 'apply_solver_result', true);
+  -- One apply per week at a time (a simultaneous second auto-fill waits here, then fails the fingerprint check below).
+  perform pg_advisory_xact_lock(hashtextextended('apply_solver_result:' || p_department_id::text || ':' || p_week_start::text, 0));
+  -- The state the payload was solved on (solver_state_fingerprint, read before the solver input); changed = stale.
+  if nullif(p_payload ->> 'state_fingerprint', '') is not null
+     and p_payload ->> 'state_fingerprint' <> public.week_state_fingerprint(p_department_id, p_week_start) then
+    raise exception 'stale_input' using errcode = 'P0409';
+  end if;
 
   if v_input_hash is not null then
     select * into v_preview from public.solver_runs
@@ -7020,7 +7027,9 @@ begin
     if v_orig_targets>1 and (p_payload ? 'starts_at' or p_payload ? 'ends_at') then raise exception 'merge_single_expanded_target_required'; end if;
     required_parties:=array[v_req.requester_id];
     for host in select * from public.rides where id=any(target_ids) order by id for update loop
-      if host.department_id<>v_req.department_id or host.week_start<>v_req.week_start or host.status='cancelled' then raise exception 'not_authorized'; end if;
+      if host.department_id<>v_req.department_id or host.week_start<>v_req.week_start then raise exception 'not_authorized'; end if;
+      -- A host ride cancelled meanwhile (another Sadran) is gone, not forbidden (hardening 2026-10-29).
+      if host.status='cancelled' then raise exception 'ride_not_found' using errcode = 'P0001'; end if;
       combined_start:=least(host.starts_at,coalesce((p_payload->>'starts_at')::timestamptz,host.starts_at));
       combined_end:=greatest(host.ends_at,coalesce((p_payload->>'ends_at')::timestamptz,host.ends_at));
       if not public.is_quarter_hour(combined_start)
@@ -8528,11 +8537,13 @@ begin
   perform public.assert_not_direct_rpc('expire_proposals');
   v_today := (_now at time zone 'Asia/Jerusalem')::date;
   for request_row in
-    select q.id, q.department_id, q.week_start,
-      (coalesce(q.depart_at, q.return_at) at time zone 'Asia/Jerusalem')::date as req_day
+    select q.id, q.department_id, q.week_start, d.req_day
     from public.requests q
-    where exists(select 1 from public.proposals p where p.request_id = q.id and p.status = 'sent')
-    order by q.id for update skip locked
+    cross join lateral (select (coalesce(q.depart_at, q.return_at) at time zone 'Asia/Jerusalem')::date as req_day) d
+    where exists(select 1 from public.proposals p where p.request_id = q.id and p.status = 'sent'
+                   and (d.req_day < v_today or p.type not in ('shift','merge') or p.created_via <> 'sadran'))
+      and (d.req_day < v_today or public.is_day_public(q.department_id, q.week_start, d.req_day))
+    order by q.id for update of q skip locked
   loop
     if request_row.req_day < v_today
       or public.is_day_public(request_row.department_id, request_row.week_start, request_row.req_day)
@@ -8780,6 +8791,10 @@ begin
   if not public.can_manage_week(p_department_id, p_week_start) then
     raise exception 'not_authorized' using errcode = 'P0001';
   end if;
+  -- Two Sadrans pressing "שלח את כל ההצעות" together: one flush per week at a time, the second then finds only what the
+  -- first left (hardening 2026-10-29; before, both walked the same held rows and only a notice's dedupe key stopped a
+  -- second copy).
+  perform pg_advisory_xact_lock(hashtextextended('flush_held_notices:' || p_department_id::text || ':' || p_week_start::text, 0));
   perform set_config('app.flushing_held_notices', 'on', true);
 
   for v_row in
@@ -18304,6 +18319,19 @@ end $$;
 ALTER FUNCTION "public"."solver_policy_same_department"() OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."solver_state_fingerprint"("p_department_id" "uuid", "p_week_start" "date") RETURNS "text"
+    LANGUAGE "plpgsql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+begin
+  if not public.can_manage_week(p_department_id, p_week_start) then raise exception 'not_authorized' using errcode = 'P0001'; end if;
+  return public.week_state_fingerprint(p_department_id, p_week_start);
+end $$;
+
+
+ALTER FUNCTION "public"."solver_state_fingerprint"("p_department_id" "uuid", "p_week_start" "date") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."stop_request_template"("p_template_id" "uuid") RETURNS "void"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -24256,6 +24284,10 @@ CREATE INDEX "car_odometer_readings_department_idx" ON "public"."car_odometer_re
 
 
 
+CREATE INDEX "car_task_notices_notification_id_idx" ON "public"."car_task_notices" USING "btree" ("notification_id") WHERE ("notification_id" IS NOT NULL);
+
+
+
 CREATE INDEX "car_tasks_car_idx" ON "public"."car_tasks" USING "btree" ("car_id", "requested_at" DESC, "id");
 
 
@@ -24336,6 +24368,14 @@ CREATE UNIQUE INDEX "policies_one_active_idx" ON "public"."policies" USING "btre
 
 
 
+CREATE INDEX "proposal_parties_request_id_idx" ON "public"."proposal_parties" USING "btree" ("request_id") WHERE ("request_id" IS NOT NULL);
+
+
+
+CREATE INDEX "proposals_applied_ride_id_idx" ON "public"."proposals" USING "btree" ("applied_ride_id") WHERE ("applied_ride_id" IS NOT NULL);
+
+
+
 CREATE INDEX "proposals_dept_week_status_idx" ON "public"."proposals" USING "btree" ("department_id", "week_start", "status");
 
 
@@ -24348,7 +24388,19 @@ CREATE INDEX "proposals_request_status_idx" ON "public"."proposals" USING "btree
 
 
 
+CREATE INDEX "proposals_ride_id_idx" ON "public"."proposals" USING "btree" ("ride_id") WHERE ("ride_id" IS NOT NULL);
+
+
+
 CREATE INDEX "push_outbox_due_idx" ON "public"."push_outbox" USING "btree" ("next_attempt_at") WHERE ("status" = ANY (ARRAY['pending'::"public"."push_outbox_status", 'failed'::"public"."push_outbox_status"]));
+
+
+
+CREATE INDEX "push_outbox_notification_id_idx" ON "public"."push_outbox" USING "btree" ("notification_id");
+
+
+
+CREATE INDEX "push_outbox_subscription_id_idx" ON "public"."push_outbox" USING "btree" ("subscription_id");
 
 
 
@@ -24365,6 +24417,10 @@ CREATE INDEX "requests_dept_week_status_idx" ON "public"."requests" USING "btree
 
 
 CREATE INDEX "requests_freed_slot_candidates_idx" ON "public"."requests" USING "btree" ("department_id", "week_start") WHERE (("status" = ANY (ARRAY['waitlisted'::"public"."request_status", 'denied'::"public"."request_status", 'external'::"public"."request_status"])) AND (NOT "freed_slot_opt_out"));
+
+
+
+CREATE INDEX "requests_join_ride_id_idx" ON "public"."requests" USING "btree" ("join_ride_id") WHERE ("join_ride_id" IS NOT NULL);
 
 
 
@@ -24397,6 +24453,10 @@ CREATE UNIQUE INDEX "ride_change_one_pending" ON "public"."ride_change_requests"
 
 
 CREATE INDEX "ride_change_parties_profile" ON "public"."ride_change_parties" USING "btree" ("profile_id", "change_id");
+
+
+
+CREATE INDEX "ride_change_parties_ride_id_idx" ON "public"."ride_change_parties" USING "btree" ("ride_id");
 
 
 
@@ -24477,6 +24537,10 @@ CREATE INDEX "waitlist_groups_dept_week_day_idx" ON "public"."waitlist_groups" U
 
 
 CREATE INDEX "waitlist_groups_open_window_idx" ON "public"."waitlist_groups" USING "gist" ("tstzrange"("starts_at", "ends_at", '[)'::"text")) WHERE ("status" = 'open'::"public"."waitlist_group_status");
+
+
+
+CREATE INDEX "waitlist_groups_ride_id_idx" ON "public"."waitlist_groups" USING "btree" ("ride_id") WHERE ("ride_id" IS NOT NULL);
 
 
 
@@ -30088,6 +30152,12 @@ GRANT ALL ON FUNCTION "public"."snooze_request_template"("p_template_id" "uuid",
 
 REVOKE ALL ON FUNCTION "public"."solver_policy_same_department"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."solver_policy_same_department"() TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."solver_state_fingerprint"("p_department_id" "uuid", "p_week_start" "date") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."solver_state_fingerprint"("p_department_id" "uuid", "p_week_start" "date") TO "service_role";
+GRANT ALL ON FUNCTION "public"."solver_state_fingerprint"("p_department_id" "uuid", "p_week_start" "date") TO "authenticated";
 
 
 

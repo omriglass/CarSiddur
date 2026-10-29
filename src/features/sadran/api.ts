@@ -482,6 +482,11 @@ export async function fetchLatestSolverRun(departmentId: string, weekStart: stri
   return data;
 }
 
+/** The week's request/ride versions, read before the solver input (hardening 2026-10-29; see `SolverContext.stateFingerprint`). */
+export async function fetchSolverStateFingerprint(departmentId: string, weekStart: string): Promise<string> {
+  return rpc("solver_state_fingerprint", { p_department_id: departmentId, p_week_start: weekStart });
+}
+
 export async function recordSolverPreview(departmentId: string, weekStart: string, payload: Json): Promise<string> {
   return rpc("record_solver_preview", { p_department_id: departmentId, p_week_start: weekStart, p_payload: payload });
 }

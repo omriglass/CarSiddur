@@ -7067,6 +7067,10 @@ export type Database = {
         Args: { p_template_id: string; p_week_start: string }
         Returns: undefined
       }
+      solver_state_fingerprint: {
+        Args: { p_department_id: string; p_week_start: string }
+        Returns: string
+      }
       stop_request_template: {
         Args: { p_template_id: string }
         Returns: undefined

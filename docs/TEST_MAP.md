@@ -412,12 +412,12 @@ migrations matching `*polic*`, `*fairness*`, `*mileage*`, `*apply_solver_result*
 `src/solver/__tests__/oneWayPairingParity.test.ts` (one-way pairing golden cases, run against both the
 solver and SQL `pair_one_way_legs`; the SQL side is the last step of `db:test`); `supabase/tests/multi_stop.sql`;
 `e2e/auto-approve.spec.ts`, `freed-slot.spec.ts`, `board.spec.ts`; `scripts/qa/**` (the QA simulation: week generator,
-real-solver regression, QA CLIs — docs/QA_SIMULATION.md); `scripts/replay/**` (re-running a production week on a
+real-solver regression, QA CLIs, `race.mjs` for two Sadrans at once — docs/QA_SIMULATION.md); `scripts/replay/**` (re-running a production week on a
 local replay stack and comparing it with the production solve — scripts/replay/README.md).
 
 **Automated**:
 - Vitest: `npx vitest run src/solver src/features/solverBridge`
-- SQL: `solve_semantics.sql`, `car_mileage.sql`, `multi_stop.sql`, `ride_day_end.sql` (REQ §13.140: a ride end after 23:59 is cut to 23:59 on insert/update; Vitest `ridesPastDayEnd` in `src/features/sadran/applySolve.test.ts`)
+- SQL: `solve_semantics.sql`, `solver_stale_input.sql` (hardening 2026-10-29: `apply_solver_result` refuses a payload whose `state_fingerprint` — read by `gatherSolverContext` before the input — no longer matches, `stale_input`; `solver_state_fingerprint` for the week's managers only), `car_mileage.sql`, `multi_stop.sql`, `ride_day_end.sql` (REQ §13.140: a ride end after 23:59 is cut to 23:59 on insert/update; Vitest `ridesPastDayEnd` in `src/features/sadran/applySolve.test.ts`)
 - Playwright: `npx playwright test --grep "@solver"` (indirect coverage only — the solver itself is
   pure and has no UI of its own; these specs exercise it end to end)
 - **Extended (opt-in, disposable stack only):** `npm run qa:regression -- --seed 7` (or `QA_REGRESSION=1 QA_API_URL=<disposable api> npm run db:test`) generates the seeded QA week, solves it with the real solver, applies it as the QA Sadran and checks the invariants (docs/QA_SIMULATION.md §5). CI's database job runs it as a non-blocking "Extended" step.

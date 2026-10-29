@@ -803,6 +803,7 @@
         "supabase/migrations/**/*fairness*",
         "supabase/migrations/**/*mileage*",
         "supabase/tests/solve_semantics.sql",
+        "supabase/tests/solver_stale_input.sql",
         "supabase/tests/car_mileage.sql",
         "e2e/auto-approve.spec.ts",
         "e2e/freed-slot.spec.ts",
@@ -826,6 +827,7 @@
       ],
       "sql": [
         "solve_semantics.sql",
+        "solver_stale_input.sql",
         "car_mileage.sql",
         "multi_stop.sql",
         "ride_day_end.sql"

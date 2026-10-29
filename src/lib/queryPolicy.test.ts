@@ -133,4 +133,12 @@ describe("retry (production timeouts 2026-10-29)", () => {
     expect(timeout.code).toBe("server_busy");
     expect(retry(0, timeout)).toBe(false);
   });
+
+  it("reports a broken deadlock / lock conflict as busy, never retried (two Sadrans at once)", () => {
+    for (const code of ["40P01", "40001", "55P03"]) {
+      const conflict = toAppError({ code, message: "deadlock detected" });
+      expect(conflict.code).toBe("server_busy");
+      expect(retry(0, conflict)).toBe(false);
+    }
+  });
 });

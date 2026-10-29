@@ -184,6 +184,11 @@ export type ErrorCode =
 const SQLSTATE_TO_CODE: Record<string, ErrorCode> = {
   // statement_timeout (8 s for signed-in users): the database was overloaded (production 2026-10-29). Reported, never retried.
   "57014": "server_busy",
+  // Two people writing the same rows at the same moment (hardening 2026-10-29): a deadlock the database broke
+  // (ride writes lock per car), a serialization failure, a lock not available. Nothing was saved; same "try again".
+  "40P01": "server_busy",
+  "40001": "server_busy",
+  "55P03": "server_busy",
   P0409: "stale_version",
   P0410: "car_chain_broken",
   P0411: "car_away_at_day_end",

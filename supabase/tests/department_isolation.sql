@@ -280,6 +280,7 @@ begin
   perform pg_temp.expect_refused('weeks.publication_conflicts', format('select public.publication_conflicts(%L, %L)', dept_b, week_b));
   perform pg_temp.expect_refused('weeks.publication_readiness', format('select public.publication_readiness(%L, %L)', dept_b, week_b));
   perform pg_temp.expect_refused('weeks.publish_scores_fingerprint', format('select public.publish_scores_fingerprint(%L, %L)', dept_b, week_b));
+  perform pg_temp.expect_refused('weeks.solver_state_fingerprint', format('select public.solver_state_fingerprint(%L, %L)', dept_b, week_b));
   perform pg_temp.expect_refused('weeks.record_solver_preview',
     format('select public.record_solver_preview(%L, %L, %L::jsonb)', dept_b, week_b,
       jsonb_build_object('rides', '[]'::jsonb, 'solver_version', 'test')::text));
@@ -394,7 +395,7 @@ declare
     'create_proposal','send_proposal','send_draft_proposals','flush_held_notices','agree_proposal_offline','proposal_car_conflicts','discard_proposal','withdraw_proposal','apply_proposal','record_answer_on_behalf','proposal_party_texts',
     'open_week','reopen_week','set_week_phase','set_week_close_at','close_week_requests','ensure_department_weeks',
     'publication_readiness','publication_conflicts','publish_siddur','record_solver_preview','form_waitlist_groups',
-    'publish_scores_fingerprint','sadran_contact_of','fairness_stats','department_stats','joinable_rides_for_request',
+    'publish_scores_fingerprint','solver_state_fingerprint','sadran_contact_of','fairness_stats','department_stats','joinable_rides_for_request',
     'planning_month','typical_usage','save_reservation',
     'create_policy_version','set_policy_active','policy_week_alignment','resolve_waitlist_group','cancel_waitlist_group','join_waitlist_discussion','waitlist_group_holds',
     'place_travel_for_week','car_start_locations','set_my_default_origin','route_minutes_preview','request_notes',
