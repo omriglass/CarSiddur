@@ -40,6 +40,18 @@ export async function handOverOwnRide(rideId: string, expectedVersion: number, n
   await rpc("hand_over_own_ride", { p_ride_id: rideId, p_expected_version: expectedVersion, p_new_driver: newDriver });
 }
 
+/**
+ * O28-8: just these rides of the week, as `week_board_rides` returns them (`week_board_rides_subset`, same rows
+ * and RLS) — a ride the caller can no longer see (e.g. cancelled) is simply absent.
+ */
+export async function fetchWeekRidesSubset(departmentId: string, weekStart: string, rideIds: readonly string[]): Promise<BoardRide[]> {
+  const { data, error } = await supabase.rpc("week_board_rides_subset", {
+    p_department_id: departmentId, p_week_start: weekStart, p_ride_ids: [...rideIds],
+  });
+  if (error) throw toAppError(error);
+  return data ?? [];
+}
+
 /** Public ride information only; does not modify scheduling, passengers or consent. */
 export async function updateRidePublicNotes(rideId: string, expectedVersion: number, notes: string | null): Promise<void> {
   await rpc("update_ride_public_notes", { p_ride_id: rideId, p_expected_version: expectedVersion, p_notes: notes ?? "" });

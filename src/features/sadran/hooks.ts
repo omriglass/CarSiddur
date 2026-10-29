@@ -159,8 +159,9 @@ function invalidateBoard(
   queryClient: ReturnType<typeof useQueryClient>,
   departmentId: string,
   weekStart: string,
+  rideIds?: readonly (string | null | undefined)[],
 ) {
-  invalidateWeekData(queryClient, departmentId, weekStart);
+  invalidateWeekData(queryClient, departmentId, weekStart, rideIds);
 }
 
 export function useRecordSolverPreviewMutation() {
@@ -218,7 +219,8 @@ export function useEditRideMutation() {
       departmentId: string;
       weekStart: string;
     }) => api.editRide(input, expectedVersion),
-    onSuccess: (_data, { departmentId, weekStart }) => invalidateBoard(queryClient, departmentId, weekStart),
+    // `edit_ride` returns the ride's id (a new one for a new reservation).
+    onSuccess: (rideId, { departmentId, weekStart, input }) => invalidateBoard(queryClient, departmentId, weekStart, [rideId, input.id]),
     onError: showErrorToast,
   });
 }
@@ -244,7 +246,7 @@ export function useSetRidePassengersMutation() {
       departmentId: string;
       weekStart: string;
     }) => api.setRidePassengers(rideId, expectedVersion, passengers),
-    onSuccess: (_data, { departmentId, weekStart }) => invalidateBoard(queryClient, departmentId, weekStart),
+    onSuccess: (_data, { departmentId, weekStart, rideId }) => invalidateBoard(queryClient, departmentId, weekStart, [rideId]),
     onError: showErrorToast,
   });
 }
@@ -263,7 +265,7 @@ export function useCancelRideMutation() {
       departmentId: string;
       weekStart: string;
     }) => api.cancelRide(rideId, reason, expectedVersion),
-    onSuccess: (_data, { departmentId, weekStart }) => invalidateBoard(queryClient, departmentId, weekStart),
+    onSuccess: (_data, { departmentId, weekStart, rideId }) => invalidateBoard(queryClient, departmentId, weekStart, [rideId]),
     onError: showErrorToast,
   });
 }
@@ -274,7 +276,7 @@ export function useUnassignRideMutation() {
     mutationFn: ({ rideId, expectedVersion }: {
       rideId: string; expectedVersion: number; departmentId: string; weekStart: string;
     }) => api.unassignRide(rideId, expectedVersion),
-    onSuccess: (_data, { departmentId, weekStart }) => invalidateBoard(queryClient, departmentId, weekStart),
+    onSuccess: (_data, { departmentId, weekStart, rideId }) => invalidateBoard(queryClient, departmentId, weekStart, [rideId]),
     onError: showErrorToast,
   });
 }
@@ -298,7 +300,7 @@ export function useUnmergeRequestMutation() {
     mutationFn: ({ rideId, requestId, expectedVersion }: {
       rideId: string; requestId: string; expectedVersion: number; departmentId: string; weekStart: string;
     }) => api.unmergeRequest(rideId, requestId, expectedVersion),
-    onSuccess: (_data, { departmentId, weekStart }) => invalidateBoard(queryClient, departmentId, weekStart),
+    onSuccess: (_data, { departmentId, weekStart, rideId }) => invalidateBoard(queryClient, departmentId, weekStart, [rideId]),
     onError: showErrorToast,
   });
 }
@@ -342,7 +344,7 @@ export function useSetRideDriverMutation() {
     mutationFn: ({ rideId, driverId, expectedVersion }: {
       rideId: string; driverId: string | null; expectedVersion: number; departmentId: string; weekStart: string;
     }) => api.setRideDriver(rideId, driverId, expectedVersion),
-    onSuccess: (_data, { departmentId, weekStart }) => invalidateWeekData(queryClient, departmentId, weekStart),
+    onSuccess: (_data, { departmentId, weekStart, rideId }) => invalidateWeekData(queryClient, departmentId, weekStart, [rideId]),
     onError: showErrorToast,
   });
 }

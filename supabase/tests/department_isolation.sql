@@ -423,6 +423,12 @@ declare
     -- REQ §13.94: per-ride route JSON read inside `v_board_rides` (security_invoker view; rows already
     -- filtered by rides_select, the function re-checks visibility and returns [] otherwise).
     'ride_route_json:read-helper',
+    -- O28-8: `ride_route_json` for a list of rides, read inside `week_board_rides_rows`; the same per-ride visibility
+    -- (`_ride_route_visible`'s rule, evaluated once per week / day) — an invisible ride's route is [].
+    'ride_routes_json:read-helper',
+    -- O28-8: the week's ride rows read as the owner, only when the caller manages that week and is a member of its
+    -- department (else nothing; week_board_rides.sql holds it to v_board_rides and checks it returns nothing to others).
+    'week_board_rides_managed:self-only',
     -- REQ §13.127: "may I open this request in the edit form" for the caller only (request_related / can_manage_week of the
     -- request's own week); returns a boolean, writes nothing.
     'can_edit_request:self-only',

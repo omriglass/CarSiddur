@@ -402,7 +402,7 @@ begin
     select c.relname
       from pg_class c
       join pg_namespace n on n.oid = c.relnamespace and n.nspname = 'public' and c.relkind in ('r', 'p')
-      join pg_proc p on p.proname in ('week_board_rides', 'my_upcoming_rides')
+      join pg_proc p on p.proname in ('week_board_rides_rows', 'my_upcoming_rides')
       join pg_namespace pn on pn.oid = p.pronamespace and pn.nspname = 'public'
      where p.prosrc ~ ('\m' || c.relname || '\M')
   )
