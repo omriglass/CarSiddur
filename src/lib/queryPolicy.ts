@@ -1,6 +1,7 @@
 import { MutationCache, QueryClient, type Query, type QueryKey } from "@tanstack/react-query";
 
 import { gatesFocusRefetch } from "./counterGate";
+import { AppError } from "./rpc";
 
 /**
  * Cache policy per query family (docs/ARCHITECTURE.md "Browser data and caching").
@@ -29,6 +30,15 @@ export const DEFAULT_STALE_MS = 30_000;
 export const PERMISSIONS_STALE_MS = 60_000;
 export const WEEKS_STALE_MS = 2 * 60_000;
 export const CATALOG_STALE_MS = 10 * 60_000;
+
+/**
+ * Board inputs a change in this week does not move (O28-8, production timeouts 2026-10-29): `fairness_stats` (the
+ * lookback before the week), `car_start_locations` (where each car stands when the week begins),
+ * `car_mileage_totals` (earlier weeks plus this week's *confirmed* rides only — a planning-time tie-break, refreshed
+ * by its staleTime) and `place_travel_for_week` (keyed by the week's place set, so a new place is a new key).
+ * Neither `invalidateWeekData` nor the live-sync refresh (`features/liveSync/invalidation.ts`) reloads them.
+ */
+export const NOT_MOVED_BY_WEEK_CHANGES = new Set<unknown>(["fairnessStats", "carStartLocations", "mileageTotals", "placeTravel"]);
 
 export type QueryTier = "permissions" | "weeks" | "catalog" | "live";
 
@@ -96,7 +106,9 @@ export function createQueryClient(): QueryClient {
   const client: QueryClient = new QueryClient({
     defaultOptions: {
       queries: {
-        retry: 1,
+        // One retry for a passing failure — but never after a statement timeout: the database is overloaded and a
+        // second 8 s attempt only adds to it (production 2026-10-29).
+        retry: (failureCount: number, error: unknown) => failureCount < 1 && !(error instanceof AppError && error.code === "server_busy"),
         staleTime: queryStaleTime,
         // true = refetch when stale; a counter-covered week query waits for the watcher's counter check instead.
         refetchOnWindowFocus: (query: Query) => !gatesFocusRefetch(query),

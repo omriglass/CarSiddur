@@ -9312,7 +9312,9 @@ begin
   perform public.expire_freed_offers(p_now);
 
   v_hour := extract(hour from (p_now at time zone 'Asia/Jerusalem'));
-  select (value ->> 'value')::date into v_last_prune from public.app_settings where key = 'housekeeping_last_run';
+  -- The marker is stored as a bare JSON string ("2026-10-29"); older rows may hold {"value": ...}. Reading only the
+  -- object form made the daily block run on every tick (production 2026-10-29).
+  select coalesce(value ->> 'value', value #>> '{}')::date into v_last_prune from public.app_settings where key = 'housekeeping_last_run';
 
   if v_last_prune is null or v_last_prune < (p_now at time zone 'Asia/Jerusalem')::date then
     perform public.materialize_templates();
@@ -15947,6 +15949,41 @@ $$;
 ALTER FUNCTION "public"."ride_route_minutes"("p_ride_id" "uuid", "p_leg" "public"."ride_leg") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."ride_routes_json"("p_ride_ids" "uuid"[]) RETURNS TABLE("ride_id" "uuid", "route" "jsonb")
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  with
+  r as (
+    select x.id, x.department_id, x.week_start, x.status, (x.starts_at at time zone 'Asia/Jerusalem')::date as day
+      from public.rides x where x.id = any(p_ride_ids)
+  ),
+  me as (select (select auth.uid()) is null as service, public.is_approved() as approved),
+  wk as (
+    select distinct r.department_id, r.week_start, public.can_manage_week(r.department_id, r.week_start) as manages
+      from r
+  ),
+  dy as (
+    select distinct r.department_id, r.week_start, r.day, public.is_day_public(r.department_id, r.week_start, r.day) as public_day
+      from r, me where not me.service and me.approved
+  )
+  select r.id,
+         case when me.service or wk.manages or (me.approved and r.status <> 'draft' and coalesce(dy.public_day, false)) then
+           coalesce((select jsonb_agg(jsonb_build_object('leg', rt.leg, 'position', rt."position", 'place_id', rt.place_id,
+               'place_text', rt.place_text, 'name', d.name, 'request_id', rt.request_id, 'kind', rt.kind, 'eta', rt.eta)
+               order by rt.leg::text, rt."position")
+             from public._ride_route(r.id) rt left join public.destinations d on d.id = rt.place_id), '[]'::jsonb)
+         else '[]'::jsonb end
+    from r
+    cross join me
+    join wk on wk.department_id = r.department_id and wk.week_start = r.week_start
+    left join dy on dy.department_id = r.department_id and dy.week_start = r.week_start and dy.day = r.day;
+$$;
+
+
+ALTER FUNCTION "public"."ride_routes_json"("p_ride_ids" "uuid"[]) OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."ride_seat_fit_check"() RETURNS "trigger"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -20925,6 +20962,31 @@ CREATE OR REPLACE FUNCTION "public"."week_board_rides"("p_department_id" "uuid",
     LANGUAGE "sql" STABLE
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
+  select * from public.week_board_rides_subset(p_department_id, p_week_start, null);
+$$;
+
+
+ALTER FUNCTION "public"."week_board_rides"("p_department_id" "uuid", "p_week_start" "date") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."week_board_rides_managed"("p_department_id" "uuid", "p_week_start" "date", "p_ride_ids" "uuid"[]) RETURNS SETOF "public"."v_board_rides"
+    LANGUAGE "plpgsql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+begin
+  if not (public.can_manage_week(p_department_id, p_week_start) and public.member_of(p_department_id)) then return; end if;
+  return query select * from public.week_board_rides_rows(p_department_id, p_week_start, p_ride_ids);
+end;
+$$;
+
+
+ALTER FUNCTION "public"."week_board_rides_managed"("p_department_id" "uuid", "p_week_start" "date", "p_ride_ids" "uuid"[]) OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."week_board_rides_rows"("p_department_id" "uuid", "p_week_start" "date", "p_ride_ids" "uuid"[]) RETURNS SETOF "public"."v_board_rides"
+    LANGUAGE "sql" STABLE
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
   with
   vr as materialized (
     select r.* from public.rides r
@@ -20973,6 +21035,53 @@ CREATE OR REPLACE FUNCTION "public"."week_board_rides"("p_department_id" "uuid",
   vrp as materialized (
     select x.* from public.ride_passengers x where x.ride_id in (select vr.id from vr)
   ),
+  -- O28-8: every ride's passenger list in one pass (was a correlated subquery per ride, ~1 ms each)
+  vpeo as (
+    select r.id as ride_id, ('driver:'::text || r.driver_id) as key, 'driver'::text as source,
+           (select q0.id from vrr rr0 join vq q0 on q0.id = rr0.request_id
+             where rr0.ride_id = r.id and q0.requester_id = r.driver_id order by q0.id limit 1) as request_id,
+           null::uuid as ride_passenger_id, r.driver_id as person_id, null::uuid as child_id,
+           d.full_name as display_name, 'adult'::text as seat_kind, null::uuid as added_by,
+           false as removable, true as is_driver
+      from vr r left join vp d on d.id = r.driver_id
+     where r.driver_id is not null
+    union all
+    select rr.ride_id, ('req:'::text || q.id), 'requester'::text, q.id, null::uuid, q.requester_id, null::uuid,
+           p.full_name, 'adult'::text, null::uuid, true, false
+      from vrr rr join vr r on r.id = rr.ride_id join vq q on q.id = rr.request_id join vp p on p.id = q.requester_id
+     where q.requester_id is distinct from r.driver_id
+    union all
+    select rr.ride_id, ((('comp:'::text || q.id) || ':'::text) || rc.profile_id), 'companion'::text, q.id, null::uuid,
+           rc.profile_id, null::uuid, p.full_name, 'adult'::text, null::uuid, true, false
+      from vrr rr join vq q on q.id = rr.request_id
+      join vrc rc on rc.request_id = q.id join vp p on p.id = rc.profile_id
+    union all
+    select rr.ride_id, ((('child:'::text || q.id) || ':'::text) || rc.child_id), 'child'::text, q.id, null::uuid,
+           null::uuid, rc.child_id, c.full_name, 'child_seat'::text, null::uuid, true, false
+      from vrr rr join vq q on q.id = rr.request_id
+      join vrch rc on rc.request_id = q.id join vch c on c.id = rc.child_id
+    union all
+    select rr.ride_id, ((('guest:'::text || q.id) || ':'::text) || gn.n), 'guest'::text, q.id, null::uuid,
+           null::uuid, null::uuid, gn.name, 'adult'::text, null::uuid, true, false
+      from vrr rr join vq q on q.id = rr.request_id
+      cross join lateral unnest(q.guest_passenger_names) with ordinality gn(name, n)
+    union all
+    select rp.ride_id, ('added:'::text || rp.id), 'added'::text, null::uuid, rp.id, rp.person_id, rp.child_id,
+           rp.display_name, rp.seat_kind, rp.added_by, true, false
+      from vrp rp
+  ),
+  vpe as (
+    select pe.ride_id,
+           jsonb_agg(jsonb_build_object('key', pe.key, 'source', pe.source, 'request_id', pe.request_id,
+                                        'ride_passenger_id', pe.ride_passenger_id, 'person_id', pe.person_id,
+                                        'child_id', pe.child_id, 'display_name', pe.display_name,
+                                        'seat_kind', pe.seat_kind, 'added_by', pe.added_by,
+                                        'removable', pe.removable)
+                     order by pe.is_driver desc, pe.display_name, pe.key) as people
+      from vpeo pe
+     where p_ride_ids is null or pe.ride_id = any(p_ride_ids)
+     group by pe.ride_id
+  ),
   base as (
     select r.id, r.department_id, r.week_start, r.car_id, r.starts_at, r.ends_at, r.blocked_until,
            r.status, r.is_pinned, r.pin_reason, r.version, r.origin_id, o.name as origin_name,
@@ -21009,6 +21118,7 @@ CREATE OR REPLACE FUNCTION "public"."week_board_rides"("p_department_id" "uuid",
       left join vp p on p.id = q.requester_id
       left join vrt rt on rt.id = q.ride_type_id
       left join vd dst on dst.id = q.destination_id
+     where p_ride_ids is null or r.id = any(p_ride_ids)
      group by r.id, r.department_id, r.week_start, r.car_id, r.starts_at, r.ends_at, r.blocked_until,
               r.status, r.is_pinned, r.pin_reason, r.version, r.origin_id, o.name, r.destination_id, e.name,
               r.overflow_allowed, r.overnight_ack_by, r.driver_id, d.full_name, r.notes, r.needs_driver,
@@ -21024,50 +21134,9 @@ CREATE OR REPLACE FUNCTION "public"."week_board_rides"("p_department_id" "uuid",
                                                          'display_name', rp.display_name, 'seat_kind', rp.seat_kind,
                                                          'added_by', rp.added_by) order by rp.created_at, rp.id)
                        from vrp rp where rp.ride_id = b.id), '[]'::jsonb) as passengers,
-           coalesce((select jsonb_agg(jsonb_build_object('key', pe.key, 'source', pe.source, 'request_id', pe.request_id,
-                                                         'ride_passenger_id', pe.ride_passenger_id, 'person_id', pe.person_id,
-                                                         'child_id', pe.child_id, 'display_name', pe.display_name,
-                                                         'seat_kind', pe.seat_kind, 'added_by', pe.added_by,
-                                                         'removable', pe.removable)
-                                      order by pe.is_driver desc, pe.display_name, pe.key)
-             from (
-               select ('driver:'::text || b.driver_id) as key, 'driver'::text as source,
-                      (select q0.id from vrr rr0 join vq q0 on q0.id = rr0.request_id
-                        where rr0.ride_id = b.id and q0.requester_id = b.driver_id order by q0.id limit 1) as request_id,
-                      null::uuid as ride_passenger_id, b.driver_id as person_id, null::uuid as child_id,
-                      b.driver_name as display_name, 'adult'::text as seat_kind, null::uuid as added_by,
-                      false as removable, true as is_driver
-                where b.driver_id is not null
-               union all
-               select ('req:'::text || q.id), 'requester'::text, q.id, null::uuid, q.requester_id, null::uuid,
-                      p.full_name, 'adult'::text, null::uuid, true, false
-                 from vrr rr join vq q on q.id = rr.request_id join vp p on p.id = q.requester_id
-                where rr.ride_id = b.id and q.requester_id is distinct from b.driver_id
-               union all
-               select ((('comp:'::text || q.id) || ':'::text) || rc.profile_id), 'companion'::text, q.id, null::uuid,
-                      rc.profile_id, null::uuid, p.full_name, 'adult'::text, null::uuid, true, false
-                 from vrr rr join vq q on q.id = rr.request_id
-                 join vrc rc on rc.request_id = q.id join vp p on p.id = rc.profile_id
-                where rr.ride_id = b.id
-               union all
-               select ((('child:'::text || q.id) || ':'::text) || rc.child_id), 'child'::text, q.id, null::uuid,
-                      null::uuid, rc.child_id, c.full_name, 'child_seat'::text, null::uuid, true, false
-                 from vrr rr join vq q on q.id = rr.request_id
-                 join vrch rc on rc.request_id = q.id join vch c on c.id = rc.child_id
-                where rr.ride_id = b.id
-               union all
-               select ((('guest:'::text || q.id) || ':'::text) || gn.n), 'guest'::text, q.id, null::uuid,
-                      null::uuid, null::uuid, gn.name, 'adult'::text, null::uuid, true, false
-                 from vrr rr join vq q on q.id = rr.request_id
-                 cross join lateral unnest(q.guest_passenger_names) with ordinality gn(name, n)
-                where rr.ride_id = b.id
-               union all
-               select ('added:'::text || rp.id), 'added'::text, null::uuid, rp.id, rp.person_id, rp.child_id,
-                      rp.display_name, rp.seat_kind, rp.added_by, true, false
-                 from vrp rp where rp.ride_id = b.id
-             ) pe(key, source, request_id, ride_passenger_id, person_id, child_id, display_name, seat_kind,
-                  added_by, removable, is_driver)), '[]'::jsonb) as people
+           coalesce(pe.people, '[]'::jsonb) as people
       from base b
+      left join vpe pe on pe.ride_id = b.id
   ),
   rel as (
     select ex.*, rp.relay_partner
@@ -21100,6 +21169,9 @@ CREATE OR REPLACE FUNCTION "public"."week_board_rides"("p_department_id" "uuid",
                   order by pr.ends_at desc, pr.id
                   limit 1)) x
          limit 1) rp on true
+  ),
+  vroute as materialized (
+    select x.ride_id, x.route from public.ride_routes_json(array(select rel.id from rel)) x
   )
   select rel.id, rel.department_id, rel.week_start, rel.car_id, rel.starts_at, rel.ends_at, rel.blocked_until,
          rel.status, rel.is_pinned, rel.pin_reason, rel.version, rel.origin_id, rel.origin_name,
@@ -21108,8 +21180,9 @@ CREATE OR REPLACE FUNCTION "public"."week_board_rides"("p_department_id" "uuid",
          coalesce(ss.served, rel.served) as served,
          rel.notes, rel.needs_driver, rel.turnaround_override_minutes, rel.planning_conflict, rel.series_id,
          rel.series_index, rel.series_count, rel.passengers, rel.people, rel.auto_relocation, rel.relay_partner,
-         public.ride_route_json(rel.id) as route
+         coalesce(vroute.route, '[]'::jsonb) as route
     from rel
+    left join vroute on vroute.ride_id = rel.id
     left join lateral (
       select jsonb_agg(elem.value || jsonb_build_object('stops', coalesce(stop_agg.stops, '[]'::jsonb)) order by elem.ord) as served
         from jsonb_array_elements(rel.served) with ordinality elem(value, ord)
@@ -21125,7 +21198,24 @@ CREATE OR REPLACE FUNCTION "public"."week_board_rides"("p_department_id" "uuid",
 $$;
 
 
-ALTER FUNCTION "public"."week_board_rides"("p_department_id" "uuid", "p_week_start" "date") OWNER TO "postgres";
+ALTER FUNCTION "public"."week_board_rides_rows"("p_department_id" "uuid", "p_week_start" "date", "p_ride_ids" "uuid"[]) OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."week_board_rides_subset"("p_department_id" "uuid", "p_week_start" "date", "p_ride_ids" "uuid"[]) RETURNS SETOF "public"."v_board_rides"
+    LANGUAGE "plpgsql" STABLE
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+begin
+  if public.can_manage_week(p_department_id, p_week_start) and public.member_of(p_department_id) then
+    return query select * from public.week_board_rides_managed(p_department_id, p_week_start, p_ride_ids);
+  else
+    return query select * from public.week_board_rides_rows(p_department_id, p_week_start, p_ride_ids);
+  end if;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."week_board_rides_subset"("p_department_id" "uuid", "p_week_start" "date", "p_ride_ids" "uuid"[]) OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."week_change_seqs"("p_department_id" "uuid", "p_weeks" "date"[]) RETURNS TABLE("week_start" "date", "seq" bigint, "public_seq" bigint, "dept_seq" bigint)
@@ -29716,6 +29806,12 @@ GRANT ALL ON FUNCTION "public"."ride_route_minutes"("p_ride_id" "uuid", "p_leg" 
 
 
 
+REVOKE ALL ON FUNCTION "public"."ride_routes_json"("p_ride_ids" "uuid"[]) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."ride_routes_json"("p_ride_ids" "uuid"[]) TO "service_role";
+GRANT ALL ON FUNCTION "public"."ride_routes_json"("p_ride_ids" "uuid"[]) TO "authenticated";
+
+
+
 REVOKE ALL ON FUNCTION "public"."ride_seat_fit_check"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."ride_seat_fit_check"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."ride_seat_fit_check"() TO "service_role";
@@ -30398,6 +30494,24 @@ GRANT ALL ON FUNCTION "public"."waitlist_group_offer"("p_request_id" "uuid") TO 
 REVOKE ALL ON FUNCTION "public"."week_board_rides"("p_department_id" "uuid", "p_week_start" "date") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."week_board_rides"("p_department_id" "uuid", "p_week_start" "date") TO "service_role";
 GRANT ALL ON FUNCTION "public"."week_board_rides"("p_department_id" "uuid", "p_week_start" "date") TO "authenticated";
+
+
+
+REVOKE ALL ON FUNCTION "public"."week_board_rides_managed"("p_department_id" "uuid", "p_week_start" "date", "p_ride_ids" "uuid"[]) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."week_board_rides_managed"("p_department_id" "uuid", "p_week_start" "date", "p_ride_ids" "uuid"[]) TO "service_role";
+GRANT ALL ON FUNCTION "public"."week_board_rides_managed"("p_department_id" "uuid", "p_week_start" "date", "p_ride_ids" "uuid"[]) TO "authenticated";
+
+
+
+REVOKE ALL ON FUNCTION "public"."week_board_rides_rows"("p_department_id" "uuid", "p_week_start" "date", "p_ride_ids" "uuid"[]) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."week_board_rides_rows"("p_department_id" "uuid", "p_week_start" "date", "p_ride_ids" "uuid"[]) TO "service_role";
+GRANT ALL ON FUNCTION "public"."week_board_rides_rows"("p_department_id" "uuid", "p_week_start" "date", "p_ride_ids" "uuid"[]) TO "authenticated";
+
+
+
+REVOKE ALL ON FUNCTION "public"."week_board_rides_subset"("p_department_id" "uuid", "p_week_start" "date", "p_ride_ids" "uuid"[]) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."week_board_rides_subset"("p_department_id" "uuid", "p_week_start" "date", "p_ride_ids" "uuid"[]) TO "service_role";
+GRANT ALL ON FUNCTION "public"."week_board_rides_subset"("p_department_id" "uuid", "p_week_start" "date", "p_ride_ids" "uuid"[]) TO "authenticated";
 
 
 

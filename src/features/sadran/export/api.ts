@@ -7,6 +7,7 @@ export interface WeekExportData {
   requests: WeekRequestRow[];
   rides: BoardRide[];
   cars: { id: string; name: string; type?: string | null; status?: string | null }[];
+  departmentName?: string | null;
   homeDestinationId?: string | null;
   boardStartTime?: string | null;
   publication: SiddurVersionRow | null;
@@ -16,5 +17,5 @@ export async function fetchWeekExport(departmentId: string, weekStart: string): 
     fetchWeekRequestsWithNames(departmentId, weekStart), fetchAllWeekRides(departmentId, weekStart),
     fetchExportLayout(departmentId), fetchLatestSiddurVersion(departmentId, weekStart),
   ]);
-  return { departmentId, weekStart, requests, rides, cars: layout.cars, homeDestinationId: layout.homeDestinationId, boardStartTime: layout.boardStartTime, publication };
+  return { departmentId, weekStart, requests, rides, cars: layout.cars, departmentName: layout.departmentName, homeDestinationId: layout.homeDestinationId, boardStartTime: layout.boardStartTime, publication };
 }

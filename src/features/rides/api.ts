@@ -40,6 +40,18 @@ export async function handOverOwnRide(rideId: string, expectedVersion: number, n
   await rpc("hand_over_own_ride", { p_ride_id: rideId, p_expected_version: expectedVersion, p_new_driver: newDriver });
 }
 
+/**
+ * O28-8: just these rides of the week, as `week_board_rides` returns them (`week_board_rides_subset`, same rows
+ * and RLS) — a ride the caller can no longer see (e.g. cancelled) is simply absent.
+ */
+export async function fetchWeekRidesSubset(departmentId: string, weekStart: string, rideIds: readonly string[]): Promise<BoardRide[]> {
+  const { data, error } = await supabase.rpc("week_board_rides_subset", {
+    p_department_id: departmentId, p_week_start: weekStart, p_ride_ids: [...rideIds],
+  });
+  if (error) throw toAppError(error);
+  return data ?? [];
+}
+
 /** Public ride information only; does not modify scheduling, passengers or consent. */
 export async function updateRidePublicNotes(rideId: string, expectedVersion: number, notes: string | null): Promise<void> {
   await rpc("update_ride_public_notes", { p_ride_id: rideId, p_expected_version: expectedVersion, p_notes: notes ?? "" });
@@ -124,17 +136,18 @@ export async function fetchCarNeighbours(rideIds: readonly string[]): Promise<Ca
  */
 export interface ExportLayoutData {
   cars: { id: string; name: string; type: string | null; status?: string | null }[];
+  departmentName: string | null;
   homeDestinationId: string | null;
   boardStartTime: string | null;
 }
 export async function fetchExportLayout(departmentId: string): Promise<ExportLayoutData> {
   const [cars, department, settings] = await Promise.all([
     supabase.from("cars").select("id, name, type, status").eq("department_id", departmentId).order("name"),
-    supabase.from("departments").select("home_destination_id").eq("id", departmentId).maybeSingle(),
+    supabase.from("departments").select("name, home_destination_id").eq("id", departmentId).maybeSingle(),
     supabase.from("department_settings").select("board_start_time").eq("department_id", departmentId).maybeSingle(),
   ]);
   if (cars.error) throw toAppError(cars.error);
   if (department.error) throw toAppError(department.error);
   if (settings.error) throw toAppError(settings.error);
-  return { cars: cars.data ?? [], homeDestinationId: department.data?.home_destination_id ?? null, boardStartTime: settings.data?.board_start_time ?? null };
+  return { cars: cars.data ?? [], departmentName: department.data?.name ?? null, homeDestinationId: department.data?.home_destination_id ?? null, boardStartTime: settings.data?.board_start_time ?? null };
 }

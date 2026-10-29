@@ -1,6 +1,6 @@
 import type { QueryClient, QueryKey } from "@tanstack/react-query";
 
-import { isStableQuery } from "@/lib/queryPolicy";
+import { NOT_MOVED_BY_WEEK_CHANGES, isStableQuery } from "@/lib/queryPolicy";
 
 import type { WatchChange, WatchScope } from "./watcher";
 
@@ -45,7 +45,7 @@ export function isWatchedWeekQuery(key: QueryKey, departmentId: string, weeks: R
   if (root === "waitlist") return family === departmentId && weeks.has(key[2] as string);
   if (root === "sadran" && scope === "sadran") {
     if (SADRAN_UNSCOPED.has(family)) return true;
-    return family === departmentId && weeks.has(key[2] as string);
+    return family === departmentId && weeks.has(key[2] as string) && !NOT_MOVED_BY_WEEK_CHANGES.has(key[3]);
   }
   return false;
 }

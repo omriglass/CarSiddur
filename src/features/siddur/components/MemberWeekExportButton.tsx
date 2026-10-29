@@ -6,6 +6,7 @@ import { he } from "@/i18n/he";
 import { showErrorToast } from "@/lib/rpc";
 
 import { fetchExportLayout } from "@/features/rides/api";
+import { weekExportFileName } from "@/features/rides/export/weekFileName";
 
 import { fetchBoardRides } from "../api";
 import { createMemberWeekWorkbook } from "../export/memberWeekWorkbook";
@@ -25,7 +26,7 @@ export function MemberWeekExportButton({ departmentId, weekStart }: { department
         fetchBoardRides(departmentId, weekStart),
         fetchExportLayout(departmentId),
       ]);
-      return { departmentId, weekStart, rides, cars: layout.cars, homeDestinationId: layout.homeDestinationId, boardStartTime: layout.boardStartTime };
+      return { departmentId, weekStart, rides, cars: layout.cars, departmentName: layout.departmentName, homeDestinationId: layout.homeDestinationId, boardStartTime: layout.boardStartTime };
     },
     enabled: false,
     retry: false,
@@ -40,7 +41,7 @@ export function MemberWeekExportButton({ departmentId, weekStart }: { department
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      link.download = `siddur-${weekStart}-${departmentId}.xlsx`;
+      link.download = weekExportFileName(data.departmentName, weekStart);
       document.body.append(link);
       link.click();
       link.remove();

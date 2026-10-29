@@ -54,6 +54,40 @@ begin
 end;
 $$;
 
+-- O28-8: `week_board_rides_subset(dept, week, ids)` returns exactly the full read's rows of those ids (every
+-- other ride of the week, by id, so relay partners outside the subset are still found), for the same caller.
+create function pg_temp.subset_matches(_user uuid, _dept uuid, _week date) returns boolean
+language plpgsql as $$
+declare _ids uuid[]; _full text[]; _part text[];
+begin
+  select coalesce(array_agg(id order by id), '{}') into _ids
+    from (select r.id, row_number() over (order by r.id) as n from public.rides r
+           where r.department_id = _dept and r.week_start = _week) x
+   where x.n % 2 = 1;
+  perform set_config('request.jwt.claims', json_build_object('sub', _user, 'role', 'authenticated')::text, true);
+  set local role authenticated;
+  select coalesce(array_agg(md5(to_jsonb(v)::text) order by v.id), '{}') into _full
+    from public.week_board_rides(_dept, _week) v where v.id = any(_ids);
+  select coalesce(array_agg(md5(to_jsonb(v)::text) order by v.id), '{}') into _part
+    from public.week_board_rides_subset(_dept, _week, _ids) v;
+  reset role;
+  return _full = _part;
+end;
+$$;
+
+-- O28-8: the managers' fast path reads as the owner, so it must return nothing to anyone who does not manage the week.
+create function pg_temp.managed_count(_user uuid, _dept uuid, _week date) returns table(manages boolean, n bigint)
+language plpgsql as $$
+begin
+  perform set_config('request.jwt.claims', json_build_object('sub', _user, 'role', 'authenticated')::text, true);
+  set local role authenticated;
+  manages := public.can_manage_week(_dept, _week) and public.member_of(_dept);
+  select count(*) into n from public.week_board_rides_managed(_dept, _week, null);
+  reset role;
+  return next;
+end;
+$$;
+
 create function pg_temp.board_json(_user uuid, _dept uuid, _week date) returns jsonb
 language plpgsql as $$
 declare _out jsonb;
@@ -270,6 +304,12 @@ begin
       assert view_rows = function_rows,
         format('week_board_rides differs from v_board_rides for %s (%s) on %s/%s: %s rows vs %s rows',
                u.label, u.profile_id, wk.department_id, wk.week_start, cardinality(view_rows), cardinality(function_rows));
+      assert (select m.manages or m.n = 0 from pg_temp.managed_count(u.profile_id, wk.department_id, wk.week_start) m),
+        format('week_board_rides_managed returned rows to %s (%s), who does not manage %s/%s',
+               u.label, u.profile_id, wk.department_id, wk.week_start);
+      assert pg_temp.subset_matches(u.profile_id, wk.department_id, wk.week_start),
+        format('week_board_rides_subset differs from week_board_rides for %s (%s) on %s/%s',
+               u.label, u.profile_id, wk.department_id, wk.week_start);
       n_checked := n_checked + 1;
     end loop;
   end loop;
@@ -277,6 +317,11 @@ begin
   -- anon: neither the view nor the function.
   assert not has_function_privilege('anon', 'public.week_board_rides(uuid, date)', 'execute'), 'anon must not execute week_board_rides';
   assert has_function_privilege('authenticated', 'public.week_board_rides(uuid, date)', 'execute'), 'authenticated executes week_board_rides';
+  assert not has_function_privilege('anon', 'public.week_board_rides_subset(uuid, date, uuid[])', 'execute'), 'anon must not execute week_board_rides_subset';
+  assert not has_function_privilege('anon', 'public.week_board_rides_managed(uuid, date, uuid[])', 'execute'), 'anon must not execute week_board_rides_managed';
+  assert not has_function_privilege('anon', 'public.week_board_rides_rows(uuid, date, uuid[])', 'execute'), 'anon must not execute week_board_rides_rows';
+  assert not has_function_privilege('anon', 'public.ride_routes_json(uuid[])', 'execute'), 'anon must not execute ride_routes_json';
+  assert has_function_privilege('authenticated', 'public.week_board_rides_subset(uuid, date, uuid[])', 'execute'), 'authenticated executes week_board_rides_subset';
   assert not has_table_privilege('anon', 'public.v_board_rides', 'select'), 'anon must not read v_board_rides';
   begin
     set local role anon;

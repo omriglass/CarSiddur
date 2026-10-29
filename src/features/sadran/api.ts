@@ -205,7 +205,7 @@ export async function fetchWeekRequests(departmentId: string, weekStart: string)
     .eq("department_id", departmentId)
     .eq("week_start", weekStart);
   if (error) throw toAppError(error);
-  const notes = await fetchRequestNotes((data ?? []).map((row) => (row as unknown as { id: string }).id));
+  const notes = await fetchRequestNotes((data ?? []) as unknown as { id: string; version: number }[]);
   return ((data ?? []) as unknown as (ReadableRequestRow & {
     requester: { full_name: string; does_not_drive: boolean } | null;
     companions: { profile_id: string; profile: { does_not_drive: boolean } | null }[];
@@ -240,18 +240,42 @@ export async function fetchWeekRequestsWithNames(
     .eq("week_start", weekStart);
   if (error) throw toAppError(error);
   const rows = (data ?? []) as unknown as Omit<WeekRequestJoinRow, "notes">[];
-  const notes = await fetchRequestNotes(rows.map((row) => row.id));
+  const notes = await fetchRequestNotes(rows);
   return rows.map((row) => flattenWeekRequest({ ...row, notes: notes.get(row.id) ?? null }));
 }
 
 /**
  * REQ §13.153: `requests.notes` is not readable as a column; `request_notes` returns the notes of the requests the
  * caller may edit (the week's Sadran: all of them).
+ *
+ * Perf (2026-10-29): every update of a request bumps its `version`, so a note read for `(request, version)` stays
+ * right until the request changes. Only requests not seen at their current version are asked for; a board change
+ * that touches two requests reads two notes, not the whole week's. Memory only, per signed-in user.
  */
-async function fetchRequestNotes(requestIds: readonly string[]): Promise<Map<string, string>> {
-  if (requestIds.length === 0) return new Map();
-  const data = await rpc("request_notes", { p_request_ids: [...requestIds] });
-  return new Map((data ?? []).map((row) => [row.request_id, row.notes]));
+const notesCache = new Map<string, string | null>();
+let notesCacheUser: string | undefined;
+
+async function fetchRequestNotes(rows: readonly { id: string; version: number }[]): Promise<Map<string, string>> {
+  if (rows.length === 0) return new Map();
+  const { data: session } = await supabase.auth.getSession();
+  const user = session.session?.user.id;
+  if (user !== notesCacheUser) {
+    notesCache.clear();
+    notesCacheUser = user;
+  }
+  const keyOf = (row: { id: string; version: number }) => `${row.id}:${row.version}`;
+  const missing = rows.filter((row) => !notesCache.has(keyOf(row)));
+  if (missing.length > 0) {
+    const data = await rpc("request_notes", { p_request_ids: missing.map((row) => row.id) });
+    const fetched = new Map((data ?? []).map((row) => [row.request_id, row.notes]));
+    for (const row of missing) notesCache.set(keyOf(row), fetched.get(row.id) ?? null);
+  }
+  const notes = new Map<string, string>();
+  for (const row of rows) {
+    const note = notesCache.get(keyOf(row));
+    if (note) notes.set(row.id, note);
+  }
+  return notes;
 }
 
 // ---------------------------------------------------------------------------

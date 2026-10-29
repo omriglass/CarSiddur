@@ -7,6 +7,7 @@ import { fleetKeys } from "@/features/fleet/queryKeys";
 import { ridesKeys } from "@/features/rides/keys";
 import { sadranKeys } from "@/features/sadran/keys";
 import { siddurKeys } from "@/features/siddur/queryKeys";
+import { toAppError } from "./rpc";
 
 import {
   CATALOG_STALE_MS,
@@ -116,5 +117,20 @@ describe("query cache policy: freshness", () => {
     expect(predicate?.(find(["auth", "profile", "u1"]))).toBe(true);
     expect(predicate?.(find(["siddur", "weeks", "d1"]))).toBe(true);
     expect(predicate?.(find(["siddur", "boardRides", "d1", "w"]))).toBe(false);
+  });
+});
+
+describe("retry (production timeouts 2026-10-29)", () => {
+  const retry = createQueryClient().getDefaultOptions().queries?.retry as (count: number, error: unknown) => boolean;
+
+  it("retries a passing failure once", () => {
+    expect(retry(0, toAppError({ code: "XX000", message: "boom" }))).toBe(true);
+    expect(retry(1, toAppError({ code: "XX000", message: "boom" }))).toBe(false);
+  });
+
+  it("never retries a statement timeout", () => {
+    const timeout = toAppError({ code: "57014", message: "canceling statement due to statement timeout" });
+    expect(timeout.code).toBe("server_busy");
+    expect(retry(0, timeout)).toBe(false);
   });
 });

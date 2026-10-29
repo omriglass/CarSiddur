@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 
+import { weekExportFileName } from "@/features/rides/export/weekFileName";
 import { showErrorToast } from "@/lib/rpc";
 import { sadranKeys } from "../keys";
 import { fetchWeekExport } from "./api";
@@ -25,7 +26,7 @@ export function useWeekExcelExport(departmentId: string, weekStart: string) {
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      link.download = `siddur-${weekStart}-${departmentId}.xlsx`;
+      link.download = weekExportFileName(data.departmentName, weekStart);
       document.body.append(link);
       link.click();
       link.remove();

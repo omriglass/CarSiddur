@@ -6,7 +6,7 @@
  * live channel is joined, every 15 s otherwise (no channel, refused, failed, timed out, closed). When a
  * counter moved, the screen's lean set of queries is invalidated. Live channels (Realtime broadcast,
  * one per watched week) only lower the latency: a broadcast is debounced 500 ms and invalidates the
- * same set — except the broadcast of this page's own change (O28-8): it waits `OWN_CHANGE_GRACE_MS` (the broadcast
+ * same set, never while the previous refresh is still loading (the changes meanwhile run as one more) — except the broadcast of this page's own change (O28-8): it waits `OWN_CHANGE_GRACE_MS` (the broadcast
  * often arrives before the call's own response) and reloads only if the page did not refetch that week itself. Member screens add a random 0–3 s before invalidating, so a publish does not make every
  * open phone re-read at the same instant. 30 s after the tab is hidden, its channels are closed (a
  * forgotten tab does not hold one of the plan's 200 connections); on visible the check runs at once
@@ -43,7 +43,8 @@ export interface WatcherDeps {
   fetchSeqs(departmentId: string, weeks: readonly string[]): Promise<SeqRow[]>;
   /** Opens one live channel for a week; returns its close function. Absent = version check only. */
   subscribe?(departmentId: string, weekStart: string, scope: WatchScope, handlers: ChannelHandlers): () => void;
-  invalidate(change: WatchChange): void;
+  /** Resolves when the refetch it started has settled (single flight: the next one waits for it). */
+  invalidate(change: WatchChange): Promise<unknown> | void;
   /** O28-8: was this broadcast's change made by this page (`lib/tabId.ts`)? */
   isOwnTab?(tab: string | null): boolean;
   /** O28-8: has this page refetched the week after its own change (`lib/ownRefresh.ts`)? Then its broadcast reloads nothing. */
@@ -111,6 +112,8 @@ export class ChangeWatcher {
   private pollTimer: Timer | null = null;
   private hiddenTimer: Timer | null = null;
   private invalidateTimer: Timer | null = null;
+  /** A refresh is running: changes arriving meanwhile wait for it and run as one more (perf 2026-10-29). */
+  private invalidating = false;
   private readonly ownChangeTimers = new Set<Timer>();
   private pendingWeeks = new Set<string>();
   private pendingDepartment = false;
@@ -243,10 +246,21 @@ export class ChangeWatcher {
   }
 
   private runInvalidate(): void {
+    // Single flight (production timeouts 2026-10-29): a new invalidation cancels the running fetch in the browser,
+    // but the database still finishes it — so a burst of changes would run the same reads side by side.
+    if (this.invalidating) return;
+    if (this.pendingWeeks.size === 0 && !this.pendingDepartment) return;
     const change = { weeks: [...this.pendingWeeks], department: this.pendingDepartment };
     this.pendingWeeks = new Set();
     this.pendingDepartment = false;
-    if (!this.stopped) this.deps.invalidate(change);
+    if (this.stopped) return;
+    const running = this.deps.invalidate(change);
+    if (!running) return;
+    this.invalidating = true;
+    void Promise.resolve(running).catch(() => undefined).then(() => {
+      this.invalidating = false;
+      if (!this.invalidateTimer) this.runInvalidate();
+    });
   }
 
   private allLive(): boolean {

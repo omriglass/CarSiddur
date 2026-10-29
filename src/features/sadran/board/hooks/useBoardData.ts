@@ -5,7 +5,7 @@
 import { withoutPrivateCarOffers } from "../privateCarOffers";
 import { formatInTimeZone, fromZonedTime } from "date-fns-tz";
 import { useEffect, useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
 
 import { datesOfWeek, todayInJerusalem } from "@/components/dateFieldDates";
@@ -36,6 +36,7 @@ import { DEFAULT_STOP_MINUTES, homeTravelEdges, makeHop, makeHopKm, parseRideRou
 import { viaLabel } from "@/lib/routeLabel";
 import { effectiveWeekSettings } from "@/lib/weekSettings";
 import { addedGuestsOf, mergePayloadLeg, previewMerge } from "../mergeProposal";
+import { weekPlacesKey } from "../weekPlacesKey";
 import { connectedPairRideIds, unmetItemId, unmetRequestViews, viewsOnDay } from "../unmetLegs";
 import { isUnmetStatus } from "../../unmetStatuses";
 import { requestRouteLine, tripTypeLabel } from "../requestRoute";
@@ -227,7 +228,8 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
     queryKey: sadranKeys.mileageTotals(departmentId, weekStart),
     queryFn: () => fetchCarMileageTotals(departmentId, weekStart),
     enabled: !!departmentId,
-    staleTime: 60_000,
+    // Perf 2026-10-29: a tie-break that moves only with confirmed rides — not reloaded per change (NOT_MOVED_BY_WEEK_CHANGES).
+    staleTime: 10 * 60_000,
   });
   // REQUIREMENTS §13.93 (ORIGINS_PLAN §2 items 6/7): same preview-only, 60s-cached
   // treatment as mileage above.
@@ -237,11 +239,14 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
     enabled: !!departmentId,
     staleTime: 60_000,
   });
+  // Perf 2026-10-29: keyed by the week's place set, so it loads again only when a request brings a new place.
+  const placesKey = useMemo(() => (requestsQuery.data ? weekPlacesKey(requestsQuery.data) : ""), [requestsQuery.data]);
   const placeTravelQuery = useQuery({
-    queryKey: sadranKeys.placeTravel(departmentId, weekStart),
+    queryKey: sadranKeys.placeTravel(departmentId, weekStart, placesKey),
     queryFn: () => fetchPlaceTravelForWeek(departmentId, weekStart),
-    enabled: !!departmentId,
-    staleTime: 60_000,
+    enabled: !!departmentId && !!requestsQuery.data,
+    staleTime: 10 * 60_000,
+    placeholderData: keepPreviousData,
   });
 
   function selectPolicyVersion(policyVersionId: string) {

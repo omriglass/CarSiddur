@@ -36,8 +36,8 @@ export function useUpdateRidePublicNotesMutation() {
   return useMutation({
     mutationFn: (vars: { rideId: string; expectedVersion: number; notes: string | null; departmentId: string; weekStart: string }) =>
       updateRidePublicNotes(vars.rideId, vars.expectedVersion, vars.notes),
-    onSuccess: (_data, { departmentId, weekStart }) => {
-      void invalidateWeekData(client, departmentId, weekStart);
+    onSuccess: (_data, { departmentId, weekStart, rideId }) => {
+      void invalidateWeekData(client, departmentId, weekStart, [rideId]);
     },
     onError: showErrorToast,
   });
@@ -55,9 +55,9 @@ export function useAddRidePassengersMutation() {
   return useMutation({
     mutationFn: (vars: { rideId: string; expectedVersion: number; passengers: RidePassengerInput[]; departmentId?: string; weekStart?: string }) =>
       addRidePassengers(vars.rideId, vars.expectedVersion, vars.passengers),
-    onSuccess: (_data, { departmentId, weekStart }) => {
+    onSuccess: (_data, { departmentId, weekStart, rideId }) => {
       if (departmentId && weekStart) {
-        void invalidateWeekData(client, departmentId, weekStart);
+        void invalidateWeekData(client, departmentId, weekStart, [rideId]);
       } else {
         for (const key of [siddurKeys.all, sadranKeys.all, requestsKeys.all]) void client.invalidateQueries({ queryKey: key });
       }
@@ -72,8 +72,8 @@ export function useRemoveRidePassengerMutation() {
     mutationFn: ({ rideId, expectedVersion, key }: {
       rideId: string; expectedVersion: number; key: string; departmentId: string; weekStart: string;
     }) => removeRidePerson(rideId, expectedVersion, key),
-    onSuccess: (_data, { departmentId, weekStart }) => {
-      void invalidateWeekData(client, departmentId, weekStart);
+    onSuccess: (_data, { departmentId, weekStart, rideId }) => {
+      void invalidateWeekData(client, departmentId, weekStart, [rideId]);
     },
     onError: showErrorToast,
   });
@@ -85,8 +85,8 @@ export function useHandOverOwnRideMutation() {
   return useMutation({
     mutationFn: ({ rideId, expectedVersion, newDriver }: { rideId: string; expectedVersion: number; newDriver: string; departmentId: string; weekStart: string }) =>
       handOverOwnRide(rideId, expectedVersion, newDriver),
-    onSuccess: (_data, { departmentId, weekStart }) => {
-      void invalidateWeekData(client, departmentId, weekStart);
+    onSuccess: (_data, { departmentId, weekStart, rideId }) => {
+      void invalidateWeekData(client, departmentId, weekStart, [rideId]);
     },
     onError: showErrorToast,
   });
