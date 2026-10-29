@@ -178,9 +178,12 @@ export type ErrorCode =
   | "constraint_violation"
   | "duplicate_value"
   | "network"
+  | "server_busy"
   | "unknown";
 
 const SQLSTATE_TO_CODE: Record<string, ErrorCode> = {
+  // statement_timeout (8 s for signed-in users): the database was overloaded (production 2026-10-29). Reported, never retried.
+  "57014": "server_busy",
   P0409: "stale_version",
   P0410: "car_chain_broken",
   P0411: "car_away_at_day_end",
@@ -525,6 +528,7 @@ const CODE_TO_MESSAGE: Record<ErrorCode, string> = {
   constraint_violation: he.errors.constraintViolation,
   duplicate_value: he.errors.duplicateValue,
   network: he.errors.network,
+  server_busy: he.errors.serverBusy,
   unknown: he.errors.unknown,
 };
 

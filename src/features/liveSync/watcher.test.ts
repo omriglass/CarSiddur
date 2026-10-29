@@ -30,7 +30,7 @@ interface Harness {
   reports: string[];
 }
 
-function harness(options: { realtime?: boolean; random?: number } = {}): Harness {
+function harness(options: { realtime?: boolean; random?: number; pending?: Promise<unknown> } = {}): Harness {
   let row: SeqRow = { weekStart: WEEK, seq: 1, publicSeq: 1, deptSeq: 1 };
   let visible = true;
   const invalidated: WatchChange[] = [];
@@ -39,7 +39,10 @@ function harness(options: { realtime?: boolean; random?: number } = {}): Harness
   const fetchSeqs = vi.fn(async () => [row]);
   const deps: WatcherDeps = {
     fetchSeqs,
-    invalidate: (change) => invalidated.push(change),
+    invalidate: (change) => {
+      invalidated.push(change);
+      return options.pending ?? undefined;
+    },
     isVisible: () => visible,
     random: () => options.random ?? 0,
     reportRefusal: (detail) => reports.push(detail),
@@ -211,6 +214,30 @@ describe("ChangeWatcher live channels", () => {
     expect(ch(h, 0).closed).toBe(true);
     await vi.advanceTimersByTimeAsync(FALLBACK_POLL_MS);
     expect(h.fetchSeqs).toHaveBeenCalledTimes(3);
+    watcher.stop();
+  });
+
+  it("never starts a refresh while the previous one is loading; the changes meanwhile run as one more", async () => {
+    let finish = () => {};
+    const pending = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    const h = harness({ pending });
+    const watcher = new ChangeWatcher(target("sadran"), h.deps);
+    watcher.start();
+    await flush();
+    ch(h, 0).handlers.onStatus("live");
+    ch(h, 0).handlers.onChange(2);
+    await vi.advanceTimersByTimeAsync(BROADCAST_DEBOUNCE_MS);
+    expect(h.invalidated).toHaveLength(1);
+    ch(h, 0).handlers.onChange(3);
+    await vi.advanceTimersByTimeAsync(BROADCAST_DEBOUNCE_MS);
+    ch(h, 0).handlers.onChange(4);
+    await vi.advanceTimersByTimeAsync(BROADCAST_DEBOUNCE_MS);
+    expect(h.invalidated).toHaveLength(1);
+    finish();
+    await flush();
+    expect(h.invalidated).toHaveLength(2);
     watcher.stop();
   });
 

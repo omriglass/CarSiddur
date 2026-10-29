@@ -632,7 +632,8 @@
         "supabase/migrations/**/*enqueue_notification*",
         "supabase/tests/qa_run13_proposals.sql",
         "supabase/tests/qa_run14_proposals.sql",
-        "supabase/tests/proposal_links_ended.sql"
+        "supabase/tests/proposal_links_ended.sql",
+        "supabase/migrations/**/*housekeeping*"
       ],
       "vitest": [
         "src/features/proposals",
@@ -1233,6 +1234,8 @@
         "src/lib/tabId.test.ts",
         "src/lib/ownRefresh.ts",
         "src/lib/ownRefresh.test.ts",
+        "src/lib/queryPolicy.ts",
+        "src/lib/queryPolicy.test.ts",
         "src/integrations/supabase/client.ts",
         "supabase/migrations/**/*week_change*",
         "supabase/migrations/**/*wcs*",

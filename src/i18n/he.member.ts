@@ -19,6 +19,8 @@ export const heMember = {
     from: "מ",
   },
   excelExport: {
+    /** The downloaded file's name (owner 2026-10-29): "סידור נבו - 1.11-7.11 (2026)". */
+    fileName: "סידור {{department}} - {{from}}-{{to}} ({{year}})",
     button: "ייצוא לאקסל", loading: "מכין קובץ…", requestsSheet: "בקשות", boardSheet: "סידור", scoresSheet: "ניקוד בפרסום",
     requestId: "מזהה בקשה", rideId: "מזהה נסיעה", requester: "מבקש/ת", status: "מצב", destination: "יעד הבקשה",
     tripShape: "כיוון הנסיעה", depart: "יציאה — שעון ישראל", returning: "חזרה — שעון ישראל", driver: "נהג/ת", car: "רכב",

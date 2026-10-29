@@ -76,7 +76,7 @@ export function useWeekChangeWatch(
         // Once per page session (watcher.ts): shows on /admin/errors when the plan's connection limit is hit.
         reportRefusal: (detail) => reportClientError(errorToReport(`realtime_channel_refused: ${detail}`, "liveSync")),
         onLiveState: markLive,
-        invalidate: (change) => void invalidateWatchedChange(client, departmentId, scope, change),
+        invalidate: (change) => invalidateWatchedChange(client, departmentId, scope, change),
         isOwnTab: (tab) => tab === tabId(),
         ownChangeRefreshed: (week) => refreshedRecently(departmentId, week),
         isVisible: () => document.visibilityState === "visible",

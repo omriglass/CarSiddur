@@ -43,7 +43,7 @@ function truncate(value: string, max: number): string {
  * (stale_version, known P0001 identifiers, constraint/duplicate violations, push setup
  * problems on a device) and is not reported.
  */
-const UNEXPECTED_CODES: ReadonlySet<string> = new Set(["unknown", "network"]);
+const UNEXPECTED_CODES: ReadonlySet<string> = new Set(["unknown", "network", "server_busy"]);
 
 export function isUnexpectedErrorCode(code: string): boolean {
   return UNEXPECTED_CODES.has(code);

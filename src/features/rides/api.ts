@@ -136,17 +136,18 @@ export async function fetchCarNeighbours(rideIds: readonly string[]): Promise<Ca
  */
 export interface ExportLayoutData {
   cars: { id: string; name: string; type: string | null; status?: string | null }[];
+  departmentName: string | null;
   homeDestinationId: string | null;
   boardStartTime: string | null;
 }
 export async function fetchExportLayout(departmentId: string): Promise<ExportLayoutData> {
   const [cars, department, settings] = await Promise.all([
     supabase.from("cars").select("id, name, type, status").eq("department_id", departmentId).order("name"),
-    supabase.from("departments").select("home_destination_id").eq("id", departmentId).maybeSingle(),
+    supabase.from("departments").select("name, home_destination_id").eq("id", departmentId).maybeSingle(),
     supabase.from("department_settings").select("board_start_time").eq("department_id", departmentId).maybeSingle(),
   ]);
   if (cars.error) throw toAppError(cars.error);
   if (department.error) throw toAppError(department.error);
   if (settings.error) throw toAppError(settings.error);
-  return { cars: cars.data ?? [], homeDestinationId: department.data?.home_destination_id ?? null, boardStartTime: settings.data?.board_start_time ?? null };
+  return { cars: cars.data ?? [], departmentName: department.data?.name ?? null, homeDestinationId: department.data?.home_destination_id ?? null, boardStartTime: settings.data?.board_start_time ?? null };
 }

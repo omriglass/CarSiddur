@@ -118,6 +118,15 @@ begin
   delete from public.app_settings where key='housekeeping_last_run';
   perform public.housekeeping(date_trunc('day', now()) + interval '41 days 10 hours');
   assert (select token_hash from public.proposals where id=p1)=hash_before, 'O28-1: a scrambled token is scrambled once';
+
+  -- ===== housekeeping's daily block runs once a day (production 2026-10-29: it ran every tick) =====
+  insert into public.client_errors(message, created_at) values ('old-error-marker', now() - interval '200 days');
+  perform public.housekeeping(date_trunc('day', now()) + interval '41 days 11 hours');
+  assert exists(select 1 from public.client_errors where message='old-error-marker'),
+    'housekeeping: a second tick the same day does not run the daily block again';
+  perform public.housekeeping(date_trunc('day', now()) + interval '42 days 4 hours');
+  assert not exists(select 1 from public.client_errors where message='old-error-marker'),
+    'housekeeping: the next day it runs';
 end $$;
 rollback;
 

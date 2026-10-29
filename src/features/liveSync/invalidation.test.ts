@@ -65,6 +65,12 @@ describe("isWatchedWeekQuery (lean set)", () => {
     expect(isWatchedWeekQuery(sadranKeys.cars(D), D, weeks, "sadran")).toBe(false);
     expect(isWatchedWeekQuery(sadranKeys.departmentSettings(D), D, weeks, "sadran")).toBe(false);
   });
+
+  it("Sadran scope leaves the inputs a week change does not move alone (perf 2026-10-29)", () => {
+    for (const key of [sadranKeys.fairnessStats(D, W, 3), sadranKeys.carStartLocations(D, W), sadranKeys.mileageTotals(D, W), sadranKeys.placeTravel(D, W, "2:x")]) {
+      expect(isWatchedWeekQuery(key, D, weeks, "sadran")).toBe(false);
+    }
+  });
 });
 
 describe("isDepartmentCatalogQuery", () => {

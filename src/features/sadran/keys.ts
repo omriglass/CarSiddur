@@ -30,9 +30,12 @@ export const sadranKeys = {
   /** Root of every `merge_preview` query - `invalidateWeekData` refreshes them all (a ride/request change can change any verdict). */
   mergePreviews: () => [...sadranKeys.all, "mergePreview"] as const,
   mergePreview: (rideId: string, requestId: string, leg: string) => [...sadranKeys.all, "mergePreview", rideId, requestId, leg] as const,
-  /** REQUIREMENTS §13.93 (ORIGINS_PLAN §2 item 6): `place_travel_for_week()`. */
-  placeTravel: (departmentId: string, weekStart: string) =>
-    [...sadranKeys.week(departmentId, weekStart), "placeTravel"] as const,
+  /**
+   * REQUIREMENTS §13.93 (ORIGINS_PLAN §2 item 6): `place_travel_for_week()`. `placesKey` (the board, `weekPlacesKey`) names
+   * the week's place set: a request with a new place makes a new key, so a week change never needs to reload it.
+   */
+  placeTravel: (departmentId: string, weekStart: string, placesKey = "") =>
+    [...sadranKeys.week(departmentId, weekStart), "placeTravel", placesKey] as const,
   /** REQ §13.101 (j): the legs of one multi-day request. */
   seriesLegs: (seriesId: string) => [...sadranKeys.all, "seriesLegs", seriesId] as const,
   rideTypes: () => [...sadranKeys.all, "rideTypes"] as const,

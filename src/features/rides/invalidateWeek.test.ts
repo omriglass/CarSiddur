@@ -6,7 +6,7 @@ import { sadranKeys } from "@/features/sadran/keys";
 import { siddurKeys } from "@/features/siddur/queryKeys";
 
 import * as api from "./api";
-import { invalidateWeekData, isSiddurQueryAffectedByWeek, patchRides } from "./invalidateWeek";
+import { invalidateWeekData, isMergePreviewTouched, isSiddurQueryAffectedByWeek, mergePreviewScope, patchRides } from "./invalidateWeek";
 
 import type { BoardRide } from "./api";
 import { ridesKeys } from "./keys";
@@ -83,17 +83,20 @@ describe("patchRides (O28-8)", () => {
   });
 });
 
-describe("invalidateWeekData skips what only earlier weeks decide (O28-8)", () => {
-  it("leaves fairness and car start places alone and refreshes the rest of the week", async () => {
+describe("invalidateWeekData skips what a change in the week does not move (O28-8, perf 2026-10-29)", () => {
+  it("leaves fairness, car start places, mileage and place travel alone and refreshes the rest of the week", async () => {
     const client = new QueryClient();
-    const fairness = sadranKeys.fairnessStats(DEPT, WEEK, 3);
-    const starts = sadranKeys.carStartLocations(DEPT, WEEK);
-    const mileage = sadranKeys.mileageTotals(DEPT, WEEK);
-    for (const key of [fairness, starts, mileage]) client.setQueryData(key, {});
+    const kept = [
+      sadranKeys.fairnessStats(DEPT, WEEK, 3),
+      sadranKeys.carStartLocations(DEPT, WEEK),
+      sadranKeys.mileageTotals(DEPT, WEEK),
+      sadranKeys.placeTravel(DEPT, WEEK, "3:abc"),
+    ];
+    const proposals = sadranKeys.proposals(DEPT, WEEK);
+    for (const key of [...kept, proposals]) client.setQueryData(key, {});
     await invalidateWeekData(client, DEPT, WEEK);
-    expect(client.getQueryState(fairness)?.isInvalidated).toBe(false);
-    expect(client.getQueryState(starts)?.isInvalidated).toBe(false);
-    expect(client.getQueryState(mileage)?.isInvalidated).toBe(true);
+    for (const key of kept) expect(client.getQueryState(key)?.isInvalidated).toBe(false);
+    expect(client.getQueryState(proposals)?.isInvalidated).toBe(true);
   });
 });
 
@@ -132,5 +135,29 @@ describe("invalidateWeekData with ride ids (O28-8)", () => {
     const fetch = vi.spyOn(api, "fetchWeekRidesSubset");
     await invalidateWeekData(new QueryClient(), DEPT, WEEK, ["a"]);
     expect(fetch).not.toHaveBeenCalled();
+  });
+});
+
+describe("merge previews after a change to known rides (perf 2026-10-29)", () => {
+  const ride = (id: string, car: string, requests: string[] = []) =>
+    ({ id, car_id: car, served: requests.map((request_id) => ({ request_id, role: "passenger", leg: "both" })) }) as unknown as BoardRide;
+  const cached = new Map([ride("r1", "carA", ["q1"]), ride("r2", "carA"), ride("r3", "carB"), ride("r4", "carC")].map((r) => [r.id as string, r]));
+  const preview = (rideId: string, requestId: string) => sadranKeys.mergePreview(rideId, requestId, "both");
+
+  it("reloads the changed ride's previews, its car's (old and new) and its requests'; leaves the rest", () => {
+    // r1 moved from carA to carB.
+    const after = new Map(cached);
+    after.set("r1", ride("r1", "carB", ["q1"]));
+    const scope = mergePreviewScope(["r1"], cached, [after.get("r1") as BoardRide], after);
+    expect(isMergePreviewTouched(preview("r1", "q9"), scope)).toBe(true);
+    expect(isMergePreviewTouched(preview("r2", "q9"), scope)).toBe(true); // old car
+    expect(isMergePreviewTouched(preview("r3", "q9"), scope)).toBe(true); // new car
+    expect(isMergePreviewTouched(preview("r4", "q1"), scope)).toBe(true); // the moved ride's request
+    expect(isMergePreviewTouched(preview("r4", "q9"), scope)).toBe(false);
+  });
+
+  it("reloads a preview whose host ride the cache does not know", () => {
+    const scope = mergePreviewScope(["r1"], cached, [], cached);
+    expect(isMergePreviewTouched(preview("unknown", "q9"), scope)).toBe(true);
   });
 });

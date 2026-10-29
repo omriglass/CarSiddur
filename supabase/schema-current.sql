@@ -9212,7 +9212,9 @@ begin
   perform public.expire_freed_offers(p_now);
 
   v_hour := extract(hour from (p_now at time zone 'Asia/Jerusalem'));
-  select (value ->> 'value')::date into v_last_prune from public.app_settings where key = 'housekeeping_last_run';
+  -- The marker is stored as a bare JSON string ("2026-10-29"); older rows may hold {"value": ...}. Reading only the
+  -- object form made the daily block run on every tick (production 2026-10-29).
+  select coalesce(value ->> 'value', value #>> '{}')::date into v_last_prune from public.app_settings where key = 'housekeeping_last_run';
 
   if v_last_prune is null or v_last_prune < (p_now at time zone 'Asia/Jerusalem')::date then
     perform public.materialize_templates();
