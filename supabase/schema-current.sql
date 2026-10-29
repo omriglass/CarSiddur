@@ -16792,6 +16792,12 @@ begin
     if v_old_notices is not null then
       delete from public.notifications where id=any(v_old_notices);
     end if;
+    -- The ended offers just weighed are now folded into this one, as their notices would have been: the next offer
+    -- is judged by this one alone (20261029102600).
+    update public.proposal_parties pp set offer_notice_opened = null
+    from public.proposals op
+    where op.id=pp.proposal_id and pp.profile_id=v_party.profile_id and pp.offer_notice_opened is not null
+      and op.request_id=v_prop.request_id and op.id<>p_proposal_id;
     v_notification:=public.enqueue_notification(v_party.profile_id,'proposal_received',v_prop.department_id,v_prop.week_start,
       coalesce(v_reader->'vars','{}'::jsonb),
       jsonb_build_object('proposal_id',p_proposal_id,'url','/p/'||(v_party_tokens->>v_party.profile_id::text),'variant',v_reader->>'variant'),
