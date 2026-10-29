@@ -272,7 +272,7 @@ async function applyOutput(board: Board, mode: "remaining" | "full", args: Args)
     return;
   }
   const payload = buildApplyPayload({ output, weekStartMs: context.weekStartMs, policyVersionId: context.policyVersionId, startedAtMs, finishedAtMs,
-    inputHash: hashSolverInput(context.input), requestsById: context.requestsById, mode });
+    inputHash: hashSolverInput(context.input), requestsById: context.requestsById, mode, stateFingerprint: context.stateFingerprint });
   const summary = await api.applySolverResult(board.scope.departmentId, board.scope.weekStart, payload as unknown as Json);
   console.log(`applied (${mode}${day ? ` day ${day}` : ""}): inserted=${summary.inserted} deleted=${summary.deleted} unchanged=${summary.unchanged} unassigned=${summary.unassigned_requests.length}${summary.skippedSeries?.length ? ` skippedSeries=${summary.skippedSeries.length} (${summary.skippedSeries.map((s) => s.reason).join(",")})` : ""}`);
   console.log(`solver: served=${output.stats.served} unmet=${output.stats.unmet} needsDriver=${output.stats.needsDriver} relocations=${output.stats.relocations}${output.stats.budgetExhausted ? " BUDGET-EXHAUSTED" : ""}`);
@@ -728,6 +728,52 @@ async function cmdWithdrawDuplicate(board: Board, args: Args): Promise<void> {
   console.log(`request ${short(request.id)} (${request.requester_full_name ?? "?"}) withdrawn as a duplicate`);
 }
 
+/**
+ * `cancel-ride <ride> [reason] [--close <req>[,<req>...]]` - the board's "בטל נסיעה" (REQ §13.162 a, `sadran_cancel_ride`):
+ * the listed requests are closed ("הנסיעה כבר לא רלוונטית"), every other request on the ride goes back to the waiting list.
+ */
+async function cmdCancelRide(board: Board, args: Args): Promise<void> {
+  const ride = resolveRide(board, need(args.pos[0], "<rideId>"));
+  const served = [...new Set(servedOf(ride).map((entry) => entry.request_id).filter((id): id is string => !!id))];
+  const close = flagAll(args, "close").flatMap((token) => token.split(",")).filter(Boolean).map((token) => resolveId(token, served, "request on this ride"));
+  await api.sadranCancelRide(ride.id as string, args.pos.slice(1).join(" ") || "qa", ride.version ?? 0, close);
+  console.log(`ride ${short(ride.id)} cancelled; closed: ${close.map(short).join(",") || "none"}; back to the waiting list: ${served.filter((id) => !close.includes(id)).map(short).join(",") || "none"}`);
+}
+
+/** `close <req> [reason]` - the unmet card's "הנסיעה כבר לא רלוונטית" (REQ §13.162 b, `close_request`). */
+async function cmdCloseRequest(board: Board, args: Args): Promise<void> {
+  const request = resolveRequest(board, need(args.pos[0], "<requestId>"));
+  await api.closeRequest(request.id, request.version, args.pos.slice(1).join(" "));
+  console.log(`request ${short(request.id)} (${request.requester_full_name ?? "?"}) closed`);
+}
+
+/** `restore <req>` - the change log's "החזר לרשימת ההמתנה" for a closed request (REQ §13.162 d, `restore_closed_request`). */
+async function cmdRestoreClosed(board: Board, args: Args): Promise<void> {
+  const id = resolveId(need(args.pos[0], "<requestId>"), board.requests.map((r) => r.id), "request");
+  const request = board.requests.find((r) => r.id === id)!;
+  await api.restoreClosedRequest(request.id, request.version);
+  console.log(`request ${short(request.id)} back on the waiting list`);
+}
+
+/**
+ * Concurrency QA (`--at HH:MM:SS` local time, or epoch ms; also QA_FIRE_AT): after the board is loaded, wait until
+ * that instant so two Sadrans' commands, started a few seconds apart, reach the database together on the same state.
+ */
+async function waitUntilFireTime(args: Args): Promise<void> {
+  const raw = flag(args, "at") ?? process.env.QA_FIRE_AT;
+  if (!raw) return;
+  let target = Number(raw);
+  if (!/^\d{10,}$/.test(raw)) {
+    const match = /^(\d{1,2}):(\d{2}):(\d{2})$/.exec(raw);
+    if (!match) throw new UsageError("--at HH:MM:SS (local) or epoch ms");
+    target = fromZonedTime(`${dateKey(new Date())}T${match[1].padStart(2, "0")}:${match[2]}:${match[3]}`, TZ).getTime();
+  }
+  const wait = target - Date.now();
+  if (wait < 0) console.log(`(--at: ${-wait} ms late)`);
+  else await new Promise((resolve) => setTimeout(resolve, wait));
+  console.log(`fired at ${new Date().toISOString()}`);
+}
+
 async function cmdAdvanceLive(board: Board): Promise<void> {
   // The cron job (`app.tick()` -> `advance_week_phases`) is not reachable from a browser session, and calling it
   // with a future "now" would also close/archive other departments' and earlier weeks. On the disposable stack the
@@ -751,18 +797,20 @@ function usage(): void {
   edit-route <ride|req> [--origin P] [--dest P] [--stop P]... [--return-stop P]... [--clear-stops] [--draft]
   propose <req> shift [--car C --depart HH:MM --return HH:MM --day D --ride R --no-places] | origin --origin P --car C | deny [--reason T] | external [--hint cab|rental|public_transport|private|waive] [--reason T] | alternative [--car C --depart HH:MM] [--return HH:MM (pickup from the drop-off place only; default pickup + drive)] [--return-car C (pickup car)]  [--draft]  (no --car/--depart = the solver's useAlternative numbers)
   send <proposal> | withdraw <proposal> | discard <proposal> | apply <proposal>
-  unassign <ride> | cancel-ride <ride> [reason] | reserve <car> <day> <HH:MM-HH:MM> <note> | car-move <car> <from> <to> <HH:MM> [--day D] [--minutes N]
+  unassign <ride> | cancel-ride <ride> [reason] [--close <req>,...] | close <req> [reason] | restore <req> | reserve <car> <day> <HH:MM-HH:MM> <note> | car-move <car> <from> <to> <HH:MM> [--day D] [--minutes N]
   message <memberEmail> <text> | messages [--new]
   fewer-days <req> <first-day> <last-day> [--car C] [--draft] | withdraw-duplicate <req>
   assign-driver <ride> <member|none> | add-passengers <ride> <name>[:adult|child_seat|booster]... | contacts [<name>]
   send-held [--days d1,d2]   (the board's "שלח את כל ההצעות" notices part; every command holds its member notices unless --surface none)
-  publish [--days d1,d2] [--allow-unanswered] [--allow-driverless] | advance live`);
+  publish [--days d1,d2] [--allow-unanswered] [--allow-driverless] | advance live
+  any command: --at HH:MM:SS (local) or epoch ms = load the board, then wait until that instant (two Sadrans racing)`);
 }
 
 run(async () => {
   const args = parseArgs(process.argv.slice(process.argv.indexOf("--") + 1 || 2));
   if (args.cmd === "help") { usage(); return; }
   const { board } = await open(args);
+  await waitUntilFireTime(args);
   switch (args.cmd) {
     case "week": return cmdWeek(board);
     case "day": return cmdDay(board, need(args.pos[0], "<yyyy-mm-dd>"));
@@ -782,7 +830,9 @@ run(async () => {
     case "discard": { await api.discardProposal(resolveId(need(args.pos[0], "<proposalId>"), board.proposals.map((p) => p.id), "proposal")); console.log("discarded"); return; }
     case "apply": return cmdApply(args, board);
     case "unassign": { const r = resolveRide(board, need(args.pos[0], "<rideId>")); await api.unassignRide(r.id as string, r.version ?? 0); console.log(`ride ${short(r.id)} unassigned; its requests are unmet again`); return; }
-    case "cancel-ride": { const r = resolveRide(board, need(args.pos[0], "<rideId>")); await api.sadranCancelRide(r.id as string, args.pos.slice(1).join(" ") || "qa", r.version ?? 0, []); console.log(`ride ${short(r.id)} cancelled`); return; }
+    case "cancel-ride": return cmdCancelRide(board, args);
+    case "close": return cmdCloseRequest(board, args);
+    case "restore": return cmdRestoreClosed(board, args);
     case "reserve": return cmdReserve(board, args);
     case "car-move": return cmdCarMove(board, args);
     case "assign-driver": return cmdAssignDriver(board, args);
