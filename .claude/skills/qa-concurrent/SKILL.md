@@ -38,7 +38,7 @@ Relay messages between agents only when one is waiting on the other (SendMessage
 
 ## Step 5 — Lead race rounds (while the agents work, or after)
 Run synchronized pairs with `scripts/qa/race.mjs` (both sides load their board, then fire at the same instant). Prefer a **separate department** on the same stack (e.g. the one `npm run qa:regression` leaves behind, with its own second Sadran) so the races do not confuse the agents; use the QA week only for the opening and closing races. Useful pairs (ids are the CLI's 8-character suffixes):
-- move vs unassign of one ride; two placements of one request on two cars (`--force` on both so the server decides); two different requests onto one free car slot (expected today: the second is stored as a planning conflict — the board's CONFLICT, blocking publication — check its toast and the board say so);
+- move vs unassign of one ride; two placements of one request on two cars (`--force` on both so the server decides); two different requests onto one free car slot (expected: one placed, the other refused with the overlap message — never a silent planning conflict, REQ §13.164 a);
 - close vs place of one waiting request; `cancel-ride --close` vs merge onto that ride; trip-type change vs place;
 - the same proposal sent / discarded / agreed by both; `send-held` by both; `publish --days d` by both (one publishes; the other refused by the fingerprint or finds it published).
 Judge each: exactly one outcome applied, the other refused with a sensible message, nothing half-applied.

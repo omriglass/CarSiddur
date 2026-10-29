@@ -615,7 +615,8 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
         destination_id: placement.destinationId,
         driver_id: placement.driverIsRequester ? req.requester_id : null,
         needs_driver: !placement.driverIsRequester,
-        allow_conflict: true,
+        // RC1B1: no `allow_conflict` - the board refused an overlap above, so a collision the server finds (its own
+        // widening of a chauffeur leg, or another Sadran's write a moment ago) is refused, never saved as a conflict.
         is_pinned: true,
         pin_reason: "SADRAN_MANUAL",
         served: [{ request_id: req.id, ...placement.served }],
@@ -843,7 +844,8 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
         starts_at: newStartsAt,
         ends_at: newEndsAt,
         is_pinned: true,
-        allow_conflict: true,
+        // RC1B1: a planning conflict only where the board saw the collision; any other collision is refused.
+        allow_conflict: hasCollision,
         pin_reason: prevInput.pin_reason ?? "SADRAN_MANUAL",
         ...(allowSmallTrunk ? { allow_small_trunk: true } : {}),
       };

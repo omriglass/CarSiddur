@@ -623,6 +623,27 @@ begin
   pv:=public.merge_preview(rA,g1,'both');
   assert pv->>'code'='seats', format('driver + 5 guests do not fit, got %s',pv);
   update public.requests set adults=1 where id=g1;
+  -- RC1B5 (QA concurrency run 1): accepted, then the seats ran out before it applied - withdrawn with seat wording for
+  -- the members who accepted and the Sadranim, and the Sadran who SENT it (here the admin, not this week's Sadran) is told.
+  perform set_config('request.jwt.claims',jsonb_build_object('sub','00000000-0000-0000-0000-000000000101','role','authenticated')::text,true);
+  perform public.send_proposal(prop,'{}');
+  perform set_config('request.jwt.claims',jsonb_build_object('sub',manager,'role','authenticated')::text,true);
+  perform public.record_answer_on_behalf(prop,m2,true);
+  -- meanwhile another merge filled the car: 1 driver + 4 = 5 seats, no room left for this guest
+  insert into public.requests(department_id,week_start,requester_id,filed_by,origin_id,destination_id,ride_type_id,depart_at,return_at,trip_shape,status,adults)
+    values(dept,w,'00000000-0000-0000-0000-000000000101',manager,home,haifa,typ,d0,d0+interval '4 hours','round_trip','merged',4) returning id into g3;
+  insert into public.ride_requests(ride_id,request_id,role,leg,car_mode) values(rA,g3,'passenger','both','passenger');
+  perform public.record_answer_on_behalf(prop,m1,true);
+  assert (select status from public.proposals where id=prop)='withdrawn', 'a merge that no longer seats everyone is withdrawn';
+  assert exists(select 1 from public.notifications n where n.recipient_id='00000000-0000-0000-0000-000000000101'
+    and n.data->>'proposal_id'=prop::text and n.data->>'variant'='withdrawn_seats'), 'the sending Sadran is told: no seats';
+  assert exists(select 1 from public.notifications n where n.recipient_id=manager
+    and n.data->>'proposal_id'=prop::text and n.data->>'variant'='withdrawn_seats'), 'the week''s Sadran is told: no seats';
+  assert (select body_he like '%מקומות%' and body_he not like '%אחרי שינויים%' and body_he not like '%{{%' from public.notifications n
+    where n.recipient_id=m2 and n.data->>'proposal_id'=prop::text and n.data->>'variant'='proposal_withdrawn_seats'),
+    'the member who accepted reads the seat reason';
+  delete from public.ride_requests where request_id=g3;
+  delete from public.requests where id=g3;
 
   -- R6B10: the joiner's return is the ARRIVAL at their origin (the alight time), not the time they leave the destination.
   insert into public.requests(department_id,week_start,requester_id,filed_by,origin_id,destination_id,ride_type_id,depart_at,return_at,trip_shape,status)

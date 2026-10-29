@@ -8872,7 +8872,12 @@ begin
       if not public._held_views_equal(v_first.before_view, v_now) then
         for v_row in
           select distinct on (event, coalesce(data ->> 'variant', '')) * from public.held_notices
-          where id = any(g.ids) order by event, coalesce(data ->> 'variant', ''), seq desc
+          where id = any(g.ids)
+            -- RC1B9: a request closed since the change was held (external accepted, withdrawn, cancelled) gets only
+            -- the notice that closed it - never an older "your trip type changed" after "your request was closed".
+            and (coalesce(v_now ->> 'status', '') not in ('external', 'withdrawn', 'cancelled')
+                 or coalesce(data ->> 'variant', '') in ('request_closed', 'request_closed_plain', 'external_accepted', 'duplicate_withdrawn'))
+          order by event, coalesce(data ->> 'variant', ''), seq desc
         loop
           perform public._send_held(v_row);
           v_sent := v_sent + 1;
@@ -9092,6 +9097,8 @@ CREATE OR REPLACE FUNCTION "public"."freed_slot_candidates"("_offer" "uuid") RET
         and tstzrange(b.starts_at, b.ends_at, '[)') && tstzrange(q.depart_at,
           q.return_at + make_interval(mins => coalesce(public.required_turnaround_minutes(o.department_id, o.week_start), 30)), '[)'))
   where o.id = _offer and o.status = 'open'
+    -- RC1B3: the people a Sadran cancelled this ride on and kept on the waiting list are not offered its own car
+    and q.id <> all(o.excluded_request_ids)
     and cr.origin_id = cr.destination_id
     and public.car_fits(o.car_id, q.adults, q.child_seats, q.boosters)
     and public.car_takes_luggage(o.car_id, case when q.has_luggage and q.luggage_waived_at is null then 1 else 0 end)
@@ -12884,6 +12891,9 @@ CREATE OR REPLACE FUNCTION "public"."proposal_system_withdraw"("p_proposal_id" "
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
 declare v_p public.proposals%rowtype; v_to uuid; v_sadranim uuid[]; v_rv jsonb;
+  -- RC1B5: an offer withdrawn for lack of seats says so (members and Sadranim), not "after changes in the siddur".
+  v_seats boolean := p_variant = 'withdrawn_stale'
+    and coalesce(p_reason, '') in ('seat_config_violation', 'ride_seats_exceeded', 'passenger_names_exceed_seats');
 begin
   select * into v_p from public.proposals where id = p_proposal_id for update;
   if not found or v_p.status not in ('sent','accepted') then return; end if;
@@ -12904,17 +12914,18 @@ begin
       perform public.enqueue_notification(v_to, 'outcome_changed', v_p.department_id, v_p.week_start,
         jsonb_build_object('route', coalesce(v_rv->'vars'->>'route', ''), 'day', coalesce(v_rv->'vars'->>'day', '')),
         jsonb_build_object('variant', case when p_variant = 'withdrawn_dependency' then 'proposal_withdrawn_dependency'
-          else 'proposal_withdrawn_stale' end, 'proposal_id', v_p.id, 'request_id', v_p.request_id),
+          when v_seats then 'proposal_withdrawn_seats' else 'proposal_withdrawn_stale' end, 'proposal_id', v_p.id, 'request_id', v_p.request_id),
         format('proposal_withdrawn_member:%s:%s', v_p.id, v_to));
     end loop;
   end if;
   for v_to in
     select x from (select v_p.created_by as x where v_p.created_by is not null and v_p.created_via = 'sadran'
+                   union select v_p.sent_by where v_p.sent_by is not null and v_p.created_via = 'sadran'   -- RC1B5
                    union select unnest(v_sadranim)) y
     where x is not null
   loop
     perform public.enqueue_notification(v_to, 'proposal_answered', v_p.department_id, v_p.week_start,
-      '{}'::jsonb, jsonb_build_object('variant', p_variant, 'proposal_id', v_p.id, 'request_id', v_p.request_id)
+      '{}'::jsonb, jsonb_build_object('variant', case when v_seats then 'withdrawn_seats' else p_variant end, 'proposal_id', v_p.id, 'request_id', v_p.request_id)
         || case when p_reason is null then '{}'::jsonb else jsonb_build_object('reason', p_reason) end,
       format('proposal_withdrawn:%s:%s', v_p.id, v_to));
   end loop;
@@ -13560,6 +13571,27 @@ begin
           nullif(line_place,'')
         ) as request_line
       from scoped s
+    ), extra_rides as (
+      -- RC1B7 (owner 2026-10-29): a newly published ride the member is on without a request of their own on it -
+      -- driving it for someone else, or a companion named on a request it serves - is one of "your rides" too
+      -- (my-rides lists it). The line is the ride's line as its served request reads it.
+      select distinct on (p.pid, x.id) p.pid as requester_id, p.request_id,
+        (x.starts_at at time zone 'Asia/Jerusalem')::date as request_day, x.starts_at as line_start,
+        public._publish_ride_line(p.request_id, x.id) as line
+      from public.rides x
+      cross join lateral (
+        select x.driver_id as pid, rr.request_id from public.ride_requests rr where rr.ride_id = x.id
+        union all
+        select rc.profile_id, rr.request_id from public.ride_requests rr
+        join public.request_companions rc on rc.request_id = rr.request_id where rr.ride_id = x.id
+      ) p
+      where x.department_id = p_department_id and x.week_start = p_week_start and x.status <> 'cancelled'
+        and (x.starts_at at time zone 'Asia/Jerusalem')::date = any(v_days)
+        and (v_prev is null or not coalesce((x.starts_at at time zone 'Asia/Jerusalem')::date = any(v_prior_days), false))
+        and p.pid is not null
+        and not exists (select 1 from public.ride_requests rr2 join public.requests q2 on q2.id = rr2.request_id
+                        where rr2.ride_id = x.id and q2.requester_id = p.pid)
+      order by p.pid, x.id, p.request_id
     ), pub_ride_lines as (
       -- R5U4: one line per ride the member is on (a pickup is its own ride and its own line); a request with
       -- no live ride keeps its single requested-time line. Rides outside the published days are not listed.
@@ -13580,12 +13612,15 @@ begin
       where c.event_kind = 'published' and (c.status = 'waitlisted' or c.offer_lapses)
         and not exists (select 1 from public.ride_requests rr join public.rides x on x.id = rr.ride_id
                         where rr.request_id = c.id and x.status <> 'cancelled')
+      union all
+      select e.requester_id, e.request_id, e.request_day, e.line_start, e.line from extra_rides e
     ), days_agg as (
       select requester_id, event_kind, string_agg(public.day_date_label(request_day), ', ' order by request_day) as days_list,
         array_agg(request_day order by request_day) as days_arr
       from (select distinct c.requester_id, c.event_kind, c.request_day from classified c where c.event_kind is not null
         and (c.event_kind <> 'published' or c.status = 'waitlisted' or c.offer_lapses or exists (select 1 from public.ride_requests rr join public.rides x on x.id = rr.ride_id
-                where rr.request_id = c.id and x.status <> 'cancelled'))) d
+                where rr.request_id = c.id and x.status <> 'cancelled'))
+        union select e.requester_id, 'published', e.request_day from extra_rides e) d
       group by requester_id, event_kind
     ), chg_lines as (
       select rc.requester_id, rc.request_id, rc.request_day,
@@ -16405,7 +16440,7 @@ declare
   r public.rides%rowtype; v_actor uuid := (select auth.uid()); v_by text;
   v_reason text := nullif(btrim(coalesce(p_reason, '')), '');
   v_rides uuid[]; v_served uuid[]; v_close uuid[]; v_keep uuid[]; v_closed uuid[] := '{}'; v_id uuid;
-  v_is_relay boolean; v_who record; v_car record;
+  v_is_relay boolean; v_who record; v_car record; v_offer uuid;
   v_prev_notify text := coalesce(nullif(current_setting('app.notify_now', true), ''), 'off');
   v_prev_sys text := coalesce(current_setting('app.system_status_transition', true), 'off');
 begin
@@ -16497,7 +16532,12 @@ begin
     perform public.flag_car_chain_breaks(v_car.car_id, v_car.week_start);
   end loop;
   if r.series_id is null and not v_is_relay then
-    perform public._offer_freed_slot(r.id);
+    v_offer := public._offer_freed_slot(r.id);
+    -- RC1B3 (owner 2026-10-29): "keep on the waiting list" means the Sadran took them off this car - its freed
+    -- car is offered to everyone else waiting (pg_net sends the offer only after this transaction commits).
+    if v_offer is not null and cardinality(v_keep) > 0 then
+      update public.freed_slot_offers set excluded_request_ids = v_keep where id = v_offer;
+    end if;
   end if;
 
   perform set_config('app.notify_now', v_prev_notify, true);
@@ -16985,6 +17025,7 @@ declare
   v_party record;
   v_reader jsonb; v_check jsonb; v_h record; v_leg_txt text; v_ext boolean := false;
   v_old_notices uuid[]; v_quiet boolean; v_notification uuid; v_ended_quiet boolean;
+  v_to uuid; v_by text;
 begin
   select request_id into v_request_id from public.proposals where id=p_proposal_id;
   if v_request_id is null then raise exception 'proposal_not_found'; end if;
@@ -17071,10 +17112,25 @@ begin
     -- whose draft may have been created while the request was already proposed.
     update public.proposals set status=case when v_ext then 'withdrawn' else 'expired' end::public.proposal_status where id=v_previous.id;
     v_request.status:=v_previous.previous_status;
+    -- RC1B4: two Sadranim on one week - whoever created or sent the replaced offer is told who replaced it (the
+    -- replacing Sadran is not told about their own change).
+    if v_previous.created_via = 'sadran' then
+      select full_name into v_by from public.profiles where id = (select auth.uid());
+      for v_to in
+        select distinct x from (values (v_previous.created_by), (v_previous.sent_by)) s(x)
+        where x is not null and x is distinct from (select auth.uid())
+      loop
+        perform public.enqueue_notification(v_to, 'proposal_answered', v_prop.department_id, v_prop.week_start,
+          jsonb_build_object('byName', coalesce(v_by, '')),
+          jsonb_build_object('variant', 'replaced_by_other', 'proposal_id', v_previous.id, 'request_id', v_request_id),
+          format('proposal_replaced:%s:%s', v_previous.id, v_to));
+      end loop;
+    end if;
   end if;
   v_proposal_token:=public.generate_token();
   update public.proposals set previous_status=v_request.status,
-    token_hash=encode(digest(v_proposal_token,'sha256'),'hex'),status='sent',sent_at=now(),sent_via=p_sent_via
+    token_hash=encode(digest(v_proposal_token,'sha256'),'hex'),status='sent',sent_at=now(),sent_via=p_sent_via,
+    sent_by=(select auth.uid())
     where id=p_proposal_id;
   perform set_config('app.system_status_transition','off',true);
   for v_party in select id,profile_id from public.proposal_parties where proposal_id=p_proposal_id order by id for update loop
@@ -22184,6 +22240,7 @@ CREATE TABLE IF NOT EXISTS "public"."freed_slot_offers" (
     "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
     "group_id" "uuid",
     "close_reason" "text",
+    "excluded_request_ids" "uuid"[] DEFAULT '{}'::"uuid"[] NOT NULL,
     CONSTRAINT "freed_slot_offers_order_ck" CHECK (("ends_at" > "starts_at"))
 );
 
@@ -22191,6 +22248,10 @@ ALTER TABLE ONLY "public"."freed_slot_offers" FORCE ROW LEVEL SECURITY;
 
 
 ALTER TABLE "public"."freed_slot_offers" OWNER TO "postgres";
+
+
+COMMENT ON COLUMN "public"."freed_slot_offers"."excluded_request_ids" IS 'Requests never offered this freed car: the people the Sadran cancelled the ride on and kept on the waiting list (sadran_cancel_ride).';
+
 
 
 ALTER TABLE "public"."held_notices" ALTER COLUMN "seq" ADD GENERATED ALWAYS AS IDENTITY (
@@ -22445,6 +22506,7 @@ CREATE TABLE IF NOT EXISTS "public"."proposals" (
     "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
     "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
     "waiting_for" "uuid"[] DEFAULT '{}'::"uuid"[] NOT NULL,
+    "sent_by" "uuid",
     CONSTRAINT "proposals_created_via_ck" CHECK (("created_via" = ANY (ARRAY['sadran'::"text", 'ask_to_join'::"text"]))),
     CONSTRAINT "proposals_payload_shape_ck" CHECK ("public"."validate_proposal_payload"("type", "payload"))
 );
@@ -22456,6 +22518,10 @@ ALTER TABLE "public"."proposals" OWNER TO "postgres";
 
 
 COMMENT ON COLUMN "public"."proposals"."waiting_for" IS 'REQ §13.138 (f): an accepted proposal that cannot apply until these pending proposals apply (empty = not waiting).';
+
+
+
+COMMENT ON COLUMN "public"."proposals"."sent_by" IS 'Who sent the proposal (send_proposal); told when it is replaced or withdrawn.';
 
 
 
@@ -24389,6 +24455,10 @@ CREATE INDEX "proposals_request_status_idx" ON "public"."proposals" USING "btree
 
 
 CREATE INDEX "proposals_ride_id_idx" ON "public"."proposals" USING "btree" ("ride_id") WHERE ("ride_id" IS NOT NULL);
+
+
+
+CREATE INDEX "proposals_sent_by_idx" ON "public"."proposals" USING "btree" ("sent_by") WHERE ("sent_by" IS NOT NULL);
 
 
 
@@ -26493,6 +26563,11 @@ ALTER TABLE ONLY "public"."proposals"
 
 ALTER TABLE ONLY "public"."proposals"
     ADD CONSTRAINT "proposals_ride_id_fkey" FOREIGN KEY ("ride_id") REFERENCES "public"."rides"("id");
+
+
+
+ALTER TABLE ONLY "public"."proposals"
+    ADD CONSTRAINT "proposals_sent_by_fkey" FOREIGN KEY ("sent_by") REFERENCES "public"."profiles"("id") ON DELETE SET NULL;
 
 
 

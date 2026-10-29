@@ -1,5 +1,5 @@
 import { fetchDepartments } from "@/features/siddur/api";
-import { AppError } from "@/lib/rpc";
+import { AppError, toAppError } from "@/lib/rpc";
 import { he } from "@/i18n/he";
 import type { Json } from "@/integrations/supabase/types";
 import { fetchActivePolicy, fetchPolicyOptions, fetchPublishFingerprint, publishSiddur, type PublicationOptions } from "../api";
@@ -33,6 +33,13 @@ export async function publishWithScores(departmentId: string, weekStart: string,
   const activeScores = activePolicy
     ? policyScores.find((p) => p.policy_version_id === activePolicy.policyVersionId)?.profiles ?? []
     : [];
-  if (before !== await fetchPublishFingerprint(departmentId, weekStart)) throw new AppError("stale_input", he.errors.staleInput);
-  return publishSiddur(departmentId, weekStart, activeScores as unknown as Json, before, policyScores as unknown as Json, options);
+  // RC1U3: a week that changed under the publish (another Sadran published or edited it) says so, not "re-run the solver".
+  const stale = () => new AppError("stale_input", he.errors.publishStale);
+  if (before !== await fetchPublishFingerprint(departmentId, weekStart)) throw stale();
+  try {
+    return await publishSiddur(departmentId, weekStart, activeScores as unknown as Json, before, policyScores as unknown as Json, options);
+  } catch (error) {
+    if (toAppError(error).code === "stale_input") throw stale();
+    throw error;
+  }
 }

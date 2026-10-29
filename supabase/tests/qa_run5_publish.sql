@@ -66,8 +66,10 @@ declare dept uuid:='00000000-0000-0000-0000-000000000001'; w date:=public.curren
 begin
   select n.body_he,n.title_he into body,title from public.notifications n where n.recipient_id=m1 and n.event='published' and n.week_start=w;
   assert body is not null, 'no published notice for m1';
-  -- R10B4: only the two placed rides are "your rides"; a request with no live ride (denied here) is not listed
-  assert array_length(string_to_array(body,chr(10)),1)=2, 'm1 notice should list exactly 2 rides, got: '||body;
+  -- R10B4: a request with no live ride (denied here) is not listed; m1's two placed rides are, and (RC1B7, owner
+  -- 2026-10-29) so is m2's Thursday pickup, which m1 drives
+  assert array_length(string_to_array(body,chr(10)),1)=3, 'm1 notice should list exactly 3 rides, got: '||body;
+  assert body like '%'||public.day_date_label(w+4)||'%', 'the ride m1 drives for m2 is listed: '||body;
   assert body not like '%ברשימת המתנה%', 'a denied request must not read as waitlisted: '||body;
   assert title like '%'||public.day_date_label(w+1)||'%', 'title lacks the weekday date: '||title;
   select n.body_he into body from public.notifications n where n.recipient_id=m2 and n.event='published' and n.week_start=w;

@@ -88,6 +88,15 @@ export function unmetRequestViews(
       if (!covered.return && !legShown("return")) views.push({ request: legView(request, "return"), leg: "return" });
       continue;
     }
+    // RC1B2 (QA concurrency run 1): a round trip placed or merged on one leg only (an "out only" merge) still needs its
+    // other leg - that leg is an unmet card of its own instead of disappearing from the list. Its virtual view is a
+    // הקפצה leg, so placing it books that leg alone (a chauffeur leg, or a merge onto a ride's leg), never the whole trip.
+    if (PARTLY_PLACED_STATUSES.has(request.status) && request.depart_at && request.return_at) {
+      const covered = coveredLegs(rides, request.id);
+      const missing: UnmetLeg | null = covered.out && !covered.return ? "return" : covered.return && !covered.out ? "out" : null;
+      if (missing && !legShown(missing)) views.push({ request: { ...legView(request, missing), trip_type: "drop_off" }, leg: missing });
+      continue;
+    }
     if (isUnmetStatus(request.status) && !opts.awaitingDriverRequestIds.has(request.id) && !shown?.size) views.push({ request });
   }
   return views;

@@ -179,6 +179,8 @@ test.describe.serial("board (bug-fix pass regression, fake-week data)", { tag: [
       .eq("department_id", NEVO_DEPARTMENT_ID)
       .eq("week_start", weekStart)
       .eq("trip_shape", "round_trip")
+      // a הקפצה with a pickup is stored round-trip-shaped but shows as two one-leg cards (REQ §13.94 G4)
+      .neq("trip_type", "drop_off")
       .in("status", ["submitted", "waitlisted", "proposed", "denied"])
       .not("depart_at", "is", null)
       .not("return_at", "is", null);

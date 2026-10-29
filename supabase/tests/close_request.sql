@@ -90,11 +90,17 @@ begin
                  where x.recipient_id=m2 and x.data->>'variant'='request_closed' and o.status='pending'), '(a) a push is queued for the closed member';
   assert exists (select 1 from public.audit_log a where a.table_name='requests' and a.row_id=q2::text and a.reason='found another car'
                  and a.after->>'status_reason'='CLOSED_BY_SADRAN' and a.before->>'status'<>'cancelled'), '(a) the closing audit row carries the reason';
-  -- the freed car is offered to the kept request, never to the closed one
+  -- RC1B3 (owner 2026-10-29): the freed car goes to the others waiting - never back to the request the Sadran just
+  -- took off it and kept on the waiting list, never to the closed one
   select id into offer from public.freed_slot_offers where cancelled_ride_id=rA;
   assert offer is not null, '(a) the cancelled ride frees its slot';
-  assert exists (select 1 from public.freed_slot_candidates(offer) c where c.request_id=q1), '(a) the kept request is a freed-car candidate';
+  assert (select excluded_request_ids from public.freed_slot_offers where id=offer) = array[q1], '(a) the offer records the kept request';
+  insert into public.requests(department_id,week_start,requester_id,filed_by,destination_id,ride_type_id,depart_at,return_at,trip_shape,status)
+    values(dept,w,admin_id,admin_id,dest,typ,dt,dt+interval '4 hours','round_trip','waitlisted') returning id into q3;
+  assert not exists (select 1 from public.freed_slot_candidates(offer) c where c.request_id=q1), '(a) the kept request is not offered its own freed car';
+  assert exists (select 1 from public.freed_slot_candidates(offer) c where c.request_id=q3), '(a) another waiting request is offered the freed car';
   assert not exists (select 1 from public.freed_slot_candidates(offer) c where c.request_id=q2), '(a) the closed request is never a freed-car candidate';
+  update public.requests set status='cancelled' where id=q3;
 
   -- ===== (b) close from the unmet card; it leaves its contested group ==========================================
   insert into public.requests(department_id,week_start,requester_id,filed_by,destination_id,ride_type_id,depart_at,return_at,trip_shape,status,status_reason)

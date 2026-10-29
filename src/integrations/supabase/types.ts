@@ -1566,6 +1566,7 @@ export type Database = {
           created_at: string
           department_id: string
           ends_at: string
+          excluded_request_ids: string[]
           expires_at: string
           group_id: string | null
           id: string
@@ -1583,6 +1584,7 @@ export type Database = {
           created_at?: string
           department_id: string
           ends_at: string
+          excluded_request_ids?: string[]
           expires_at: string
           group_id?: string | null
           id?: string
@@ -1600,6 +1602,7 @@ export type Database = {
           created_at?: string
           department_id?: string
           ends_at?: string
+          excluded_request_ids?: string[]
           expires_at?: string
           group_id?: string | null
           id?: string
@@ -2376,6 +2379,7 @@ export type Database = {
           request_id: string
           ride_id: string | null
           sent_at: string | null
+          sent_by: string | null
           sent_via: Database["public"]["Enums"]["notification_channel"][]
           status: Database["public"]["Enums"]["proposal_status"]
           token_hash: string
@@ -2404,6 +2408,7 @@ export type Database = {
           request_id: string
           ride_id?: string | null
           sent_at?: string | null
+          sent_by?: string | null
           sent_via?: Database["public"]["Enums"]["notification_channel"][]
           status?: Database["public"]["Enums"]["proposal_status"]
           token_hash: string
@@ -2432,6 +2437,7 @@ export type Database = {
           request_id?: string
           ride_id?: string | null
           sent_at?: string | null
+          sent_by?: string | null
           sent_via?: Database["public"]["Enums"]["notification_channel"][]
           status?: Database["public"]["Enums"]["proposal_status"]
           token_hash?: string
@@ -2567,6 +2573,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "v_ride_car_neighbours"
             referencedColumns: ["ride_id"]
+          },
+          {
+            foreignKeyName: "proposals_sent_by_fkey"
+            columns: ["sent_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
           },
           {
             foreignKeyName: "proposals_week_fk"

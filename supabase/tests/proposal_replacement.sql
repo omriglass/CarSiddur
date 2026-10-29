@@ -59,6 +59,9 @@ begin
   assert not exists(select 1 from public.notifications where data->>'proposal_id'=new_id::text),'failed send leaked notification';
   new_tokens:=public.send_proposal(new_id,'{}',old_id,old_version);
   assert (select status='expired' from public.proposals where id=old_id),'explicit replacement did not expire old offer';
+  -- RC1B4: the sender is recorded; replacing one's own offer tells nobody about the replacement
+  assert (select sent_by=manager from public.proposals where id=new_id),'send_proposal records the sender';
+  assert not exists(select 1 from public.notifications where data->>'variant'='replaced_by_other'),'own replacement is quiet';
   assert (select status='sent' and previous_status='submitted' from public.proposals where id=new_id),'replacement lost original previous status';
   assert (select count(*)=1 from public.proposals where request_id=req and status='sent'),'replacement violated single sent offer';
   begin perform public.answer_proposal(old_tokens->'party_tokens'->>member::text,true);raise exception 'expired party token approved';
@@ -82,6 +85,25 @@ begin
   begin perform public.send_proposal(next_id,'{}',old_id,old_version);raise exception 'accepted offer replaced';
   exception when sqlstate 'P0409' then null;end;
   assert (select status in ('accepted','applied') from public.proposals where id=old_id),'accepted offer overwritten';
+
+  -- RC1B4 (QA concurrency run 1): a second Sadran (here the admin) replaces the first Sadran's sent offer - the first
+  -- Sadran is told, once, by name; the replacing one is not told about their own change.
+  insert into public.requests(department_id,week_start,requester_id,filed_by,destination_id,ride_type_id,depart_at,return_at,status)
+    values(dept,w,other_member,other_member,'00000000-0000-0000-0000-000000000011','00000000-0000-0000-0000-000000000021',
+      ((w+2)+time '08:00') at time zone 'Asia/Jerusalem',((w+2)+time '10:00') at time zone 'Asia/Jerusalem','submitted') returning id into req;
+  perform set_config('request.jwt.claims',jsonb_build_object('sub',manager,'role','authenticated')::text,true);
+  old_id:=public.create_proposal(req,null,'deny',payload,'First Sadran offer');
+  perform public.send_proposal(old_id);
+  select version into old_version from public.proposals where id=old_id;
+  perform set_config('request.jwt.claims',jsonb_build_object('sub','00000000-0000-0000-0000-000000000101','role','authenticated')::text,true);
+  new_id:=public.create_proposal(req,null,'deny',payload,'Second Sadran offer');
+  perform public.send_proposal(new_id,'{}',old_id,old_version);
+  assert (select count(*) from public.notifications where recipient_id=manager and event='proposal_answered'
+          and data->>'variant'='replaced_by_other' and data->>'proposal_id'=old_id::text)=1, 'the first Sadran is told their offer was replaced';
+  assert (select title_he not like '%{{%' and body_he not like '%{{%' and body_he like '%' || (select full_name from public.profiles where id='00000000-0000-0000-0000-000000000101') || '%'
+          from public.notifications where recipient_id=manager and data->>'variant'='replaced_by_other'), 'the notice names who replaced it, fully rendered';
+  assert not exists(select 1 from public.notifications where recipient_id='00000000-0000-0000-0000-000000000101' and data->>'variant'='replaced_by_other'),
+    'the replacing Sadran is not told';
 end $$;
 set constraints all immediate;
 rollback;

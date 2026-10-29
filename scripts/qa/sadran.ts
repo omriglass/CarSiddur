@@ -325,7 +325,7 @@ async function cmdPlace(board: Board, args: Args): Promise<void> {
   const rideId = await api.editRide({
     department_id: board.scope.departmentId, week_start: board.scope.weekStart, car_id: car.id, starts_at: window.startsAt, ends_at: window.endsAt,
     origin_id: placement.originId, destination_id: placement.destinationId, driver_id: placement.driverIsRequester ? req.requester_id : null,
-    needs_driver: !placement.driverIsRequester, allow_conflict: true, is_pinned: true, pin_reason: "SADRAN_MANUAL",
+    needs_driver: !placement.driverIsRequester, is_pinned: true, pin_reason: "SADRAN_MANUAL",
     served: [{ request_id: req.id, ...placement.served }],
   });
   // R14B7: the drop snaps to the request's own time when within 15 minutes of it - say so.
@@ -366,7 +366,7 @@ async function cmdMove(board: Board, args: Args): Promise<void> {
   await api.editRide({
     id: ride.id, department_id: board.scope.departmentId, week_start: board.scope.weekStart, car_id: carId, starts_at: newStartsAt, ends_at: newEndsAt,
     origin_id: ride.origin_id, destination_id: ride.destination_id, driver_id: ride.driver_id, needs_driver: !!ride.needs_driver, notes: ride.notes ?? undefined,
-    is_pinned: true, allow_conflict: true, pin_reason: ride.pin_reason ?? "SADRAN_MANUAL", served: servedToEditRideLegs(served),
+    is_pinned: true, allow_conflict: collision, pin_reason: ride.pin_reason ?? "SADRAN_MANUAL", served: servedToEditRideLegs(served),
   }, ride.version ?? undefined);
   console.log(`moved ride ${short(ride.id)} to ${board.carName(carId)} ${t(newStartsAt)}-${t(newEndsAt)}${collision ? " (OVERLAPS another ride: planning conflict flagged)" : ""}`);
 }

@@ -45,6 +45,21 @@ describe("unmetRequestViews", () => {
     expect(unmetRequestViews([request({ trip_type: "round_trip" })], [], none)).toHaveLength(1);
   });
 
+  it("RC1B2: a round trip merged on one leg only shows its other leg as a card; both legs covered -> nothing", () => {
+    const roundTrip = request({ trip_type: "round_trip", status: "merged" });
+    const outOnly = unmetRequestViews([roundTrip], [ride("out")], none);
+    expect(outOnly.map(unmetItemKey)).toEqual(["r1:return"]);
+    expect(outOnly[0]!.request.trip_shape).toBe("one_way_from");
+    expect(outOnly[0]!.request.trip_type).toBe("drop_off");   // placed as that leg alone, never the whole round trip
+    expect(unmetRequestViews([roundTrip], [ride("return")], none).map((v) => v.leg)).toEqual(["out"]);
+    expect(unmetRequestViews([roundTrip], [ride("both")], none)).toEqual([]);
+    expect(unmetRequestViews([roundTrip], [ride("out"), ride("return", { id: "ride2" })], none)).toEqual([]);
+    // the missing leg already shown on the board as a sent merge: not listed twice
+    expect(unmetRequestViews([roundTrip], [ride("out")], { ...none, boardShownLegs: new Map([["r1", new Set(["return" as const])]]) })).toEqual([]);
+    // a one-way request has no second leg to miss
+    expect(unmetRequestViews([request({ trip_type: "one_way", trip_shape: "one_way_to", return_at: null, status: "assigned" })], [ride("out")], none)).toEqual([]);
+  });
+
   it("skips draft-placed requests and keeps a denied drop-off as one card", () => {
     expect(unmetRequestViews([request()], [], { ...none, draftPlacedRequestIds: new Set(["r1"]) })).toEqual([]);
     expect(unmetRequestViews([request({ status: "denied" })], [], none)).toHaveLength(1);

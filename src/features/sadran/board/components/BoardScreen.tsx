@@ -838,7 +838,7 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
                 destination_id: selectedRide.destination_id,
                 driver_id: selectedRide.driver_id,
                 needs_driver: !!selectedRide.needs_driver,
-                allow_conflict: true,
+                allow_conflict: hasCollision,
                 notes: selectedRide.notes,
                 // REQUIREMENTS §13.93: the day-end rule/overnight acknowledgement are retired —
                 // `edit_ride` no longer needs this field (the DB column is deprecated, not

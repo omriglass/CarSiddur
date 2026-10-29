@@ -189,6 +189,8 @@ const SQLSTATE_TO_CODE: Record<string, ErrorCode> = {
   "40P01": "server_busy",
   "40001": "server_busy",
   "55P03": "server_busy",
+  // A ride overlapping another on the car (the `rides_no_overlap_per_car` exclusion constraint; RC1B1).
+  "23P01": "ride_unavailable",
   P0409: "stale_version",
   P0410: "car_chain_broken",
   P0411: "car_away_at_day_end",

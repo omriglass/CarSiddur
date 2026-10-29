@@ -22,13 +22,15 @@ test("weekly member manages only their assigned board while permanent Sadran ret
   if (loginError) throw loginError;
   const week = WEEK;
   const otherWeek = await getWeekStart("live");
+  // Every week-scoped table, children first; a failed delete throws. (It used to ignore errors and never deleted the
+  // auto-fill's `solver_runs` row, so the week survived and the next run on the same database failed at its insert.)
   async function cleanupWeek() {
-    await database.from("proposals").delete().eq("department_id", NEVO_DEPARTMENT_ID).eq("week_start", week);
-    await database.from("notifications").delete().eq("department_id", NEVO_DEPARTMENT_ID).eq("week_start", week);
-    await database.from("rides").delete().eq("department_id", NEVO_DEPARTMENT_ID).eq("week_start", week);
-    await database.from("requests").delete().eq("department_id", NEVO_DEPARTMENT_ID).eq("week_start", week);
-    await database.from("sadran_assignments").delete().eq("department_id", NEVO_DEPARTMENT_ID).eq("week_start", week);
-    await database.from("weeks").delete().eq("department_id", NEVO_DEPARTMENT_ID).eq("week_start", week);
+    for (const table of ["held_notices", "unsent_change_reminders", "notifications", "proposals", "ride_change_requests",
+      "freed_slot_offers", "waitlist_group_members", "waitlist_groups", "ride_passengers", "rides", "request_alternatives",
+      "requests", "solver_runs", "week_stats", "sadran_assignments", "weeks"] as const) {
+      const { error } = await database.from(table).delete().eq("department_id", NEVO_DEPARTMENT_ID).eq("week_start", week);
+      if (error) throw new Error(`cleanup ${table}: ${error.message}`);
+    }
   }
   await cleanupWeek();
   const at = (daysBefore: number) => new Date(Date.parse(`${week}T00:00:00Z`) - daysBefore * 86400000).toISOString();

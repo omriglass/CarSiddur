@@ -20,6 +20,7 @@ vi.mock("../api", () => ({
 vi.mock("../applySolve", () => ({ gatherSolverContext: mocks.gatherSolverContext, servedOf: vi.fn() }));
 
 import { publishWithScores } from "./publishWithScores";
+import { he } from "@/i18n/he";
 
 describe("publishWithScores", () => {
   beforeEach(() => {
@@ -62,5 +63,19 @@ describe("publishWithScores", () => {
     expect(policyScoresArg[0].policy_id).toBe("good");
     expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("bad"), expect.any(Error));
     errorSpy.mockRestore();
+  });
+
+  it("RC1U3: a week changed under the publish (another Sadran) gets the publish wording, not the solver's", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    mocks.gatherSolverContext.mockRejectedValue(new Error("not scored"));
+    // the server refuses: the other Sadran published a moment ago
+    mocks.publishSiddur.mockRejectedValue({ code: "P0409", message: "stale_input" });
+    await expect(publishWithScores("dept", "2026-09-13")).rejects.toMatchObject({ code: "stale_input", message: he.errors.publishStale });
+    // the client's own before/after check
+    mocks.publishSiddur.mockResolvedValue("published-version");
+    mocks.fetchPublishFingerprint.mockResolvedValueOnce("before").mockResolvedValueOnce("after");
+    await expect(publishWithScores("dept", "2026-09-13")).rejects.toMatchObject({ code: "stale_input", message: he.errors.publishStale });
+    expect(mocks.publishSiddur).toHaveBeenCalledTimes(1);
+    vi.restoreAllMocks();
   });
 });

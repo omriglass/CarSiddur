@@ -135,4 +135,47 @@ begin
   assert (select count(*) from public.push_outbox o join public.notifications nn on nn.id=o.notification_id
           where nn.recipient_id=m2 and nn.week_start=w and nn.event='published' and nn.read_at is null)=1, 'the new notice pushes once';
 end $$;
+
+-- RC1B7 (QA concurrency run 1, owner 2026-10-29): a ride the member drives for someone else, and one they ride on as a
+-- companion of someone else's request, are lines of their one publish notice (another week, its own fixtures).
+reset role;
+do $$
+declare dept uuid:='00000000-0000-0000-0000-000000000001'; manager uuid:='00000000-0000-0000-0000-000000000102';
+  admin_id uuid:='00000000-0000-0000-0000-000000000101';
+  m1 uuid:='00000000-0000-0000-0000-000000000103'; m2 uuid:='00000000-0000-0000-0000-000000000104';
+  home uuid:='00000000-0000-0000-0000-000000000010'; dest uuid:='00000000-0000-0000-0000-000000000011';
+  typ uuid:='00000000-0000-0000-0000-000000000021'; car uuid:='00000000-0000-0000-0000-000000000041';
+  w date:=public.current_week_start()+245; dt timestamptz; q uuid; r uuid;
+begin
+  insert into public.weeks(department_id,week_start,phase,open_at,close_at,publish_at)
+    values(dept,w,'open',now()-interval '1 day',now()+interval '1 day',now()+interval '2 days');
+  dt:=((w+1)+time '12:00') at time zone 'Asia/Jerusalem';
+  insert into public.requests(department_id,week_start,requester_id,filed_by,destination_id,origin_id,ride_type_id,trip_shape,trip_type,depart_at,return_at,status,adults)
+    values(dept,w,admin_id,admin_id,dest,home,typ,'round_trip','round_trip',dt,dt+interval '2 hours','assigned',2) returning id into q;
+  insert into public.request_companions(request_id,profile_id) values(q,m2);
+  insert into public.rides(department_id,week_start,car_id,starts_at,ends_at,origin_id,destination_id,driver_id,status,created_by)
+    values(dept,w,car,dt,dt+interval '2 hours',home,home,m1,'draft',manager) returning id into r;
+  insert into public.ride_requests(ride_id,request_id,role,leg,car_mode) values(r,q,'passenger','both','passenger');
+end $$;
+set constraints all immediate;
+set constraints all deferred;
+set local role authenticated;
+do $$
+declare dept uuid:='00000000-0000-0000-0000-000000000001'; w date:=public.current_week_start()+245;
+begin
+  perform public.publish_siddur(dept,w,'[]'::jsonb,public.publish_scores_fingerprint(dept,w),'[]'::jsonb,array[w+1],true);
+end $$;
+reset role;
+do $$
+declare w date:=public.current_week_start()+245; who uuid;
+begin
+  foreach who in array array['00000000-0000-0000-0000-000000000103','00000000-0000-0000-0000-000000000104']::uuid[] loop
+    assert (select count(*) from public.notifications where recipient_id=who and week_start=w and event='published')=1,
+      format('RC1B7: %s gets one publish notice for the ride they are on without a request of their own', who);
+    assert (select jsonb_array_length(data->'pub_items')=1 and body_he like '%12:00%' and body_he not like '%{{%'
+            from public.notifications where recipient_id=who and week_start=w and event='published'),
+      format('RC1B7: the notice of %s lists that ride', who);
+  end loop;
+  raise notice 'publish_one_notice.sql (driving / companion rides): all assertions passed';
+end $$;
 rollback;

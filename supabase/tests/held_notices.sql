@@ -325,4 +325,64 @@ begin
   end loop;
   raise notice 'held_notices.sql (live cancellation): all assertions passed';
 end $$;
+
+-- RC1B9 (QA concurrency run 1): a request change held on the board, then the request is closed (external accepted
+-- through the link, told at once): "send all" drops the stale held notice; the closing notice itself, and a held change
+-- on a request still open, are sent.
+do $$
+declare
+  dept uuid := '00000000-0000-0000-0000-000000000001';
+  manager uuid := '00000000-0000-0000-0000-000000000102';
+  member uuid := '00000000-0000-0000-0000-000000000103';
+  other uuid := '00000000-0000-0000-0000-000000000104';
+  dest uuid := '00000000-0000-0000-0000-000000000011';
+  typ uuid := '00000000-0000-0000-0000-000000000021';
+  w date := public.current_week_start() + 203;
+  d1 date := w + 1; t1 timestamptz; pub uuid; q1 uuid; q2 uuid; res int;
+begin
+  t1 := (d1 + time '08:00') at time zone 'Asia/Jerusalem';
+  insert into public.weeks(department_id, week_start, phase, open_at, close_at, publish_at)
+    values (dept, w, 'open', now() - interval '2 days', now() + interval '1 day', now() + interval '2 days');
+  insert into public.siddur_versions(department_id, week_start, snapshot, published_by) values (dept, w, '{}', manager) returning id into pub;
+  perform set_config('app.in_publish', 'on', true);
+  update public.weeks set phase = 'published', published_version_id = pub, published_at = now(), published_days = array[d1]
+    where department_id = dept and week_start = w;
+  perform set_config('app.in_publish', 'off', true);
+  insert into public.requests(department_id, week_start, requester_id, filed_by, destination_id, ride_type_id, depart_at, return_at, trip_shape, status)
+    values (dept, w, member, member, dest, typ, t1, t1 + interval '3 hours', 'round_trip', 'waitlisted') returning id into q1;
+  insert into public.requests(department_id, week_start, requester_id, filed_by, destination_id, ride_type_id, depart_at, return_at, trip_shape, status)
+    values (dept, w, other, other, dest, typ, t1, t1 + interval '3 hours', 'round_trip', 'waitlisted') returning id into q2;
+  perform set_config('request.jwt.claims', jsonb_build_object('sub', manager, 'role', 'authenticated')::text, true);
+  perform set_config('request.headers', '{"x-app-surface":"board"}', true);
+
+  -- both requests changed on the board: held
+  perform set_config('app.held_audit_floor', (select max(id) from public.audit_log)::text, true);
+  update public.requests set depart_at = t1 + interval '15 minutes' where id in (q1, q2);
+  perform public.enqueue_notification(member, 'outcome_changed', dept, w, '{}'::jsonb,
+    jsonb_build_object('variant', 'trip_type_changed', 'request_id', q1), 'rc1b9-q1');
+  perform public.enqueue_notification(other, 'outcome_changed', dept, w, '{}'::jsonb,
+    jsonb_build_object('variant', 'trip_type_changed', 'request_id', q2), 'rc1b9-q2');
+  assert (select count(*) from public.held_notices where week_start = w) = 2, 'both changes held';
+
+  -- q1 is closed in the meantime (the member accepted "I'll manage" through the link: told at once, not held)
+  perform set_config('request.headers', '', true);
+  update public.requests set status = 'external' where id = q1;
+  perform set_config('request.headers', '{"x-app-surface":"board"}', true);
+
+  res := public.flush_held_notices(dept, w, null);
+  assert not exists (select 1 from public.notifications where dedupe_key = 'rc1b9-q1'), 'a stale change notice reached a closed request';
+  assert exists (select 1 from public.notifications where dedupe_key = 'rc1b9-q2'), 'the change on the open request was sent';
+  assert not exists (select 1 from public.held_notices where week_start = w), 'flush left rows';
+
+  -- a closure made on the board is itself held - and sent, even though the request is closed by then
+  perform set_config('app.held_audit_floor', (select max(id) from public.audit_log)::text, true);
+  update public.requests set status = 'cancelled', status_reason = 'CLOSED_BY_SADRAN' where id = q2;
+  perform public.enqueue_notification(other, 'outcome_changed', dept, w, '{}'::jsonb,
+    jsonb_build_object('variant', 'request_closed_plain', 'request_id', q2), 'rc1b9-q2-closed');
+  assert exists (select 1 from public.held_notices where week_start = w and data->>'variant' = 'request_closed_plain'), 'closure held';
+  res := public.flush_held_notices(dept, w, null);
+  assert exists (select 1 from public.notifications where dedupe_key = 'rc1b9-q2-closed'), 'the held closing notice was sent';
+  perform set_config('request.headers', '', true);
+  raise notice 'held_notices.sql (closed requests): all assertions passed';
+end $$;
 rollback;

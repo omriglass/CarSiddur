@@ -689,6 +689,8 @@ export const he = {
     reservationSelfOnly: "טיוטת בקשה היא תמיד בשמך",
     staleVersion: "מישהו אחר שינה את זה בינתיים — טען/י את הגרסה החדשה ונסה/י שוב",
     staleInput: "הבקשות או הנסיעות השתנו מאז הרצת הפתרון — יש להריץ את הפתרון מחדש",
+    // RC1U3: publishing refused because the week changed meanwhile (often: another Sadran published or edited it).
+    publishStale: "השבוע השתנה בזמן הפרסום (אולי סדרן/ית אחר/ת פרסם/ה או ערך/ה אותו) — בדקו את הלוח ונסו לפרסם שוב",
     notAuthorized: "אין לך הרשאה לבצע פעולה זו",
     publicationDrafts: "לא ניתן לפרסם — בימים שנבחרו יש טיוטות הצעה שלא נשלחו. יש לשלוח או למחוק אותן בלוח.",
     publicationHeldNotices: "לא ניתן לפרסם — בימים שנבחרו יש שינויים מהלוח שעוד לא נשלחו. שלחו אותם (\"שלח את כל ההצעות\" בתפריט ⋮ שבלוח).",

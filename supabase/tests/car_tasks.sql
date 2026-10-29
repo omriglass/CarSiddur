@@ -159,7 +159,11 @@ begin
   insert into public.weeks(department_id, week_start, phase, open_at, close_at, publish_at)
     values (dept, wk, 'solving', now() - interval '9 days', now() - interval '8 days', now() - interval '7 days')
     on conflict do nothing;
-  r_now := pg_temp.ride(dept, wk, car2, date_trunc('hour', now()) - interval '1 hour', date_trunc('hour', now()) + interval '2 hours', plain);
+  -- around now, but inside today's date: rides are cut at 23:59 (rides_at_day_end), so a ride from 23:00 yesterday
+  -- ended before "now" when the suite ran just after midnight
+  r_now := pg_temp.ride(dept, wk, car2,
+    greatest(date_trunc('hour', now()) - interval '1 hour', ((now() at time zone 'Asia/Jerusalem')::date)::timestamp at time zone 'Asia/Jerusalem'),
+    least(date_trunc('hour', now()) + interval '2 hours', ((now() at time zone 'Asia/Jerusalem')::date + time '23:59') at time zone 'Asia/Jerusalem'), plain);
   perform pg_temp.as_user(car_admin);
   perform public.request_car_tasks(car2, array['other', 'wash']::public.car_task_kind[], 'לנעול את תא הכפפות');
   select id into t_other from public.car_tasks where car_id = car2 and kind = 'other';
