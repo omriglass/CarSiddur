@@ -51,6 +51,8 @@ async function dragChipToUnmet(page: Page, requestId: string) {
   await page.mouse.down();
   await page.mouse.move(target.x + target.width / 2, target.y + 40, { steps: 12 });
   await page.mouse.up();
+  // REQ §13.161 (c): taking a guest out of a merged ride asks "לפצל את הנסיעה?" first.
+  await page.getByRole("button", { name: he.dropAsk.split.confirm, exact: true }).click();
 }
 
 const WEEK = "2042-01-19";
@@ -192,6 +194,7 @@ test("the sheet button \"הוצא מהנסיעה\" remains the fallback (phone l
     const sheet = page.getByRole("dialog");
     await expect(sheet.getByTestId("ride-added-person")).toHaveCount(1);
     await sheet.getByTestId("ride-added-person").getByRole("button").click();
+    await page.getByRole("button", { name: he.dropAsk.split.confirm, exact: true }).click();
     await expect(sheet).not.toBeVisible();
 
     // `unmerge_request`: the guest's request is submitted again and listed as unmet.

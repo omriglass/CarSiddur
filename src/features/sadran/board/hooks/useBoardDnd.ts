@@ -51,6 +51,7 @@ import {
 } from "../dropValidity";
 import type { UnmetListItem } from "../components/UnmetList";
 import { isoToDayMinutes, slotToIso, wouldOverlap } from "../geometry";
+import { guestDropQuestion, rideDropAsksMerge, splitOutcome, type DropAnswer, type DropAsk, type DropAskSpec } from "../dropQuestions";
 import { planBSwitchPrefill } from "../planBSwitch";
 import { seriesSpanSuggestionPrefill } from "../seriesSpan";
 import { buildDisplacementSteps, checklistRideIds, isDisplacementSuggestion, type ChecklistStep, type DisplacementSuggestion } from "../displacementChecklist";
@@ -97,7 +98,24 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
   // Swap cars on a day by dragging car names (REQ §13.92, owner batch 2026-09-24 S1) — the
   // Sadran is allowed on any non-archived day (planning, no notifications).
   const [carSwapPair, setCarSwapPair] = useState<{ carA: string; carB: string } | null>(null);
-  const [mergePrefill, setMergePrefill] = useState<ComposerPrefill | null>(null);
+  const [mergePrefill, setMergePrefillState] = useState<ComposerPrefill | null>(null);
+  // REQ §13.161 (c): a guest moved to another ride is taken out of the old one only after the merge popup is
+  // confirmed (agree / draft / compose); closing the popup any other way drops the intent and changes nothing.
+  const [pendingSplit, setPendingSplit] = useState<{ rideId: string; requestId: string; name: string } | null>(null);
+  const splitIntent = useRef<{ rideId: string; requestId: string; name: string } | null>(null);
+  /** The open "לאחד / לפצל / להעביר / להוציא?" question (REQ §13.161 c). */
+  const [dropAsk, setDropAsk] = useState<DropAsk | null>(null);
+  function setMergePrefill(value: ComposerPrefill | null) {
+    if (!value) setPendingSplit(null);
+    setMergePrefillState(value);
+  }
+  function askDrop(spec: DropAskSpec): Promise<DropAnswer> {
+    return new Promise<DropAnswer>((resolve) => setDropAsk({ ...spec, resolve }));
+  }
+  function answerDropAsk(answer: DropAnswer) {
+    dropAsk?.resolve(answer);
+    setDropAsk(null);
+  }
   // REQ §13.138 (a): every board popup that leads to the composer first asks "דיברת עם X על השינוי?" —
   // agreed (apply now), draft (store unsent, stay on the board) or send now (open the composer).
   const [composeChoice, setComposeChoice] = useState<ComposerPrefill | null>(null);
@@ -253,7 +271,7 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
 
   /** REQ §13.94 (G10): the popup's "הלוך בלבד" / "הלוך וחזור" choice rewrites the merge payload's leg. */
   function setMergeLeg(leg: MergeLeg) {
-    setMergePrefill((prev) => {
+    setMergePrefillState((prev) => {
       if (!prev?.rideId) return prev;
       // R3B11: a split merge (legs on two rides) keeps the other ride's leg; only the dropped-on ride's leg changes.
       const legs = mergePayloadLegs(prev.payload);
@@ -282,7 +300,8 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
       payload = mergePayloadFromLegs(combined.legs);
       draftNote = combined.replaced ? "replaces" : "extends";
     }
-    setMergePrefill({ requestId, rideId: payload.ride_id as string, type: "merge", payload, anchorLeg, draftNote, legRideId: hostRideId });
+    setPendingSplit(splitIntent.current);
+    setMergePrefillState({ requestId, rideId: payload.ride_id as string, type: "merge", payload, anchorLeg, draftNote, legRideId: hostRideId });
   }
 
   /**
@@ -325,20 +344,69 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
     } catch { /* toast shown by the mutation */ return false; }
   }
 
+  /** Names for the questions: a ride's driver (else its first requester), and its car. */
+  function rideTitleName(ride: BoardRide | undefined): string {
+    if (!ride) return "";
+    return ride.driver_name ?? servedOf(ride).find((entry) => entry.role === "driver")?.requester ?? servedOf(ride)[0]?.requester ?? "";
+  }
+  const carNameOf = (carId: string | null | undefined) => carsData.find((c) => c.id === carId)?.name ?? "";
+
   /**
-   * REQ §13.94 (G10): a guest chip was dragged off a merged block. Dropped on the unmet list / a
-   * phantom lane: unmerge only. Dropped on a car (or onto another ride): unmerge first, then the
-   * ordinary unmet placement / merge path for that request at the drop point.
+   * REQ §13.161 (c): "לפצל את הנסיעה?" - asked before any way of taking a guest out of a merged ride (chip drag, the
+   * sheet's "הוצא"); only a confirmed answer runs `removeAddedPerson`.
+   */
+  async function askAndRemoveAddedPerson(rideId: string, requestId: string, name: string): Promise<boolean> {
+    const ride = rides.find((r) => r.id === rideId);
+    const baseEntry = ride ? (servedOf(ride).find((entry) => entry.role === "driver") ?? servedOf(ride)[0]) : undefined;
+    const baseRequest = baseEntry ? requestsData.find((r) => r.id === baseEntry.request_id) : undefined;
+    const outcome = ride?.starts_at && ride.ends_at ? splitOutcome({ starts_at: ride.starts_at, ends_at: ride.ends_at }, baseRequest) : null;
+    const answer = await askDrop({ kind: "split", guest: name, host: rideTitleName(ride), outcome });
+    if (answer !== "yes") return false;
+    return removeAddedPerson(rideId, requestId, name);
+  }
+
+  /** Runs `next` once the merge popup is confirmed: first the pending split (a guest moved from another ride), if any. */
+  async function afterSplit(next: () => void | Promise<void>) {
+    if (pendingSplit) {
+      const removed = await removeAddedPerson(pendingSplit.rideId, pendingSplit.requestId, pendingSplit.name);
+      if (!removed) return;
+      setPendingSplit(null);
+    }
+    await next();
+  }
+
+  /**
+   * REQ §13.94 (G10) / §13.161 (c): a guest chip was dragged off a merged block. Dropped on another ride: one question
+   * ("להעביר את X לנסיעה של Y?"), then the merge popup, and the split runs only when that popup is confirmed.
+   * Dropped anywhere else: "לפצל את הנסיעה?" first; on the unmet list that is all, on a car the ordinary unmet
+   * placement path follows.
    */
   async function handleGuestDrop(guest: { requestId: string; rideId: string; name: string }, target: GuestDropTarget) {
     setGuestHover(null);
-    const removed = await removeAddedPerson(guest.rideId, guest.requestId, guest.name);
-    if (!removed || target.kind === "unmet") return;
     const request = board.boardRequests.find((r) => r.id === guest.requestId);
-    if (!request) return;
     const servedLeg = rides.flatMap((ride) => servedOf(ride)).find((entry) => entry.request_id === guest.requestId)?.leg;
-    const view = isDropOffWithPickup(request) && (servedLeg === "out" || servedLeg === "return") ? legView(request, servedLeg) : request;
-    await handlePlaceUnmetRequest({ request: view, leg: undefined, destinationName: request.destination_resolved_name ?? "—" }, target.carId, target.minutes, target.hostRideId);
+    const placeItem = (): UnmetListItem | null => {
+      if (!request) return null;
+      const view = isDropOffWithPickup(request) && (servedLeg === "out" || servedLeg === "return") ? legView(request, servedLeg) : request;
+      return { request: view, leg: undefined, destinationName: request.destination_resolved_name ?? "—" };
+    };
+    const targetHostId = target.kind === "car" ? target.hostRideId : undefined;
+    const targetHost = targetHostId ? rides.find((r) => r.id === targetHostId && r.status !== "cancelled") : undefined;
+    const fromRide = rides.find((r) => r.id === guest.rideId);
+    if (target.kind === "car" && targetHost && guestDropQuestion({ guestRideId: guest.rideId, hostRideId: targetHostId, hostIsLiveRide: true }) === "transfer") {
+      const answer = await askDrop({ kind: "transfer", guest: guest.name, host: rideTitleName(targetHost), from: rideTitleName(fromRide), car: carNameOf(targetHost.car_id) });
+      if (answer !== "yes") return;
+      const item = placeItem();
+      if (!item) return;
+      splitIntent.current = { rideId: guest.rideId, requestId: guest.requestId, name: guest.name };
+      try { await handlePlaceUnmetRequest(item, target.carId, target.minutes, target.hostRideId); } finally { splitIntent.current = null; }
+      return;
+    }
+    const removed = await askAndRemoveAddedPerson(guest.rideId, guest.requestId, guest.name);
+    if (!removed || target.kind === "unmet") return;
+    const item = placeItem();
+    if (!item) return;
+    await handlePlaceUnmetRequest(item, target.carId, target.minutes, target.hostRideId);
   }
 
   /**
@@ -555,14 +623,15 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
       };
       let placedRideId = await editRideMutation.mutateAsync({ input: placeInput, departmentId, weekStart });
       // R2B7: undo works after a drop from the unmet list - it takes the placed ride back out (the request returns to the list).
-      undoStack.push({
+      const undoEntry = {
         label: req.requester_full_name ?? placedRideId,
         run: async () => {
           const expectedVersion = await fetchRideVersion(placedRideId);
           await unassignRideMutation.mutateAsync({ rideId: placedRideId, expectedVersion, departmentId, weekStart });
         },
         redo: async () => { placedRideId = await editRideMutation.mutateAsync({ input: placeInput, departmentId, weekStart }); },
-      });
+      };
+      undoStack.push(undoEntry);
       const carName = carsData.find((c) => c.id === carId)?.name ?? "";
       const placedAt = placedStartVersusDrop(dropCtx, window, minutes);
       // R14B7: say so when the ride starts at another time than the drop (snapped to the requested time).
@@ -570,7 +639,10 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
         ? placedAt.moved
           ? tv("sadranBoard.dragPlacedMovedToast", { car: carName, start: formatMinutes(placedAt.startMinutes), asked: formatMinutes(minutes) })
           : tv("sadranBoard.dragPlacedToast", { car: carName, start: formatMinutes(minutes) })
-        : connects ? he.connectedPair.saved : he.boardCoordination.standaloneSaved);
+        : connects ? he.connectedPair.saved : he.boardCoordination.standaloneSaved,
+      // REQ §13.161 (c): joining a הקפצה's second leg onto the first leg's car keeps its toast and adds an undo - the same
+      // reverse as the board's undo button (takes the placed ride out; the request returns to the list).
+      connects ? { action: { label: he.common.cancel, onClick: () => { void undoStack.undoEntry(undoEntry).then((result) => { if (result) toast.success(tv("sadranBoard.undoToast", { label: result.label })); }).catch(() => undefined); } } } : undefined);
       // REQ §13.126 g (owner 2026-10-11): a kept-car trip's two legs go together — placing one leg also tries the other leg
       // on the same car at its own time (the server then connects them; a misfit is reported like any drop).
       const twin = !chainedLeg ? keepCarTwinLeg(item) : null;
@@ -630,7 +702,39 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
     setSelectedRideId(id);
   }
 
-  async function handleRideDrop(rideId: string, carId: string, startMinutes: number, droppedOnRideId?: string, resizedEndMinutes?: number) {
+  /**
+   * A ride's request(s) dropped onto `hostId`: the same path as dropping its unmet card - the server's `merge_preview`
+   * decides which leg is allowed (its refusal is shown as a toast), then the merge popup opens.
+   */
+  async function attemptRideMerge(ride: BoardRide, hostId: string) {
+    const driverEntry = servedOf(ride).find((s) => s.role === "driver") ?? servedOf(ride)[0];
+    if (!driverEntry?.request_id) return;
+    const host = rides.find((candidate) => candidate.id === hostId);
+    if (!host?.starts_at || !host.ends_at) return;
+    if (!host.driver_id || host.needs_driver) { toast.error(he.boardCoordination.mergeNeedsDriver); return; }
+    const guestRequest = requestsData.find((r) => r.id === driverEntry.request_id);
+    const invalidMerge = guestRequest ? mergeRefusalReason(dropCtx, host, guestRequest, driverEntry.leg ?? "both", [ride.id as string]) : null;
+    if (invalidMerge === "private_car") { toast.error(he.mergedRide.invalid[invalidMerge]); return; }
+    let openLeg: MergeLeg = driverEntry.leg ?? "both";
+    let openAnchor: "out" | "return" | null = driverEntry.leg === "return" ? "return" : driverEntry.leg === "out" ? "out" : null;
+    if (invalidMerge && guestRequest) {
+      const chosen = await serverMergeLeg(hostId, guestRequest, openLeg, openAnchor);
+      if (!chosen) return;
+      openLeg = chosen.leg; openAnchor = chosen.anchor;
+    }
+    openMerge(driverEntry.request_id, hostId, openLeg, openAnchor);
+  }
+
+  /** Dropping a ride on the unmet list / a phantom lane removes its assignment: REQ §13.161 (c) asks first. */
+  async function handleDropUnassign(rideId: string) {
+    const ride = rides.find((r) => r.id === rideId);
+    const name = ride ? (servedOf(ride).find((entry) => entry.role === "driver")?.requester ?? servedOf(ride)[0]?.requester ?? ride.driver_name ?? "") : "";
+    const answer = await askDrop({ kind: "unplace", name });
+    if (answer === "yes") await handleUnassignRide(rideId);
+  }
+
+  async function handleRideDrop(rideId: string, carId: string, startMinutes: number, droppedOnRideId?: string, resizedEndMinutes?: number, skipMergeAsk = false) {
+    const originalRideId = rideId;
     const planningChange = (board.rideChangesQuery.data ?? []).find((change) => change.is_planning && `change:${change.id}` === rideId);
     if (planningChange) {
       if (carId.startsWith("phantom:")) { await cancelRideChangeMutation.mutateAsync(planningChange.id); return; }
@@ -642,7 +746,7 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
       if (item) await handlePlaceUnmetRequest(item, carId, startMinutes, droppedOnRideId);
       return;
     }
-    if (carId.startsWith("phantom:")) { await handleUnassignRide(rideId); return; }
+    if (carId.startsWith("phantom:")) { await handleDropUnassign(rideId); return; }
     const ride = rides.find((r) => r.id === rideId);
     if (!ride?.id || !ride.starts_at || !ride.ends_at || !ride.car_id || !ride.origin_id || !ride.destination_id) return;
 
@@ -654,23 +758,21 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
     // R3B2: a needs-driver ride dropped on another ride is always a merge attempt (the host may itself
     // need a driver: refused below), never a plain move.
     if (ride.needs_driver && droppedOnRideId && droppedOnRideId !== rideId && rides.some((other) => other.id === droppedOnRideId && other.car_id === carId)) {
-      const driverEntry = servedOf(ride).find((s) => s.role === "driver") ?? servedOf(ride)[0];
-      if (driverEntry?.request_id) {
-        const host = rides.find((candidate) => candidate.id === droppedOnRideId);
-        if (!host?.starts_at || !host.ends_at) return;
-        if (!host.driver_id || host.needs_driver) { toast.error(he.boardCoordination.mergeNeedsDriver); return; }
-        const guestRequest = requestsData.find((r) => r.id === driverEntry.request_id);
-        const invalidMerge = guestRequest ? mergeRefusalReason(dropCtx, host, guestRequest, driverEntry.leg ?? "both", [ride.id]) : null;
-        if (invalidMerge === "private_car") { toast.error(he.mergedRide.invalid[invalidMerge]); return; }
-        let openLeg: MergeLeg = driverEntry.leg ?? "both";
-        let openAnchor: "out" | "return" | null = driverEntry.leg === "return" ? "return" : driverEntry.leg === "out" ? "out" : null;
-        if (invalidMerge && guestRequest) {
-          const chosen = await serverMergeLeg(droppedOnRideId, guestRequest, openLeg, openAnchor);
-          if (!chosen) return;
-          openLeg = chosen.leg; openAnchor = chosen.anchor;
-        }
-        openMerge(driverEntry.request_id, droppedOnRideId, openLeg, openAnchor);
-      }
+      await attemptRideMerge(ride, droppedOnRideId);
+      return;
+    }
+    // REQ §13.161 (c): a ride WITH a driver dropped on another ride asks first - merge (the same path as dropping its
+    // request), just move here (an overlap, as before) or cancel. A drop on empty space stays a plain move.
+    const askedHost = droppedOnRideId ? rides.find((candidate) => candidate.id === droppedOnRideId) : undefined;
+    if (!skipMergeAsk && rideDropAsksMerge({
+      ride, host: askedHost, droppedOnRideId, carId,
+      draggedServesRequest: !!(servedOf(ride).find((s) => s.role === "driver") ?? servedOf(ride)[0])?.request_id,
+      hostIsReservation: !!askedHost && isReservation(askedHost),
+      isPlanningChange: !!planningChange,
+    }) && askedHost) {
+      const answer = await askDrop({ kind: "merge", guest: rideTitleName(ride), host: rideTitleName(askedHost), car: carNameOf(askedHost.car_id) });
+      if (answer === "yes") await attemptRideMerge(ride, askedHost.id as string);
+      else if (answer === "alt") await handleRideDrop(originalRideId, carId, startMinutes, droppedOnRideId, resizedEndMinutes, true);
       return;
     }
 
@@ -1051,6 +1153,11 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
     proposalActionPending: agreeOfflineMutation.isPending || discardProposalMutation.isPending || withdrawProposalMutation.isPending || unmergeRequestMutation.isPending,
     handlePlaceUnmetRequest,
     handleUnassignRide,
+    handleDropUnassign,
+    askAndRemoveAddedPerson,
+    afterSplit,
+    dropAsk,
+    answerDropAsk,
     handleRideClick,
     handleRideDrop,
     handleRideResize,

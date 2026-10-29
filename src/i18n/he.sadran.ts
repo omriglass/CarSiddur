@@ -83,7 +83,7 @@ export const heSadran = {
     needsDriverHelp: "הנסיעה משובצת וממתינה לנהג/ת. חבר/ה יכול/ה לקבל את הנהיגה דרך הסידור.",
     tight: "סידור צפוף",
     tightHelp: "זמן המעבר בין הנסיעות קצר מהמרווח הרגיל. השיבוץ נשמר באישור הסדרן/ית.",
-    mergeTitle: "שילוב הנסיעות ואישור הנוסעים/ות",
+    mergeTitle: "לאחד את הנסיעות?",
     mergeHelp: "מקום העלייה של הנוסע/ת נוסף למסלול הנסיעה. הנסיעה עשויה לצאת מוקדם יותר או להסתיים מאוחר יותר בהתאם לנסיעה הנוספת. השילוב יוחל רק לאחר אישור הצדדים.",
     expandedWindow: "טווח הנסיעה המשולבת",
     standaloneSaved: "הבקשה שובצה — חסר/ה נהג/ת",
@@ -737,6 +737,11 @@ export const heSadran = {
     dragChip: "גררו אל רשימת הלא-משובצים או אל רכב אחר כדי להוציא מהנסיעה",
     removeAria: "הוצא/י את {{name}} מהנסיעה",
     removed: "{{name}} הוצא/ה מהנסיעה — הבקשה חזרה לרשימה",
+    /** REQ §13.161 (c): the merge popup's one result block. */
+    resultHeading: "התוצאה",
+    resultCar: "{{car}} · {{driver}} נוהג/ת",
+    resultPickup: "{{place}} (איסוף {{name}})",
+    resultWho: "{{name}}:",
     /** REQ §13.95 (H1): a merge is refused - toast text. */
     invalid: {
       boards_at_end: "אי אפשר לצרף — האיסוף אחרי היעד של הנסיעה",
@@ -784,6 +789,38 @@ export const heSadran = {
     marker: "מחובר",
     driver: "הנהיגה: {{name}}",
     saved: "שתי הנסיעות חוברו — המבקש/ת נוהג/ת בשתיהן והרכב ממתין ביעד",
+  },
+  /** REQ §13.161 (c), docs/UX_FLOWS.md "Board drag questions": merge and split ask in words first. */
+  dropAsk: {
+    merge: {
+      title: "לאחד את הנסיעות?",
+      body: "{{guest}} שוחרר/ה על הנסיעה של {{host}} ({{car}}).",
+      yes: "לאחד",
+      yesHelp: "נסיעה אחת ב-{{car}}: {{host}} נוהג/ת, {{guest}} נוסע/ת. הרכב של {{guest}} מתפנה.",
+      moveOnly: "רק להזיז לכאן (חפיפה)",
+      moveHelp: "שתי נסיעות על {{car}} באותן שעות — חפיפה.",
+    },
+    split: {
+      title: "לפצל את הנסיעה?",
+      body: "{{guest}} תצא מהנסיעה של {{host}}.",
+      before: "לפני",
+      after: "אחרי",
+      hostBack: "הנסיעה של {{host}} חוזרת לכ-{{time}}.",
+      hostSame: "שעות הנסיעה של {{host}} לא משתנות ({{time}}).",
+      guestBack: "הבקשה של {{guest}} חוזרת לרשימת \"לא שובצו\".",
+      confirm: "לפצל",
+    },
+    transfer: {
+      title: "להעביר את {{guest}} לנסיעה של {{host}}?",
+      body: "{{guest}} תצא מהנסיעה של {{from}} ותצטרף לנסיעה של {{host}} ({{car}}).",
+      help: "ההמשך פותח את חלון האיחוד. ביטול בכל שלב לא משנה כלום.",
+      confirm: "המשך — לאחד עם {{host}}",
+    },
+    unplace: {
+      title: "להוציא את הנסיעה של {{name}} מהשיבוץ?",
+      body: "הבקשה תחזור לרשימת \"לא שובצו\".",
+      confirm: "הוצא משיבוץ",
+    },
   },
   /** REQ §13.95 (H3): the Sadran changes a request's trip type from the ride sheet / unmet card. */
   tripTypeChange: {

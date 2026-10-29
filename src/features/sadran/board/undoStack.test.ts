@@ -10,6 +10,19 @@ describe("UndoStack", () => {
     expect(stack.peekLabel()).toBeNull();
   });
 
+  it("undoEntry reverses one specific entry and leaves the others (a toast's own undo)", async () => {
+    const order: string[] = [];
+    const stack = new UndoStack();
+    const first = { label: "first", run: () => void order.push("first") };
+    stack.push(first);
+    stack.push({ label: "second", run: () => void order.push("second") });
+
+    expect((await stack.undoEntry(first))?.label).toBe("first");
+    expect(order).toEqual(["first"]);
+    expect(stack.size).toBe(1);
+    expect(await stack.undoEntry(first)).toBeNull();
+  });
+
   it("undoes the most recently pushed action first (LIFO)", async () => {
     const order: string[] = [];
     const stack = new UndoStack();

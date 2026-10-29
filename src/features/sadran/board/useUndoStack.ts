@@ -5,6 +5,7 @@ import { UndoStack, type UndoAction, type UndoResult } from "./undoStack";
 export interface UseUndoStackResult<T> {
   push: (action: UndoAction<T>) => void;
   undo: () => Promise<UndoResult<T> | null>;
+  undoEntry: (action: UndoAction<T>) => Promise<UndoResult<T> | null>;
   redo: () => Promise<UndoResult<T> | null>;
   canUndo: boolean;
   canRedo: boolean;
@@ -52,5 +53,11 @@ export function useUndoStack<T = void>(limit = 50): UseUndoStackResult<T> {
     return result;
   }, [stack, sync]);
 
-  return { push, undo, redo, canUndo: snapshot.canUndo, canRedo: snapshot.canRedo, peekLabel: snapshot.peekLabel };
+  const undoEntry = useCallback(async (action: UndoAction<T>) => {
+    const result = await stack.undoEntry(action);
+    sync();
+    return result;
+  }, [stack, sync]);
+
+  return { push, undo, undoEntry, redo, canUndo: snapshot.canUndo, canRedo: snapshot.canRedo, peekLabel: snapshot.peekLabel };
 }

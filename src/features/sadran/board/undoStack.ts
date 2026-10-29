@@ -76,6 +76,22 @@ export class UndoStack<T = void> {
     return { label: action.label, result };
   }
 
+  /**
+   * Undoes one specific entry (e.g. a toast's own "ביטול") wherever it sits in the stack; `null` when it is no
+   * longer there (already undone, or pushed out). Later entries stay.
+   */
+  async undoEntry(action: UndoAction<T>): Promise<UndoResult<T> | null> {
+    const index = this.stack.indexOf(action);
+    if (index < 0) return null;
+    this.stack.splice(index, 1);
+    const result = await action.run();
+    if (action.redo) {
+      this.redoStack.push(action);
+      if (this.redoStack.length > this.limit) this.redoStack.shift();
+    }
+    return { label: action.label, result };
+  }
+
   async redo(): Promise<UndoResult<T> | null> {
     const action = this.redoStack.pop();
     if (!action?.redo) return null;

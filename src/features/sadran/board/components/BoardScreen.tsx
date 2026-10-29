@@ -73,6 +73,7 @@ import type { PendingDraft } from "./SendAllDialog";
 import type { FewerDaysSupport } from "./FewerDaysAction";
 import type { ComposerPrefill } from "../draftInput";
 import { MergePrefillDialog } from "./MergePrefillDialog";
+import { DropAskDialog } from "./DropAskDialog";
 import { ProposalActionSheet } from "./ProposalActionSheet";
 import { PolicyChip } from "./PolicyChip";
 import { ReservationDialog } from "./ReservationDialog";
@@ -482,7 +483,7 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
             }
             onGuestHover={(guest, target) => dnd.setGuestHover({ guest, target })}
             onGuestDrop={(guest, target) => void dnd.handleGuestDrop(guest, target)}
-            onRideDropOnUnmet={(rideId) => void dnd.handleUnassignRide(rideId)}
+            onRideDropOnUnmet={(rideId) => void dnd.handleDropUnassign(rideId)}
             discussionBlocks={board.weekGridDiscussionBlocks}
             onDiscussionClick={dnd.setSelectedGroupId}
             canSwapCars={board.boardCanSwapCars}
@@ -611,6 +612,8 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
       <MergePrefillDialog
         prefill={dnd.mergePrefill}
         hostLabel={board.weekGridRides.find((ride) => ride.id === dnd.mergePrefill?.rideId)?.label ?? mergeHost?.driver_name}
+        carName={(board.carsQuery.data ?? []).find((car) => car.id === mergeHost?.car_id)?.name}
+        hostDriverName={mergeHost?.driver_name}
         hostStartsAt={mergeHost?.starts_at}
         hostEndsAt={mergeHost?.ends_at}
         request={mergeRequest}
@@ -629,12 +632,13 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
         draftNote={dnd.mergePrefill?.draftNote}
         preview={mergePreview}
         partyNames={partyNamesFor(dnd.mergePrefill)}
-        onAgree={() => { void withMergeWaiver((prefill) => dnd.agreeChoice(prefill)); }}
-        onConfirm={() => { void withMergeWaiver((prefill) => { dnd.openComposer(prefill); dnd.setMergePrefill(null); }); }}
-        onDraft={() => { void withMergeWaiver(async (prefill) => { await dnd.saveDraft(prefill); }); }}
+        onAgree={() => { void withMergeWaiver((prefill) => dnd.afterSplit(() => dnd.agreeChoice(prefill))); }}
+        onConfirm={() => { void withMergeWaiver((prefill) => dnd.afterSplit(() => { dnd.openComposer(prefill); dnd.setMergePrefill(null); })); }}
+        onDraft={() => { void withMergeWaiver(async (prefill) => { await dnd.afterSplit(async () => { await dnd.saveDraft(prefill); }); }); }}
         busy={dnd.draftPending}
         onCancel={() => dnd.setMergePrefill(null)}
       />
+      <DropAskDialog ask={dnd.dropAsk} onAnswer={dnd.answerDropAsk} />
       {dnd.displacement ? (
         <DisplacementChecklist
           steps={dnd.displacementSteps}
@@ -790,7 +794,7 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
         homeDestinationId={board.department?.home_destination_id ?? null}
         destinations={(board.destinationsQuery.data ?? []).map((d) => ({ id: d.id, name: d.name, aliases: d.aliases, zone: d.zone }))}
         onSaveRoute={(values) => { if (selectedRide) void dnd.saveRideRoute(selectedRide, values); }}
-        onRemoveAddedPerson={(requestId, name) => { if (selectedRide?.id) void dnd.removeAddedPerson(selectedRide.id, requestId, name); }}
+        onRemoveAddedPerson={(requestId, name) => { if (selectedRide?.id) void dnd.askAndRemoveAddedPerson(selectedRide.id, requestId, name); }}
         onOpenChange={(open) => !open && dnd.setSelectedRideId(null)}
         saving={dnd.editRideMutation.isPending || dnd.claimDriverMutation.isPending}
         tightSchedule={!!selectedRide?.id && board.tightRideIds.has(selectedRide.id)}
