@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { expect, test } from "@playwright/test";
+import { weekExportFileName } from "../src/features/rides/export/weekFileName";
 import { he } from "../src/i18n/he";
 import { getWeekStart, NEVO_DEPARTMENT_ID, SEEDED_USERS, serviceRoleClient, signIn } from "./helpers";
 
@@ -38,7 +39,9 @@ test("Sadran downloads the entire current week as a Hebrew Excel workbook", { ta
   const downloaded = page.waitForEvent("download");
   await page.getByRole("menuitem", { name: he.excelExport.button, exact: true }).click();
   const download = await downloaded;
-  expect(download.suggestedFilename()).toBe(`siddur-${weekStart}-${NEVO_DEPARTMENT_ID}.xlsx`);
+  // REQ §13.163 (c): "סידור <department> - d.M-d.M (yyyy).xlsx".
+  const { data: department } = await service.from("departments").select("name").eq("id", NEVO_DEPARTMENT_ID).single();
+  expect(download.suggestedFilename()).toBe(weekExportFileName(department?.name, weekStart));
   const filePath = await download.path();
   expect(filePath).toBeTruthy();
   const files = readStoredEntries(await readFile(filePath!));

@@ -164,7 +164,8 @@ test.describe("siddur mobile header", { tag: ["@siddur"] }, () => {
       const downloadPromise = page.waitForEvent("download");
       await page.getByTestId("siddur-archive-export").click();
       const download = await downloadPromise;
-      expect(download.suggestedFilename()).toMatch(/^siddur-.*\.xlsx$/);
+      // REQ §13.163 (c): "סידור <department> - d.M-d.M (yyyy).xlsx".
+      expect(download.suggestedFilename()).toMatch(/ - \d{1,2}\.\d{1,2}-\d{1,2}\.\d{1,2} \(\d{4}\)\.xlsx$/);
     } finally {
       await service.from("weeks").delete().eq("department_id", NEVO_DEPARTMENT_ID).eq("week_start", pastWeekStart);
     }
