@@ -398,9 +398,12 @@ function defaultRenderRide(ride: WeekGridRide) {
           {ride.coordinatorNotes ? <span className="w-full whitespace-pre-wrap break-words text-xs" title={`${he.field.notes}: ${ride.coordinatorNotes}`}>{he.field.notes}: {ride.coordinatorNotes}</span> : null}
         </RideNotes>
       ) : null}
-      <span className={cn("w-full shrink-0 truncate text-[10px] opacity-90", ride.isMine ? "font-bold" : "font-normal")} dir="ltr">
-        {formatMinutes(ride.startMinutes)}–{formatMinutes(ride.endMinutes)}
-      </span>
+      {/* REQ §13.161 (a): a delta line with both ends already shows the ride's hours (old → new). */}
+      {ride.delta?.hours?.gotStart && ride.delta.hours.gotEnd ? null : (
+        <span className={cn("w-full shrink-0 truncate text-[10px] opacity-90", ride.isMine ? "font-bold" : "font-normal")} dir="ltr">
+          {formatMinutes(ride.startMinutes)}–{formatMinutes(ride.endMinutes)}
+        </span>
+      )}
     </span>
   );
 }
