@@ -221,8 +221,8 @@ stateDiagram-v2
   sent --> accepted: member accepts via /p/token, or Sadran records answer
   sent --> declined: member declines / Sadran records
   sent --> expired: its day is published or has passed (Asia/Jerusalem) — no timer (2026-09-10)
-  draft --> withdrawn: Sadran withdraws
-  sent --> withdrawn: Sadran withdraws (tokens die)
+  draft --> withdrawn: Sadran withdraws, or its week is archived (O28-4)
+  sent --> withdrawn: Sadran withdraws (link kept: says "withdrawn"; offer leaves the inbox)
   accepted --> applied: apply_proposal (merge: only when every party accepted)
   declined --> [*]
   expired --> [*]
@@ -432,7 +432,7 @@ Principle: **the database is the last line of defence** (constraints, triggers, 
 - *Unguessable*: `send_proposal()` generates a random 128-bit secret per party (`gen_random_bytes(16)`, base64url); only `sha256(token)` is stored (`proposals.token_hash`, `proposal_parties.token_hash`). The clear token is returned to the Sadran's UI once for the WhatsApp text and the push payload.
 - *Single-purpose*: it can only view and answer that one proposal for that one party; it grants no session and no other read.
 - *Expiring*: unusable once the proposal itself is `expired` — its day published or passed (REQ §13.29), not a stored deadline; `proposals.expires_at` is normally null, and `answer_proposal()` re-checks `status = 'sent'`.
-- *Revocable*: re-sending regenerates the token (old hash replaced → old links die); withdrawing or applying the proposal ends its validity.
+- *Revocable*: re-sending regenerates the token (old hash replaced → old links die); withdrawing or applying the proposal ends its validity. Withdrawal keeps the hash (O28-1, REQ §13.160): the old link still finds the proposal, cannot answer it, and `answer-proposal` returns `status: 'withdrawn'` with no trip details (plus `superseded: true` — also for `expired` — when a newer proposal on the same request was sent), so the page says why the link no longer works; `housekeeping()` scrambles ended proposals' tokens 30 days later. A failed lookup is `500 db_error` (logged), never `404 invalid_token` (O28-2).
 - *Auditable*: the answer is recorded with `answered_via = 'token'` (`session` when the app had a JWT, `sadran` when recorded on behalf).
 
 The residual risk — a forwarded message lets someone else answer — is accepted for a kibbutz-scale, low-stakes decision that the Sadran sees and can reverse. If the browser *does* have a session, the page shows the full UI (inbox link, my-week) in addition to the answer buttons; that full UI's "talk to the Sadran on WhatsApp" button is the only thing on `/p/<token>` that needs a phone number, so it calls `sadran_contact_of(department_id, week_start)` (`20260909095000_add_sadran_contact_rpc.sql`) — a session-only, `is_approved() and member_of(dept)` RPC — never the token-only response, which keeps excluding phones exactly as before.
@@ -470,7 +470,7 @@ Realtime (optional, v1.x): the Sadran board may subscribe to `postgres_changes` 
 |---|---|---|
 | `advance_week_phases()` | dept config open time (default Sun 00:00, week before target) | create `weeks` row in `open`, `window_open` to members; also promotes any `upcoming` week (materialized early for a multi-day series leg, REQ §13.77) whose `open_at` has arrived to `open`, same notification |
 | | dept config close time (default Wed 12:00) | week → `solving`; later requests are `is_late`; `window_closed_solve_now` to `sadranim_of(dept, week)` |
-| | after the target week ends (first tick after Sun 00:00) | week → `archived` (read-only; fairness lookback reads it); `compute_week_stats(department_id, week_start)` runs for each just-archived week, caching its final requests/rides/hours/distinct-people figures into `week_stats` (DATA_MODEL §7.6) — waiting-list placements have settled by the time a week leaves `live`, so this is the one moment those numbers become final rather than provisional |
+| | after the target week ends (first tick after Sun 00:00) | week → `archived` (read-only; fairness lookback reads it); `compute_week_stats(department_id, week_start)` runs for each just-archived week, caching its final requests/rides/hours/distinct-people figures into `week_stats` (DATA_MODEL §7.6) — waiting-list placements have settled by the time a week leaves `live`, so this is the one moment those numbers become final rather than provisional; the week's leftover `draft` proposals become `withdrawn` (O28-4, REQ §13.160; rows kept) |
 | `send_due_reminders()` | `closing_reminder_hours` before close (default 24 h and 2 h) | `window_closing` to members without a request |
 | | planned publish time (`publish_dow`/`publish_time`) passes while `weeks.phase = 'solving'` | `publish_reminder` to the Sadranim, once (`weeks.publish_reminder_sent_at`) |
 | | proposal unanswered | WhatsApp reminder text offered to the Sadran (`wa.reminder`), no automatic push |

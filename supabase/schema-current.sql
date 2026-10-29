@@ -4098,6 +4098,7 @@ declare
   v_dept record;
   v_week record;
   v_archived record;
+  v_prev_reason text;
 begin
   for v_dept in select id from public.departments where is_active loop
     v_count := v_count + public.materialize_department_weeks(v_dept.id, p_now);
@@ -4121,6 +4122,12 @@ begin
     returning department_id, week_start
   loop
     perform public.compute_week_stats(v_archived.department_id, v_archived.week_start);
+    -- O28-4: the week's leftover board drafts end with it.
+    v_prev_reason := current_setting('app.audit_reason', true);
+    perform set_config('app.audit_reason', 'week_archived_withdraw_drafts', true);
+    update public.proposals set status = 'withdrawn'
+    where department_id = v_archived.department_id and week_start = v_archived.week_start and status = 'draft';
+    perform set_config('app.audit_reason', coalesce(v_prev_reason, ''), true);
   end loop;
 
   update public.weeks set phase = 'live'
@@ -9215,9 +9222,16 @@ begin
       delete from public.push_outbox where status in ('sent', 'dead') and created_at < p_now - interval '30 days';
       delete from public.client_errors where created_at < p_now - interval '90 days';
       delete from public.push_subscriptions where last_used_at < p_now - interval '180 days';
-      -- token_hash cannot be null (unique not-null column); scramble it instead so old links die.
-      update public.proposals set token_hash = encode(digest(gen_random_uuid()::text, 'sha256'), 'hex')
-      where expires_at < p_now - interval '30 days' and status in ('expired', 'withdrawn', 'applied', 'declined');
+      -- token_hash cannot be null (unique not-null column); scramble it instead so old links die (once per row).
+      update public.proposal_parties pp set token_hash = 'scrambled:' || gen_random_uuid()::text
+      from public.proposals p
+      where p.id = pp.proposal_id and pp.token_hash not like 'scrambled:%'
+        and coalesce(p.expires_at, p.updated_at) < p_now - interval '30 days'
+        and p.status in ('expired', 'withdrawn', 'applied', 'declined');
+      update public.proposals set token_hash = 'scrambled:' || gen_random_uuid()::text
+      where token_hash not like 'scrambled:%'
+        and coalesce(expires_at, updated_at) < p_now - interval '30 days'
+        and status in ('expired', 'withdrawn', 'applied', 'declined');
       delete from public.audit_log where at < p_now - interval '1 year'
         and table_name not in ('requests', 'rides', 'proposals', 'policies', 'weeks', 'siddur_versions');
       delete from public.audit_log where at < p_now - interval '3 years';
@@ -12760,11 +12774,9 @@ begin
   -- R5B3 noise: this function tells the Sadran (and, for these variants, the members who accepted) itself, so the
   -- accepted-withdrawn trigger's "still needs a driver" notices would be a second notice about the same thing.
   perform set_config('app.system_withdraw_notifies', case when p_variant in ('withdrawn_stale', 'withdrawn_ride', 'withdrawn_dependency') then 'all' else 'sadran' end, true);
-  update public.proposals set status = 'withdrawn', token_hash = encode(digest(public.generate_token(), 'sha256'), 'hex')
-  where id = p_proposal_id;
+  -- O28-1: the tokens are kept, so the members' links say "withdrawn" (answering refuses a non-`sent` proposal).
+  update public.proposals set status = 'withdrawn' where id = p_proposal_id;
   perform set_config('app.system_withdraw_notifies', '', true);
-  update public.proposal_parties set token_hash = encode(digest(public.generate_token(), 'sha256'), 'hex')
-  where proposal_id = p_proposal_id;
   select coalesce(array_agg(s.profile_id), '{}') into v_sadranim from public.sadranim_of(v_p.department_id, v_p.week_start) as s(profile_id);
   -- REQ §13.103 R3B1: the members who accepted are told their answer no longer leads anywhere.
   if p_variant in ('withdrawn_stale', 'withdrawn_ride', 'withdrawn_dependency') then
@@ -12891,6 +12903,18 @@ CREATE OR REPLACE FUNCTION "public"."proposals_clear_inbox"() RETURNS "trigger"
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
 begin
+  if new.status in ('withdrawn', 'expired') then
+    update public.proposal_parties pp set offer_notice_opened = x.opened
+    from (select n.recipient_id,
+                 bool_or(n.read_at is not null and coalesce(n.data->>'cleared_by', '') <> 'system') as opened
+          from public.notifications n
+          where n.event = 'proposal_received' and n.data ->> 'proposal_id' = new.id::text
+          group by n.recipient_id) x
+    where pp.proposal_id = new.id and pp.profile_id = x.recipient_id;
+    delete from public.notifications where event = 'proposal_received' and data ->> 'proposal_id' = new.id::text;
+    delete from public.held_notices where event = 'proposal_received' and data ->> 'proposal_id' = new.id::text;
+    return new;
+  end if;
   update public.notifications set read_at = now(), data = coalesce(data, '{}'::jsonb) || jsonb_build_object('cleared_by', 'system')
   where event = 'proposal_received' and read_at is null and data ->> 'proposal_id' = new.id::text;
   return new;
@@ -16643,7 +16667,7 @@ declare
   v_party_tokens jsonb:='{}';
   v_party record;
   v_reader jsonb; v_check jsonb; v_h record; v_leg_txt text; v_ext boolean := false;
-  v_old_notices uuid[]; v_quiet boolean; v_notification uuid;
+  v_old_notices uuid[]; v_quiet boolean; v_notification uuid; v_ended_quiet boolean;
 begin
   select request_id into v_request_id from public.proposals where id=p_proposal_id;
   if v_request_id is null then raise exception 'proposal_not_found'; end if;
@@ -16754,6 +16778,17 @@ begin
     join public.proposals op on op.id::text=n.data->>'proposal_id'
     where n.recipient_id=v_party.profile_id and n.event='proposal_received'
       and op.request_id=v_prop.request_id and op.id<>p_proposal_id;
+    -- O28-3: an earlier offer that ended (withdrawn / expired, also the one replaced just above) already left the inbox;
+    -- its party row remembers whether this person had opened it. The latest such offer counts like a notice still there.
+    select not pp.offer_notice_opened into v_ended_quiet
+    from public.proposal_parties pp
+    join public.proposals op on op.id=pp.proposal_id
+    where pp.profile_id=v_party.profile_id and pp.offer_notice_opened is not null
+      and op.request_id=v_prop.request_id and op.id<>p_proposal_id
+    order by op.sent_at desc nulls last, op.id desc
+    limit 1;
+    v_quiet := case when v_ended_quiet is null then v_quiet when v_quiet is null then v_ended_quiet
+                    else v_quiet and v_ended_quiet end;
     if v_old_notices is not null then
       delete from public.notifications where id=any(v_old_notices);
     end if;
@@ -21159,12 +21194,8 @@ begin
   if v_p.status not in ('sent', 'accepted') then raise exception 'proposal_not_withdrawable' using errcode = 'P0001'; end if;
   perform set_config('app.audit_reason', 'withdraw_proposal', true);
   -- sent -> withdrawn; accepted -> withdrawn (both allowed by the guard, which restores the request).
-  update public.proposals
-  set status = 'withdrawn', token_hash = encode(digest(public.generate_token(), 'sha256'), 'hex')
-  where id = p_proposal_id;
-  update public.proposal_parties
-  set token_hash = encode(digest(public.generate_token(), 'sha256'), 'hex')
-  where proposal_id = p_proposal_id;
+  -- O28-1: the tokens are kept, so the members' links say "withdrawn" (answering refuses a non-`sent` proposal).
+  update public.proposals set status = 'withdrawn' where id = p_proposal_id;
 end;
 $$;
 
@@ -21984,13 +22015,18 @@ CREATE TABLE IF NOT EXISTS "public"."proposal_parties" (
     "responded_at" timestamp with time zone,
     "responded_by" "uuid",
     "responded_via" "public"."answer_channel",
-    "token_hash" "text" NOT NULL
+    "token_hash" "text" NOT NULL,
+    "offer_notice_opened" boolean
 );
 
 ALTER TABLE ONLY "public"."proposal_parties" FORCE ROW LEVEL SECURITY;
 
 
 ALTER TABLE "public"."proposal_parties" OWNER TO "postgres";
+
+
+COMMENT ON COLUMN "public"."proposal_parties"."offer_notice_opened" IS 'O28-3: set when the proposal ended (withdrawn/expired) and its proposal_received notice for this party was deleted: whether the party had opened it. Read by send_proposal() for a quiet replacement offer.';
+
 
 
 CREATE TABLE IF NOT EXISTS "public"."proposals" (

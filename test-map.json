@@ -630,7 +630,8 @@
         "src/lib/appSurface.ts",
         "supabase/migrations/**/*enqueue_notification*",
         "supabase/tests/qa_run13_proposals.sql",
-        "supabase/tests/qa_run14_proposals.sql"
+        "supabase/tests/qa_run14_proposals.sql",
+        "supabase/tests/proposal_links_ended.sql"
       ],
       "vitest": [
         "src/features/proposals",
@@ -645,7 +646,8 @@
         "held_notices.sql",
         "proposal_dependencies.sql",
         "qa_run13_proposals.sql",
-        "qa_run14_proposals.sql"
+        "qa_run14_proposals.sql",
+        "proposal_links_ended.sql"
       ],
       "playwrightTags": [
         "@proposals"
@@ -655,10 +657,12 @@
         "13.29",
         "13.46",
         "13.67",
-        "13.90"
+        "13.90",
+        "13.160"
       ],
       "qaChecklist": [
         "Drag beyond flexibility to create a shift proposal; confirm WhatsApp deep link (REQ §13.24)",
+        "Withdraw a sent proposal; its /p link says the Sadran cancelled it, it leaves the member's inbox; send a new one and the old link says a new one replaced it (REQ §13.160)",
         "Answer the token link with no session; confirm binary accept/decline only (REQ §13.46)",
         "Decline as found-another-solution; confirm freed-slot opt-out (REQ §13.46)",
         "Attempt a Sadran proposal on a published day; confirm it is refused (REQ §13.29)",

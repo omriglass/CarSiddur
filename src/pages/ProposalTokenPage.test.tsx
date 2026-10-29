@@ -231,4 +231,31 @@ describe("ProposalTokenPage", () => {
     renderPage();
     await waitFor(() => expect(screen.getByText("תודה! הסדרן/ית יעדכנו את הסידור")).toBeInTheDocument());
   });
+  // O28-1 (REQ §13.160)
+  it("says the Sadran cancelled a withdrawn proposal", async () => {
+    fetchProposalSummaryMock.mockResolvedValueOnce({
+      proposalId: "p8", type: "shift", status: "withdrawn", superseded: false, reasonHe: "", expiresAt: null,
+      payload: null, request: null, parties: [],
+    });
+    renderPage();
+    await waitFor(() => expect(screen.getByText("ההצעה בוטלה על ידי הסידור")).toBeInTheDocument());
+    expect(screen.queryByText("הקישור אינו תקין")).not.toBeInTheDocument();
+  });
+
+  it("points to the latest message when a newer proposal replaced this one", async () => {
+    fetchProposalSummaryMock.mockResolvedValueOnce({
+      proposalId: "p9", type: "shift", status: "expired", superseded: true, reasonHe: "", expiresAt: null,
+      payload: {}, request: null, parties: [],
+    });
+    renderPage();
+    await waitFor(() => expect(screen.getByText("נשלחה הצעה חדשה במקומה — בדקו את ההודעה האחרונה")).toBeInTheDocument());
+  });
+
+  it("says an expired proposal lapsed", async () => {
+    fetchProposalSummaryMock.mockResolvedValueOnce({
+      proposalId: "p10", type: "shift", status: "expired", reasonHe: "", expiresAt: null, payload: {}, request: null, parties: [],
+    });
+    renderPage();
+    await waitFor(() => expect(screen.getByText("ההצעה פקעה — הבקשה חזרה למצב הקודם")).toBeInTheDocument());
+  });
 });

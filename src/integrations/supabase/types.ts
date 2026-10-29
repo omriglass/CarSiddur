@@ -2277,6 +2277,7 @@ export type Database = {
       proposal_parties: {
         Row: {
           id: string
+          offer_notice_opened: boolean | null
           profile_id: string
           proposal_id: string
           request_id: string | null
@@ -2288,6 +2289,7 @@ export type Database = {
         }
         Insert: {
           id?: string
+          offer_notice_opened?: boolean | null
           profile_id: string
           proposal_id: string
           request_id?: string | null
@@ -2299,6 +2301,7 @@ export type Database = {
         }
         Update: {
           id?: string
+          offer_notice_opened?: boolean | null
           profile_id?: string
           proposal_id?: string
           request_id?: string | null

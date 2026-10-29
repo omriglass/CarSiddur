@@ -68,6 +68,8 @@ export interface ProposalSummary {
   proposalId: string;
   type: ProposalType;
   status: ProposalStatus;
+  /** O28-1: `withdrawn` / `expired` only — a newer proposal on the same request replaced this one. */
+  superseded?: boolean;
   reasonHe: string;
   /** No timer any more (20260910090000): null until the proposal's day is published or has passed. */
   expiresAt: string | null;
@@ -98,6 +100,7 @@ export class ProposalFetchError extends Error {
 
 const ANSWER_PROPOSAL_FUNCTION_URL = `${env.VITE_SUPABASE_URL}/functions/v1/answer-proposal`;
 
+/** 404 = no such link; 500 (O28-2: the lookup failed) and anything else = "cannot load the proposal right now". */
 function codeForStatus(status: number): ProposalFetchErrorCode {
   if (status === 404) return "invalid_token";
   if (status === 410) return "expired";

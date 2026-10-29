@@ -57,7 +57,7 @@ describe("classifyProposalScreenState", () => {
     });
   });
 
-  it.each(["accepted", "declined", "expired", "applied", "withdrawn"] as const)(
+  it.each(["accepted", "declined", "applied"] as const)(
     "is 'answered' for a proposal already in a final status ('%s')",
     (status) => {
       const summary = { ...SUMMARY, status };
@@ -67,6 +67,24 @@ describe("classifyProposalScreenState", () => {
       });
     },
   );
+
+  // O28-1 (REQ §13.160): an old link of a withdrawn / expired proposal says why it no longer works.
+  it.each(["withdrawn", "expired"] as const)("is 'ended' for a '%s' proposal", (status) => {
+    expect(
+      classifyProposalScreenState({ isLoading: false, errorCode: null, summary: { ...SUMMARY, status }, justAnswered: false }),
+    ).toEqual({ kind: "ended", reason: status, superseded: false });
+    expect(
+      classifyProposalScreenState({
+        isLoading: false, errorCode: null, summary: { ...SUMMARY, status, superseded: true }, justAnswered: false,
+      }),
+    ).toEqual({ kind: "ended", reason: status, superseded: true });
+  });
+
+  it("is 'ended' even when this reader had answered before it was withdrawn", () => {
+    const summary = { ...SUMMARY, status: "withdrawn" as const,
+      parties: [{ profileId: "u1", fullName: "x", response: "accepted" as const, isYou: true }] };
+    expect(classifyProposalScreenState({ isLoading: false, errorCode: null, summary, justAnswered: false }).kind).toBe("ended");
+  });
 });
 
 describe("classifyProposalScreenState - already answered (R5B9)", () => {

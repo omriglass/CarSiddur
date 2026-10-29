@@ -146,6 +146,18 @@ export function ProposalTokenPage() {
 
           {state.kind === "error" ? <p className="text-destructive">{ERROR_COPY[state.code]}</p> : null}
 
+          {state.kind === "ended" ? (
+            <div className="space-y-3" data-testid="proposal-ended">
+              <p className="font-medium">
+                {state.superseded ? he.proposalScreen.superseded
+                  : state.reason === "withdrawn" ? he.proposalScreen.withdrawn : he.proposalScreen.expired}
+              </p>
+              <Button asChild variant="outline">
+                <Link to="/my">{he.proposalScreen.backHome}</Link>
+              </Button>
+            </div>
+          ) : null}
+
           {state.kind === "answered" ? (
             <div className="space-y-3">
               {/* R10U9: accepting a plan B applies it on the spot — say so (declining keeps the ordinary thanks). */}

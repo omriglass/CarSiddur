@@ -8,6 +8,12 @@
 //   GET  ?token=<token>   -> proposal summary for the answer screen (what
 //                            changes, expiry, parties by name only — never
 //                            phones) without requiring the RPC's write path.
+//                            A withdrawn proposal keeps its token (O28-1) and
+//                            answers `status: 'withdrawn'` with no trip details;
+//                            withdrawn/expired carry `superseded: true` when a
+//                            newer proposal on the same request was sent. 404
+//                            `invalid_token` = no such token; 500 `db_error` =
+//                            the lookup failed (O28-2, logged).
 //   POST { token, answer: 'accepted'|'declined', note?, optOut? }
 //                         -> calls `answer_proposal(token, accept, note, via)`
 //                            with the service role; `via` is 'session' when
@@ -50,6 +56,8 @@ interface ProposalSummary {
   proposalId: string;
   type: string;
   status: string;
+  /** O28-1: `withdrawn` / `expired` only — a newer proposal on the same request was sent after this one. */
+  superseded?: boolean;
   reasonHe: string;
   /** No timer any more (20260910090000): null until the proposal's day is published or has passed. */
   expiresAt: string | null;
@@ -71,6 +79,8 @@ interface ProposalSummary {
     boosters: number;
     /** `round_trip` / `one_way` / `drop_off` -- a plan-B answer says which request it replaces (REQ §13.112 a, R11M3). */
     tripType: string | null;
+    /** REQ §13.126 g: a kept-car drop_off reads as the member's round trip. */
+    keepCarAtDestination?: boolean | null;
   } | null;
   /** `origin` proposals only (REQ §13.93) -- resolved place/car names, never raw ids. */
   originChange?: { from: string | null; to: string | null; car: string | null } | null;
@@ -85,21 +95,29 @@ interface ProposalSummary {
   parties: PartySummary[];
 }
 
-async function findByToken(token: string) {
+type FoundProposal = { kind: 'found'; proposal: Record<string, unknown>; myProfileId: string | null };
+/** O28-2: a query error is not "invalid link" — the caller answers 500 (the page says "cannot load right now"). */
+type FindResult = FoundProposal | { kind: 'not_found' } | { kind: 'error' };
+
+async function findByToken(token: string): Promise<FindResult> {
   const hash = await sha256Hex(token);
   const client = getServiceRoleClient();
 
   // Two FKs on `requests` point at `destinations` (destination_id, origin_id), so PostgREST
   // refuses a bare `destinations(name)` embed (PGRST201) — both embeds name their FK.
   const proposalSelect =
-    'id, type, status, reason_he, expires_at, payload, request_id, department_id, week_start, ' +
+    'id, type, status, reason_he, expires_at, payload, request_id, department_id, week_start, sent_at, created_at, ' +
     'requests(id, requester_id, origin_id, origin_text, destination_id, destination_text, depart_at, return_at, adults, child_seats, boosters, ride_type_id, trip_type, keep_car_at_destination, ' +
     'destinations!requests_destination_id_fkey(name), ride_types(name_he), origin:destinations!requests_origin_id_fkey(name))';
 
   const byProposal = await client.from('proposals').select(proposalSelect).eq('token_hash', hash).maybeSingle();
+  if (byProposal.error) {
+    console.error('answer-proposal: proposal lookup failed', byProposal.error.code, byProposal.error.message);
+    return { kind: 'error' };
+  }
   if (byProposal.data) {
     const proposal = byProposal.data as unknown as { requests?: { requester_id?: string } };
-    return { proposal: byProposal.data as unknown as Record<string, unknown>, myProfileId: proposal.requests?.requester_id ?? null };
+    return { kind: 'found', proposal: byProposal.data as unknown as Record<string, unknown>, myProfileId: proposal.requests?.requester_id ?? null };
   }
 
   const byParty = await client
@@ -107,11 +125,59 @@ async function findByToken(token: string) {
     .select(`profile_id, proposals(${proposalSelect})`)
     .eq('token_hash', hash)
     .maybeSingle();
+  if (byParty.error) {
+    console.error('answer-proposal: party lookup failed', byParty.error.code, byParty.error.message);
+    return { kind: 'error' };
+  }
   if (byParty.data && byParty.data.proposals) {
-    return { proposal: byParty.data.proposals as unknown as Record<string, unknown>, myProfileId: byParty.data.profile_id as string };
+    return { kind: 'found', proposal: byParty.data.proposals as unknown as Record<string, unknown>, myProfileId: byParty.data.profile_id as string };
   }
 
-  return null;
+  return { kind: 'not_found' };
+}
+
+/**
+ * O28-1: a newer proposal on the same request was sent after this one — the old link says
+ * "a new offer replaced it, check the latest message" instead of only "withdrawn"/"expired".
+ * `null` on a query error (the page then shows the plain state; never worth a 500).
+ */
+async function isSuperseded(proposal: Record<string, unknown>): Promise<boolean | null> {
+  const requestId = proposal.request_id as string | null;
+  if (!requestId) return false;
+  const since = (proposal.sent_at as string | null) ?? (proposal.created_at as string);
+  const { data, error } = await getServiceRoleClient()
+    .from('proposals')
+    .select('id')
+    .eq('request_id', requestId)
+    .neq('id', proposal.id as string)
+    .not('sent_at', 'is', null)
+    .gt('sent_at', since)
+    .limit(1);
+  if (error) {
+    console.error('answer-proposal: superseded lookup failed', error.code, error.message);
+    return null;
+  }
+  return (data ?? []).length > 0;
+}
+
+/**
+ * O28-1: a withdrawn proposal answers with its machine state only (no trip details — it no
+ * longer offers anything); `superseded` says a newer proposal on the same request replaced it.
+ */
+function endedSummary(proposal: Record<string, unknown>, superseded: boolean): ProposalSummary {
+  return {
+    proposalId: proposal.id as string,
+    type: proposal.type as string,
+    status: proposal.status as string,
+    superseded,
+    reasonHe: '',
+    expiresAt: proposal.expires_at as string | null,
+    payload: null,
+    departmentId: proposal.department_id as string | undefined,
+    weekStart: proposal.week_start as string | undefined,
+    request: null,
+    parties: [],
+  };
 }
 
 async function buildSummary(proposal: Record<string, unknown>, myProfileId: string | null): Promise<ProposalSummary> {
@@ -257,9 +323,16 @@ Deno.serve(async (req) => {
     if (!token) return errorResponse(400, 'missing_token', corsHeaders);
 
     const found = await findByToken(token);
-    if (!found) return errorResponse(404, 'invalid_token', corsHeaders);
+    if (found.kind === 'error') return errorResponse(500, 'db_error', corsHeaders);
+    if (found.kind === 'not_found') return errorResponse(404, 'invalid_token', corsHeaders);
 
+    const status = found.proposal.status as string;
+    if (status === 'withdrawn') {
+      const superseded = await isSuperseded(found.proposal);
+      return jsonResponse(endedSummary(found.proposal, superseded === true), { headers: corsHeaders });
+    }
     const summary = await buildSummary(found.proposal, found.myProfileId);
+    if (status === 'expired') summary.superseded = (await isSuperseded(found.proposal)) === true;
     return jsonResponse(summary, { headers: corsHeaders });
   }
 
@@ -307,7 +380,7 @@ Deno.serve(async (req) => {
       // (no owner/Sadran RLS check needed, unlike the authenticated `set_freed_slot_opt_out`
       // RPC a signed-in caller uses instead, see src/pages/ProposalTokenPage.tsx).
       const found = await findByToken(token);
-      const requestId = (found?.proposal.requests as { id?: string } | undefined)?.id;
+      const requestId = found.kind === 'found' ? (found.proposal.requests as { id?: string } | undefined)?.id : undefined;
       if (requestId) {
         await client.from('requests').update({ freed_slot_opt_out: optOut }).eq('id', requestId);
       }

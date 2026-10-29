@@ -456,6 +456,9 @@ export const heMember = {
     loading: "טוען הצעה…",
     notFound: "הקישור אינו תקין",
     expired: "ההצעה פקעה — הבקשה חזרה למצב הקודם",
+    /** O28-1 (REQ §13.160): an old link of a proposal the Sadran withdrew / one a newer proposal replaced. */
+    withdrawn: "ההצעה בוטלה על ידי הסידור",
+    superseded: "נשלחה הצעה חדשה במקומה — בדקו את ההודעה האחרונה",
     rateLimited: "יותר מדי בקשות, נסו שוב בעוד דקה",
     alreadyAnswered: "כבר עניתם להצעה הזו",
     genericError: "לא ניתן לטעון את ההצעה כרגע",
