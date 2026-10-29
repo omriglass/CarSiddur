@@ -31,6 +31,9 @@ export interface MergePrefillDialogProps {
   prefill: MergePrefill | null;
   /** The base ride's board label. */
   hostLabel: string | null | undefined;
+  /** REQ §13.161 (c): the result block names the car and its driver. */
+  carName?: string | null;
+  hostDriverName?: string | null;
   /** The base ride's own window (before the merge). */
   hostStartsAt?: string | null;
   hostEndsAt?: string | null;
@@ -125,7 +128,44 @@ function RideBlock({ testId, heading, label, startsAt, endsAt, preview, flex }: 
   );
 }
 
-export function MergePrefillDialog({ prefill, hostLabel, hostStartsAt, hostEndsAt, request, hostRequest, pair, requestRoute, leg, onLegChange, anchorLeg, legVerdicts, verdict, split, draftNote, preview, partyNames, onAgree, onConfirm, onDraft, busy, onCancel }: MergePrefillDialogProps) {
+/** REQ §13.161 (c): old -> new hours; the new pair is orange when it differs (read from the server's `merge_preview`). */
+function OldNew({ name, oldText, newText }: { name: string; oldText: string; newText: string }) {
+  return (
+    <p>
+      {tv("mergedRide.resultWho", { name })}{" "}
+      {oldText === newText ? <span dir="ltr" className="tabular-nums">{newText}</span> : (
+        <>
+          <span dir="ltr" className="tabular-nums text-muted-foreground">{oldText}</span>
+          {" ← "}
+          <span dir="ltr" className="tabular-nums rounded bg-maintenance/15 px-1 font-semibold text-maintenance">{newText}</span>
+        </>
+      )}
+    </p>
+  );
+}
+
+const hoursOf = (start: string, end: string) => `${formatTime(new Date(start))}–${formatTime(new Date(end))}`;
+const timeOf = (iso: string) => formatTime(new Date(iso));
+
+/** The one result block: car + driver, the route with the guest's pickup, each person's old -> new hours. */
+function ResultBlock({ carName, hostDriverName, hostLabel, hostStartsAt, hostEndsAt, request, preview, split }: Pick<MergePrefillDialogProps, "carName" | "hostDriverName" | "hostLabel" | "hostStartsAt" | "hostEndsAt" | "request" | "preview"> & { split?: boolean }) {
+  if (!preview?.valid || split) return null;
+  const guestName = request?.requester_full_name ?? "";
+  const legPoints = preview.route.filter((point) => point.leg === (preview.boardLeg ?? "out"));
+  const routeText = legPoints.map((point) => (point.requestId && (point.kind === "board" || point.kind === "alight") ? tv("mergedRide.resultPickup", { place: point.name, name: guestName }) : point.name)).join(" ← ");
+  const joinerAt = preview.joinerOutAt ?? preview.boardEta;
+  return (
+    <div className="space-y-1" data-testid="merge-result">
+      <p className="text-xs text-muted-foreground">{he.mergedRide.resultHeading}</p>
+      {carName ? <p className="font-medium" data-testid="merge-result-car">{tv("mergedRide.resultCar", { car: carName, driver: hostDriverName ?? hostLabel ?? "" })}</p> : null}
+      {routeText ? <p data-testid="merge-result-route">{routeText}</p> : null}
+      {hostStartsAt && hostEndsAt ? <OldNew name={hostDriverName ?? hostLabel ?? ""} oldText={hoursOf(hostStartsAt, hostEndsAt)} newText={hoursOf(preview.startsAt, preview.endsAt)} /> : null}
+      {request?.depart_at && joinerAt ? <OldNew name={guestName} oldText={timeOf(request.depart_at)} newText={timeOf(joinerAt)} /> : null}
+    </div>
+  );
+}
+
+export function MergePrefillDialog({ prefill, carName, hostDriverName, hostLabel, hostStartsAt, hostEndsAt, request, hostRequest, pair, requestRoute, leg, onLegChange, anchorLeg, legVerdicts, verdict, split, draftNote, preview, partyNames, onAgree, onConfirm, onDraft, busy, onCancel }: MergePrefillDialogProps) {
   const options = request && !split ? mergeLegOptions(request, anchorLeg) : null;
   // The server decides; without a verdict (no host/request to ask about) the TS twin's validity is the fallback.
   const blocked = verdict ? verdict.status !== "ok" : (!!preview && !preview.valid) || (!!pair?.preview && !pair.preview.valid);
@@ -140,6 +180,7 @@ export function MergePrefillDialog({ prefill, hostLabel, hostStartsAt, hostEndsA
           <div className="space-y-3 rounded-md border p-3 text-sm">
             {draftNote ? <p className="text-xs font-semibold text-maintenance" data-testid="merge-draft-note">{draftNote === "extends" ? he.mergedRide.draftExtends : he.mergedRide.draftReplaces}</p> : null}
             {split ? <p className="text-xs text-muted-foreground" data-testid="merge-split-note">{he.mergedRide.splitNote}</p> : null}
+            <ResultBlock carName={carName} hostDriverName={hostDriverName} hostLabel={hostLabel} hostStartsAt={hostStartsAt} hostEndsAt={hostEndsAt} request={request} preview={preview} split={split} />
             <RideBlock testId="merge-base" heading={split ? he.mergedRide.splitHeadingOut : he.mergedRide.base} label={hostLabel} startsAt={hostStartsAt} endsAt={hostEndsAt} preview={preview} flex={hostRequest} />
             {pair ? (
               <RideBlock testId="merge-pair" heading={split ? he.mergedRide.splitHeadingReturn : he.mergedRide.pairHeading} label={pair.label} startsAt={pair.startsAt} endsAt={pair.endsAt} preview={pair.preview} />
