@@ -191,6 +191,15 @@ begin
   perform pg_temp.expect_refused('rides.set_ride_driver', format('select public.set_ride_driver(%L, %L, %L)', ride_b, member_b, ride_b_version));
   perform pg_temp.expect_refused('requests.withdraw_duplicate_request', format('select public.withdraw_duplicate_request(%L, 1)', req_b));
   perform pg_temp.expect_refused('requests.restore_duplicate_request', format('select public.restore_duplicate_request(%L)', req_b));
+  -- REQ §13.162: closing a request (unmet card / ride cancel) and returning it are the request's own week's Sadran only
+  perform pg_temp.expect_refused('requests.close_request', format('select public.close_request(%L, %L, %L)', req_b,
+    (select version from public.requests where id = req_b), 'attack'));
+  perform pg_temp.expect_refused('rides.sadran_cancel_ride', format('select public.sadran_cancel_ride(%L, %L, %L, %L::uuid[])', ride_b, 'attack',
+    ride_b_version, array[req_b]));
+  perform pg_temp.expect_refused('requests.restore_closed_request', format('select public.restore_closed_request(%L, %L)', req_b,
+    (select version from public.requests where id = req_b)));
+  assert (select status_reason is distinct from 'CLOSED_BY_SADRAN' from public.requests where id = req_b),
+    'REQ 13.162: a department-A Sadran must not close a department-B request';
   -- REQ §13.103: car move + series shortening
   perform pg_temp.expect_refused('rides.mark_car_move', format('select public.mark_car_move(%L, %L, %L, %L::timestamptz, 30)', car_b, gen_random_uuid(), gen_random_uuid(), date_trunc('hour', now()) + interval '10 days'));
   perform pg_temp.expect_refused('requests.shorten_series', format('select public.shorten_series(%L, now() + interval ''10 days'', now() + interval ''12 days'')', req_b));
@@ -389,7 +398,7 @@ declare
     'planning_month','typical_usage','save_reservation',
     'create_policy_version','set_policy_active','policy_week_alignment','resolve_waitlist_group','cancel_waitlist_group','join_waitlist_discussion','waitlist_group_holds',
     'place_travel_for_week','car_start_locations','set_my_default_origin','route_minutes_preview','request_notes',
-    'my_co_guardians','set_ride_driver','withdraw_duplicate_request','restore_duplicate_request','place_on_own_car','child_request_overlaps',
+    'my_co_guardians','set_ride_driver','withdraw_duplicate_request','restore_duplicate_request','close_request','restore_closed_request','sadran_cancel_ride','place_on_own_car','child_request_overlaps',
     'mark_car_move','shorten_series','join_drop_off_legs','place_series_on_car',
     'create_car_maintenance','update_car_maintenance','delete_car_maintenance','report_car_issue_unsafe_maintenance'
   ];

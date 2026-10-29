@@ -18,10 +18,11 @@ import { canSwitchPlan as canSwitchRequestPlan } from "../planSwitch";
 import { PlanSwitchButton } from "./PlanSwitchButton";
 import { TripTypeChange } from "./TripTypeChange";
 import { WithdrawDuplicateAction } from "./WithdrawDuplicateAction";
+import { CloseRequestAction } from "./CloseRequestAction";
 
 import type { WeekRequestRow } from "../../api";
 
-type Dialogs = "tripType" | "plan" | "duplicate" | "fewerDays" | null;
+type Dialogs = "tripType" | "plan" | "duplicate" | "fewerDays" | "close" | null;
 
 export interface UnmetCardMenuProps {
   request: WeekRequestRow;
@@ -83,6 +84,8 @@ export function UnmetCardMenu({ request, destinationName, proposalOut, tripTypeS
           {onDeny && !proposalOut ? <DropdownMenuItem className="min-h-11" data-testid="unmet-deny" onSelect={onDeny}>{he.unmetCard.proposeDeny}</DropdownMenuItem> : null}
           {scoped && !request.series_id ? <DropdownMenuItem className="min-h-11" data-testid="unmet-duplicate" onSelect={open("duplicate")}>{he.unmetCard.markDuplicate}</DropdownMenuItem> : null}
           {fewerDays && !proposalOut && request.series_id ? <DropdownMenuItem className="min-h-11" data-testid="unmet-fewer-days" onSelect={open("fewerDays")}>{he.fewerDays.action}</DropdownMenuItem> : null}
+          {/* REQ §13.162 (b): close a request that is no longer needed (proposals out are withdrawn with it). */}
+          {tripTypeScope ? <DropdownMenuItem className="min-h-11 text-destructive" data-testid="unmet-close-request" onSelect={open("close")}>{he.closeRequest.menuItem}</DropdownMenuItem> : null}
           <DropdownMenuSeparator />
           {menuOpen ? <WhatsappItem request={request} destinationName={destinationName} /> : null}
         </DropdownMenuContent>
@@ -97,6 +100,10 @@ export function UnmetCardMenu({ request, destinationName, proposalOut, tripTypeS
       ) : null}
       {tripTypeScope && dialog === "duplicate" ? (
         <WithdrawDuplicateAction requestId={request.id} version={request.version} name={name} departmentId={tripTypeScope.departmentId} weekStart={tripTypeScope.weekStart} open onOpenChange={closer("duplicate")} />
+      ) : null}
+      {tripTypeScope && dialog === "close" ? (
+        <CloseRequestAction requestId={request.id} version={request.version} name={name} departmentId={tripTypeScope.departmentId} weekStart={tripTypeScope.weekStart}
+          series={!!request.series_id} open onOpenChange={closer("close")} />
       ) : null}
       {fewerDays && dialog === "fewerDays" ? <FewerDaysAction request={request} support={fewerDays} open onOpenChange={closer("fewerDays")} /> : null}
     </>

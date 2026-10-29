@@ -249,6 +249,7 @@ export function useSetRidePassengersMutation() {
   });
 }
 
+/** REQ §13.162 (a): the board's "בטל נסיעה" with a choice per request (`closeRequestIds` are closed, the rest wait). */
 export function useCancelRideMutation() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -256,13 +257,15 @@ export function useCancelRideMutation() {
       rideId,
       reason,
       expectedVersion,
+      closeRequestIds,
     }: {
       rideId: string;
       reason: string;
-      expectedVersion?: number;
+      expectedVersion: number;
+      closeRequestIds: readonly string[];
       departmentId: string;
       weekStart: string;
-    }) => api.cancelRide(rideId, reason, expectedVersion),
+    }) => api.sadranCancelRide(rideId, reason, expectedVersion, closeRequestIds),
     onSuccess: (_data, { departmentId, weekStart }) => invalidateBoard(queryClient, departmentId, weekStart),
     onError: showErrorToast,
   });
@@ -353,6 +356,30 @@ export function useWithdrawDuplicateRequestMutation() {
     mutationFn: ({ requestId, expectedVersion }: {
       requestId: string; expectedVersion: number; departmentId: string; weekStart: string;
     }) => api.withdrawDuplicateRequest(requestId, expectedVersion),
+    onSuccess: (_data, { departmentId, weekStart }) => invalidateWeekData(queryClient, departmentId, weekStart),
+    onError: showErrorToast,
+  });
+}
+
+/** REQ §13.162 (b): close a waiting request from the unmet card. */
+export function useCloseRequestMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ requestId, expectedVersion, reason }: {
+      requestId: string; expectedVersion: number; reason: string; departmentId: string; weekStart: string;
+    }) => api.closeRequest(requestId, expectedVersion, reason),
+    onSuccess: (_data, { departmentId, weekStart }) => invalidateWeekData(queryClient, departmentId, weekStart),
+    onError: showErrorToast,
+  });
+}
+
+/** REQ §13.162 (d): the change log's "החזר לרשימת ההמתנה". */
+export function useRestoreClosedRequestMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ requestId, expectedVersion }: {
+      requestId: string; expectedVersion: number; departmentId: string; weekStart: string;
+    }) => api.restoreClosedRequest(requestId, expectedVersion),
     onSuccess: (_data, { departmentId, weekStart }) => invalidateWeekData(queryClient, departmentId, weekStart),
     onError: showErrorToast,
   });

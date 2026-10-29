@@ -44,6 +44,29 @@ export function filterChangeLogRows(rows: readonly ChangeLogRow[], filters: Pick
     && (!needle || (row.request.requester_full_name ?? "").toLowerCase().includes(needle)));
 }
 
+/** REQ §13.162: the Sadran closed this request ("הנסיעה כבר לא רלוונטית"); only such a request offers "החזר לרשימת ההמתנה". */
+export function isClosedBySadran(request: Pick<WeekRequestRow, "status" | "status_reason">): boolean {
+  return request.status === "cancelled" && request.status_reason === "CLOSED_BY_SADRAN";
+}
+
+type AuditLike = { table_name: string; row_id: string; at: string; id: number; reason: string | null; before: unknown; after: unknown };
+/** Reasons the close RPCs write when the Sadran gave none (not shown). */
+const NO_REASON = new Set(["close_request", "sadran_cancel_ride", ""]);
+
+function field(row: unknown, key: string): unknown {
+  return row && typeof row === "object" && !Array.isArray(row) ? (row as Record<string, unknown>)[key] : undefined;
+}
+
+/** The Sadran's reason for the latest close of `requestId`, read from its closing audit row; `null` when none was given. */
+export function closedReasonOf(audit: readonly AuditLike[], requestId: string): string | null {
+  const closing = audit
+    .filter((row) => row.table_name === "requests" && row.row_id === requestId
+      && field(row.after, "status_reason") === "CLOSED_BY_SADRAN" && field(row.before, "status_reason") !== "CLOSED_BY_SADRAN")
+    .sort((a, b) => b.at.localeCompare(a.at) || b.id - a.id)[0];
+  const reason = closing?.reason?.trim() ?? "";
+  return NO_REASON.has(reason) ? null : reason;
+}
+
 /** Rows grouped by day, in order. */
 export function groupRowsByDay(rows: readonly ChangeLogRow[]): { day: string; rows: ChangeLogRow[] }[] {
   const groups: { day: string; rows: ChangeLogRow[] }[] = [];

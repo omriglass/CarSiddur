@@ -782,7 +782,7 @@ run(async () => {
     case "discard": { await api.discardProposal(resolveId(need(args.pos[0], "<proposalId>"), board.proposals.map((p) => p.id), "proposal")); console.log("discarded"); return; }
     case "apply": return cmdApply(args, board);
     case "unassign": { const r = resolveRide(board, need(args.pos[0], "<rideId>")); await api.unassignRide(r.id as string, r.version ?? 0); console.log(`ride ${short(r.id)} unassigned; its requests are unmet again`); return; }
-    case "cancel-ride": { const r = resolveRide(board, need(args.pos[0], "<rideId>")); await api.cancelRide(r.id as string, args.pos.slice(1).join(" ") || "qa", r.version ?? undefined); console.log(`ride ${short(r.id)} cancelled`); return; }
+    case "cancel-ride": { const r = resolveRide(board, need(args.pos[0], "<rideId>")); await api.sadranCancelRide(r.id as string, args.pos.slice(1).join(" ") || "qa", r.version ?? 0, []); console.log(`ride ${short(r.id)} cancelled`); return; }
     case "reserve": return cmdReserve(board, args);
     case "car-move": return cmdCarMove(board, args);
     case "assign-driver": return cmdAssignDriver(board, args);

@@ -23,7 +23,8 @@ import { cn } from "@/lib/utils";
 import { useAllWeekRides, useAuditLog, useCarsForDepartment, useProposalsForWeek, useWeekRequestsWithNames } from "../../hooks";
 import { requestDeltas } from "../../requestDelta";
 import { requestHistory } from "../auditSentences";
-import { changeLogRows, filterChangeLogRows, groupRowsByDay, type ChangeLogRow } from "../changeLogRows";
+import { changeLogRows, closedReasonOf, filterChangeLogRows, groupRowsByDay, isClosedBySadran, type ChangeLogRow } from "../changeLogRows";
+import { RestoreClosedAction } from "./RestoreClosedAction";
 
 interface ChangeLogScreenProps {
   departmentId: string;
@@ -108,8 +109,9 @@ export function ChangeLogScreen({ departmentId, weekStart }: ChangeLogScreenProp
                         </div>
                         <p className="text-xs text-muted-foreground">{route(row)}</p>
                         <dl className="grid grid-cols-[auto_1fr] gap-x-2.5 gap-y-0.5">
-                          <GotLines row={row} carName={carName} labelled />
+                          <GotLines row={row} carName={carName} labelled closedReason={closedReasonOf(audit.data ?? [], row.request.id)} />
                         </dl>
+                        <ClosedRestore row={row} departmentId={departmentId} weekStart={weekStart} />
                         <RequestHistory row={row} audit={audit.data ?? []} proposals={proposals.data ?? []} />
                       </CardContent>
                     </Card>
@@ -140,10 +142,10 @@ export function ChangeLogScreen({ departmentId, weekStart }: ChangeLogScreenProp
                         <span dir="ltr" className="tabular-nums">{pair(askedStart(row), askedEnd(row))}</span>
                       </td>
                       <td className="space-y-0.5 px-1.5 py-2">
-                        <GotLines row={row} carName={carName} />
+                        <GotLines row={row} carName={carName} closedReason={closedReasonOf(audit.data ?? [], row.request.id)} />
                         <RequestHistory row={row} audit={audit.data ?? []} proposals={proposals.data ?? []} />
                       </td>
-                      <td className="px-1.5 py-2"><StateCell row={row} /></td>
+                      <td className="space-y-1 px-1.5 py-2"><StateCell row={row} /><ClosedRestore row={row} departmentId={departmentId} weekStart={weekStart} /></td>
                     </tr>
                   ))}
                 </tbody>
@@ -180,8 +182,14 @@ function StateCell({ row }: { row: ChangeLogRow }) {
   return <ConsentChip state={delta.consent} className="text-xs" />;
 }
 
+/** REQ §13.162 (d): a request the Sadran closed can be put back on the waiting list from here (and only here). */
+function ClosedRestore({ row, departmentId, weekStart }: { row: ChangeLogRow; departmentId: string; weekStart: string }) {
+  if (!isClosedBySadran(row.request)) return null;
+  return <RestoreClosedAction requestId={row.request.id} version={row.request.version} name={row.request.requester_full_name ?? ""} departmentId={departmentId} weekStart={weekStart} />;
+}
+
 /** What the request got: hours, changed places, people, the car, who it rides with, or why it was not placed. */
-function GotLines({ row, carName, labelled = false }: { row: ChangeLogRow; carName: (id: string) => string; labelled?: boolean }) {
+function GotLines({ row, carName, labelled = false, closedReason = null }: { row: ChangeLogRow; carName: (id: string) => string; labelled?: boolean; closedReason?: string | null }) {
   const { delta, request } = row;
   const lines: { label: string; node: ReactNode }[] = [];
   if (delta.depart || delta.return) {
@@ -199,6 +207,7 @@ function GotLines({ row, carName, labelled = false }: { row: ChangeLogRow; carNa
   if (delta.state !== "placed") {
     const reason = describeStatusReason(request.status_reason);
     lines.push({ label: he.sadranLog.reason, node: reason ?? he.sadranLog.noRide });
+    if (closedReason && isClosedBySadran(request)) lines.push({ label: he.sadranLog.reason, node: tv("closeRequest.closedReason", { reason: closedReason }) });
   }
   if (!lines.length) return <span className="text-muted-foreground">{he.sadranLog.noRide}</span>;
   return (

@@ -894,7 +894,10 @@
         "supabase/migrations/**/*publish_notice_merges_unread*",
         "supabase/migrations/**/*leave_notices_merge_unread*",
         "supabase/migrations/**/*one_notice_per_publish*",
-        "supabase/migrations/**/*offer_replaces_unopened_notice*"
+        "supabase/migrations/**/*offer_replaces_unopened_notice*",
+        "supabase/tests/close_request.sql",
+        "supabase/migrations/**/*request_closed_templates*",
+        "supabase/migrations/**/*close_request_rpcs*"
       ],
       "vitest": [
         "src/features/inbox",
@@ -908,7 +911,8 @@
         "qa_run13_rides.sql",
         "publish_one_notice.sql",
         "offer_replaces_notice.sql",
-        "leave_notices_merge.sql"
+        "leave_notices_merge.sql",
+        "close_request.sql"
       ],
       "playwrightTags": [
         "@notifications"

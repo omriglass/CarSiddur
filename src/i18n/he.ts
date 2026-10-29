@@ -34,6 +34,8 @@ export const STATUS_REASON_CODES = [
   "AUTO_APPROVED",
   "AUTO_APPROVED_FREE_CAR",
   "CANCELLED_BY_MEMBER",
+  "CLOSED_BY_SADRAN",
+  "CLOSE_UNDONE",
   "DENIED_BY_SADRAN",
   "DRIVER_CLAIMED",
   "DUPLICATE_OVERLAP",
@@ -636,6 +638,9 @@ export const he = {
     AUTO_APPROVED: "אושרה אוטומטית — היה רכב פנוי",
     AUTO_APPROVED_FREE_CAR: "אושרה אוטומטית — הרכב היה פנוי",
     CANCELLED_BY_MEMBER: "בוטלה על ידך",
+    // REQ §13.162: the Sadran closed the request (the ride is no longer needed) / took that back.
+    CLOSED_BY_SADRAN: "נסגרה על ידי הסדרן/ית — הנסיעה כבר לא רלוונטית",
+    CLOSE_UNDONE: "הסגירה בוטלה — הבקשה חזרה לרשימת ההמתנה",
     DENIED_BY_SADRAN: "לא נמצא רכב מתאים",
     DRIVER_CLAIMED: "שובצת לנסיעה — נהג/ת התנדב/ה",
     EXTERNAL: "נבחר פתרון חיצוני",

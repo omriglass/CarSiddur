@@ -553,10 +553,6 @@ export async function markCarMove(input: MarkCarMoveInput): Promise<string> {
   });
 }
 
-export async function cancelRide(rideId: string, reason: string, expectedVersion?: number): Promise<void> {
-  await rpc("cancel_ride", { p_ride_id: rideId, p_reason: reason, p_expected_version: expectedVersion });
-}
-
 /** The ride's current `version` (undo of a placement reads it fresh so a later edit does not make the undo stale). */
 export async function fetchRideVersion(rideId: string): Promise<number> {
   const { data, error } = await supabase.from("rides").select("version").eq("id", rideId).single();
@@ -653,6 +649,27 @@ export async function setRideDriver(rideId: string, driverId: string | null, exp
 /** REQ §13.101 (e): the Sadran withdraws a request as a duplicate; the member is notified and may answer "not a duplicate". */
 export async function withdrawDuplicateRequest(requestId: string, expectedVersion: number): Promise<void> {
   await rpc("withdraw_duplicate_request", { p_request_id: requestId, p_expected_version: expectedVersion });
+}
+
+/**
+ * REQ §13.162 (b): the Sadran closes a waiting request ("הנסיעה כבר לא רלוונטית"): `cancelled` /
+ * `CLOSED_BY_SADRAN`, with its series days and plan-B pair; the member is told once, with `reason`.
+ */
+export async function closeRequest(requestId: string, expectedVersion: number, reason: string): Promise<void> {
+  await rpc("close_request", { p_request_id: requestId, p_expected_version: expectedVersion, p_reason: reason });
+}
+
+/** REQ §13.162 (d): undo a close (mistakes only) - back to the waiting list, the member's close notice is taken back. */
+export async function restoreClosedRequest(requestId: string, expectedVersion: number): Promise<void> {
+  await rpc("restore_closed_request", { p_request_id: requestId, p_expected_version: expectedVersion });
+}
+
+/**
+ * REQ §13.162 (a): the board's "בטל נסיעה" - the ride is cancelled (every day of a series ride); each request on it
+ * goes back to the waiting list unless it is in `closeRequestIds` ("הנסיעה כבר לא רלוונטית"), which closes it.
+ */
+export async function sadranCancelRide(rideId: string, reason: string, expectedVersion: number, closeRequestIds: readonly string[]): Promise<void> {
+  await rpc("sadran_cancel_ride", { p_ride_id: rideId, p_reason: reason, p_expected_version: expectedVersion, p_close_request_ids: [...closeRequestIds] });
 }
 
 /**

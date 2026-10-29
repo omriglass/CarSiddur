@@ -17,13 +17,14 @@ const ride = (id: string, requestId: string, starts: string, ends: string) => ({
   served: [{ request_id: requestId, role: "driver", leg: "both", car_mode: "keep", requester: "x" }],
 });
 
-const mocks = vi.hoisted(() => ({ requests: [] as unknown[], rides: [] as unknown[], proposals: [] as unknown[] }));
+const mocks = vi.hoisted(() => ({ requests: [] as unknown[], rides: [] as unknown[], proposals: [] as unknown[], audit: [] as unknown[] }));
 vi.mock("../../hooks", () => ({
   useWeekRequestsWithNames: () => ({ data: mocks.requests, isLoading: false, isError: false }),
   useAllWeekRides: () => ({ data: mocks.rides, isLoading: false, isError: false }),
   useProposalsForWeek: () => ({ data: mocks.proposals, isLoading: false, isError: false }),
   useCarsForDepartment: () => ({ data: [], isLoading: false, isError: false }),
-  useAuditLog: () => ({ data: [], isLoading: false, isError: false }),
+  useAuditLog: () => ({ data: mocks.audit, isLoading: false, isError: false }),
+  useRestoreClosedRequestMutation: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 vi.mock("@/features/siddur/hooks", () => ({ useDepartments: () => ({ data: [] }) }));
 vi.mock("@/features/fleet/hooks", () => ({ useDestinations: () => ({ data: [] }) }));
@@ -57,5 +58,23 @@ describe("ChangeLogScreen", () => {
     fireEvent.change(screen.getByLabelText(he.sadranLog.searchPlaceholder), { target: { value: "bob" } });
     expect(container.querySelector('[data-change-log-request="q1"]')).toBeNull();
     expect(container.querySelector('[data-change-log-request="q2"]')).not.toBeNull();
+  });
+
+  it("shows a request the Sadran closed with its reason and the return button; an ordinary cancellation has none (REQ §13.162)", () => {
+    mocks.requests = [
+      request("q1", "Closed", { status: "cancelled", status_reason: "CLOSED_BY_SADRAN", version: 3 }),
+      request("q2", "Cancelled", { status: "cancelled", status_reason: "RIDE_CANCELLED", version: 2 }),
+    ];
+    mocks.rides = [];
+    mocks.proposals = [];
+    mocks.audit = [{ id: 1, at: at("09:00"), table_name: "requests", row_id: "q1", action: "update", reason: "got a lift",
+      before: { status: "waitlisted", status_reason: null }, after: { status: "cancelled", status_reason: "CLOSED_BY_SADRAN" }, changed_columns: ["status", "status_reason"], actor_role: "sadran" }];
+    const { container } = show();
+    const closedRows = container.querySelectorAll('[data-change-log-request="q1"]');
+    expect(closedRows.length).toBeGreaterThan(0);
+    expect(container.querySelector('[data-change-log-request="q1"] [data-testid="change-log-restore"]')).not.toBeNull();
+    expect(container.querySelector('[data-change-log-request="q1"]')?.textContent).toContain("got a lift");
+    expect(container.querySelector('[data-change-log-request="q2"] [data-testid="change-log-restore"]')).toBeNull();
+    mocks.audit = [];
   });
 });

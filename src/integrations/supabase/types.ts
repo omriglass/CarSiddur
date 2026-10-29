@@ -5372,6 +5372,7 @@ export type Database = {
           window_starts_at: string
         }[]
       }
+      _close_request: { Args: { p_request_id: string }; Returns: string[] }
       _complete_car_tasks: {
         Args: {
           p_by: string
@@ -5536,6 +5537,10 @@ export type Database = {
           _week_start: string
         }
         Returns: boolean
+      }
+      _notify_request_closed: {
+        Args: { p_reason: string; p_request_id: string }
+        Returns: undefined
       }
       _notify_request_edited_by_manager: {
         Args: { p_actor: string; p_request: string }
@@ -5985,6 +5990,14 @@ export type Database = {
         Returns: undefined
       }
       close_offer: { Args: { p_offer_id: string }; Returns: undefined }
+      close_request: {
+        Args: {
+          p_expected_version: number
+          p_reason?: string
+          p_request_id: string
+        }
+        Returns: Json
+      }
       close_week_requests: {
         Args: { p_department_id: string; p_week_start: string }
         Returns: undefined
@@ -6845,6 +6858,10 @@ export type Database = {
         Args: { p_accept: boolean; p_change_id: string }
         Returns: undefined
       }
+      restore_closed_request: {
+        Args: { p_expected_version: number; p_request_id: string }
+        Returns: Json
+      }
       restore_duplicate_request: {
         Args: { p_request_id: string }
         Returns: Json
@@ -6896,6 +6913,15 @@ export type Database = {
       route_minutes_preview: {
         Args: { p_department_id: string; p_points: Json }
         Returns: number
+      }
+      sadran_cancel_ride: {
+        Args: {
+          p_close_request_ids?: string[]
+          p_expected_version: number
+          p_reason: string
+          p_ride_id: string
+        }
+        Returns: Json
       }
       sadran_contact_of: {
         Args: { _department_id: string; _week_start: string }

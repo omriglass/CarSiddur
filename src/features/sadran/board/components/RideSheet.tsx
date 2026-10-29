@@ -21,7 +21,6 @@ import {
 } from "@/components/ui/select";
 import { Sheet, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { PortalSheetContent } from "@/components/PortalSheetContent";
-import { Textarea } from "@/components/ui/textarea";
 import { TimeField15 } from "@/components/TimeField15";
 import { formatMinutes, parseHHMM } from "@/components/timeField15Format";
 import { he, t, tv } from "@/i18n/he";
@@ -39,6 +38,8 @@ import { TripTypeChange } from "./TripTypeChange";
 import { WithdrawDuplicateAction } from "./WithdrawDuplicateAction";
 import { busyDriverIds, personDayEntries } from "../driverBusy";
 import { RideDriverPicker, type DriverCandidate } from "./RideDriverPicker";
+import { RideCancelDialog } from "./RideCancelDialog";
+import { rideCancelLines } from "../rideCancelChoices";
 import { initialRouteEditValues, type RouteEditValues } from "../rideRouteEdit";
 
 import type { BoardRide, WeekRequestRow } from "../../api";
@@ -59,7 +60,8 @@ interface RideSheetProps {
   onOpenChange: (open: boolean) => void;
   onSave: (input: RideSheetSaveInput) => void;
   onTogglePin: (nextPinned: boolean, reason: string | null) => void;
-  onCancel: (reason: string) => void;
+  /** REQ §13.162 (a): `closeRequestIds` = the requests the Sadran marked "הנסיעה כבר לא רלוונטית"; the rest go back to the waiting list. */
+  onCancel: (reason: string, closeRequestIds: string[]) => void;
   /** Return served requests to the unmet board without cancelling them. */
   onUnassign?: () => void;
   /** REQ §13.105 c: join this הקפצה's drop-off and pickup rides into one (the request id comes from `joinableDropOffLegs`). */
@@ -113,8 +115,7 @@ export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenCha
   const [carId, setCarId] = useState(ride?.car_id ?? "");
   const [startTime, setStartTime] = useState(ride?.starts_at ? formatTime(new Date(ride.starts_at)) : "08:00");
   const [endTime, setEndTime] = useState(ride?.ends_at ? formatTime(new Date(ride.ends_at)) : "09:00");
-  const [cancelReason, setCancelReason] = useState("");
-  const [showCancelForm, setShowCancelForm] = useState(false);
+  const [showCancelDialog, setShowCancelDialog] = useState(false);
 
   if ((ride?.id ?? null) !== lastRideId) {
     // Derived during render, no effect needed (same convention as
@@ -123,7 +124,7 @@ export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenCha
     setCarId(ride?.car_id ?? "");
     setStartTime(ride?.starts_at ? formatTime(new Date(ride.starts_at)) : "08:00");
     setEndTime(ride?.ends_at ? formatTime(new Date(ride.ends_at)) : "09:00");
-    setShowCancelForm(false);
+    setShowCancelDialog(false);
   }
 
   function dayIso(): string {
@@ -395,26 +396,20 @@ export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenCha
                 <p className="text-xs text-muted-foreground">{he.sadranBoard.seriesUnassignHint}</p>
               ) : null}
 
-              {isPlanning ? <Button variant="outline" onClick={() => onCancel("")} disabled={saving}>{he.boardCoordination.cancelPlanning}</Button> : showCancelForm ? (
-                <div className="space-y-2 rounded-md border border-destructive/40 p-3">
-                  <Textarea
-                    value={cancelReason}
-                    onChange={(e) => setCancelReason(e.target.value)}
-                    placeholder={he.sadranBoard.cancelRidePrompt}
-                  />
-                  <Button
-                    variant="destructive"
-                    className="w-full"
-                    onClick={() => onCancel(cancelReason || "SADRAN_EDIT")}
-                    disabled={saving}
-                  >
+              {isPlanning ? <Button variant="outline" onClick={() => onCancel("", [])} disabled={saving}>{he.boardCoordination.cancelPlanning}</Button> : (
+                <>
+                  <Button variant="destructive" className="w-full" onClick={() => setShowCancelDialog(true)} data-testid="ride-sheet-cancel">
                     {t("action.cancelRide")}
                   </Button>
-                </div>
-              ) : (
-                <Button variant="destructive" className="w-full" onClick={() => setShowCancelForm(true)}>
-                  {t("action.cancelRide")}
-                </Button>
+                  <RideCancelDialog
+                    open={showCancelDialog}
+                    onOpenChange={setShowCancelDialog}
+                    lines={rideCancelLines(servedOf(ride))}
+                    series={!!ride.series_id}
+                    loading={saving}
+                    onConfirm={(reason, closeIds) => onCancel(reason, closeIds)}
+                  />
+                </>
               )}
             </div>
           </>

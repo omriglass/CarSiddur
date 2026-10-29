@@ -509,6 +509,21 @@ select 'outcome_changed',channel,'unassigned_by_sadran',
 from unnest(array['inbox','push']::public.notification_channel[]) channel
 on conflict (event,channel,(coalesce(variant,''))) do update set title=excluded.title,body=excluded.body,default_title=excluded.default_title,default_body=excluded.default_body;
 
+-- REQ §13.162 (c): the Sadran closed the member's request ("הנסיעה כבר לא רלוונטית"), with / without a reason.
+-- Mirrors 20261029104000_request_closed_templates.sql.
+insert into public.notification_templates(event,channel,variant,title,body,default_title,default_body)
+select 'outcome_changed',channel,v.variant,v.title,v.body,v.title,v.body
+from unnest(array['inbox','push']::public.notification_channel[]) channel
+cross join (values
+  ('request_closed',
+   'הבקשה שלך נסגרה',
+   '{{byName}} סימן/ה שהנסיעה שלך ביום {{day}} {{route}} כבר לא רלוונטית, והבקשה נסגרה. הסיבה: {{reason}}. הבקשה יצאה מרשימת ההמתנה ולא יוצע לה רכב. אם עדיין צריך נסיעה — אפשר להגיש בקשה חדשה.'),
+  ('request_closed_plain',
+   'הבקשה שלך נסגרה',
+   '{{byName}} סימן/ה שהנסיעה שלך ביום {{day}} {{route}} כבר לא רלוונטית, והבקשה נסגרה. הבקשה יצאה מרשימת ההמתנה ולא יוצע לה רכב. אם עדיין צריך נסיעה — אפשר להגיש בקשה חדשה.')
+) as v(variant, title, body)
+on conflict (event,channel,(coalesce(variant,''))) do update set title=excluded.title,body=excluded.body,default_title=excluded.default_title,default_body=excluded.default_body;
+
 -- Named reservation passengers (F3, 20260914120000_ride_passengers.sql): a Sadran-picked
 -- reservation passenger (or, later, anyone added via "+ נוסעים") is notified once.
 insert into public.notification_templates(event,channel,variant,title,body,default_title,default_body)
