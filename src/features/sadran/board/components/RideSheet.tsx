@@ -60,8 +60,9 @@ interface RideSheetProps {
   onOpenChange: (open: boolean) => void;
   onSave: (input: RideSheetSaveInput) => void;
   onTogglePin: (nextPinned: boolean, reason: string | null) => void;
-  /** REQ §13.162 (a): `closeRequestIds` = the requests the Sadran marked "הנסיעה כבר לא רלוונטית"; the rest go back to the waiting list. */
-  onCancel: (reason: string, closeRequestIds: string[]) => void;
+  /** REQ §13.162 (a): `closeRequestIds` = the requests the Sadran marked "הנסיעה כבר לא רלוונטית"; `continueRequestIds`
+   *  (O29-2 (3)) = the requests that continue on the ride (non-empty: the ride is kept for them); the rest wait. */
+  onCancel: (reason: string, closeRequestIds: string[], continueRequestIds?: string[]) => void;
   /** Return served requests to the unmet board without cancelling them. */
   onUnassign?: () => void;
   /** REQ §13.105 c: join this הקפצה's drop-off and pickup rides into one (the request id comes from `joinableDropOffLegs`). */
@@ -407,7 +408,7 @@ export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenCha
                     lines={rideCancelLines(servedOf(ride))}
                     series={!!ride.series_id}
                     loading={saving}
-                    onConfirm={(reason, closeIds) => onCancel(reason, closeIds)}
+                    onConfirm={(reason, closeIds, continueIds) => onCancel(reason, closeIds, continueIds)}
                   />
                 </>
               )}

@@ -251,7 +251,8 @@ export function useSetRidePassengersMutation() {
   });
 }
 
-/** REQ §13.162 (a): the board's "בטל נסיעה" with a choice per request (`closeRequestIds` are closed, the rest wait). */
+/** REQ §13.162 (a): the board's "בטל נסיעה" with a choice per request (`closeRequestIds` are closed,
+ *  `continueRequestIds` stay on the kept ride, the rest wait). */
 export function useCancelRideMutation() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -260,14 +261,16 @@ export function useCancelRideMutation() {
       reason,
       expectedVersion,
       closeRequestIds,
+      continueRequestIds,
     }: {
       rideId: string;
       reason: string;
       expectedVersion: number;
       closeRequestIds: readonly string[];
+      continueRequestIds?: readonly string[];
       departmentId: string;
       weekStart: string;
-    }) => api.sadranCancelRide(rideId, reason, expectedVersion, closeRequestIds),
+    }) => api.sadranCancelRide(rideId, reason, expectedVersion, closeRequestIds, continueRequestIds),
     onSuccess: (_data, { departmentId, weekStart, rideId }) => invalidateBoard(queryClient, departmentId, weekStart, [rideId]),
     onError: showErrorToast,
   });

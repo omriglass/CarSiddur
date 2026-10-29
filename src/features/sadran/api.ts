@@ -696,9 +696,14 @@ export async function restoreClosedRequest(requestId: string, expectedVersion: n
 /**
  * REQ §13.162 (a): the board's "בטל נסיעה" - the ride is cancelled (every day of a series ride); each request on it
  * goes back to the waiting list unless it is in `closeRequestIds` ("הנסיעה כבר לא רלוונטית"), which closes it.
+ * O29-2 (3): with `continueRequestIds` ("ממשיך/ה בנסיעה") the ride is kept for those and only the others leave it.
  */
-export async function sadranCancelRide(rideId: string, reason: string, expectedVersion: number, closeRequestIds: readonly string[]): Promise<void> {
-  await rpc("sadran_cancel_ride", { p_ride_id: rideId, p_reason: reason, p_expected_version: expectedVersion, p_close_request_ids: [...closeRequestIds] });
+export async function sadranCancelRide(rideId: string, reason: string, expectedVersion: number, closeRequestIds: readonly string[],
+  continueRequestIds: readonly string[] = []): Promise<void> {
+  await rpc("sadran_cancel_ride", {
+    p_ride_id: rideId, p_reason: reason, p_expected_version: expectedVersion,
+    p_close_request_ids: [...closeRequestIds], p_continue_request_ids: [...continueRequestIds],
+  });
 }
 
 /**

@@ -884,12 +884,13 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
             weekStart,
           });
         }}
-        onCancel={(reason, closeRequestIds) => {
+        onCancel={(reason, closeRequestIds, continueRequestIds = []) => {
           if (selectedPlanningChange) { dnd.cancelRideChangeMutation.mutate(selectedPlanningChange.id, { onSuccess: () => dnd.setSelectedRideId(null) }); return; }
           if (!selectedRide?.id || selectedRide.version == null) return;
-          // REQ §13.162 (a): one call - the ride goes, each request waits or is closed, one notice per member.
+          // REQ §13.162 (a): one call - the ride goes (or, O29-2 (3), stays for the requests that continue), each other
+          // request waits or is closed, one notice per member.
           void dnd.cancelRideMutation
-            .mutateAsync({ rideId: selectedRide.id, reason, expectedVersion: selectedRide.version, closeRequestIds, departmentId, weekStart })
+            .mutateAsync({ rideId: selectedRide.id, reason, expectedVersion: selectedRide.version, closeRequestIds, continueRequestIds, departmentId, weekStart })
             .then(() => dnd.setSelectedRideId(null))
             .catch(() => {
               // Toast already shown by the mutation's onError; same reasoning as `onSave` above.

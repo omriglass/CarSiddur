@@ -729,15 +729,17 @@ async function cmdWithdrawDuplicate(board: Board, args: Args): Promise<void> {
 }
 
 /**
- * `cancel-ride <ride> [reason] [--close <req>[,<req>...]]` - the board's "בטל נסיעה" (REQ §13.162 a, `sadran_cancel_ride`):
- * the listed requests are closed ("הנסיעה כבר לא רלוונטית"), every other request on the ride goes back to the waiting list.
+ * `cancel-ride <ride> [reason] [--close <req>[,<req>...]] [--continue <req>[,<req>...]]` - the board's "בטל נסיעה"
+ * (REQ §13.162 a, `sadran_cancel_ride`): the `--close` requests are closed ("הנסיעה כבר לא רלוונטית"), the `--continue`
+ * ones stay on the kept ride (O29-2 (3) "ממשיך/ה בנסיעה"), every other request goes back to the waiting list.
  */
 async function cmdCancelRide(board: Board, args: Args): Promise<void> {
   const ride = resolveRide(board, need(args.pos[0], "<rideId>"));
   const served = [...new Set(servedOf(ride).map((entry) => entry.request_id).filter((id): id is string => !!id))];
   const close = flagAll(args, "close").flatMap((token) => token.split(",")).filter(Boolean).map((token) => resolveId(token, served, "request on this ride"));
-  await api.sadranCancelRide(ride.id as string, args.pos.slice(1).join(" ") || "qa", ride.version ?? 0, close);
-  console.log(`ride ${short(ride.id)} cancelled; closed: ${close.map(short).join(",") || "none"}; back to the waiting list: ${served.filter((id) => !close.includes(id)).map(short).join(",") || "none"}`);
+  const keepOn = flagAll(args, "continue").flatMap((token) => token.split(",")).filter(Boolean).map((token) => resolveId(token, served, "request on this ride"));
+  await api.sadranCancelRide(ride.id as string, args.pos.slice(1).join(" ") || "qa", ride.version ?? 0, close, keepOn);
+  console.log(`ride ${short(ride.id)} ${keepOn.length ? `kept for ${keepOn.map(short).join(",")}` : "cancelled"}; closed: ${close.map(short).join(",") || "none"}; back to the waiting list: ${served.filter((id) => !close.includes(id) && !keepOn.includes(id)).map(short).join(",") || "none"}`);
 }
 
 /** `close <req> [reason]` - the unmet card's "הנסיעה כבר לא רלוונטית" (REQ §13.162 b, `close_request`). */
@@ -797,7 +799,7 @@ function usage(): void {
   edit-route <ride|req> [--origin P] [--dest P] [--stop P]... [--return-stop P]... [--clear-stops] [--draft]
   propose <req> shift [--car C --depart HH:MM --return HH:MM --day D --ride R --no-places] | origin --origin P --car C | deny [--reason T] | external [--hint cab|rental|public_transport|private|waive] [--reason T] | alternative [--car C --depart HH:MM] [--return HH:MM (pickup from the drop-off place only; default pickup + drive)] [--return-car C (pickup car)]  [--draft]  (no --car/--depart = the solver's useAlternative numbers)
   send <proposal> | withdraw <proposal> | discard <proposal> | apply <proposal>
-  unassign <ride> | cancel-ride <ride> [reason] [--close <req>,...] | close <req> [reason] | restore <req> | reserve <car> <day> <HH:MM-HH:MM> <note> | car-move <car> <from> <to> <HH:MM> [--day D] [--minutes N]
+  unassign <ride> | cancel-ride <ride> [reason] [--close <req>,...] [--continue <req>,...] | close <req> [reason] | restore <req> | reserve <car> <day> <HH:MM-HH:MM> <note> | car-move <car> <from> <to> <HH:MM> [--day D] [--minutes N]
   message <memberEmail> <text> | messages [--new]
   fewer-days <req> <first-day> <last-day> [--car C] [--draft] | withdraw-duplicate <req>
   assign-driver <ride> <member|none> | add-passengers <ride> <name>[:adult|child_seat|booster]... | contacts [<name>]

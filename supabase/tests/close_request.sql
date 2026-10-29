@@ -225,6 +225,54 @@ begin
   assert exists (select 1 from public.audit_log a where a.table_name='requests' and a.row_id=q6::text and a.reason='got a lift'
                  and a.after->>'status_reason'='CLOSED_BY_SADRAN'), '(b) the closing audit row keeps the Sadran''s reason after a release';
 
+  -- ===== (e) O29-2 (3): a merged ride, "ממשיך/ה בנסיעה" keeps it for the requests that continue ===================
+  perform set_config('request.headers','',true);
+  insert into public.requests(department_id,week_start,requester_id,filed_by,destination_id,ride_type_id,depart_at,return_at,trip_shape,status)
+    values(dept,w,m1,m1,dest,typ,dt-interval '1 day',dt-interval '1 day'+interval '4 hours','round_trip','assigned') returning id into q1;
+  insert into public.requests(department_id,week_start,requester_id,filed_by,destination_id,ride_type_id,depart_at,return_at,trip_shape,status)
+    values(dept,w,m2,m2,dest,typ,dt-interval '1 day',dt-interval '1 day'+interval '4 hours','round_trip','merged') returning id into q2;
+  insert into public.requests(department_id,week_start,requester_id,filed_by,destination_id,ride_type_id,depart_at,return_at,trip_shape,status)
+    values(dept,w,admin_id,admin_id,dest,typ,dt-interval '1 day',dt-interval '1 day'+interval '4 hours','round_trip','merged') returning id into q3;
+  insert into public.rides(department_id,week_start,car_id,starts_at,ends_at,origin_id,destination_id,driver_id,status,is_pinned,pin_reason,created_by)
+    values(dept,w,carA,dt-interval '1 day',dt-interval '1 day'+interval '4 hours',home,home,m1,'confirmed',true,'SADRAN_MANUAL',sadran) returning id into rA;
+  insert into public.ride_requests(ride_id,request_id,role,leg,car_mode) values(rA,q1,'driver','both','keep'),(rA,q2,'passenger','both','passenger'),(rA,q3,'passenger','both','passenger');
+  begin
+    perform public.sadran_cancel_ride(rA,null,(select version from public.rides where id=rA),'{}',array[q1,q2,q3]);
+    raise exception 'cancelling with everyone continuing unexpectedly succeeded';
+  exception when others then
+    assert sqlerrm='nothing_to_cancel', format('(e) everyone continuing is refused, got %s', sqlerrm);
+  end;
+  begin
+    perform public.sadran_cancel_ride(rA,null,(select version from public.rides where id=rA),array[q2],array[q2]);
+    raise exception 'close + continue unexpectedly accepted';
+  exception when others then
+    assert sqlerrm='request_choice_conflict', format('(e) close and continue on one request is refused, got %s', sqlerrm);
+  end;
+  -- a guest leaves to the waiting list; the driver and the other guest continue
+  select count(*) into n0 from public.notifications where recipient_id=m1;
+  res := public.sadran_cancel_ride(rA,null,(select version from public.rides where id=rA),'{}',array[q1,q3]);
+  assert (res->>'ride_kept')::boolean, format('(e) the ride is kept, got %s', res);
+  assert (select status::text from public.rides where id=rA)<>'cancelled', '(e) the ride is not cancelled';
+  assert (select driver_id from public.rides where id=rA)=m1, '(e) the driver stays';
+  assert (select array_agg(request_id order by request_id) from public.ride_requests where ride_id=rA)=(select array_agg(x order by x) from unnest(array[q1,q3]) x),
+    '(e) the continuing requests stay on the ride';
+  assert (select status::text||'/'||status_reason from public.requests where id=q2)='waitlisted/SADRAN_UNASSIGNED', '(e) the leaving guest is waiting';
+  assert (select status::text from public.requests where id=q3)='merged', '(e) the continuing guest is unchanged';
+  assert exists (select 1 from public.notifications where recipient_id=m2 and data->>'variant'='unassigned_by_sadran' and data->>'request_id'=q2::text),
+    '(e) the leaving guest is told';
+  select count(*) into n from public.notifications where recipient_id=m1;
+  assert n-n0=1, format('(e) the driver hears once that a passenger left, got %s', n-n0);
+  assert not exists (select 1 from public.freed_slot_offers where cancelled_ride_id=rA), '(e) a kept ride frees no car';
+  -- the driver's request is closed, the guest continues: the ride stays without the driver (as a host who cancels)
+  res := public.sadran_cancel_ride(rA,'got another car',(select version from public.rides where id=rA),array[q1],array[q3]);
+  assert (select status::text from public.rides where id=rA)<>'cancelled', format('(e) the ride stays for the guest, got %s', res);
+  assert (select driver_id is distinct from m1 from public.rides where id=rA), '(e) the closed driver is off the ride';
+  assert exists (select 1 from public.ride_requests where ride_id=rA and request_id=q3), '(e) the guest is still on it';
+  assert (select status::text||'/'||status_reason from public.requests where id=q1)='cancelled/CLOSED_BY_SADRAN',
+    format('(e) the driver''s request is closed, got %s', (select status::text||'/'||status_reason from public.requests where id=q1));
+  assert (select count(*) from public.notifications where recipient_id=m1 and data->>'variant' in ('request_closed','request_closed_plain') and data->>'request_id'=q1::text)=1,
+    '(e) the closed driver gets one closing notice';
+
   set constraints all immediate;
   raise notice 'close_request.sql: all REQ §13.162 assertions passed';
 end $$;

@@ -6937,6 +6937,7 @@ export type Database = {
       sadran_cancel_ride: {
         Args: {
           p_close_request_ids?: string[]
+          p_continue_request_ids?: string[]
           p_expected_version: number
           p_reason: string
           p_ride_id: string

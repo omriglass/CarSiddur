@@ -44,7 +44,7 @@ All three tools run on the disposable stack only (API `http://127.0.0.1:57321`, 
 
 **`npm run qa:sadran`** also has `car-move <car> <from> <to> <HH:MM> [--day D] [--minutes N]` (REQ §13.103 b, `mark_car_move`).
 
-**`npm run qa:sadran`** (REQ §13.162): `cancel-ride <ride> [reason] [--close <req>,...]` is the board's "בטל נסיעה" (`sadran_cancel_ride`: the listed requests are closed, the others go back to the waiting list), `close <req> [reason]` the unmet card's "הנסיעה כבר לא רלוונטית" (`close_request`), `restore <req>` the change log's "החזר לרשימת ההמתנה" (`restore_closed_request`).
+**`npm run qa:sadran`** (REQ §13.162): `cancel-ride <ride> [reason] [--close <req>,...] [--continue <req>,...]` is the board's "בטל נסיעה" (`sadran_cancel_ride`: the `--close` requests are closed, the `--continue` ones keep the ride — O29-2 (3) — the others go back to the waiting list), `close <req> [reason]` the unmet card's "הנסיעה כבר לא רלוונטית" (`close_request`), `restore <req>` the change log's "החזר לרשימת ההמתנה" (`restore_closed_request`).
 
 ### Two Sadrans at once (`/qa-concurrent`, 2026-10-29)
 - **`--at HH:MM:SS` (local) or epoch ms** on any `qa:sadran` command (or `QA_FIRE_AT`): the board is loaded first, then the command waits for that instant — two commands started a few seconds apart act together on the same, soon stale, state.
