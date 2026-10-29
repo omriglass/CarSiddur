@@ -1238,7 +1238,17 @@ Thin run on today's blast zones: planning ahead (REQ §13.154), the partly publi
   - **Stage 2b done 2026-10-29** (branch `perf-stage2`, REQ §13.163): mileage and place travel no longer reloaded by week changes (place travel keyed by the week's place set), merge previews only around the changed rides, notes cached per request version, live-sync refresh single-flight, no retry after a statement timeout (`server_busy`), `housekeeping` once a day again (`20261029103100`), Excel file name.
   - **Next perf upgrade (owner 2026-10-29, after 2b is in production):** (1) cheaper RLS — the per-row helper calls (`can_manage_week`, `member_of`, …) worked out once per query; overlapping permissive SELECT policies (`request_companions`, `request_children`; Supabase advisor `auth_rls_initplan` on `children`, `child_guardians`, `request_children`); own branch + `department_isolation.sql`. (2) The live-sync broadcast carries the changed ride ids, receivers patch those rides (full reload when unknown/too many) and verify with a cheap week fingerprint (ids + versions + latest change of the feeding tables) on focus and every few minutes. (3) Why Realtime channels rejoin so often (`realtime.authorize` ≈ 2 % of database time, `CHANNEL_ERROR` reports).
 
-## QA concurrency run 1 findings (2026-10-29, seed 5150, department `qa-s5150`, week 1–7.11; branch `review-2026-10-29` + the pre-merge hardening fixes) — **awaiting owner triage**
+## QA concurrency run 1 findings (2026-10-29, seed 5150, department `qa-s5150`, week 1–7.11; branch `review-2026-10-29` + the pre-merge hardening fixes) — **owner triage 2026-10-29: one fix round before the merge**
+
+**Owner decisions 2026-10-29 (fix in this round, then merge):**
+- RC1B1 — refuse: a placement the server would itself put into an occupied slot (its own widening, or a concurrent write) is refused with the overlap message; no silent planning conflict.
+- RC1B2, RC1B4, RC1B5, RC1U3 — fix as proposed (uncovered leg shown as an unmet card; the first Sadran is told their sent offer was replaced; seat-specific withdrawal wording + notice to the sending Sadran; publish-specific stale wording).
+- RC1B7 — yes: the publish notice also lists rides the member drives for others and rides as a companion. RC1B6 — no separate correction notice; the publish notice is the correction (one combined notice).
+- RC1B9 — refuse a trip-type change on a request closed as external.
+- RC1U2 — keep the filter as it is (added guests / place changes count).
+- RC1B3 — clarified to the owner: exclude only the people who were ON the cancelled ride and kept on the waiting list from that ride's own freed-car offer (a conflicting ride B pushed to the waiting list still gets A's freed car). **Awaiting the owner's OK.**
+- `weekly-permissions.spec.ts` fails on HEAD (60 s timeout) — investigate in this round.
+- Not in this round: RC1B8, B10–B13, U1, U4, U5, M1, M2 and the infrastructure follow-ups (tick steps in separate transactions, per-change refetch size, `publish_scores_fingerprint` scope, connection pool vs. parallel board reads, change-log `audit_log` cap).
 
 First run of `/qa-concurrent`: **two QA Sadranim at once** (both Sonnet; Sadran A = Sun + Mon, Sadran B = Tue + Thu, **Wed 4.11 shared**, CLI + desktop UI), lead race pairs with `scripts/qa/race.mjs` (same instant), QA user (Sonnet) answering proposals and a **pass-only** member check of the published days (no live phase). Disposable stack `carshare-rev`.
 
