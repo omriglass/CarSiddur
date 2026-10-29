@@ -23,7 +23,7 @@ import { cn } from "@/lib/utils";
 import { useAllWeekRides, useAuditLog, useCarsForDepartment, useProposalsForWeek, useWeekRequestsWithNames } from "../../hooks";
 import { requestDeltas } from "../../requestDelta";
 import { requestHistory } from "../auditSentences";
-import { changeLogRows, closedReasonOf, filterChangeLogRows, groupRowsByDay, isClosedBySadran, type ChangeLogRow } from "../changeLogRows";
+import { changeLogRows, closedReasonOf, filterChangeLogRows, groupRowsByDay, isClosedBySadran, isWaitingRow, type ChangeLogRow } from "../changeLogRows";
 import { RestoreClosedAction } from "./RestoreClosedAction";
 
 interface ChangeLogScreenProps {
@@ -52,6 +52,7 @@ export function ChangeLogScreen({ departmentId, weekStart }: ChangeLogScreenProp
   const [onlyBeyondFlex, setOnlyBeyondFlex] = useState(true);
   const [day, setDay] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  const [waitlistOnly, setWaitlistOnly] = useState(false);
 
   const homeId = (departments.data ?? []).find((department) => department.id === departmentId)?.home_destination_id;
   const homeName = homeId ? (destinations.data ?? []).find((place) => place.id === homeId)?.name ?? null : null;
@@ -61,7 +62,9 @@ export function ChangeLogScreen({ departmentId, weekStart }: ChangeLogScreenProp
   );
   const allRows = useMemo(() => changeLogRows(requests.data ?? [], deltas, onlyBeyondFlex), [requests.data, deltas, onlyBeyondFlex]);
   const days = useMemo(() => [...new Set(allRows.map((row) => row.day))], [allRows]);
-  const rows = filterChangeLogRows(allRows, { day: day && days.includes(day) ? day : null, query });
+  const dayFilter = day && days.includes(day) ? day : null;
+  const rows = filterChangeLogRows(allRows, { day: dayFilter, query, waitlistOnly });
+  const waitingCount = filterChangeLogRows(allRows, { day: dayFilter, query }).filter(isWaitingRow).length;
   const groups = groupRowsByDay(rows);
 
   const loading = requests.isLoading || rides.isLoading;
@@ -82,10 +85,17 @@ export function ChangeLogScreen({ departmentId, weekStart }: ChangeLogScreenProp
           <DayPill active={!day} onClick={() => setDay(null)}>{he.sadranLog.allWeek}</DayPill>
           {days.map((value) => <DayPill key={value} active={day === value} onClick={() => setDay(value)}>{formatDayDate(value)}</DayPill>)}
         </div>
+        {waitingCount || waitlistOnly ? (
+          <div className="flex flex-wrap gap-1.5">
+            <DayPill active={waitlistOnly} onClick={() => setWaitlistOnly((current) => !current)}>
+              {tv("sadranLog.waitlistPill", { count: String(waitingCount) })}
+            </DayPill>
+          </div>
+        ) : null}
         <div className="flex min-h-11 items-center gap-2">
           <Switch id="change-log-beyond-flex" checked={onlyBeyondFlex} onCheckedChange={setOnlyBeyondFlex} />
           <Label htmlFor="change-log-beyond-flex" className="text-sm font-normal">
-            {he.sadranLog.onlyBeyondFlex} · {tv("sadranLog.requestCount", { count: String(rows.length) })}
+            {he.sadranLog.onlyBeyondFlex} · {rows.length === 1 ? he.sadranLog.requestCountOne : tv("sadranLog.requestCount", { count: String(rows.length) })}
           </Label>
         </div>
       </div>

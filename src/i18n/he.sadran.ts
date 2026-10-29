@@ -436,6 +436,9 @@ export const heSadran = {
     /** REQ §13.161 (d): the change log shows requested vs got, one row per request. */
     onlyBeyondFlex: "רק שינויים מחוץ לגמישות",
     requestCount: "{{count}} בקשות",
+    requestCountOne: "בקשה אחת",
+    /** O29-2 (4): the change log's filter for requests still on the waiting list. */
+    waitlistPill: "ברשימת ההמתנה · {{count}}",
     allWeek: "כל השבוע",
     loadError: "לא ניתן לטעון את יומן השינויים כרגע",
     emptyFiltered: "אין בקשות שהתוצאה שלהן שונה ממה שביקשו",

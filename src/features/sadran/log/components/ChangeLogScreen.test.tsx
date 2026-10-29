@@ -2,7 +2,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 
-import { he } from "@/i18n/he";
+import { he, tv } from "@/i18n/he";
 import { ChangeLogScreen } from "./ChangeLogScreen";
 
 const at = (hhmm: string) => `2040-01-02T${hhmm}:00Z`;
@@ -58,6 +58,18 @@ describe("ChangeLogScreen", () => {
     fireEvent.change(screen.getByLabelText(he.sadranLog.searchPlaceholder), { target: { value: "bob" } });
     expect(container.querySelector('[data-change-log-request="q1"]')).toBeNull();
     expect(container.querySelector('[data-change-log-request="q2"]')).not.toBeNull();
+  });
+
+  it("filters to the waiting list with its own pill and counts one request in the singular (O29-2 (4))", () => {
+    mocks.requests = [request("q1", "Waiting", { status: "waitlisted" }), request("q2", "Refused", { status: "denied" })];
+    mocks.rides = [];
+    mocks.proposals = [];
+    const { container } = show();
+    expect(container.querySelector('[data-change-log-request="q2"]')).not.toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: tv("sadranLog.waitlistPill", { count: "1" }) }));
+    expect(container.querySelector('[data-change-log-request="q1"]')).not.toBeNull();
+    expect(container.querySelector('[data-change-log-request="q2"]')).toBeNull();
+    expect(screen.getByText(new RegExp(he.sadranLog.requestCountOne))).toBeTruthy();
   });
 
   it("shows a request the Sadran closed with its reason and the return button; an ordinary cancellation has none (REQ §13.162)", () => {

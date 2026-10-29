@@ -19,6 +19,8 @@ export interface ChangeLogFilters {
   /** `null` = the whole week. */
   day: string | null;
   query: string;
+  /** O29-2 (4): only requests still on the waiting list (no ride). */
+  waitlistOnly?: boolean;
 }
 
 const askedAt = (request: WeekRequestRow) =>
@@ -38,9 +40,15 @@ export function changeLogRows(requests: readonly WeekRequestRow[], deltas: Reado
   return rows.sort((a, b) => (askedAt(a.request) ?? "").localeCompare(askedAt(b.request) ?? "") || a.request.id.localeCompare(b.request.id));
 }
 
-export function filterChangeLogRows(rows: readonly ChangeLogRow[], filters: Pick<ChangeLogFilters, "day" | "query">): ChangeLogRow[] {
+/** O29-2 (4): a request still waiting - no ride, not refused, closed or answered externally. */
+export function isWaitingRow(row: Pick<ChangeLogRow, "delta">): boolean {
+  return row.delta.state === "unplaced";
+}
+
+export function filterChangeLogRows(rows: readonly ChangeLogRow[], filters: Pick<ChangeLogFilters, "day" | "query" | "waitlistOnly">): ChangeLogRow[] {
   const needle = filters.query.trim().toLowerCase();
   return rows.filter((row) => (!filters.day || row.day === filters.day)
+    && (!filters.waitlistOnly || isWaitingRow(row))
     && (!needle || (row.request.requester_full_name ?? "").toLowerCase().includes(needle)));
 }
 
