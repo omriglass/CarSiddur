@@ -69,6 +69,7 @@ export default {
         rideHealthcare: "hsl(var(--ride-healthcare))",
         rideErrands: "hsl(var(--ride-errands))",
         rideOther: "hsl(var(--ride-other))",
+        delta: { DEFAULT: "hsl(var(--delta))", soft: "hsl(var(--delta-soft))" },
         mine: "hsl(var(--mine))",
         calendar: { DEFAULT: "hsl(var(--calendar))", foreground: "hsl(var(--calendar-foreground))" },
       },

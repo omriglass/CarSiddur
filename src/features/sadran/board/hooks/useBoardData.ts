@@ -28,6 +28,7 @@ import type { Window } from "@/solver";
 
 import { fetchCarMileageTotals, fetchCarStartLocations, fetchFairnessStats, fetchPlaceTravelForWeek } from "../../api";
 import { readLastUsedPolicyVersion, rememberLastUsedPolicyVersion } from "../../lastUsedPolicy";
+import { requestDeltas, rideDeltaView } from "../../requestDelta";
 import { sadranKeys } from "../../keys";
 import { isoToDayMinutes, scanBoardConflicts, slotToIso, requestDayMismatchRideIds, tightScheduleRideIds } from "../geometry";
 import { rideBlockLabel } from "../rideLabel";
@@ -145,6 +146,8 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
   // R15U13: a Sadran notice opens the board on its request's day (`?day=yyyy-mm-dd`), ahead of the remembered day.
   const [searchParams] = useSearchParams();
   const urlDay = searchParams.get("day");
+  // REQ §13.161 (d): the change log opens the board on a day with one ride marked (`?ride=<id>`).
+  const urlRideId = searchParams.get("ride");
   const [selectedDayOverride, setSelectedDayOverrideState] = useState<string | null>(() =>
     urlDay && /^\d{4}-\d{2}-\d{2}$/.test(urlDay) ? urlDay : readStoredBoardDay(dayStorageKey));
   const setSelectedDayOverride = (day: string | null) => {
@@ -676,6 +679,10 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
 
   // Moved up from near `awayWeekGridBlocks` below — also needed by `weekGridCars`' base badge.
   const destinationNameById = new Map((destinationsQuery.data ?? []).map((d) => [d.id, d.name]));
+  // REQ §13.161 (a): what each request got versus what it asked for, shown as a delta line on the ride block / card.
+  const requestDeltaMap = requestDeltas(requestsQuery.data ?? [], rides, proposalsQuery.data ?? [], {
+    homeName: department?.home_destination_id ? destinationNameById.get(department.home_destination_id) : null,
+  });
   const isLastDayOfWeek = selectedDay === days[days.length - 1];
   const weekGridCars: WeekGridCar[] = (carsQuery.data ?? []).map((c) => {
     const base = c.base_location_id ?? undefined;
@@ -762,6 +769,7 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
         return via ? `${base} · ${via}` : base;
       })(),
       pinned: !!r.is_pinned,
+      delta: rideDeltaView(r, requestDeltaMap),
       // REQ §13.94 (G10): an applied merge - the ride's own route carries boarding/alighting places.
       // R3B19: a lone הקפצה's own pickup/drop points are not a merge - only another request's points are.
       merged: (() => {
@@ -777,7 +785,7 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
       tightSchedule: tightRideIds.has(r.id as string),
       shadowed: shadowedRideIds.has(r.id as string),
       conflict: conflictRideIds.has(r.id as string),
-      highlighted: focusedConflict?.id === r.id,
+      highlighted: focusedConflict?.id === r.id || (!!urlRideId && r.id === urlRideId),
       pendingConsent: pendingConsentRideIds.has(r.id as string),
       rideTypeCode: representativeRideTypeCode(servedOf(r)),
       seriesIndex: r.series_index,
@@ -1035,6 +1043,8 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
     dropCtx,
     focusedConflict,
     focusedConflictIndex,
+    requestDeltaMap,
+    urlRideId,
   };
 }
 

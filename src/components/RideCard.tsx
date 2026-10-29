@@ -3,6 +3,8 @@ import { ArrowLeft, CarFront, MapPin, Star } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { CarNameWithReport } from "@/features/carCare/components/CarNameWithReport";
 import type { CarHandoverNotes } from "@/features/rides/carHandover";
+import { RideDeltaLine } from "@/components/RideDeltaLine";
+import type { RideDeltaView } from "@/features/sadran/requestDelta";
 import { CarHandoverNotice } from "@/features/rides/components/CarHandoverNotice";
 import { he, tv } from "@/i18n/he";
 import { formatDayDate } from "@/lib/dayLabels";
@@ -32,6 +34,8 @@ export interface RideCardData {
   description?: string;
   coordinatorNotes?: string;
   passengerSummary?: string;
+  /** REQ §13.161 (a): requested -> got, beyond flexibility only (Sadran board list mode). */
+  delta?: RideDeltaView | null;
   isChauffeur?: boolean;
   needsDriver?: boolean;
   conflict?: boolean;
@@ -147,6 +151,7 @@ export function RideCard({ ride, onClick }: RideCardProps) {
           {ride.purpose ? <p className="text-sm text-muted-foreground">({ride.purpose})</p> : null}
           {ride.joining?.map((line, index) => <p key={index} className="whitespace-normal break-words text-sm">{line}</p>)}
           {ride.passengerSummary ? <p className="whitespace-pre-wrap break-words">{ride.passengerSummary}</p> : null}
+          <RideDeltaLine view={ride.delta} className="text-xs" />
           {ride.description ? <p className="whitespace-pre-wrap break-words text-muted-foreground">{ride.description}</p> : null}
           {ride.handover ? <CarHandoverNotice notes={ride.handover} ride={{ startsAt: ride.startsAt, endsAt: ride.endsAt ?? ride.startsAt }} /> : null}
           {ride.coordinatorNotes ? <p className="whitespace-pre-wrap break-words text-xs text-muted-foreground">{he.field.notes}: {ride.coordinatorNotes}</p> : null}

@@ -97,20 +97,16 @@ test("combined one-way consent preserves an orphaned passenger and lets a member
     const coordinator = await newSignedInPage(browser, SEEDED_USERS.sadran);
     contexts.push(coordinator.context);
     await coordinator.page.goto(`/sadran/${NEVO_DEPARTMENT_ID}/${week}/board`);
-    // The request-deviations dialog now opens from the board's kebab "actions" menu (UX_FLOWS.md §4.2, 2026-09-10).
+    // The kebab "כל השינויים מהבקשות המקוריות" item opens the change log (REQ §13.161 d): one row per request, requested vs got.
     await coordinator.page.getByRole("button", { name: he.sadranBoard.actionsMenu, exact: true }).click();
     await coordinator.page.getByRole("menuitem", { name: he.deviations.title, exact: true }).click();
-    const deviation = coordinator.page.locator(`[data-request-deviation="${requestIds[0]}"]`);
-    const tripSummary = deviation.locator("[data-trip-summary]");
-    await expect(tripSummary).toContainText(SEEDED_USERS.member1.fullName);
-    // Single dates render as "א׳ 13.1" (`formatDayDate`, CLAUDE.md conventions, 2026-09-15).
-    await expect(tripSummary).toContainText(`${he.days.short[0]!}${he.days.geresh} 13.1`);
-    await expect(tripSummary).toContainText("07:15–10:00");
-    const { data: rideType } = await service.from("ride_types").select("name_he").eq("id", "00000000-0000-0000-0000-000000000021").single();
-    await expect(tripSummary).toContainText(rideType!.name_he);
-    await expect(deviation).toContainText("07:15");
-    await expect(deviation).toContainText("07:00");
-    await coordinator.page.keyboard.press("Escape");
+    await expect(coordinator.page).toHaveURL(/\/log$/);
+    // The merge moved the start 15 minutes (maybe inside the flexibility): show every difference.
+    await coordinator.page.getByRole("switch").click();
+    const row = coordinator.page.locator(`tr[data-change-log-request="${requestIds[0]}"]`);
+    await expect(row).toContainText(SEEDED_USERS.member1.fullName);
+    await expect(row).toContainText("07:15–10:00");
+    await expect(row).toContainText("07:00");
 
     // Negotiation has settled (merge applied) — publish the week for real now: the driver's
     // "בטל נסיעה" below exists only for a published ride, and the later step (a non-party,

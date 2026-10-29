@@ -11,7 +11,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
-import { RequestDeviationsDialog } from "../../deviations/RequestDeviationsDialog";
 import { useWeekExcelExport } from "../../export/useWeekExcelExport";
 import { CancelPublicationAction } from "../../publish/components/BoardPublicationActions";
 import { he, tv } from "@/i18n/he";
@@ -56,7 +55,6 @@ export function BoardActionsMenu({
 }: BoardActionsMenuProps) {
   const pending = drafts.length + heldUpdateCount(held);
   const navigate = useNavigate();
-  const [deviationsOpen, setDeviationsOpen] = useState(false);
   const [autoFillOpen, setAutoFillOpen] = useState(false);
   const [sendAllOpen, setSendAllOpen] = useState(false);
   // Controlled so opening a dialog that lives outside the menu also closes the menu (a menu left
@@ -94,8 +92,8 @@ export function BoardActionsMenu({
           <PlayCircle className="me-2 size-4" aria-hidden="true" />
           {autoSolving ? he.sadranDashboard.solving : he.action.autoSolveRemaining}
         </DropdownMenuItem>
-        <DropdownMenuItem onSelect={(e) => { e.preventDefault(); setMenuOpen(false); setDeviationsOpen(true); }}>
-          <ListChecks className="me-2 size-4" aria-hidden="true" />
+        <DropdownMenuItem onSelect={() => navigate(paths.sadran.log(departmentId, weekStart))} data-testid="board-actions-deviations">
+          <History className="me-2 size-4" aria-hidden="true" />
           {he.deviations.title}
         </DropdownMenuItem>
         <SetWeekCloseAction
@@ -133,10 +131,6 @@ export function BoardActionsMenu({
           )}
         />
         <DropdownMenuSeparator />
-        <DropdownMenuItem onSelect={() => navigate(paths.sadran.log(departmentId, weekStart))}>
-          <History className="me-2 size-4" aria-hidden="true" />
-          {he.screen.log.title}
-        </DropdownMenuItem>
         <DropdownMenuItem onSelect={() => navigate(paths.sadran.proposals(departmentId, weekStart))}>
           <ListChecks className="me-2 size-4" aria-hidden="true" />
           {he.screen.proposals.title}
@@ -157,6 +151,5 @@ export function BoardActionsMenu({
       onConfirm={(day) => { onAutoSolveRemaining(day); setAutoFillOpen(false); }}
     />
     <SendAllDialog open={sendAllOpen} onOpenChange={setSendAllOpen} departmentId={departmentId} weekStart={weekStart} drafts={drafts} held={held} />
-    <RequestDeviationsDialog departmentId={departmentId} weekStart={weekStart} open={deviationsOpen} onOpenChange={setDeviationsOpen} />
   </>;
 }

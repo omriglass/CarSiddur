@@ -22,7 +22,9 @@ export const paths = {
   sadran: {
     /** `/sadran/:dept/:week` — redirects straight to `.board()`; kept mainly as a `returnTo` safelist entry (`ProposalComposerScreen`). */
     week: (departmentId: string, weekStart: string) => `/sadran/${departmentId}/${weekStart}`,
-    board: (departmentId: string, weekStart: string) => `/sadran/${departmentId}/${weekStart}/board`,
+    /** `?day=` opens that day, `?ride=` marks that ride (the change log's row link, REQ §13.161 d). */
+    board: (departmentId: string, weekStart: string, opts: { day?: string; rideId?: string } = {}) =>
+      withQuery(`/sadran/${departmentId}/${weekStart}/board`, { day: opts.day, ride: opts.rideId }),
     /** `?proposal=<id>` highlights and scrolls to that row (`ProposalsListScreen`). */
     proposals: (departmentId: string, weekStart: string, proposalId?: string) =>
       withQuery(`/sadran/${departmentId}/${weekStart}/proposals`, { proposal: proposalId }),
