@@ -15564,7 +15564,7 @@ CREATE OR REPLACE FUNCTION "public"."restore_closed_request"("p_request_id" "uui
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
 declare
-  v_req public.requests%rowtype; v_ids uuid[]; v_all uuid[]; v_removed int; v_held int;
+  v_req public.requests%rowtype; v_ids uuid[]; v_all uuid[]; v_removed int; v_held int; v_seen boolean; v_by text;
   v_prev text := coalesce(current_setting('app.system_status_transition', true), 'off');
 begin
   select * into v_req from public.requests where id = p_request_id for update;
@@ -15591,6 +15591,14 @@ begin
   update public.requests set status = 'waitlisted', status_reason = 'CLOSE_UNDONE' where id = any(v_all);
   perform set_config('app.system_status_transition', v_prev, true);
 
+  -- Did the closing notice reach the member? (read in the inbox, or a push already sent)
+  select exists (
+    select 1 from public.notifications n
+    where n.event = 'outcome_changed' and n.data ->> 'variant' in ('request_closed', 'request_closed_plain')
+      and n.data ->> 'request_id' = any(select x::text from unnest(v_all) x)
+      and (n.read_at is not null or exists (select 1 from public.push_outbox o where o.notification_id = n.id and o.status = 'sent')))
+  into v_seen;
+
   -- Take the notice back: the inbox row (its undelivered push_outbox rows cascade) and a notice still held on the board.
   with gone as (
     delete from public.notifications n
@@ -15605,8 +15613,19 @@ begin
     returning 1)
   select count(*) into v_held from gone;
 
+  -- O29-2 (2): one short correction, only when there is something seen to correct
+  if v_seen and v_req.requester_id is distinct from (select auth.uid()) then
+    select full_name into v_by from public.profiles where id = (select auth.uid());
+    perform public.enqueue_notification(v_req.requester_id, 'outcome_changed', v_req.department_id, v_req.week_start,
+      jsonb_build_object('byName', coalesce(v_by, ''),
+        'route', coalesce(public.request_route_label(p_request_id), ''),
+        'day', public.day_date_label(coalesce(v_req.original_depart_at, v_req.depart_at, v_req.original_return_at, v_req.return_at))),
+      jsonb_build_object('variant', 'request_restored', 'request_id', p_request_id, 'url', '/my'),
+      format('request_restored:%s:%s', p_request_id, v_req.version));
+  end if;
+
   return jsonb_build_object('request_id', p_request_id, 'status', 'waitlisted', 'restored', to_jsonb(v_all),
-    'notices_removed', v_removed + v_held);
+    'notices_removed', v_removed + v_held, 'member_told', coalesce(v_seen, false));
 end $$;
 
 

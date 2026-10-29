@@ -524,6 +524,17 @@ cross join (values
 ) as v(variant, title, body)
 on conflict (event,channel,(coalesce(variant,''))) do update set title=excluded.title,body=excluded.body,default_title=excluded.default_title,default_body=excluded.default_body;
 
+-- O29-2 (2): a closed request returned to the waiting list, told only when the closing notice was seen.
+-- Mirrors 20261030090000_restore_closed_request_notice.sql.
+insert into public.notification_templates(event,channel,variant,title,body,default_title,default_body)
+select 'outcome_changed',channel,'request_restored',
+  'הבקשה שלך חזרה לרשימת ההמתנה',
+  '{{byName}} החזיר/ה את הבקשה שלך ליום {{day}} {{route}} לרשימת ההמתנה — ההודעה שהבקשה נסגרה נשלחה בטעות. נעדכן אם יימצא לך שיבוץ.',
+  'הבקשה שלך חזרה לרשימת ההמתנה',
+  '{{byName}} החזיר/ה את הבקשה שלך ליום {{day}} {{route}} לרשימת ההמתנה — ההודעה שהבקשה נסגרה נשלחה בטעות. נעדכן אם יימצא לך שיבוץ.'
+from unnest(array['inbox','push']::public.notification_channel[]) channel
+on conflict (event,channel,(coalesce(variant,''))) do update set title=excluded.title,body=excluded.body,default_title=excluded.default_title,default_body=excluded.default_body;
+
 -- Named reservation passengers (F3, 20260914120000_ride_passengers.sql): a Sadran-picked
 -- reservation passenger (or, later, anyone added via "+ נוסעים") is notified once.
 insert into public.notification_templates(event,channel,variant,title,body,default_title,default_body)

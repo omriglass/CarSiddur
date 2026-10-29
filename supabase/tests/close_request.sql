@@ -152,6 +152,9 @@ begin
   assert (res->>'notices_removed')::int=1, format('(d) one notice taken back, got %s', res);
   assert not exists (select 1 from public.notifications where id=notif), '(d) the inbox entry is removed';
   assert not exists (select 1 from public.push_outbox where notification_id=notif), '(d) its undelivered push is dropped';
+  -- O29-2 (2): nothing was seen, so the restore is silent
+  assert (res->>'member_told')::boolean is false, '(d) an unseen closing notice is taken back silently';
+  assert not exists (select 1 from public.notifications where recipient_id=m2 and data->>'variant'='request_restored'), '(d) no restore notice';
   begin
     perform public.restore_closed_request(q3,(select version from public.requests where id=q3));
     raise exception 'restoring a waiting request unexpectedly succeeded';
@@ -181,6 +184,16 @@ begin
   assert (select count(*) from public.requests where series_id=ser and status='waitlisted' and status_reason='CLOSE_UNDONE')=2, '(c) every day comes back';
   select count(*) into n from public.notifications where recipient_id=m2;
   assert n=n0, '(c) the series notice is taken back';
+
+  -- ===== O29-2 (2): a closing notice the member already read -> one short "back on the waiting list" notice ==========
+  perform public.close_request(s1,(select version from public.requests where id=s1),'again');
+  update public.notifications set read_at=now() where recipient_id=m2 and data->>'variant'='request_closed' and data->>'request_id' in (s1::text,s2::text);
+  res := public.restore_closed_request(s1,(select version from public.requests where id=s1));
+  assert (res->>'member_told')::boolean, format('(d) a seen closing notice is corrected, got %s', res);
+  select count(*) into n from public.notifications where recipient_id=m2;
+  assert n=n0+1, format('(d) exactly one restore notice for the series, got %s', n-n0);
+  assert (select title_he from public.notifications where recipient_id=m2 and data->>'variant'='request_restored') like '%רשימת ההמתנה%', '(d) restore copy';
+  delete from public.notifications where recipient_id=m2 and data->>'variant'='request_restored';
 
   -- ===== (d) a close made on the board is held; restoring before "send all" drops the held notice ==========
   insert into public.requests(department_id,week_start,requester_id,filed_by,destination_id,ride_type_id,depart_at,return_at,trip_shape,status)
