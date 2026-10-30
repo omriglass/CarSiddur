@@ -273,6 +273,26 @@ begin
   assert (select count(*) from public.notifications where recipient_id=m1 and data->>'variant' in ('request_closed','request_closed_plain') and data->>'request_id'=q1::text)=1,
     '(e) the closed driver gets one closing notice';
 
+  -- ===== (f) R16B5: the same on an UNPUBLISHED day - closing the driver must not cancel the kept (draft) ride =========
+  perform set_config('app.in_publish','on',true);
+  update public.weeks set published_days=array[w,w+1,w+2,w+3,w+4,w+6] where department_id=dept and week_start=w;
+  perform set_config('app.in_publish','off',true);
+  insert into public.requests(department_id,week_start,requester_id,filed_by,destination_id,ride_type_id,depart_at,return_at,trip_shape,status)
+    values(dept,w,m1,m1,dest,typ,dt+interval '3 days',dt+interval '3 days 4 hours','round_trip','assigned') returning id into q1;
+  insert into public.requests(department_id,week_start,requester_id,filed_by,destination_id,ride_type_id,depart_at,return_at,trip_shape,status)
+    values(dept,w,m2,m2,dest,typ,dt+interval '3 days',dt+interval '3 days 4 hours','round_trip','merged') returning id into q2;
+  insert into public.rides(department_id,week_start,car_id,starts_at,ends_at,origin_id,destination_id,driver_id,status,is_pinned,pin_reason,created_by)
+    values(dept,w,carA,dt+interval '3 days',dt+interval '3 days 4 hours',home,home,m1,'draft',true,'SADRAN_MANUAL',sadran) returning id into rA;
+  insert into public.ride_requests(ride_id,request_id,role,leg,car_mode) values(rA,q1,'driver','both','keep'),(rA,q2,'passenger','both','passenger');
+  set constraints all immediate; set constraints all deferred;
+  res := public.sadran_cancel_ride(rA,'not needed',(select version from public.rides where id=rA),array[q1],array[q2]);
+  set constraints all immediate; set constraints all deferred;
+  assert (select status::text from public.rides where id=rA)<>'cancelled',
+    format('(f) the kept draft ride stays, got %s / %s', (select status::text||'/'||coalesce(cancel_reason,'') from public.rides where id=rA), res);
+  assert exists (select 1 from public.ride_requests where ride_id=rA and request_id=q2), '(f) the continuing request keeps its place';
+  assert (select status::text||'/'||status_reason from public.requests where id=q1)='cancelled/CLOSED_BY_SADRAN',
+    format('(f) the driver''s request is closed, got %s', (select status::text||'/'||coalesce(status_reason,'') from public.requests where id=q1));
+
   set constraints all immediate;
   raise notice 'close_request.sql: all REQ §13.162 assertions passed';
 end $$;
