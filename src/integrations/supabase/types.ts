@@ -3973,6 +3973,7 @@ export type Database = {
           created_by_solver_run_id: string | null
           department_id: string
           destination_id: string
+          draft_hold: boolean
           driver_id: string | null
           ends_at: string
           flag_reason: string | null
@@ -4007,6 +4008,7 @@ export type Database = {
           created_by_solver_run_id?: string | null
           department_id: string
           destination_id: string
+          draft_hold?: boolean
           driver_id?: string | null
           ends_at: string
           flag_reason?: string | null
@@ -4041,6 +4043,7 @@ export type Database = {
           created_by_solver_run_id?: string | null
           department_id?: string
           destination_id?: string
+          draft_hold?: boolean
           driver_id?: string | null
           ends_at?: string
           flag_reason?: string | null
@@ -5471,6 +5474,15 @@ export type Database = {
         Args: { p_day: string; p_series_id: string }
         Returns: undefined
       }
+      _draft_hold_conflict: {
+        Args: {
+          p_car: string
+          p_exempt: string[]
+          p_from: string
+          p_until: string
+        }
+        Returns: boolean
+      }
       _dt_label: { Args: { p_at: string }; Returns: string }
       _duration_lock_shape_ok: {
         Args: {
@@ -5590,6 +5602,10 @@ export type Database = {
           from_at: string
           to_at: string
         }[]
+      }
+      _proposal_holds_ride: {
+        Args: { p: Database["public"]["Tables"]["proposals"]["Row"] }
+        Returns: boolean
       }
       _publish_ride_line: {
         Args: { p_request_id: string; p_ride_id: string }
@@ -5723,6 +5739,7 @@ export type Database = {
       }
       _small_trunk_mode: { Args: { p_allow: boolean }; Returns: undefined }
       _small_trunk_probe: { Args: { p_request_id: string }; Returns: string }
+      _sync_draft_hold: { Args: { p_request_id: string }; Returns: undefined }
       _time_change_line: {
         Args: {
           _day_level?: boolean

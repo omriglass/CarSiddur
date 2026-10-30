@@ -917,9 +917,10 @@ begin
   return (p_at_origin is null or public.car_location_at(p_car, q.depart_at) = p_at_origin)
     and not exists (
       select 1 from public.rides r
-      where r.car_id = p_car and r.status <> 'cancelled' and not r.planning_conflict
+      where r.car_id = p_car and r.status <> 'cancelled' and not r.planning_conflict and not r.draft_hold
         and not exists (select 1 from public.ride_requests rr where rr.ride_id = r.id and rr.request_id = q.id)
         and tstzrange(r.starts_at, r.blocked_until, '[)') && tstzrange(q.depart_at, v_end + v_ta, '[)'))
+    and not public._draft_hold_conflict(p_car, q.depart_at, v_end + v_ta, array[q.id])
     and not exists (
       select 1 from public.car_maintenance_blocks b
       where b.car_id = p_car and tstzrange(b.starts_at, b.ends_at, '[)') && tstzrange(q.depart_at, v_end, '[)'));
@@ -1610,6 +1611,25 @@ end $$;
 
 
 ALTER FUNCTION "public"."_day_car_swap_split_series"("p_series_id" "uuid", "p_day" "date") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."_draft_hold_conflict"("p_car" "uuid", "p_from" timestamp with time zone, "p_until" timestamp with time zone, "p_exempt" "uuid"[]) RETURNS boolean
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  select exists (
+    select 1 from public.proposals p
+    cross join lateral public._proposal_car_holds(p.payload, p.type) h
+    where p.type in ('shift', 'origin') and p.status in ('draft', 'sent', 'accepted') and p.applied_at is null
+      and nullif(p.payload ->> 'car_id', '') = p_car::text
+      and h.car_id = p_car
+      and p.request_id <> all(coalesce(p_exempt, '{}'))
+      and tstzrange(h.from_at, h.to_at + make_interval(mins => coalesce(public.required_turnaround_minutes(p.department_id, p.week_start), 30)), '[)')
+          && tstzrange(p_from, p_until, '[)'))
+$$;
+
+
+ALTER FUNCTION "public"."_draft_hold_conflict"("p_car" "uuid", "p_from" timestamp with time zone, "p_until" timestamp with time zone, "p_exempt" "uuid"[]) OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."_dt_label"("p_at" timestamp with time zone) RETURNS "text"
@@ -2592,6 +2612,91 @@ end $$;
 ALTER FUNCTION "public"."_proposal_car_holds"("p_payload" "jsonb", "p_type" "public"."proposal_type") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."validate_proposal_payload"("_type" "public"."proposal_type", "_payload" "jsonb") RETURNS boolean
+    LANGUAGE "sql" IMMUTABLE
+    AS $$
+  select case _type
+    when 'shift' then _payload ? 'series_span' or _payload ? 'depart_at' or _payload ? 'return_at' or _payload ? 'car_id'
+      or _payload ? 'origin_id' or _payload ? 'origin_text'
+      or _payload ? 'destination_id' or _payload ? 'destination_text' or _payload ? 'stops'
+    when 'merge' then _payload ? 'legs' and jsonb_typeof(_payload -> 'legs') = 'array' and jsonb_array_length(_payload -> 'legs') > 0
+      and not exists (select 1 from jsonb_array_elements(_payload -> 'legs') l where not (l ? 'ride_id'))
+    when 'deny' then _payload ? 'reason'
+    when 'external' then _payload ? 'hint' and _payload ? 'reason'
+    when 'origin' then _payload ? 'origin_id' and _payload ? 'car_id'
+    when 'alternative' then _payload ? 'car_id' and _payload ? 'depart_at'
+    else false
+  end;
+$$;
+
+
+ALTER FUNCTION "public"."validate_proposal_payload"("_type" "public"."proposal_type", "_payload" "jsonb") OWNER TO "postgres";
+
+SET default_tablespace = '';
+
+SET default_table_access_method = "heap";
+
+
+CREATE TABLE IF NOT EXISTS "public"."proposals" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "department_id" "uuid" NOT NULL,
+    "week_start" "date" NOT NULL,
+    "type" "public"."proposal_type" NOT NULL,
+    "status" "public"."proposal_status" DEFAULT 'draft'::"public"."proposal_status" NOT NULL,
+    "request_id" "uuid" NOT NULL,
+    "ride_id" "uuid",
+    "payload" "jsonb" NOT NULL,
+    "reason_he" "text" NOT NULL,
+    "previous_status" "public"."request_status" NOT NULL,
+    "token_hash" "text" NOT NULL,
+    "expires_at" timestamp with time zone,
+    "sent_at" timestamp with time zone,
+    "sent_via" "public"."notification_channel"[] DEFAULT '{}'::"public"."notification_channel"[] NOT NULL,
+    "answered_by" "uuid",
+    "answered_at" timestamp with time zone,
+    "answered_via" "public"."answer_channel",
+    "answer_note" "text",
+    "applied_at" timestamp with time zone,
+    "applied_ride_id" "uuid",
+    "created_by" "uuid" NOT NULL,
+    "created_via" "text" DEFAULT 'sadran'::"text" NOT NULL,
+    "version" integer DEFAULT 1 NOT NULL,
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "waiting_for" "uuid"[] DEFAULT '{}'::"uuid"[] NOT NULL,
+    "sent_by" "uuid",
+    CONSTRAINT "proposals_created_via_ck" CHECK (("created_via" = ANY (ARRAY['sadran'::"text", 'ask_to_join'::"text"]))),
+    CONSTRAINT "proposals_payload_shape_ck" CHECK ("public"."validate_proposal_payload"("type", "payload"))
+);
+
+ALTER TABLE ONLY "public"."proposals" FORCE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."proposals" OWNER TO "postgres";
+
+
+COMMENT ON COLUMN "public"."proposals"."waiting_for" IS 'REQ §13.138 (f): an accepted proposal that cannot apply until these pending proposals apply (empty = not waiting).';
+
+
+
+COMMENT ON COLUMN "public"."proposals"."sent_by" IS 'Who sent the proposal (send_proposal); told when it is replaced or withdrawn.';
+
+
+
+CREATE OR REPLACE FUNCTION "public"."_proposal_holds_ride"("p" "public"."proposals") RETURNS boolean
+    LANGUAGE "sql" IMMUTABLE
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  select p.type in ('shift', 'origin') and p.status in ('draft', 'sent', 'accepted') and p.applied_at is null
+    and nullif(p.payload ->> 'car_id', '') is not null
+    and (nullif(p.payload ->> 'depart_at', '') is not null or nullif(p.payload ->> 'return_at', '') is not null)
+    and not (p.payload ? 'leg') and not (p.payload ? 'series_span')
+$$;
+
+
+ALTER FUNCTION "public"."_proposal_holds_ride"("p" "public"."proposals") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."_publish_ride_line"("p_request_id" "uuid", "p_ride_id" "uuid") RETURNS "text"
     LANGUAGE "plpgsql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -3276,10 +3381,6 @@ end $$;
 
 ALTER FUNCTION "public"."_save_request_alternative"("p_request_id" "uuid", "p_payload" "jsonb", "p_old_depart" timestamp with time zone) OWNER TO "postgres";
 
-SET default_tablespace = '';
-
-SET default_table_access_method = "heap";
-
 
 CREATE TABLE IF NOT EXISTS "public"."held_notices" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
@@ -3492,6 +3593,91 @@ end $$;
 
 
 ALTER FUNCTION "public"."_small_trunk_probe"("p_request_id" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."_sync_draft_hold"("p_request_id" "uuid") RETURNS "void"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  v_prop public.proposals%rowtype; v_ride uuid; r public.rides%rowtype; v_ids uuid[]; v_who record; v_to uuid; v_by text;
+  v_prev text := coalesce(current_setting('app.system_status_transition', true), 'off');
+begin
+  if p_request_id is null then return; end if;
+  select * into v_prop from public.proposals p
+  where p.request_id = p_request_id and public._proposal_holds_ride(p)
+  order by (p.status = 'draft'), p.created_at desc limit 1;
+  if v_prop.id is not null
+     and (select count(*) from public.ride_requests rr join public.rides rd on rd.id = rr.ride_id
+          where rr.request_id = p_request_id and rd.status <> 'cancelled') = 1 then
+    select rd.id into v_ride from public.ride_requests rr join public.rides rd on rd.id = rr.ride_id
+    where rr.request_id = p_request_id and rd.status <> 'cancelled';
+  end if;
+  if v_ride is not null then
+    update public.rides set draft_hold = true where id = v_ride and not draft_hold;
+  end if;
+
+  -- Rides of this request still held but no longer by an open proposal.
+  for r in
+    select rd.* from public.rides rd
+    where rd.draft_hold and rd.id is distinct from v_ride
+      and (rd.status = 'cancelled' or exists (select 1 from public.ride_requests rr where rr.ride_id = rd.id and rr.request_id = p_request_id))
+      and not exists (select 1 from public.ride_requests rr join public.proposals p on p.request_id = rr.request_id
+                      where rr.ride_id = rd.id and rr.request_id <> p_request_id and public._proposal_holds_ride(p))
+    order by rd.id for update
+  loop
+    if r.status = 'cancelled' then
+      update public.rides set draft_hold = false where id = r.id;
+      continue;
+    end if;
+    select coalesce(array_agg(request_id), '{}') into v_ids from public.ride_requests where ride_id = r.id;
+    if exists (select 1 from public.rides o where o.car_id = r.car_id and o.id <> r.id and o.status <> 'cancelled'
+                 and not o.draft_hold and not o.planning_conflict
+                 and not (r.series_id is not null and o.series_id = r.series_id)
+                 and tstzrange(o.starts_at, o.blocked_until, '[)') && tstzrange(r.starts_at, r.blocked_until, '[)'))
+       or public._draft_hold_conflict(r.car_id, r.starts_at, r.blocked_until, v_ids)
+       or exists (select 1 from public.car_maintenance_blocks b where b.car_id = r.car_id
+                    and tstzrange(b.starts_at, b.ends_at, '[)') && tstzrange(r.starts_at, r.blocked_until, '[)')) then
+      -- Its time was taken while the change was open: released, never double-booked.
+      select p.* into v_prop from public.proposals p where p.request_id = any(v_ids) and p.type in ('shift', 'origin')
+      order by p.updated_at desc limit 1;
+      select full_name into v_by from public.profiles where id = v_prop.created_by;
+      for v_who in select distinct q.id as request_id, q.requester_id from public.requests q where q.id = any(v_ids)
+        and q.requester_id is distinct from (select auth.uid()) loop
+        perform public.enqueue_notification(v_who.requester_id, 'outcome_changed', r.department_id, r.week_start,
+          jsonb_build_object('byName', coalesce(v_by, '')),
+          jsonb_build_object('variant', 'unassigned_by_sadran', 'request_id', v_who.request_id, 'ride_id', r.id),
+          format('unassigned_by_sadran:%s:%s:%s', r.id, v_who.request_id, clock_timestamp()));
+      end loop;
+      perform set_config('app.audit_reason', 'draft_slot_taken', true);
+      perform set_config('app.system_status_transition', 'on', true);
+      update public.rides set status = 'cancelled', cancelled_at = now(), cancel_reason = 'DRAFT_SLOT_TAKEN', draft_hold = false,
+        cancelled_by = coalesce((select auth.uid()), v_prop.created_by, r.created_by)
+      where id = r.id;
+      delete from public.ride_requests where ride_id = r.id;
+      update public.requests q set status = 'waitlisted', status_reason = 'DRAFT_SLOT_TAKEN'
+      where q.id = any(v_ids) and q.status not in ('cancelled', 'withdrawn', 'external', 'denied')
+        and not exists (select 1 from public.ride_requests rr join public.rides rd on rd.id = rr.ride_id
+                        where rr.request_id = q.id and rd.status <> 'cancelled');
+      perform set_config('app.system_status_transition', v_prev, true);
+      if v_prop.id is not null then
+        for v_to in select distinct x from unnest(array[v_prop.created_by, v_prop.sent_by]) x
+                    where x is not null and x is distinct from (select auth.uid()) loop
+          perform public.enqueue_notification(v_to, 'proposal_answered', v_prop.department_id, v_prop.week_start,
+            jsonb_build_object('byName', coalesce(v_by, '')),
+            jsonb_build_object('variant', 'declined_slot_taken', 'proposal_id', v_prop.id, 'request_id', v_prop.request_id),
+            format('declined_slot_taken:%s:%s', v_prop.id, v_to));
+        end loop;
+      end if;
+      perform public.flag_car_chain_breaks(r.car_id, r.week_start);
+    else
+      update public.rides set draft_hold = false where id = r.id;
+    end if;
+  end loop;
+end $$;
+
+
+ALTER FUNCTION "public"."_sync_draft_hold"("p_request_id" "uuid") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."_time_change_line"("_old_start" timestamp with time zone, "_old_end" timestamp with time zone, "_new_start" timestamp with time zone, "_new_end" timestamp with time zone, "_day_level" boolean DEFAULT false) RETURNS "text"
@@ -13150,6 +13336,19 @@ $$;
 ALTER FUNCTION "public"."proposals_status_guard"() OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."proposals_sync_draft_hold"() RETURNS "trigger"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+begin
+  perform public._sync_draft_hold(new.request_id);
+  return null;
+end $$;
+
+
+ALTER FUNCTION "public"."proposals_sync_draft_hold"() OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."publication_conflict_details"("p_department_id" "uuid", "p_week_start" "date", "p_days" "date"[]) RETURNS TABLE("ride_id" "uuid", "reason" "text", "other_ride_id" "uuid")
     LANGUAGE "plpgsql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -15939,6 +16138,28 @@ end $$;
 ALTER FUNCTION "public"."ride_requests_refresh_flags"() OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."ride_requests_respect_draft_holds"() RETURNS "trigger"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare r public.rides%rowtype; v_mine uuid[];
+begin
+  select * into r from public.rides where id = new.ride_id;
+  if r.id is null or r.status = 'cancelled' or r.draft_hold or r.planning_conflict
+     or coalesce(current_setting('app.day_car_swap', true), '') = 'on' then
+    return null;
+  end if;
+  select coalesce(array_agg(request_id), '{}') into v_mine from public.ride_requests where ride_id = r.id;
+  if public._draft_hold_conflict(r.car_id, r.starts_at, r.blocked_until, v_mine) then
+    raise exception 'ride_held_by_draft' using errcode = '23P01';
+  end if;
+  return null;
+end $$;
+
+
+ALTER FUNCTION "public"."ride_requests_respect_draft_holds"() OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."ride_requests_sync_coverage"() RETURNS "trigger"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -16083,16 +16304,20 @@ CREATE OR REPLACE FUNCTION "public"."rides_before_write"() RETURNS "trigger"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
-declare required int; collision boolean; planning boolean; same_window boolean:=false;
+declare required int; collision boolean; planning boolean; same_window boolean:=false; v_mine uuid[];
 begin
   perform pg_advisory_xact_lock(hashtextextended(new.car_id::text,0));
   required:=coalesce(public.required_turnaround_minutes(new.department_id,new.week_start),30);
   planning:=coalesce(current_setting('app.coordinator_planning',true),'')='on'
     and public.can_manage_week(new.department_id,new.week_start);
   if tg_op='UPDATE' then same_window:=new.car_id=old.car_id and new.starts_at=old.starts_at and new.ends_at=old.ends_at and new.status=old.status; end if;
-  select coalesce(current_setting('app.day_car_swap',true),'')<>'on' and exists(select 1 from public.rides r where r.car_id=new.car_id and r.id<>new.id and r.status<>'cancelled'
-    and tstzrange(r.starts_at,r.ends_at,'[)') && tstzrange(new.starts_at,new.ends_at,'[)')) into collision;
-  if planning and collision then
+  -- REQ §13.161 (b): the requests on this ride; their own open proposals never block it.
+  if tg_op='UPDATE' then select coalesce(array_agg(request_id),'{}') into v_mine from public.ride_requests where ride_id=new.id; end if;
+  select coalesce(current_setting('app.day_car_swap',true),'')<>'on' and (exists(select 1 from public.rides r where r.car_id=new.car_id and r.id<>new.id and r.status<>'cancelled'
+    and not r.draft_hold
+    and tstzrange(r.starts_at,r.ends_at,'[)') && tstzrange(new.starts_at,new.ends_at,'[)'))
+    or (planning and tg_op='UPDATE' and not new.draft_hold and public._draft_hold_conflict(new.car_id,new.starts_at,new.ends_at,v_mine))) into collision;
+  if planning and collision and not new.draft_hold then
     -- Existing published rides are intercepted by edit_ride and saved as shadows.
     if tg_op='UPDATE' and old.status<>'draft' then raise exception 'published_ride_requires_planning_shadow'; end if;
     new.status:='draft'; new.planning_conflict:=true; new.turnaround_override_minutes:=0;
@@ -16102,7 +16327,8 @@ begin
   end if;
   new.turnaround:=make_interval(mins=>least(required,coalesce(new.turnaround_override_minutes,required)));
   new.blocked_until:=new.ends_at+new.turnaround;
-  if new.status<>'cancelled' then
+  -- A held ride stands aside (its time is not reserved), so it is checked again only when it takes its time back.
+  if new.status<>'cancelled' and not new.draft_hold then
     -- REQ §13.114: only a ride that is new, or whose car / window changed, is checked against maintenance. A
     -- status / flag / driver update on a ride that already sits inside a period (e.g. `flag_rides_in_maintenance`
     -- flagging it when someone extends the period) must not be refused — that made every non-admin who created or
@@ -16113,11 +16339,20 @@ begin
        and exists(select 1 from public.car_maintenance_blocks b where b.car_id=new.car_id
       and tstzrange(b.starts_at,b.ends_at,'[)') && tstzrange(new.starts_at,new.blocked_until,'[)')) then raise exception 'ride_conflicts_with_maintenance'; end if;
     if not new.planning_conflict and coalesce(current_setting('app.day_car_swap',true),'')<>'on' and exists(select 1 from public.rides r where r.car_id=new.car_id and r.id<>new.id and r.status<>'cancelled'
+      and not r.draft_hold
       and (not same_window or not r.planning_conflict)
       -- REQ §13.77: consecutive legs of one multi-day series need no turnaround buffer.
       and not (new.series_id is not null and r.series_id = new.series_id)
       and tstzrange(r.starts_at,r.blocked_until,'[)') && tstzrange(new.starts_at,new.blocked_until,'[)')) then
       raise exception 'ride_turnaround_conflict' using errcode='23P01';
+    end if;
+    -- REQ §13.161 (b): another request's open draft holds this car + time (checked when the window or car moves; a
+    -- new ride is checked when a request is linked to it - ride_requests_respect_draft_holds).
+    if tg_op='UPDATE' and not new.planning_conflict and coalesce(current_setting('app.day_car_swap',true),'')<>'on'
+       and (new.car_id is distinct from old.car_id or new.starts_at is distinct from old.starts_at
+            or new.blocked_until is distinct from old.blocked_until or old.status='cancelled' or old.draft_hold)
+       and public._draft_hold_conflict(new.car_id,new.starts_at,new.blocked_until,v_mine) then
+      raise exception 'ride_held_by_draft' using errcode='23P01';
     end if;
   end if;
   return new;
@@ -20704,27 +20939,6 @@ end $$;
 ALTER FUNCTION "public"."validate_preferred_car"() OWNER TO "postgres";
 
 
-CREATE OR REPLACE FUNCTION "public"."validate_proposal_payload"("_type" "public"."proposal_type", "_payload" "jsonb") RETURNS boolean
-    LANGUAGE "sql" IMMUTABLE
-    AS $$
-  select case _type
-    when 'shift' then _payload ? 'series_span' or _payload ? 'depart_at' or _payload ? 'return_at' or _payload ? 'car_id'
-      or _payload ? 'origin_id' or _payload ? 'origin_text'
-      or _payload ? 'destination_id' or _payload ? 'destination_text' or _payload ? 'stops'
-    when 'merge' then _payload ? 'legs' and jsonb_typeof(_payload -> 'legs') = 'array' and jsonb_array_length(_payload -> 'legs') > 0
-      and not exists (select 1 from jsonb_array_elements(_payload -> 'legs') l where not (l ? 'ride_id'))
-    when 'deny' then _payload ? 'reason'
-    when 'external' then _payload ? 'hint' and _payload ? 'reason'
-    when 'origin' then _payload ? 'origin_id' and _payload ? 'car_id'
-    when 'alternative' then _payload ? 'car_id' and _payload ? 'depart_at'
-    else false
-  end;
-$$;
-
-
-ALTER FUNCTION "public"."validate_proposal_payload"("_type" "public"."proposal_type", "_payload" "jsonb") OWNER TO "postgres";
-
-
 CREATE OR REPLACE FUNCTION "public"."validate_request_companion"() RETURNS "trigger"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -22543,52 +22757,6 @@ COMMENT ON COLUMN "public"."proposal_parties"."offer_notice_opened" IS 'O28-3: s
 
 
 
-CREATE TABLE IF NOT EXISTS "public"."proposals" (
-    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
-    "department_id" "uuid" NOT NULL,
-    "week_start" "date" NOT NULL,
-    "type" "public"."proposal_type" NOT NULL,
-    "status" "public"."proposal_status" DEFAULT 'draft'::"public"."proposal_status" NOT NULL,
-    "request_id" "uuid" NOT NULL,
-    "ride_id" "uuid",
-    "payload" "jsonb" NOT NULL,
-    "reason_he" "text" NOT NULL,
-    "previous_status" "public"."request_status" NOT NULL,
-    "token_hash" "text" NOT NULL,
-    "expires_at" timestamp with time zone,
-    "sent_at" timestamp with time zone,
-    "sent_via" "public"."notification_channel"[] DEFAULT '{}'::"public"."notification_channel"[] NOT NULL,
-    "answered_by" "uuid",
-    "answered_at" timestamp with time zone,
-    "answered_via" "public"."answer_channel",
-    "answer_note" "text",
-    "applied_at" timestamp with time zone,
-    "applied_ride_id" "uuid",
-    "created_by" "uuid" NOT NULL,
-    "created_via" "text" DEFAULT 'sadran'::"text" NOT NULL,
-    "version" integer DEFAULT 1 NOT NULL,
-    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
-    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
-    "waiting_for" "uuid"[] DEFAULT '{}'::"uuid"[] NOT NULL,
-    "sent_by" "uuid",
-    CONSTRAINT "proposals_created_via_ck" CHECK (("created_via" = ANY (ARRAY['sadran'::"text", 'ask_to_join'::"text"]))),
-    CONSTRAINT "proposals_payload_shape_ck" CHECK ("public"."validate_proposal_payload"("type", "payload"))
-);
-
-ALTER TABLE ONLY "public"."proposals" FORCE ROW LEVEL SECURITY;
-
-
-ALTER TABLE "public"."proposals" OWNER TO "postgres";
-
-
-COMMENT ON COLUMN "public"."proposals"."waiting_for" IS 'REQ §13.138 (f): an accepted proposal that cannot apply until these pending proposals apply (empty = not waiting).';
-
-
-
-COMMENT ON COLUMN "public"."proposals"."sent_by" IS 'Who sent the proposal (send_proposal); told when it is replaced or withdrawn.';
-
-
-
 CREATE TABLE IF NOT EXISTS "public"."push_outbox" (
     "id" bigint NOT NULL,
     "notification_id" "uuid" NOT NULL,
@@ -22954,6 +23122,7 @@ CREATE TABLE IF NOT EXISTS "public"."rides" (
     "planning_conflict" boolean DEFAULT false NOT NULL,
     "series_id" "uuid",
     "auto_relocation" boolean DEFAULT false NOT NULL,
+    "draft_hold" boolean DEFAULT false NOT NULL,
     CONSTRAINT "rides_cancel_consistency_ck" CHECK (((("cancelled_at" IS NULL) AND ("cancelled_by" IS NULL) AND ("cancel_reason" IS NULL) AND ("status" <> 'cancelled'::"public"."ride_status")) OR (("cancelled_at" IS NOT NULL) AND ("cancelled_by" IS NOT NULL) AND ("cancel_reason" IS NOT NULL) AND ("status" = 'cancelled'::"public"."ride_status")))),
     CONSTRAINT "rides_ends_qh_ck" CHECK (("public"."is_quarter_hour"("ends_at") OR "public"."is_same_day_end"("ends_at"))),
     CONSTRAINT "rides_needs_driver_ck" CHECK (((NOT "needs_driver") OR ("driver_id" IS NULL))),
@@ -22970,6 +23139,10 @@ ALTER TABLE ONLY "public"."rides" FORCE ROW LEVEL SECURITY;
 
 
 ALTER TABLE "public"."rides" OWNER TO "postgres";
+
+
+COMMENT ON COLUMN "public"."rides"."draft_hold" IS 'REQ §13.161 (b): an open shift/origin proposal of a request on this ride holds the car instead; this ride''s own time does not (synced by _sync_draft_hold).';
+
 
 
 CREATE TABLE IF NOT EXISTS "public"."sadran_assignments" (
@@ -24266,7 +24439,7 @@ ALTER TABLE ONLY "public"."ride_types"
 
 
 ALTER TABLE ONLY "public"."rides"
-    ADD CONSTRAINT "rides_no_overlap_per_car" EXCLUDE USING "gist" ("car_id" WITH =, "tstzrange"("starts_at", "ends_at", '[)'::"text") WITH &&) WHERE ((("status" <> 'cancelled'::"public"."ride_status") AND (NOT "planning_conflict"))) DEFERRABLE;
+    ADD CONSTRAINT "rides_no_overlap_per_car" EXCLUDE USING "gist" ("car_id" WITH =, "tstzrange"("starts_at", "ends_at", '[)'::"text") WITH &&) WHERE ((("status" <> 'cancelled'::"public"."ride_status") AND (NOT "planning_conflict") AND (NOT "draft_hold"))) DEFERRABLE;
 
 
 
@@ -25453,6 +25626,10 @@ CREATE OR REPLACE TRIGGER "proposals_status_guard" BEFORE UPDATE OF "status" ON 
 
 
 
+CREATE CONSTRAINT TRIGGER "proposals_sync_draft_hold" AFTER INSERT OR UPDATE OF "status", "payload", "applied_at" ON "public"."proposals" DEFERRABLE INITIALLY DEFERRED FOR EACH ROW WHEN (("new"."type" = ANY (ARRAY['shift'::"public"."proposal_type", 'origin'::"public"."proposal_type"]))) EXECUTE FUNCTION "public"."proposals_sync_draft_hold"();
+
+
+
 CREATE OR REPLACE TRIGGER "push_outbox_notify_dispatch" AFTER INSERT ON "public"."push_outbox" FOR EACH ROW EXECUTE FUNCTION "public"."push_outbox_notify_dispatch"();
 
 
@@ -25577,6 +25754,10 @@ CREATE OR REPLACE TRIGGER "ride_requests_refresh_flags" AFTER INSERT OR DELETE O
 
 
 
+CREATE OR REPLACE TRIGGER "ride_requests_respect_draft_holds" AFTER INSERT ON "public"."ride_requests" FOR EACH ROW EXECUTE FUNCTION "public"."ride_requests_respect_draft_holds"();
+
+
+
 CREATE OR REPLACE TRIGGER "ride_requests_sync_coverage" AFTER INSERT ON "public"."ride_requests" FOR EACH ROW EXECUTE FUNCTION "public"."ride_requests_sync_coverage"();
 
 
@@ -25601,7 +25782,7 @@ CREATE OR REPLACE TRIGGER "rides_at_day_end" BEFORE INSERT OR UPDATE OF "starts_
 
 
 
-CREATE OR REPLACE TRIGGER "rides_before_write" BEFORE INSERT OR UPDATE OF "starts_at", "ends_at", "car_id", "department_id", "status", "turnaround_override_minutes", "planning_conflict" ON "public"."rides" FOR EACH ROW EXECUTE FUNCTION "public"."rides_before_write"();
+CREATE OR REPLACE TRIGGER "rides_before_write" BEFORE INSERT OR UPDATE OF "starts_at", "ends_at", "car_id", "department_id", "status", "turnaround_override_minutes", "planning_conflict", "draft_hold" ON "public"."rides" FOR EACH ROW EXECUTE FUNCTION "public"."rides_before_write"();
 
 
 
@@ -28031,6 +28212,11 @@ GRANT ALL ON FUNCTION "public"."_day_car_swap_split_series"("p_series_id" "uuid"
 
 
 
+REVOKE ALL ON FUNCTION "public"."_draft_hold_conflict"("p_car" "uuid", "p_from" timestamp with time zone, "p_until" timestamp with time zone, "p_exempt" "uuid"[]) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_draft_hold_conflict"("p_car" "uuid", "p_from" timestamp with time zone, "p_until" timestamp with time zone, "p_exempt" "uuid"[]) TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."_dt_label"("p_at" timestamp with time zone) FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."_dt_label"("p_at" timestamp with time zone) TO "service_role";
 
@@ -28181,6 +28367,22 @@ GRANT ALL ON FUNCTION "public"."_proposal_car_holds"("p_payload" "jsonb", "p_typ
 
 
 
+REVOKE ALL ON FUNCTION "public"."validate_proposal_payload"("_type" "public"."proposal_type", "_payload" "jsonb") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."validate_proposal_payload"("_type" "public"."proposal_type", "_payload" "jsonb") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."validate_proposal_payload"("_type" "public"."proposal_type", "_payload" "jsonb") TO "service_role";
+
+
+
+GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE "public"."proposals" TO "authenticated";
+GRANT ALL ON TABLE "public"."proposals" TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."_proposal_holds_ride"("p" "public"."proposals") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_proposal_holds_ride"("p" "public"."proposals") TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."_publish_ride_line"("p_request_id" "uuid", "p_ride_id" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."_publish_ride_line"("p_request_id" "uuid", "p_ride_id" "uuid") TO "service_role";
 
@@ -28308,6 +28510,11 @@ GRANT ALL ON FUNCTION "public"."_small_trunk_mode"("p_allow" boolean) TO "servic
 
 REVOKE ALL ON FUNCTION "public"."_small_trunk_probe"("p_request_id" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."_small_trunk_probe"("p_request_id" "uuid") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."_sync_draft_hold"("p_request_id" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_sync_draft_hold"("p_request_id" "uuid") TO "service_role";
 
 
 
@@ -29531,6 +29738,11 @@ GRANT ALL ON FUNCTION "public"."proposals_status_guard"() TO "service_role";
 
 
 
+REVOKE ALL ON FUNCTION "public"."proposals_sync_draft_hold"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."proposals_sync_draft_hold"() TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."publication_conflict_details"("p_department_id" "uuid", "p_week_start" "date", "p_days" "date"[]) FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."publication_conflict_details"("p_department_id" "uuid", "p_week_start" "date", "p_days" "date"[]) TO "service_role";
 
@@ -29981,6 +30193,11 @@ GRANT ALL ON FUNCTION "public"."ride_requests_refresh_flags"() TO "service_role"
 
 
 
+REVOKE ALL ON FUNCTION "public"."ride_requests_respect_draft_holds"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."ride_requests_respect_draft_holds"() TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."ride_requests_sync_coverage"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."ride_requests_sync_coverage"() TO "service_role";
 
@@ -30411,12 +30628,6 @@ GRANT ALL ON FUNCTION "public"."validate_policy_rules"("_rules" "jsonb") TO "ser
 
 REVOKE ALL ON FUNCTION "public"."validate_preferred_car"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."validate_preferred_car"() TO "service_role";
-
-
-
-REVOKE ALL ON FUNCTION "public"."validate_proposal_payload"("_type" "public"."proposal_type", "_payload" "jsonb") FROM PUBLIC;
-GRANT ALL ON FUNCTION "public"."validate_proposal_payload"("_type" "public"."proposal_type", "_payload" "jsonb") TO "authenticated";
-GRANT ALL ON FUNCTION "public"."validate_proposal_payload"("_type" "public"."proposal_type", "_payload" "jsonb") TO "service_role";
 
 
 
@@ -31092,11 +31303,6 @@ GRANT SELECT("my_rides_week_view") ON TABLE "public"."profiles" TO "authenticate
 
 GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE "public"."proposal_parties" TO "authenticated";
 GRANT ALL ON TABLE "public"."proposal_parties" TO "service_role";
-
-
-
-GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE "public"."proposals" TO "authenticated";
-GRANT ALL ON TABLE "public"."proposals" TO "service_role";
 
 
 

@@ -57,6 +57,8 @@ test("a draft is drawn dashed on the board, blocks publishing, and publishing wo
     await service.from("rides").delete().eq("department_id", NEVO_DEPARTMENT_ID).eq("week_start", week);
     await service.from("requests").delete().eq("department_id", NEVO_DEPARTMENT_ID).eq("week_start", week);
     await service.from("notifications").delete().eq("department_id", NEVO_DEPARTMENT_ID).eq("week_start", week);
+    // (merged-ride.spec.ts shares 2042-01-19; its held board notices would inflate the ⋮ counter)
+    await service.from("held_notices").delete().eq("department_id", NEVO_DEPARTMENT_ID).eq("week_start", week);
   }
   await cleanupFixture();
   try {
@@ -130,6 +132,8 @@ test("\"already agreed\" applies at once with no proposal; drafts go out togethe
     await service.from("rides").delete().eq("department_id", NEVO_DEPARTMENT_ID).eq("week_start", week);
     await service.from("requests").delete().eq("department_id", NEVO_DEPARTMENT_ID).eq("week_start", week);
     await service.from("notifications").delete().eq("department_id", NEVO_DEPARTMENT_ID).eq("week_start", week);
+    // (merged-ride.spec.ts shares 2042-01-19; its held board notices would inflate the ⋮ counter)
+    await service.from("held_notices").delete().eq("department_id", NEVO_DEPARTMENT_ID).eq("week_start", week);
   }
   async function insertRequest(requester: string, depart: string, ret: string) {
     const { data, error } = await service.from("requests").insert({
@@ -210,6 +214,8 @@ test("a board change on a published day reaches the member only with \"send all\
     await service.from("rides").delete().eq("department_id", NEVO_DEPARTMENT_ID).eq("week_start", week);
     await service.from("requests").delete().eq("department_id", NEVO_DEPARTMENT_ID).eq("week_start", week);
     await service.from("notifications").delete().eq("department_id", NEVO_DEPARTMENT_ID).eq("week_start", week);
+    // (merged-ride.spec.ts shares 2042-01-19; its held board notices would inflate the ⋮ counter)
+    await service.from("held_notices").delete().eq("department_id", NEVO_DEPARTMENT_ID).eq("week_start", week);
   }
   await cleanupFixture();
   await publishedFixtureWeek(week);
@@ -277,6 +283,8 @@ test("a draft of a placed ride is drawn on the ride itself; dragging it updates 
     await service.from("rides").delete().eq("department_id", NEVO_DEPARTMENT_ID).eq("week_start", week);
     await service.from("requests").delete().eq("department_id", NEVO_DEPARTMENT_ID).eq("week_start", week);
     await service.from("notifications").delete().eq("department_id", NEVO_DEPARTMENT_ID).eq("week_start", week);
+    // (merged-ride.spec.ts shares 2042-01-19; its held board notices would inflate the ⋮ counter)
+    await service.from("held_notices").delete().eq("department_id", NEVO_DEPARTMENT_ID).eq("week_start", week);
   }
   await cleanupFixture();
   try {

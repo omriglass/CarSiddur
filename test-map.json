@@ -900,7 +900,9 @@
         "supabase/migrations/**/*offer_replaces_unopened_notice*",
         "supabase/tests/close_request.sql",
         "supabase/migrations/**/*request_closed_templates*",
-        "supabase/migrations/**/*close_request_rpcs*"
+        "supabase/migrations/**/*close_request_rpcs*",
+        "supabase/tests/draft_holds.sql",
+        "supabase/migrations/**/*draft_holds_the_car*"
       ],
       "vitest": [
         "src/features/inbox",
@@ -915,7 +917,8 @@
         "publish_one_notice.sql",
         "offer_replaces_notice.sql",
         "leave_notices_merge.sql",
-        "close_request.sql"
+        "close_request.sql",
+        "draft_holds.sql"
       ],
       "playwrightTags": [
         "@notifications"
