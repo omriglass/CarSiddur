@@ -639,7 +639,7 @@ begin
         join public.ride_requests rr on rr.request_id = p.request_id
         join public.rides r1 on r1.id = rr.ride_id
         join public.rides r2 on r2.car_id = r1.car_id and r2.id <> r1.id
-        where p.id = any(v_group) and r1.status <> 'cancelled' and r2.status <> 'cancelled'
+        where p.id = any(v_group) and r1.status <> 'cancelled' and not r1.draft_hold and r2.status <> 'cancelled' and not r2.draft_hold
           and not r1.planning_conflict and not r2.planning_conflict
           and not (r1.series_id is not null and r1.series_id = r2.series_id)
           and tstzrange(r1.starts_at, r1.blocked_until, '[)') && tstzrange(r2.starts_at, r2.blocked_until, '[)')
@@ -1478,7 +1478,7 @@ begin
     join public.cars c on c.id = o.car_id
     where rd.id = any(p_ride_ids) and rd.status <> 'cancelled' and rd.car_id in (p_car_a, p_car_b)
       and (rd.starts_at at time zone 'Asia/Jerusalem')::date <> p_day
-      and o.status <> 'cancelled'
+      and o.status <> 'cancelled' and not o.draft_hold
       and not (o.id = any(p_ride_ids))
       and not rd.planning_conflict and not o.planning_conflict
       and tstzrange(rd.starts_at, rd.blocked_until, '[)') && tstzrange(o.starts_at, o.blocked_until, '[)')
@@ -2257,7 +2257,7 @@ begin
   if h.id is null then return false; end if;
   if _new_start >= h.starts_at and _new_end <= h.ends_at then return false; end if;
   return exists(select 1 from public.rides x
-    where x.car_id = h.car_id and x.id <> h.id and x.status <> 'cancelled'
+    where x.car_id = h.car_id and x.id <> h.id and x.status <> 'cancelled' and not x.draft_hold
       and tstzrange(x.starts_at, x.blocked_until, '[)') && tstzrange(_new_start, _new_end + (h.blocked_until - h.ends_at), '[)'));
 end $$;
 
@@ -2275,7 +2275,7 @@ begin
   if h.id is null then return null; end if;
   if _new_start >= h.starts_at and _new_end <= h.ends_at then return null; end if;
   select x.* into v_x from public.rides x
-    where x.car_id = h.car_id and x.id <> h.id and x.status <> 'cancelled'
+    where x.car_id = h.car_id and x.id <> h.id and x.status <> 'cancelled' and not x.draft_hold
       and tstzrange(x.starts_at, x.blocked_until, '[)') && tstzrange(_new_start, _new_end + (h.blocked_until - h.ends_at), '[)')
     order by x.starts_at, x.id limit 1;
   if v_x.id is null then return null; end if;
@@ -2546,7 +2546,7 @@ CREATE OR REPLACE FUNCTION "public"."_proposal_blockers"("p_proposal_id" "uuid")
   from public.proposals p
   cross join lateral public._proposal_car_holds(p.payload, p.type) mine
   cross join lateral (select make_interval(mins => coalesce(public.required_turnaround_minutes(p.department_id, p.week_start), 30)) as buf) b
-  join public.rides r on r.car_id = mine.car_id and r.status <> 'cancelled'
+  join public.rides r on r.car_id = mine.car_id and r.status <> 'cancelled' and not r.draft_hold
     and tstzrange(r.starts_at, r.ends_at, '[)') && tstzrange(mine.from_at - b.buf, mine.to_at + b.buf, '[)')
   join public.ride_requests rr on rr.ride_id = r.id
   join public.proposals o on o.request_id = rr.request_id and o.id <> p.id and o.request_id <> p.request_id
@@ -6961,7 +6961,7 @@ begin
     -- no collision with other rides of the car; between the legs only trips that start and end at the destination
     if exists (
       select 1 from public.rides x
-      where x.car_id = _car and x.id not in (c.out_ride, c.ret_ride) and x.status <> 'cancelled' and not x.planning_conflict
+      where x.car_id = _car and x.id not in (c.out_ride, c.ret_ride) and x.status <> 'cancelled' and not x.draft_hold and not x.planning_conflict
         and (tstzrange(x.starts_at, x.blocked_until, '[)') && tstzrange(v_os, v_oe + v_turnaround, '[)')
           or tstzrange(x.starts_at, x.blocked_until, '[)') && tstzrange(v_rs, v_re + v_turnaround, '[)')
           or (x.starts_at >= v_oe and x.starts_at < v_rs
@@ -8451,7 +8451,7 @@ begin
     if p_expected_version is null or existing.version<>p_expected_version then perform public.raise_stale_version(); end if;
   end if;
   perform pg_advisory_xact_lock(hashtextextended(v_car::text,0));
-  select exists(select 1 from public.rides r where r.car_id=v_car and r.id is distinct from v_id and r.status<>'cancelled'
+  select exists(select 1 from public.rides r where r.car_id=v_car and r.id is distinct from v_id and r.status<>'cancelled' and not r.draft_hold
     and tstzrange(r.starts_at,r.ends_at,'[)') && tstzrange(v_start,v_end,'[)')) into collision;
   if wants_planning and collision and existing.id is not null and existing.status<>'draft' then
     if exists(select 1 from public.weeks where department_id=v_dept and week_start=v_week and phase='archived') then raise exception 'week_archived'; end if;
@@ -8805,7 +8805,7 @@ begin
       or ((v_end - interval '1 minute') at time zone 'Asia/Jerusalem')::date <> (c.starts_at at time zone 'Asia/Jerusalem')::date;
     continue when exists (
       select 1 from public.rides x
-      where x.car_id = _car and x.id <> c.ride_id and x.status <> 'cancelled' and not x.planning_conflict
+      where x.car_id = _car and x.id <> c.ride_id and x.status <> 'cancelled' and not x.draft_hold and not x.planning_conflict
         and tstzrange(x.starts_at, x.blocked_until, '[)') && tstzrange(v_start, v_end + v_turnaround, '[)'))
       or exists (
       select 1 from public.car_maintenance_blocks b
@@ -9274,7 +9274,7 @@ CREATE OR REPLACE FUNCTION "public"."freed_slot_candidates"("_offer" "uuid") RET
    -- REQ §13.102 (b): the request's own times lie inside the car's free gap, and it starts where the car is
    and q.depart_at >= o.starts_at and q.return_at <= o.ends_at
    and (q.origin_id = cr.origin_id or (q.origin_id is null and q.origin_text is null))
-   and not exists (select 1 from rides r2 where r2.car_id = o.car_id and r2.status <> 'cancelled'
+   and not exists (select 1 from rides r2 where r2.car_id = o.car_id and r2.status <> 'cancelled' and not r2.draft_hold
         and r2.id <> o.cancelled_ride_id and not r2.planning_conflict
         and tstzrange(r2.starts_at, r2.blocked_until, '[)') && tstzrange(q.depart_at, q.return_at, '[)'))
    -- REQ §13.114: a scheduled maintenance period on the freed car (also one added after the offer was
@@ -9816,7 +9816,7 @@ begin
     if public.car_fits(v_cand, q.adults + 1, q.child_seats, q.boosters)
        and not exists (
          select 1 from public.rides x
-         where x.car_id = v_cand and x.id not in (o.id, r.id) and x.status <> 'cancelled' and not x.planning_conflict
+         where x.car_id = v_cand and x.id not in (o.id, r.id) and x.status <> 'cancelled' and not x.draft_hold and not x.planning_conflict
            and tstzrange(x.starts_at, x.blocked_until, '[)') && tstzrange(o.starts_at, r.ends_at + v_turnaround, '[)'))
        and not exists (
          select 1 from public.car_maintenance_blocks b
@@ -10677,7 +10677,7 @@ begin
       if public.car_fits(v_cand, q.adults + 1, q.child_seats, q.boosters)
          and not exists (
            select 1 from public.rides x
-           where x.car_id = v_cand and x.id not in (c.out_ride, c.ret_ride) and x.status <> 'cancelled' and not x.planning_conflict
+           where x.car_id = v_cand and x.id not in (c.out_ride, c.ret_ride) and x.status <> 'cancelled' and not x.draft_hold and not x.planning_conflict
              and tstzrange(x.starts_at, x.blocked_until, '[)') && tstzrange(c.o_start, c.r_end + v_turnaround, '[)'))
          and not exists (
            select 1 from public.car_maintenance_blocks b
@@ -10788,7 +10788,7 @@ begin
     select d.home_destination_id into v_home from public.departments d where d.id = v_dept;
 
     if exists (select 1 from public.rides r
-      where r.car_id = p_new_car_id and r.status <> 'cancelled' and not r.planning_conflict
+      where r.car_id = p_new_car_id and r.status <> 'cancelled' and not r.draft_hold and not r.planning_conflict
         and r.series_id is distinct from p_series_id
         and tstzrange(r.starts_at, r.blocked_until, '[)') && tstzrange(v_first, v_last + v_turnaround, '[)')) then
       raise exception 'series_car_unavailable' using errcode = 'MDR03', detail = 'car_busy';
@@ -10798,7 +10798,7 @@ begin
       raise exception 'series_car_unavailable' using errcode = 'MDR03', detail = 'ride_conflicts_with_maintenance';
     end if;
     if coalesce((select r.destination_id from public.rides r
-      where r.car_id = p_new_car_id and r.status <> 'cancelled' and not r.planning_conflict
+      where r.car_id = p_new_car_id and r.status <> 'cancelled' and not r.draft_hold and not r.planning_conflict
         and r.series_id is distinct from p_series_id and r.starts_at < v_first
         and not public.ride_is_reservation(r.id)
       order by r.starts_at desc limit 1), v_home) <> v_home then
@@ -11585,7 +11585,7 @@ begin
           and public.car_fits(out_leg.car_id, v_ret_load.adults, v_ret_load.child_seats, v_ret_load.boosters)
           and not exists (
             select 1 from public.rides x where x.car_id = out_leg.car_id and x.id not in (out_leg.ride_id, ret_leg.ride_id)
-              and x.status <> 'cancelled' and not x.planning_conflict
+              and x.status <> 'cancelled' and not x.draft_hold and not x.planning_conflict
               and tstzrange(x.starts_at, x.blocked_until, '[)') && tstzrange(v_ret_start, v_ret_end + v_turnaround, '[)'))
         then v_cand := out_leg.car_id; end if;
       else
@@ -11594,7 +11594,7 @@ begin
           and public.car_fits(ret_leg.car_id, v_ret_load.adults, v_ret_load.child_seats, v_ret_load.boosters)
           and not exists (
             select 1 from public.rides x where x.car_id = ret_leg.car_id and x.id not in (out_leg.ride_id, ret_leg.ride_id)
-              and x.status <> 'cancelled' and not x.planning_conflict
+              and x.status <> 'cancelled' and not x.draft_hold and not x.planning_conflict
               and tstzrange(x.starts_at, x.blocked_until, '[)') && tstzrange(v_out_start, v_out_end + v_turnaround, '[)'))
         then v_cand := ret_leg.car_id; end if;
       end if;
@@ -11602,7 +11602,7 @@ begin
       continue when exists (
         select 1 from public.rides x
         where x.car_id = v_cand and x.id not in (out_leg.ride_id, ret_leg.ride_id)
-          and x.status <> 'cancelled' and not x.planning_conflict and not public.ride_is_reservation(x.id)
+          and x.status <> 'cancelled' and not x.draft_hold and not x.planning_conflict and not public.ride_is_reservation(x.id)
           and x.starts_at >= v_out_end and x.starts_at < v_ret_start
           and (x.origin_id is distinct from out_leg.destination_id or x.destination_id is distinct from out_leg.destination_id));
       v_target_car := v_cand; exit;
@@ -11734,7 +11734,7 @@ begin
   select phase into v_phase from public.weeks where department_id = v_req.department_id and week_start = v_req.week_start;
   if v_phase is null or v_phase in ('archived', 'upcoming') then raise exception 'week_archived' using errcode = 'P0001'; end if;
   v_turnaround := coalesce(public.required_turnaround_minutes(v_req.department_id, v_req.week_start), 30);
-  if exists (select 1 from public.rides r where r.car_id = p_car_id and r.status <> 'cancelled'
+  if exists (select 1 from public.rides r where r.car_id = p_car_id and r.status <> 'cancelled' and not r.draft_hold
              and tstzrange(r.starts_at, r.blocked_until, '[)') && tstzrange(v_req.depart_at, v_req.return_at + make_interval(mins => v_turnaround), '[)'))
      or exists (select 1 from public.car_maintenance_blocks b where b.car_id = p_car_id
              and tstzrange(b.starts_at, b.ends_at, '[)') && tstzrange(v_req.depart_at, v_req.return_at, '[)')) then
@@ -11983,7 +11983,7 @@ begin
           or (v_s at time zone 'Asia/Jerusalem')::date <> v_day
           or ((v_e - interval '1 minute') at time zone 'Asia/Jerusalem')::date <> v_day
           or public.car_location_at(v_car, v_s) is distinct from v_loc
-          or exists(select 1 from public.rides r where r.car_id = v_car and r.status <> 'cancelled'
+          or exists(select 1 from public.rides r where r.car_id = v_car and r.status <> 'cancelled' and not r.draft_hold
             and tstzrange(r.starts_at, case when v_manual then r.ends_at else r.blocked_until end, '[)')
               && tstzrange(v_s, case when v_manual then v_e else v_e + make_interval(mins => v_buffer) end, '[)'))
           or exists(select 1 from public.car_maintenance_blocks b where b.car_id = v_car
@@ -12097,7 +12097,7 @@ begin
 
     -- Nobody else uses the car anywhere inside the span.
     if exists (select 1 from public.rides r
-      where r.car_id = p_car_id and r.status <> 'cancelled' and not r.planning_conflict
+      where r.car_id = p_car_id and r.status <> 'cancelled' and not r.draft_hold and not r.planning_conflict
         and r.series_id is distinct from p_series_id
         and tstzrange(r.starts_at, r.blocked_until, '[)') && tstzrange(v_first, v_last + v_turnaround, '[)')) then
       raise exception 'series_car_unavailable' using errcode = 'MDR03', detail = 'car_busy';
@@ -12109,7 +12109,7 @@ begin
     -- The car must be at the series' own origin when the series starts (own legs ignored so
     -- re-runs are idempotent).
     if coalesce((select r.destination_id from public.rides r
-      where r.car_id = p_car_id and r.status <> 'cancelled' and not r.planning_conflict
+      where r.car_id = p_car_id and r.status <> 'cancelled' and not r.draft_hold and not r.planning_conflict
         and r.series_id is distinct from p_series_id and r.starts_at < v_first
         and not public.ride_is_reservation(r.id)
       order by r.starts_at desc limit 1), v_origin) <> v_origin then
@@ -12528,7 +12528,7 @@ begin
   if coalesce(current_setting('app.day_car_swap',true),'')='on' then return null; end if;
   if coalesce(current_setting('app.coordinator_planning',true),'')='on'
     and exists(select 1 from public.cars c where c.id=p_car_id and public.can_manage_week(c.department_id,p_week_start))
-    and exists(select 1 from public.rides r where r.car_id=p_car_id and r.id is distinct from p_ride_id and r.status<>'cancelled'
+    and exists(select 1 from public.rides r where r.car_id=p_car_id and r.id is distinct from p_ride_id and r.status<>'cancelled' and not r.draft_hold
       and tstzrange(r.starts_at,r.ends_at,'[)') && tstzrange(p_starts_at,p_ends_at,'[)')) then return 0; end if;
   return public.prepare_manual_ride_window_before_planning(p_car_id,p_week_start,p_starts_at,p_ends_at,p_ride_id);
 end $$;
@@ -12545,16 +12545,16 @@ declare required int; next_start timestamptz; result smallint; previous record;
 begin
   perform pg_advisory_xact_lock(hashtextextended(p_car_id::text,0));
   if p_ends_at<=p_starts_at then raise exception 'invalid_ride_window'; end if;
-  if exists(select 1 from public.rides where car_id=p_car_id and id is distinct from p_ride_id and status<>'cancelled'
+  if exists(select 1 from public.rides where car_id=p_car_id and id is distinct from p_ride_id and status<>'cancelled' and not draft_hold
     and tstzrange(starts_at,ends_at,'[)') && tstzrange(p_starts_at,p_ends_at,'[)')) then
     raise exception 'ride_time_overlap' using errcode='23P01';
   end if;
   select public.required_turnaround_minutes(c.department_id,p_week_start) into required from public.cars c where c.id=p_car_id;
-  for previous in select * from public.rides where car_id=p_car_id and id is distinct from p_ride_id and status<>'cancelled'
+  for previous in select * from public.rides where car_id=p_car_id and id is distinct from p_ride_id and status<>'cancelled' and not draft_hold
     and ends_at<=p_starts_at and blocked_until>p_starts_at order by starts_at for update loop
     update public.rides set turnaround_override_minutes=(extract(epoch from(p_starts_at-previous.ends_at))/60)::smallint where id=previous.id;
   end loop;
-  select min(starts_at) into next_start from public.rides where car_id=p_car_id and id is distinct from p_ride_id and status<>'cancelled' and starts_at>=p_ends_at;
+  select min(starts_at) into next_start from public.rides where car_id=p_car_id and id is distinct from p_ride_id and status<>'cancelled' and not draft_hold and starts_at>=p_ends_at;
   if next_start is not null and p_ends_at+make_interval(mins=>required)>next_start then result:=(extract(epoch from(next_start-p_ends_at))/60)::smallint; end if;
   return result;
 end $$;
@@ -13366,7 +13366,7 @@ begin
       or (r.starts_at at time zone 'Asia/Jerusalem')::date not between p_week_start and p_week_start+6 then
       reason:='bad_window'; other_ride_id:=null; return next;
     end if;
-    select other.id into o from public.rides other where other.id<>r.id and other.status<>'cancelled' and other.car_id=r.car_id
+    select other.id into o from public.rides other where other.id<>r.id and other.status<>'cancelled' and not other.draft_hold and not r.draft_hold and other.car_id=r.car_id
       and tstzrange(other.starts_at,other.ends_at,'[)') && tstzrange(r.starts_at,r.ends_at,'[)') order by other.starts_at limit 1;
     if o is not null then reason:='car_overlap'; other_ride_id:=o; return next; end if;
     other_ride_id:=null;
@@ -14703,7 +14703,7 @@ begin
       and public.car_takes_luggage(c.id, case when q.has_luggage and q.luggage_waived_at is null then 1 else 0 end)
       and public.car_location_at(c.id, q.depart_at) = q.origin_id
       and (not p_strict or (
-        not exists (select 1 from public.rides r where r.car_id = c.id and r.status <> 'cancelled' and not r.planning_conflict
+        not exists (select 1 from public.rides r where r.car_id = c.id and r.status <> 'cancelled' and not r.draft_hold and not r.planning_conflict
           and tstzrange(r.starts_at, r.blocked_until, '[)') && tstzrange(q.depart_at, coalesce(q.return_at, q.depart_at + interval '1 hour') + v_ta, '[)'))
         and not exists (select 1 from public.car_maintenance_blocks b where b.car_id = c.id
           and tstzrange(b.starts_at, b.ends_at, '[)') && tstzrange(q.depart_at, coalesce(q.return_at, q.depart_at + interval '1 hour'), '[)')))));
@@ -14951,7 +14951,7 @@ begin
   update public.ride_change_requests set status='cancelled' where ride_id=r.id and status='pending';
   insert into public.ride_change_requests(department_id,week_start,requester_id,ride_id,car_id,starts_at,ends_at,expected_version,allow_small_trunk)
   values(r.department_id,r.week_start,(select auth.uid()),r.id,p_car_id,p_starts_at,p_ends_at,r.version,coalesce(p_allow_small_trunk,false)) returning id into ch;
-  for other in select * from public.rides where car_id=p_car_id and id<>r.id and status<>'cancelled'
+  for other in select * from public.rides where car_id=p_car_id and id<>r.id and status<>'cancelled' and not draft_hold
     and tstzrange(starts_at,blocked_until,'[)') && tstzrange(p_starts_at,p_ends_at+buffer,'[)') order by id for update loop
     if other.driver_id is null or other.driver_id=r.driver_id or other.origin_id<>other.destination_id
       or exists(select 1 from public.ride_requests rr join public.requests q on q.id=rr.request_id where rr.ride_id=other.id and q.requester_id<>other.driver_id)
@@ -15537,7 +15537,7 @@ begin
         v_start:=pickup_start;v_end:=pickup_end;v_loc:=q.destination_id;
       end if;
       if v_loc is null
-        or exists(select 1 from public.rides r where r.car_id=c.id and r.status<>'cancelled'
+        or exists(select 1 from public.rides r where r.car_id=c.id and r.status<>'cancelled' and not r.draft_hold
           and tstzrange(r.starts_at,r.blocked_until,'[)') && tstzrange(v_start,v_end+make_interval(mins=>buffer_minutes),'[)'))
         or exists(select 1 from public.car_maintenance_blocks b where b.car_id=c.id
           and tstzrange(b.starts_at,b.ends_at,'[)') && tstzrange(v_start,v_end+make_interval(mins=>buffer_minutes),'[)')) then continue;end if;
@@ -18388,7 +18388,7 @@ begin
     and public.car_fits(c.id, v_adults, v_child_seats, v_boosters)
     and public.car_takes_luggage(c.id, v_lug)
     and public.car_location_at(c.id, v_starts) = v_home
-    and not exists (select 1 from public.rides r where r.car_id = c.id and r.status <> 'cancelled'
+    and not exists (select 1 from public.rides r where r.car_id = c.id and r.status <> 'cancelled' and not r.draft_hold
       and tstzrange(r.starts_at, r.blocked_until, '[)') && tstzrange(v_starts, v_ends + v_turnaround, '[)'))
   order by c.id limit 1;
 
@@ -18399,7 +18399,7 @@ begin
       and public.car_fits(c.id, v_adults, v_child_seats, v_boosters)
       and public.car_takes_luggage(c.id, v_lug)
       and public.car_location_at(c.id, v_starts) = v_home
-      and not exists (select 1 from public.rides r where r.car_id = c.id and r.status <> 'cancelled'
+      and not exists (select 1 from public.rides r where r.car_id = c.id and r.status <> 'cancelled' and not r.draft_hold
         and tstzrange(r.starts_at, r.blocked_until, '[)') && tstzrange(v_starts, v_ends + v_turnaround, '[)'));
   end if;
   if v_car.id is null then
@@ -18408,7 +18408,7 @@ begin
       and public.car_fits(c.id, v_adults, v_child_seats, v_boosters)
       and public.car_takes_luggage(c.id, v_lug)
       and public.car_location_at(c.id, v_starts) = v_home
-      and not exists (select 1 from public.rides r where r.car_id = c.id and r.status <> 'cancelled'
+      and not exists (select 1 from public.rides r where r.car_id = c.id and r.status <> 'cancelled' and not r.draft_hold
         and tstzrange(r.starts_at, r.blocked_until, '[)') && tstzrange(v_starts, v_ends + v_turnaround, '[)'))
     order by c.id limit 1;
   end if;
@@ -19912,7 +19912,7 @@ begin
     from public.rides r1
     join public.rides r2 on r2.car_id = r1.car_id and r2.id <> r1.id
     where r1.id = any(v_moving)
-      and r1.status <> 'cancelled' and r2.status <> 'cancelled'
+      and r1.status <> 'cancelled' and not r1.draft_hold and r2.status <> 'cancelled' and not r2.draft_hold
       and not r1.planning_conflict and not r2.planning_conflict
       and not (r1.series_id is not null and r1.series_id = r2.series_id)
       and tstzrange(r1.starts_at, r1.blocked_until, '[)') && tstzrange(r2.starts_at, r2.blocked_until, '[)')
@@ -20214,9 +20214,10 @@ begin
       and public.car_location_at(c.id, v_req.depart_at) = v_req.origin_id
       and not exists (
         select 1 from public.rides r
-        where r.car_id = c.id and r.status <> 'cancelled'
+        where r.car_id = c.id and r.status <> 'cancelled' and not r.draft_hold
           and tstzrange(r.starts_at, r.blocked_until, '[)') && tstzrange(v_req.depart_at, v_end + v_turnaround, '[)')
       )
+      and not public._draft_hold_conflict(c.id, v_req.depart_at, v_end + v_turnaround, array[v_req.id])
       -- REQ §13.114: never inside a scheduled maintenance period (incl. the turnaround buffer before it).
       and not exists (
         select 1 from public.car_maintenance_blocks b
@@ -20240,9 +20241,10 @@ begin
       and public.car_location_at(c.id, v_req.depart_at) = v_req.origin_id
       and not exists (
         select 1 from public.rides r
-        where r.car_id = c.id and r.status <> 'cancelled'
+        where r.car_id = c.id and r.status <> 'cancelled' and not r.draft_hold
           and tstzrange(r.starts_at, r.blocked_until, '[)') && tstzrange(v_req.depart_at, v_end + v_turnaround, '[)')
       )
+      and not public._draft_hold_conflict(c.id, v_req.depart_at, v_end + v_turnaround, array[v_req.id])
       -- REQ §13.114: never inside a scheduled maintenance period (incl. the turnaround buffer before it).
       and not exists (
         select 1 from public.car_maintenance_blocks b
@@ -20449,7 +20451,7 @@ begin
         and public.car_fits(v_candidate, v_adults + 1, v_child_seats, v_boosters)
         and not exists (
           select 1 from public.rides x
-          where x.car_id = v_candidate and x.id <> p_ride_id and x.status <> 'cancelled' and not x.planning_conflict
+          where x.car_id = v_candidate and x.id <> p_ride_id and x.status <> 'cancelled' and not x.draft_hold and not x.planning_conflict
             and tstzrange(x.starts_at, x.blocked_until, '[)') && tstzrange(v_start_a, v_end_a + p_turnaround, '[)')
         )
       then
@@ -20469,7 +20471,7 @@ begin
           and public.car_fits(v_candidate, v_adults + 1, v_child_seats, v_boosters)
           and not exists (
             select 1 from public.rides x
-            where x.car_id = v_candidate and x.id <> p_ride_id and x.status <> 'cancelled' and not x.planning_conflict
+            where x.car_id = v_candidate and x.id <> p_ride_id and x.status <> 'cancelled' and not x.draft_hold and not x.planning_conflict
               and tstzrange(x.starts_at, x.blocked_until, '[)') && tstzrange(v_start_b, v_end_b + p_turnaround, '[)')
           )
         then
@@ -20492,7 +20494,7 @@ begin
     v_car_id := p_car;
     if not (public.car_fits(v_car_id, v_adults + 1, v_child_seats, v_boosters)) or exists (
       select 1 from public.rides x
-      where x.car_id = v_car_id and x.id <> p_ride_id and x.status <> 'cancelled' and not x.planning_conflict
+      where x.car_id = v_car_id and x.id <> p_ride_id and x.status <> 'cancelled' and not x.draft_hold and not x.planning_conflict
         and tstzrange(x.starts_at, x.blocked_until, '[)') && tstzrange(v_start, v_end + p_turnaround, '[)')
     ) then
       v_car_id := null;
@@ -20503,7 +20505,7 @@ begin
       loop
         if public.car_fits(v_candidate, v_adults + 1, v_child_seats, v_boosters) and not exists (
           select 1 from public.rides x
-          where x.car_id = v_candidate and x.status <> 'cancelled' and not x.planning_conflict
+          where x.car_id = v_candidate and x.status <> 'cancelled' and not x.draft_hold and not x.planning_conflict
             and tstzrange(x.starts_at, x.blocked_until, '[)') && tstzrange(v_start, v_end + p_turnaround, '[)')
         ) then
           v_car_id := v_candidate;
@@ -21132,7 +21134,7 @@ begin
       and q.origin_id is not null and public.car_location_at(p_car_id, q.depart_at) = q.origin_id
       and public.car_fits(p_car_id, q.adults, q.child_seats, q.boosters)
       and public.car_takes_luggage(p_car_id, case when q.has_luggage and q.luggage_waived_at is null then 1 else 0 end)
-      and not exists (select 1 from public.rides r where r.car_id = p_car_id and r.status <> 'cancelled' and not r.planning_conflict
+      and not exists (select 1 from public.rides r where r.car_id = p_car_id and r.status <> 'cancelled' and not r.draft_hold and not r.planning_conflict
                       and tstzrange(r.starts_at, r.blocked_until, '[)') && tstzrange(q.depart_at, q.return_at + v_ta, '[)'))
       -- REQ §13.158: during an edit the editor's own old booking still occupies its car — a car that was not free for
       -- the member before the edit is not held against the editor (keeping or shrinking one's hours is never blocked).
@@ -21170,17 +21172,17 @@ begin
       and public.car_location_at(c.id, q.depart_at) = q.origin_id
       and public.car_fits(c.id, q.adults, q.child_seats, q.boosters)
       and public.car_takes_luggage(c.id, case when q.has_luggage and q.luggage_waived_at is null then 1 else 0 end)
-      and not exists (select 1 from public.rides r where r.car_id = c.id and r.status <> 'cancelled' and not r.planning_conflict
+      and not exists (select 1 from public.rides r where r.car_id = c.id and r.status <> 'cancelled' and not r.draft_hold and not r.planning_conflict
                       and tstzrange(r.starts_at, r.blocked_until, '[)') && tstzrange(q.depart_at, q.return_at + v_ta, '[)'))
       and not exists (select 1 from public.car_maintenance_blocks b where b.car_id = c.id
                       and tstzrange(b.starts_at, b.ends_at, '[)') && tstzrange(q.depart_at, q.return_at, '[)'))
     group by g.id, g.day, c.id)
   select h.gid, h.cid, h.h_from, h.h_until,
     greatest(((h.day + time '06:00') at time zone 'Asia/Jerusalem'),
-             coalesce((select max(r.blocked_until) from public.rides r where r.car_id = h.cid and r.status <> 'cancelled'
+             coalesce((select max(r.blocked_until) from public.rides r where r.car_id = h.cid and r.status <> 'cancelled' and not r.draft_hold
                        and not r.planning_conflict and r.blocked_until <= h.h_from), '-infinity'::timestamptz)),
     least(((h.day + time '23:59') at time zone 'Asia/Jerusalem'),
-          coalesce((select min(r.starts_at) - v_ta from public.rides r where r.car_id = h.cid and r.status <> 'cancelled'
+          coalesce((select min(r.starts_at) - v_ta from public.rides r where r.car_id = h.cid and r.status <> 'cancelled' and not r.draft_hold
                     and not r.planning_conflict and r.starts_at >= h.h_until), 'infinity'::timestamptz))
   from held h
   order by h.gid, h.cid;

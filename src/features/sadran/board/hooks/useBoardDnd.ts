@@ -578,7 +578,8 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
     if (!window) { toast.error(he.sadranBoard.invalidWindow); return; }
     if (unavailable(dropCtx, carId, window.startsAt, window.endsAt)) { toast.error(he.sadranBoard.maintenanceUnavailable); return; }
     // R2B7: never create a ride that overlaps another ride on the car (reservations and blocks included).
-    if (wouldOverlap(window, rides.filter((ride) => ride.car_id === carId && ride.status !== "cancelled" && ride.starts_at && ride.ends_at)
+    // R16B1: the drop checks' view - a drafted ride stands at its draft's time, its old time is free.
+    if (wouldOverlap(window, dropCtx.rides.filter((ride) => ride.car_id === carId && ride.status !== "cancelled" && ride.starts_at && ride.ends_at)
       .map((ride) => ({ startsAt: ride.starts_at!, endsAt: ride.ends_at! })), 0)) {
       // R7B10: a plain placement (nothing to merge into) - never worded as a merged ride.
       toast.error(he.sadranBoard.placementOverlap); return;

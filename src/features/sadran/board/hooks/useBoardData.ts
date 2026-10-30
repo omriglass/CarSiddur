@@ -618,7 +618,8 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
   const conflictScan =
     daySettings && department?.home_destination_id
       ? (() => {
-          const validRides = rides.filter(
+          // R16B2: a drafted ride stands at its draft's time (its old time is free), so a ride placed there is no conflict.
+          const validRides = ridesAsDrafted.filter(
             (r): r is typeof r & { id: string; car_id: string; starts_at: string; ends_at: string; origin_id: string; destination_id: string } =>
               !!r.id && !!r.car_id && !!r.starts_at && !!r.ends_at && !!r.origin_id && !!r.destination_id && !mergeGuestRideIds.has(r.id),
           );
@@ -653,7 +654,7 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
         })()
       : null;
 
-  const tightRideIds = tightScheduleRideIds(rides.filter((ride) => !(ride.id && mergeGuestRideIds.has(ride.id))).map((ride) => (isReservation(ride) ? { ...ride, origin_id: null, destination_id: null } : ride)), weekSettings.turnaroundMinutes, {
+  const tightRideIds = tightScheduleRideIds(ridesAsDrafted.filter((ride) => !(ride.id && mergeGuestRideIds.has(ride.id))).map((ride) => (isReservation(ride) ? { ...ride, origin_id: null, destination_id: null } : ride)), weekSettings.turnaroundMinutes, {
     homeLocationId: department?.home_destination_id,
     carBaseLocationId: new Map((carsQuery.data ?? []).map((c) => [c.id, c.base_location_id])),
   });

@@ -44,10 +44,19 @@ begin
   -- its old time is free: m2's ride takes 08:00-10:00 on the same car
   insert into public.requests(department_id,week_start,requester_id,filed_by,destination_id,ride_type_id,depart_at,return_at,trip_shape,status)
     values(dept,w,m2,m2,dest,typ,d,d+interval '2 hours','round_trip','assigned') returning id into qb;
-  insert into public.rides(department_id,week_start,car_id,starts_at,ends_at,origin_id,destination_id,driver_id,status,is_pinned,pin_reason,created_by)
-    values(dept,w,carA,d,d+interval '2 hours',home,home,m2,'confirmed',true,'SADRAN_MANUAL',sadran) returning id into rB;
-  insert into public.ride_requests(ride_id,request_id,role,leg,car_mode) values(rB,qb,'driver','both','keep');
+  -- R16B1: a board edit (edit_ride - drag / reservation) into the old time is accepted
+  rC:=public.edit_ride(jsonb_build_object('department_id',dept,'week_start',w,'car_id',carA,'origin_id',home,'destination_id',home,
+    'starts_at',d,'ends_at',d+interval '1 hour','notes','draft_holds reservation','served','[]'::jsonb));
   set constraints all immediate; set constraints all deferred;
+  assert (select status::text from public.rides where id=rC)<>'cancelled', '(a) a reservation fits into a drafted ride''s old time';
+  delete from public.rides where id=rC;
+  -- R16B1: through the Sadran's manual placement path (the same checks as a board drop), not only a raw insert
+  rB:=public.place_request_on_car(qb,carA,true,sadran,null,d,d+interval '2 hours','SADRAN_MANUAL');
+  set constraints all immediate; set constraints all deferred;
+  assert (select car_id from public.rides where id=rB)=carA, '(a) the old time of a drafted ride takes a manual placement';
+  -- R16B2: and the two are not a car overlap for publishing
+  assert not exists (select 1 from public.publication_conflict_details(dept,w,array[w+2]) c where c.reason='car_overlap'),
+    '(a) a ride in a drafted ride''s old time is not a conflict';
 
   -- ===== (b) the draft's time is held: the admin's request linked onto a ride at 12:30 is refused ===============
   insert into public.requests(department_id,week_start,requester_id,filed_by,destination_id,ride_type_id,depart_at,return_at,trip_shape,status)

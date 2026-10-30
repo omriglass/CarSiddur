@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { he } from "../src/i18n/he";
+import { he, tv } from "../src/i18n/he";
 import { newSignedInPage, NEVO_DEPARTMENT_ID, SEEDED_USERS, serviceRoleClient, scrollGridColumnTo, openRideDetails } from "./helpers";
 import { publishedFixtureWeek } from "./published-week";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -337,6 +337,28 @@ test("a draft of a placed ride is drawn on the ride itself; dragging it updates 
     await expect(page.locator('button[data-ride-id^="draft:"]:visible')).toHaveCount(0);
     const { data: unchanged } = await service.from("rides").select("starts_at, ends_at").eq("id", ride.id).single();
     expect(unchanged).toEqual({ starts_at: ride.starts_at, ends_at: ride.ends_at });
+
+    // R16B1/B2: the ride's old time is free on the board and on the server - another request dropped there is placed,
+    // and the two are no conflict.
+    const { data: other, error: otherError } = await service.from("requests").insert({
+      department_id: NEVO_DEPARTMENT_ID, week_start: week, requester_id: "00000000-0000-0000-0000-000000000104", filed_by: "00000000-0000-0000-0000-000000000104",
+      ride_type_id: "00000000-0000-0000-0000-000000000021", destination_id: "00000000-0000-0000-0000-000000000011",
+      trip_shape: "round_trip", trip_type: "round_trip", depart_at: at("07:00"), return_at: at("08:00"), status: "submitted",
+      // (some flexibility, so a drop a quarter hour off still places it directly)
+      flex_depart_early: "00:30:00", flex_depart_late: "00:30:00", flex_return_early: "00:30:00", flex_return_late: "00:30:00",
+    }).select("id").single();
+    if (otherError) throw otherError;
+    await page.reload();
+    await dragRequest(page, other.id, carId, 420);
+    await expect.poll(async () => (await service.from("ride_requests").select("ride_id").eq("request_id", other.id)).data?.length ?? 0).toBe(1);
+    await expect(page.getByText(tv("sadranBoard.conflictBanner", { count: "2" }))).toHaveCount(0);
+    await expect(page.locator(`button[data-ride-id="${ride.id}"][data-draft="true"]:visible`)).toHaveCount(1);
+    // (out of the way again, so the drafted ride can be dragged back to its own time below)
+    const { data: placed } = await service.from("ride_requests").select("ride_id").eq("request_id", other.id).single();
+    await service.from("ride_requests").delete().eq("ride_id", placed!.ride_id);
+    await service.from("rides").delete().eq("id", placed!.ride_id);
+    await page.reload();
+    await expect(block).toBeVisible();
 
     // Its sheet carries the draft banner.
     await openRideDetails(page, block);
