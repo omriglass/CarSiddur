@@ -1299,7 +1299,7 @@ First run of `/qa-concurrent`: **two QA Sadranim at once** (both Sonnet; Sadran 
 - R16B9 — Change log: drafts/sent proposals never appear (filter on or off); an accepted origin change does not appear (Michal 53a89f3a); "לא שובץ" always reads "כל הרכבים תפוסים… תקבל/י הודעה" (member wording, wrong reason) for UNMET_NO_CAR_AT_ORIGIN / ONE_WAY_STRANDS / DRAFT_SLOT_TAKEN.
 - R16B10 — Mobile list mode shows a draft (934eb408) with no chip or dashed border.
 - R16B11 — Dragging a drafted ride back inside the flexibility discards the draft but ignores the dropped end (preview 11:30–16:15, ride stays 11:30–15:45).
-- R16B12 — A member's edit dropped her named companion silently: m13 edited 09795f13 (4.11, 07:00–16:30 → 07:30–17:00); m06 (companion) is off the ride with no notice.
+- R16B12 ✅ (2026-10-30, `20261030090500`, suite `member_edit_companions.sql`; on inspection the companion stayed on the request and the new ride — QA misread "my rides" — but she was never told the hours changed; now she is) — A member's edit dropped her named companion silently: m13 edited 09795f13 (4.11, 07:00–16:30 → 07:30–17:00); m06 (companion) is off the ride with no notice.
 - R16B13 — Ask-to-join: the asker gets no confirmation notice (m31 1d23ba08, m19 60ef3505); the driver's notice is an `outcome_changed`.
 - R16B14 — CLI only: `move ba0c7043 --start 14:15 --end 15:00` says "beyond flexibility" where the board moved the same ride within it.
 - (minor) The closing notice inherits the Sadran's gendered reason text ("ולא יוצע לה רכב"); generator artefacts: series legs 00:00–23:59, edits ending at 00:00 (`ride_same_day`).
