@@ -198,6 +198,7 @@ e2e/
   request-sentence-overlay.spec.ts  the sentence form as a card over the siddur (phone + desktop), who/seat counts, arrive-by derived departure, `?day=`
   request-window.spec.ts         "יש לי חלון זמן?" 3 h between 07:00 and 12:00: stored lock, `/my` summary, edit reopens in window mode
   ride-editing.spec.ts           member resizes owned rides; shadow-collision driver consent
+  edit-mode.spec.ts              siddur edit mode (REQ §13.165): off, a drag moves nothing + hint toast; a long press drags; the pencil drags at once
   sadran.spec.ts                 sadran flows
   siddur-desktop.spec.ts         siddur on a computer (1280 px): week switcher (this/next/archive), car names visible, no sideways overflow (REQ §13.111 b)
   siddur-mobile.spec.ts          siddur mobile header: title/week switcher, eye menu, car-now, waitlist button, archive

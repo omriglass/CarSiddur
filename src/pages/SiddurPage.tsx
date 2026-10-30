@@ -74,6 +74,8 @@ import { resolveThisNextWeek } from "@/features/siddur/thisNextWeek";
 import { WeekSwitcherTitle } from "@/features/siddur/components/WeekSwitcherTitle";
 import { LongRangeMenu } from "@/features/planning/components/LongRangeMenu";
 import { SiddurDisplayMenu } from "@/features/siddur/components/SiddurDisplayMenu";
+import { EditModeButton } from "@/features/rides/components/EditModeButton";
+import { useDragHint, useEditMode } from "@/features/rides/editMode";
 import type { Week, BoardRide } from "@/features/siddur/api";
 import { representativeRideTypeCode, rideViaNames, servedOf } from "@/features/rides/servedOf";
 import { viaLabel } from "@/lib/routeLabel";
@@ -336,6 +338,9 @@ export function SiddurPage() {
     onDone: () => setSelectedRideId(null),
   });
   const { ownsEditableRide, canDragRide, saveMove, moveRide } = rideMoves;
+  // Owner 2026-10-30: edit mode (the pencil) - off, a ride drags only after a long press.
+  const [editMode, setEditMode] = useEditMode();
+  const onDragHint = useDragHint();
   const sheetCarActions = useRideSheetCarActions({ departmentId, profileId, myRequestIds, week: resolvedWeek, isMember: isMyDepartment, now });
 
   const selectedCar = selectedRide ? (carsQuery.data ?? []).find((c) => c.id === selectedRide.car_id) ?? null : null;
@@ -434,6 +439,9 @@ export function SiddurPage() {
   const awayBands = activeDay ? awayBandBlocks(carLocationsQuery.data ?? [], activeDay, (place) => tv("siddur.awayBand", { place })) : [];
   const maintenanceEditing = useMaintenanceGridEditing({ departmentId, blocks: maintenanceQuery.data ?? [], cars: carsQuery.data ?? [], day: activeDay });
 
+  // The pencil shows only when this day has something this member may drag.
+  const canDragSomething = canEditWeek && (canSwapCarsOnActiveDay || weekGridRides.some((ride) => canDragRide(ride.id))
+    || maintenanceEditing.gridBlocks.some((block) => block.editable));
   const weekGridDiscussionBlocks: WeekGridDiscussionBlock[] = activeDayWaitlistGroups.map((group) => ({
     id: group.id,
     startMinutes: minutesSinceMidnight(group.starts_at),
@@ -488,6 +496,7 @@ export function SiddurPage() {
         <h1 className="sr-only">{t("screen.siddur.title")}</h1>
         <WeekSwitcherTitle resolution={thisNextWeek} activeWeekStart={weekStart} onSelect={(next) => goTo(departmentId as string, next)} onArchive={goToArchive} />
         <div className="flex items-center gap-2">
+          {canDragSomething ? <EditModeButton on={editMode} onChange={setEditMode} /> : null}
           {departmentId ? <LongRangeMenu departmentId={departmentId} /> : null}
           <SiddurDisplayMenu
             table={tableView}
@@ -536,6 +545,7 @@ export function SiddurPage() {
         <>
           {/* Desktop: the same display menu as mobile; "show early hours" lives only here. */}
           <div className="hidden md:flex md:justify-end md:gap-2">
+            {canDragSomething ? <EditModeButton on={editMode} onChange={setEditMode} /> : null}
             {departmentId ? <LongRangeMenu departmentId={departmentId} /> : null}
             <SiddurDisplayMenu
               table={tableView}
@@ -668,6 +678,8 @@ export function SiddurPage() {
                 draggable={canEditWeek && !rideMoves.saving}
                 canDragRide={(ride) => canDragRide(ride.id)}
                 canResizeRide={(ride) => ownsEditableRide(ride.id)}
+                holdToDrag={!editMode}
+                onDragHint={onDragHint}
                 isDropTargetValid={rideMoves.isValidTarget}
                 onRideDrop={(rideId, carId, startMinutes) => moveRide(rideId, carId, startMinutes)}
                 onRideResize={(rideId, edge, minutes) => {

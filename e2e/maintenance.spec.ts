@@ -79,7 +79,9 @@ test.describe("scheduled maintenance", { tag: ["@maintenance"] }, () => {
       }
       // another member (not responsible, not Sadran): read-only band, no handles
       await expect(member2.page.locator(`[data-block-id="${blockId}"] [data-block-handle]`)).toHaveCount(0);
-      // the responsible member (created by someone else) can drag the end handle upwards by one hour
+      // the responsible member (created by someone else) can drag the end handle upwards by one hour - in edit mode
+      // (owner 2026-10-30: off, the siddur drags only after a long press)
+      await member1.page.getByTestId("edit-mode-button").locator("visible=true").click();
       const handle = member1.page.locator(`[data-block-id="${blockId}"] [data-block-handle="end"]`);
       await expect(handle).toBeVisible();
       await handle.scrollIntoViewIfNeeded();

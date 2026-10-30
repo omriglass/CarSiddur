@@ -27,6 +27,7 @@ import { RideNotes } from "./RideNotes";
 import { RideDeltaLine } from "./RideDeltaLine";
 import type { RideDeltaView } from "@/features/sadran/requestDelta";
 import { clampRideVertical, minutesFromClientY, snapTimeShift } from "./weekGridGeometry";
+import { HOLD_TO_DRAG_MS, holdStartOf, isDragAttempt, setTouchScrollLocked, watchHold, type HoldStart } from "./holdGesture";
 
 /**
  * Cars × time grid for one day (component inventory `WeekGrid`, UX_FLOWS.md
@@ -266,6 +267,13 @@ export interface WeekGridProps {
   draggable?: boolean;
   canDragRide?: (ride: WeekGridRide) => boolean;
   canResizeRide?: (ride: WeekGridRide) => boolean;
+  /**
+   * Edit mode off (owner 2026-10-30, member siddur and "my rides" only): every drag — a ride, its ends, a car header,
+   * a maintenance band — starts only after a long press (`holdGesture.ts`); otherwise the blocks scroll the page.
+   */
+  holdToDrag?: boolean;
+  /** A likely attempt to drag that did nothing: `locked` (edit mode off, no long press) or `notYours` (a ride this person may not drag). */
+  onDragHint?: (hint: "locked" | "notYours") => void;
   /** A ride block was dropped on car `carId` at `startMinutes`; `droppedOnRideId` is set when it landed on another block (merge-by-drop). */
   onRideDrop?: (rideId: string, carId: string, startMinutes: number, droppedOnRideId?: string) => void;
   /** One edge (top = start, bottom = end) of a ride block was dragged to a new time (resize). */
@@ -428,6 +436,8 @@ interface DragState {
   shiftMinutes: number;
   hoverCarId: string | null;
   overRideId: string | null;
+  /** Started by a long press (edit mode off): released without moving it is neither a drag nor a click. */
+  armed?: boolean;
 }
 
 /** One in-progress car-header drag (REQ §13.92) — see the const block above for the gesture split. */
@@ -438,6 +448,9 @@ interface CarDragState {
   clientX: number;
   clientY: number;
   confirmed: boolean;
+  /** Confirmed by a long press, not by moving (always on touch; with a mouse too while edit mode is off). */
+  hold: boolean;
+  startedAt: number;
   /** Recomputed on every `pointermove` (an event handler, so reading `colRefs` there is fine) — never derived at render time, which would read a ref during render. */
   hoverCarId: string | null;
 }
@@ -471,6 +484,8 @@ export function WeekGrid({
   draggable = false,
   canDragRide,
   canResizeRide,
+  holdToDrag = false,
+  onDragHint,
   onRideDrop,
   onRideResize,
   isDropTargetValid,
@@ -802,9 +817,10 @@ export function WeekGrid({
     if (!current || event.pointerId !== current.pointerId) return;
     const movedPx = Math.max(Math.abs(event.clientX - current.clientX), Math.abs(event.clientY - current.clientY));
     if (!current.confirmed) {
-      if (current.pointerType === "touch") {
-        // Long-press not fired yet and the finger moved enough to be a scroll — cancel silently.
+      if (current.hold) {
+        // Long-press not fired yet and the finger moved enough to be a scroll — cancel (a hint while edit mode is off).
         if (movedPx >= CAR_TOUCH_SCROLL_CANCEL_PX) {
+          if (holdToDrag && isDragAttempt(current.pointerType, event.timeStamp - current.startedAt)) onDragHint?.("locked");
           clearCarLongPress();
           carDragRef.current = null;
           setCarDrag(null);
@@ -845,6 +861,8 @@ export function WeekGrid({
       clientX: event.clientX,
       clientY: event.clientY,
       confirmed: false,
+      hold: event.pointerType === "touch" || holdToDrag,
+      startedAt: event.timeStamp,
       hoverCarId: carId,
     };
     carDragRef.current = state;
@@ -852,14 +870,15 @@ export function WeekGrid({
     window.addEventListener("pointermove", handleCarWindowMove);
     window.addEventListener("pointerup", handleCarWindowUp);
     window.addEventListener("pointercancel", handleCarWindowCancel);
-    if (event.pointerType === "touch") {
+    if (state.hold) {
       clearCarLongPress();
       carLongPressTimer.current = setTimeout(() => {
         if (carDragRef.current?.pointerId === event.pointerId) {
           carDragRef.current = { ...carDragRef.current, confirmed: true };
           setCarDrag(carDragRef.current);
+          if (holdToDrag) navigator.vibrate?.(20);
         }
-      }, CAR_LONG_PRESS_MS);
+      }, holdToDrag ? HOLD_TO_DRAG_MS : CAR_LONG_PRESS_MS);
     } else {
       event.preventDefault();
     }
@@ -873,6 +892,7 @@ export function WeekGrid({
    * closure from the render that first attached them.
    */
   function finishDrag() {
+    setTouchScrollLocked(false);
     dragRef.current = null;
     setDrag(null);
     window.removeEventListener("pointermove", handleWindowMove);
@@ -933,7 +953,7 @@ export function WeekGrid({
     suppressClick.current = true;
     finishDrag();
     if (!finished.confirmed) {
-      if (finished.kind === "move") openRide(finished.rideId);
+      if (finished.kind === "move" && !finished.armed) openRide(finished.rideId);
       return;
     }
 
@@ -977,10 +997,38 @@ export function WeekGrid({
    * a band belongs to its car. Touch only starts from the edge handles (the body must still scroll the grid); a tap on
    * the body is a click.
    */
-  function beginBlockDrag(event: ReactPointerEvent<HTMLElement>, block: WeekGridBlock, kind: WeekGridBlockEdge, colEl: HTMLElement | null) {
+  /**
+   * A press on a ride block or one of its ends: the drag starts at once (edit mode on), after a long press (edit mode
+   * off), or never — a ride this person may not drag only reports an attempt (`onDragHint`).
+   */
+  function pressRide(event: ReactPointerEvent<HTMLElement>, ride: WeekGridRide, kind: DragState["kind"], colRect: { top: number; height: number }, allowed: boolean) {
+    const start = holdStartOf(event);
+    // A mouse press that moved without dragging must not click what it was let go over (a column: the two-tap span).
+    const onMoved = () => { if (start.pointerType !== "touch") suppressClick.current = true; };
+    if (!allowed) {
+      if (onDragHint && !ride.kind) watchHold(start, { onMoved, onAttempt: () => onDragHint("notYours") });
+      return;
+    }
+    if (!holdToDrag) { beginDrag(event, ride, kind, colRect); return; }
     event.stopPropagation();
+    watchHold(start, { onArmed: () => beginDrag(start, ride, kind, colRect, true), onMoved, onAttempt: () => onDragHint?.("locked") });
+  }
+
+  function beginBlockDrag(event: ReactPointerEvent<HTMLElement> | HoldStart, block: WeekGridBlock, kind: WeekGridBlockEdge, colEl: HTMLElement | null, armed = false) {
+    if ("stopPropagation" in event) event.stopPropagation();
     if (!colEl || !onBlockChange) return;
-    if (kind === "move" && event.pointerType === "touch") return;
+    // Edit mode off: the band (and its ends) drag only after a long press - then on touch too.
+    if (holdToDrag && !armed) {
+      const start = holdStartOf(event);
+      watchHold(start, {
+        onArmed: () => beginBlockDrag(start, block, kind, colEl, true),
+        onMoved: () => { if (start.pointerType !== "touch") { suppressBlockClick.current = true; suppressClick.current = true; } },
+        onAttempt: () => onDragHint?.("locked"),
+      });
+      return;
+    }
+    if (kind === "move" && event.pointerType === "touch" && !armed) return;
+    if (armed) setTouchScrollLocked(true);
     const rect = colEl.getBoundingClientRect();
     const total = dayEndMinutes - dayStartMinutes;
     const pointerId = event.pointerId;
@@ -1001,6 +1049,7 @@ export function WeekGrid({
       window.removeEventListener("pointerup", onUp);
       window.removeEventListener("pointercancel", onCancel);
       setBlockDrag(null);
+      if (armed) setTouchScrollLocked(false);
     };
     function onMove(e: PointerEvent) {
       if (e.pointerId !== pointerId) return;
@@ -1013,7 +1062,10 @@ export function WeekGrid({
       if (e.pointerId !== pointerId) return;
       const finished = { ...state, delta: compute(e.clientY) };
       cleanup();
-      if (!finished.confirmed) return; // a plain tap: the element's own onClick opens the dialog
+      if (!finished.confirmed) {
+        if (armed) suppressBlockClick.current = true; // a long press let go in place is not a tap
+        return; // a plain tap: the element's own onClick opens the dialog
+      }
       suppressBlockClick.current = true;
       if (finished.delta !== 0) onBlockChange?.(block.id, kind, finished.delta);
     }
@@ -1026,12 +1078,14 @@ export function WeekGrid({
   }
 
   function beginDrag(
-    event: ReactPointerEvent<HTMLElement>,
+    event: ReactPointerEvent<HTMLElement> | HoldStart,
     ride: WeekGridRide,
     kind: DragState["kind"],
     colRect: { top: number; height: number },
+    armed = false,
   ) {
-    event.stopPropagation();
+    if ("stopPropagation" in event) event.stopPropagation();
+    if (armed) setTouchScrollLocked(true);
     suppressClick.current = false;
     const state: DragState = {
       rideId: ride.id,
@@ -1048,6 +1102,7 @@ export function WeekGrid({
       shiftMinutes: 0,
       hoverCarId: ride.carId,
       overRideId: null,
+      armed,
     };
     dragRef.current = state;
     setDrag(state);
@@ -1236,7 +1291,7 @@ export function WeekGrid({
           const shownStart = dragging && dragging.kind !== "end" ? b.startMinutes + dragging.delta : b.startMinutes;
           const shownEnd = dragging && dragging.kind !== "start" ? b.endMinutes + dragging.delta : b.endMinutes;
           const rect = clampRideVertical(shownStart, shownEnd, dayStartMinutes, dayEndMinutes);
-          const handleClass = "absolute inset-x-0 z-30 h-2.5 cursor-ns-resize touch-none border-foreground/30 bg-foreground/15";
+          const handleClass = cn("absolute inset-x-0 z-30 h-2.5 cursor-ns-resize border-foreground/30 bg-foreground/15", !holdToDrag && "touch-none");
           return (
             <div
               key={b.id}
@@ -1352,7 +1407,7 @@ export function WeekGrid({
                 // REQ §13.161 (b): a draft keeps the ride-type colour - only the border and the chip say "draft".
                 (ride.draft || ride.sentDraft) && "border-2 border-dashed border-primary",
                 onRideClick && "cursor-pointer",
-                dragEnabled && (canDragRide?.(ride) ?? true) && "touch-none",
+                dragEnabled && (canDragRide?.(ride) ?? true) && (holdToDrag ? "select-none [-webkit-touch-callout:none]" : "touch-none"),
                 ride.shadowed && "opacity-50",
                 ride.muted && "border-dotted opacity-70 shadow-none",
                 ride.isMine && "shadow-md",
@@ -1378,11 +1433,12 @@ export function WeekGrid({
                 openRide(ride.id);
               }}
               onPointerDown={(e) => {
-                if (!dragEnabled || !(canDragRide?.(ride) ?? true)) return;
+                if (!dragEnabled) return;
                 const rect2 = e.currentTarget.parentElement?.getBoundingClientRect();
                 if (!rect2) return;
-                beginDrag(e, ride, "move", rect2);
+                pressRide(e, ride, "move", rect2, canDragRide?.(ride) ?? true);
               }}
+              onContextMenu={holdToDrag && dragEnabled ? (e) => e.preventDefault() : undefined}
               aria-label={ride.kind ? `${he.myWeek.kind[ride.kind]} · ${ride.label}` : ride.isMine ? `${he.siddur.myRide} · ${ride.label}` : ride.draft ? `${he.boardDrafts.tag} · ${ride.label}` : ride.label}
             >
               {/* Sliding label (owner, 2026-09-14): everything readable in the block — badges, clamped-start
@@ -1427,7 +1483,7 @@ export function WeekGrid({
               ) : null}
               {resizeEnabled && (canDragRide?.(ride) ?? true) && (canResizeRide?.(ride) ?? true) ? (
                 <span
-                  className={cn("absolute inset-x-0 top-0 z-20 cursor-ns-resize touch-none border-y border-foreground/20 bg-foreground/10", ride.endMinutes - ride.startMinutes <= SHORT_RIDE_MINUTES ? "h-1" : "h-2.5")}
+                  className={cn("absolute inset-x-0 top-0 z-20 cursor-ns-resize border-y border-foreground/20 bg-foreground/10", !holdToDrag && "touch-none", ride.endMinutes - ride.startMinutes <= SHORT_RIDE_MINUTES ? "h-1" : "h-2.5")}
                   aria-hidden="true"
                   onClick={(e) => e.stopPropagation()}
                   onPointerDown={(e) => {
@@ -1435,7 +1491,7 @@ export function WeekGrid({
                     // was the ride block — every pixel counted ~9× (owner 2026-10-11, "dragging from above jumps").
                     const rect2 = e.currentTarget.closest<HTMLElement>(`[${CAR_COLUMN_ATTR}]`)?.getBoundingClientRect();
                     if (!rect2) return;
-                    beginDrag(e, ride, "resize-start", rect2);
+                    pressRide(e, ride, "resize-start", rect2, true);
                   }}
                 />
               ) : null}
@@ -1443,13 +1499,13 @@ export function WeekGrid({
               </div>
               {resizeEnabled && (canDragRide?.(ride) ?? true) && (canResizeRide?.(ride) ?? true) ? (
                 <span
-                  className={cn("absolute inset-x-0 bottom-0 z-20 cursor-ns-resize touch-none border-y border-foreground/20 bg-foreground/10", ride.endMinutes - ride.startMinutes <= SHORT_RIDE_MINUTES ? "h-1" : "h-2.5")}
+                  className={cn("absolute inset-x-0 bottom-0 z-20 cursor-ns-resize border-y border-foreground/20 bg-foreground/10", !holdToDrag && "touch-none", ride.endMinutes - ride.startMinutes <= SHORT_RIDE_MINUTES ? "h-1" : "h-2.5")}
                   aria-hidden="true"
                   onClick={(e) => e.stopPropagation()}
                   onPointerDown={(e) => {
                     const rect2 = e.currentTarget.closest<HTMLElement>(`[${CAR_COLUMN_ATTR}]`)?.getBoundingClientRect();
                     if (!rect2) return;
-                    beginDrag(e, ride, "resize-end", rect2);
+                    pressRide(e, ride, "resize-end", rect2, true);
                   }}
                 />
               ) : null}

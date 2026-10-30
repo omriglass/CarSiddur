@@ -1304,6 +1304,8 @@ First run of `/qa-concurrent`: **two QA Sadranim at once** (both Sonnet; Sadran 
 - R16B14 — CLI only: `move ba0c7043 --start 14:15 --end 15:00` says "beyond flexibility" where the board moved the same ride within it.
 - (minor) The closing notice inherits the Sadran's gendered reason text ("ולא יוצע לה רכב"); generator artefacts: series legs 00:00–23:59, edits ending at 00:00 (`ride_same_day`).
 
+- O30-1 ✅ (2026-10-30, owner: "it is too easy to drag a ride") — **Edit mode (REQ §13.165)** on the member's siddur and "my rides" (not the board): pencil next to the spyglass and the eye; off by default (every app start, after 5 min untouched), shared by both screens; off, everything drags only after a long press; hint toasts after repeated failed drags ("not yours" / "turn on edit mode"). `holdGesture.ts`, `features/rides/editMode.ts`, e2e `edit-mode.spec.ts`.
+
 ### UI changes
 - "דיברת עם…?" shows no old → new time; the draft banner does not say what the draft is, and the sheet's time fields show the ride's real time while the block shows the draft's; no "requested → draft" delta on a drafted block; stale drag-preview text ("מתחילה ב-13:45" while at 16:45).
 - Merge question wording "שי קרמר שוחרר/ה על הנסיעה של…" and no detour/route check shown; the Sadran notice title "מונית לסדרן/ית" reads as "taxi"; needs-driver red dash vs draft dash easily confused.

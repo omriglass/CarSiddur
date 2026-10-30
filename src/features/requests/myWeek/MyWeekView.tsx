@@ -52,6 +52,8 @@ import {
   type MyWeekTarget,
 } from "./myWeekItems";
 import { MyWeekDisplayMenu } from "./MyWeekDisplayMenu";
+import { EditModeButton } from "@/features/rides/components/EditModeButton";
+import { useDragHint, useEditMode } from "@/features/rides/editMode";
 import { RequestDeadlineNote } from "../components/RequestDeadlineNote";
 import { MyWeekSwitcher } from "./MyWeekSwitcher";
 
@@ -201,6 +203,10 @@ export function MyWeekView({ departmentId, homeDestinationId, profileId, request
     const row = requestOf(blockId);
     return row ? canMoveRequest(row) : canMove(blockId);
   }
+  // Owner 2026-10-30: edit mode (the pencil, shared with the siddur) - off, a block drags only after a long press.
+  const [editMode, setEditMode] = useEditMode();
+  const onDragHint = useDragHint();
+  const canDragSomething = !isPast && entries.some((entry) => canDrag(entry.block.id));
   /** Only a request with both ends can be stretched; a one-way block is a fixed hour. */
   function canResize(blockId: string): boolean {
     const row = requestOf(blockId);
@@ -248,6 +254,7 @@ export function MyWeekView({ departmentId, homeDestinationId, profileId, request
                 <CalendarDays className="size-4" />
               </Button>
             ) : null}
+            {canDragSomething ? <EditModeButton on={editMode} onChange={setEditMode} /> : null}
             {departmentId ? <LongRangeMenu departmentId={departmentId} /> : null}
             <MyWeekDisplayMenu view="week" onViewChange={onViewChange} zoom={tableZoom} onZoomChange={setTableZoom} showKidsRides={showKidsRides} onShowKidsRidesChange={onShowKidsRidesChange} />
           </div>
@@ -269,6 +276,8 @@ export function MyWeekView({ departmentId, homeDestinationId, profileId, request
           draggable={!isPast && !rideMoves.saving && !moveRequest.isPending}
           canDragRide={(block) => canDrag(block.id)}
           canResizeRide={(block) => canResize(block.id)}
+          holdToDrag={!editMode}
+          onDragHint={onDragHint}
           isDropTargetValid={(blockId, dayKey, start, end) => {
             if (requestOf(blockId)) return requestTargetValid(dayKey, start, end);
             const ride = rideOf(blockId);

@@ -270,6 +270,13 @@ export const heMember = {
   requestDeadline: {
     line: "אפשר להגיש בקשות עד יום {{day}} בשעה {{time}}",
   },
+  // Owner 2026-10-30: the pencil on the siddur and "my rides" (src/features/rides/editMode.ts).
+  editMode: {
+    turnOn: "מצב עריכה — גרירת נסיעות",
+    turnOff: "סיום מצב עריכה",
+    hintLocked: "כדי לגרור נסיעה יש להפעיל מצב עריכה (סמל העיפרון), או ללחוץ לחיצה ארוכה על הנסיעה",
+    hintNotYours: "אי אפשר לגרור את הנסיעה הזו — היא לא שלך",
+  },
   myWeek: {
     kind: {
       suggestion: "הצעה",

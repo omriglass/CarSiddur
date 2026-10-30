@@ -180,7 +180,7 @@ gap is closed.
 `WeekStrip.test.tsx`, `src/pages/SiddurPage.tsx`; `src/i18n/he.member.ts`; migrations matching
 `*public_request*`, `*public_notes*`, `*car_swap*`, or whose content defines `v_board_rides`;
 `src/components/CarSwapDialog.tsx`(+test), `WeekGrid.carSwap.test.tsx`, `src/features/carSwap/**`;
-`e2e/siddur-mobile.spec.ts`, `siddur-desktop.spec.ts` (REQ §13.111 b: week switcher + car names without sideways overflow at 1280 px), `ride-editing.spec.ts`, `member.spec.ts`, `car-swap.spec.ts`, `car-handover.spec.ts` ("be back on time" note);
+`e2e/siddur-mobile.spec.ts`, `siddur-desktop.spec.ts` (REQ §13.111 b: week switcher + car names without sideways overflow at 1280 px), `ride-editing.spec.ts`, `edit-mode.spec.ts` (REQ §13.165: off, a drag moves nothing and the second try hints; a long press drags; the pencil drags at once — unit `WeekGrid.holdToDrag.test.tsx`, `features/rides/editMode.test.ts`; paths `src/components/holdGesture.ts`, `src/features/rides/editMode.ts`, `EditModeButton.tsx`), `member.spec.ts`, `car-swap.spec.ts`, `car-handover.spec.ts` ("be back on time" note);
 `src/features/rides/servedOf.ts`, `src/features/rides/components/RideRouteStops.tsx`,
 `src/lib/routeStops.ts` (multi-stop rides ride-detail route display, REQ §13.93, step O6).
 `src/features/rides/carHandover*`, `components/CarHandoverNotice.tsx`, `components/RideCarHandover.tsx`, `src/features/requests/rowHandover*`,
