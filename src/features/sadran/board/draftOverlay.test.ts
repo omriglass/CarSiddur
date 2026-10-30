@@ -46,6 +46,14 @@ describe("resolveDraftPlacement", () => {
     expect(placement).toMatchObject({ carId: "carB", endsAt: "2026-10-11T11:00:00.000Z", replacesRideId: null });
     expect(Date.parse(placement!.startsAt)).toBeGreaterThan(Date.parse("2026-10-11T10:00:00.000Z"));
   });
+  it("R16B4: a placed leg's draft carrying the ride as drawn is drawn on that ride, never the other leg's", () => {
+    const req = request({ trip_type: "drop_off", depart_at: "2026-10-11T04:30:00.000Z", return_at: "2026-10-11T11:00:00.000Z" } as Partial<WeekRequestRow>);
+    const outRide = ride({ id: "rideOut", starts_at: "2026-10-11T04:30:00.000Z", ends_at: "2026-10-11T05:30:00.000Z" });
+    const retRide = ride({ id: "rideRet", starts_at: "2026-10-11T10:00:00.000Z", ends_at: "2026-10-11T11:00:00.000Z", origin_id: "dest", destination_id: "home" });
+    const placement = resolveDraftPlacement(proposal({ ride_id: "rideRet", payload: { car_id: "carA", leg: "return", return_at: "2026-10-11T13:00:00.000Z", ride_id: "rideRet",
+      ride_starts_at: "2026-10-11T12:00:00.000Z", ride_ends_at: "2026-10-11T13:00:00.000Z" } }), [req], [outRide, retRide], "home");
+    expect(placement).toMatchObject({ leg: "return", carId: "carA", startsAt: "2026-10-11T12:00:00.000Z", endsAt: "2026-10-11T13:00:00.000Z", replacesRideId: "rideRet", originId: "dest" });
+  });
   it("REQ 105 d: a fewer-days draft is drawn on the span's own day and car, not on the series head's day", () => {
     const head = request({ depart_at: "2026-10-12T05:00:00.000Z", return_at: "2026-10-12T20:59:00.000Z" });
     const placement = resolveDraftPlacement(proposal({ payload: { car_id: "carB", series_span: { depart_at: "2026-10-14T05:00:00.000Z", return_at: "2026-10-14T14:00:00.000Z" } } }), [head], [], "home");

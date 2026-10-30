@@ -5,6 +5,7 @@
 --       told; never a double booking
 --   (d) a draft closed with its old time still free gives the ride its time back
 --   (e) "כן, כבר סיכמנו" applies the draft onto the time it held
+--   (f) R16B4: a one-leg draft of a הקפצה holds that leg's ride and its drawn window only, and applies that leg only
 -- Transactional (begin ... rollback).
 begin;
 do $$
@@ -115,6 +116,38 @@ begin
   assert exists (select 1 from public.ride_requests rr join public.rides rd on rd.id=rr.ride_id
                  where rr.request_id=qa and rd.status<>'cancelled' and rd.starts_at=d+interval '4 hours' and not rd.draft_hold),
     '(e) the request rides at the new time, no hold left';
+
+  -- ===== (f) R16B4: a one-leg draft of a הקפצה holds that leg's ride only and moves that leg only =============
+  d:=((w+3)+time '08:00') at time zone 'Asia/Jerusalem';
+  insert into public.requests(department_id,week_start,requester_id,filed_by,destination_id,ride_type_id,depart_at,return_at,trip_shape,trip_type,needs_car_at_destination,status)
+    values(dept,w,m1,m1,dest,typ,d,d+interval '8 hours','round_trip','drop_off',false,'assigned') returning id into qc;
+  insert into public.rides(department_id,week_start,car_id,starts_at,ends_at,origin_id,destination_id,driver_id,status,is_pinned,pin_reason,created_by)
+    values(dept,w,carA,d,d+interval '1 hour',home,dest,m1,'confirmed',true,'SADRAN_MANUAL',sadran) returning id into rB;
+  insert into public.rides(department_id,week_start,car_id,starts_at,ends_at,origin_id,destination_id,driver_id,status,is_pinned,pin_reason,created_by)
+    values(dept,w,carA,d+interval '7 hours',d+interval '8 hours',dest,home,m1,'confirmed',true,'SADRAN_MANUAL',sadran) returning id into rC;
+  insert into public.ride_requests(ride_id,request_id,role,leg,car_mode) values(rB,qc,'driver','out','relay');
+  insert into public.ride_requests(ride_id,request_id,role,leg,car_mode) values(rC,qc,'driver','return','relay');
+  set constraints all immediate; set constraints all deferred;
+  p:=public.create_proposal(qc,rC,'shift',jsonb_build_object('car_id',carA,'leg','return','return_at',d+interval '10 hours','ride_id',rC,
+       'ride_starts_at',d+interval '9 hours','ride_ends_at',d+interval '10 hours'),'',array[]::uuid[]);
+  set constraints all immediate; set constraints all deferred;
+  assert (select draft_hold from public.rides where id=rC), '(f) the drafted leg''s ride is held';
+  assert not (select draft_hold from public.rides where id=rB), '(f) the other leg''s ride is not';
+  assert public._draft_hold_conflict(carA,d+interval '9 hours',d+interval '9 hours 30 minutes',array[]::uuid[]), '(f) the drawn leg window is held';
+  rA:=public.edit_ride(jsonb_build_object('department_id',dept,'week_start',w,'car_id',carA,'origin_id',dest,'destination_id',dest,
+    'starts_at',d+interval '7 hours','ends_at',d+interval '8 hours','notes','draft_holds leg reservation','served','[]'::jsonb));
+  set constraints all immediate; set constraints all deferred;
+  assert (select status::text from public.rides where id=rA)<>'cancelled', '(f) the leg ride''s old time is free';
+  delete from public.rides where id=rA;
+  res:=public.agree_proposal_offline(p);
+  set constraints all immediate; set constraints all deferred;
+  assert (select status::text from public.proposals where id=p)='applied', format('(f) applied, got %s / %s', (select status from public.proposals where id=p), res);
+  assert (select status::text<>'cancelled' and starts_at=d and ends_at=d+interval '1 hour' from public.rides where id=rB), '(f) the out leg''s ride is untouched';
+  assert exists (select 1 from public.ride_requests rr where rr.ride_id=rB and rr.request_id=qc and rr.covers_out), '(f) the out leg stays on its ride';
+  assert (select depart_at from public.requests where id=qc)=d, '(f) the departure time is unchanged';
+  assert exists (select 1 from public.ride_requests rr join public.rides rd on rd.id=rr.ride_id
+                 where rr.request_id=qc and rr.covers_return and rd.status<>'cancelled' and rd.ends_at=d+interval '10 hours' and not rd.draft_hold),
+    format('(f) the return leg rides at the new time, got %s', (select string_agg(rd.starts_at||'-'||rd.ends_at, ', ') from public.ride_requests rr join public.rides rd on rd.id=rr.ride_id where rr.request_id=qc and rd.status<>'cancelled'));
 
   set constraints all immediate;
   raise notice 'draft_holds.sql: all REQ §13.161 (b) assertions passed';

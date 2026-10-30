@@ -47,6 +47,7 @@ import {
   placedStartVersusDrop,
   unmetPlacement,
   unmetRequestPassengers,
+  rideShiftPayload,
   unmetShiftPayload,
 } from "../dropValidity";
 import type { UnmetListItem } from "../components/UnmetList";
@@ -837,7 +838,7 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
         // Still beyond it: the same draft, updated (a new Sadran draft supersedes the old one - `create_proposal`).
         const id = await saveDraft({
           requestId: driverRequest.id, rideId: ride.id, type: "shift",
-          payload: { car_id: carId, depart_at: newStartsAt, return_at: newEndsAt, origin_id: ride.origin_id, destination_id: ride.destination_id, ride_id: ride.id, ...(allowSmallTrunk ? { allow_small_trunk: true } : {}) },
+          payload: { ...rideShiftPayload(ride, driverRequest, driverEntry?.leg, carId, newStartsAt, newEndsAt), ...(allowSmallTrunk ? { allow_small_trunk: true } : {}) },
         }, true);
         if (id) toast.success(he.boardDrafts.draftUpdated);
         return;
@@ -927,7 +928,7 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
         requestId: driverRequest.id,
         rideId: ride.id,
         type: "shift",
-        payload: { car_id: carId, depart_at: newStartsAt, return_at: newEndsAt, origin_id: ride.origin_id, destination_id: ride.destination_id, ride_id: ride.id, ...(allowSmallTrunk ? { allow_small_trunk: true } : {}) },
+        payload: { ...rideShiftPayload(ride, driverRequest, driverEntry?.leg, carId, newStartsAt, newEndsAt), ...(allowSmallTrunk ? { allow_small_trunk: true } : {}) },
       });
     }
   }

@@ -146,6 +146,14 @@ export function resolveDraftPlacement(
     const leg = payload.leg === "out" || payload.leg === "return" ? payload.leg : inferredLeg;
     const legCar = str(payload.car_id);
     if (leg && legCar) {
+      // R16B4: a placed leg's ride dragged beyond its flexibility carries the ride as drawn; the draft is drawn on it.
+      const legRide = str(payload.ride_id) ? rides.find((r) => r.id === payload.ride_id && servedOf(r).some((s) => s.request_id === request.id)) : undefined;
+      const rideStart = str(payload.ride_starts_at);
+      const rideEnd = str(payload.ride_ends_at);
+      if (legRide && rideStart && rideEnd) {
+        return { ...common, type: "shift", carId: legCar, startsAt: rideStart, endsAt: rideEnd,
+          originId: legRide.origin_id ?? null, destinationId: legRide.destination_id ?? null, hostRideId: null, replacesRideId: legRide.id ?? null, leg };
+      }
       const win = leg === "return" && returnAt
         ? requestWindow({ ...request, trip_shape: "one_way_from", return_at: returnAt })
         : leg === "out" && departAt ? requestWindow({ ...request, trip_shape: "one_way_to", depart_at: departAt, return_at: null }) : null;

@@ -486,3 +486,31 @@ export function unmetShiftPayload(req: WeekRequestRow, carId: string, window: { 
   const pickup = req.trip_shape === "one_way_from";
   return { car_id: carId, ...(pickup ? { return_at: window.endsAt } : { depart_at: window.startsAt }), ...(leg ? { leg } : {}) };
 }
+
+/**
+ * R16B4: the `shift` payload for dragging / resizing a placed ride beyond its flexibility. A ride that carries
+ * the request's both legs sends the ride's window and places, as before. A ride that carries ONE leg (one half of a
+ * הקפצה, a relay leg) sends that leg and that leg's own time moved by the drag (`depart_at` + the start's move for
+ * the out leg, `return_at` + the end's move for the return leg) — never the other leg's time, never the ride's
+ * places (`apply_proposal` writes a shift's places onto the request). `ride_starts_at`/`ride_ends_at` = the leg ride as
+ * drawn: the server holds exactly that window and frees the ride's old time (`_proposal_car_holds`, `_sync_draft_hold`).
+ */
+export function rideShiftPayload(
+  ride: Pick<BoardRide, "id" | "starts_at" | "ends_at" | "origin_id" | "destination_id">,
+  req: Pick<WeekRequestRow, "depart_at" | "return_at" | "trip_type" | "trip_shape"> | undefined,
+  leg: "out" | "return" | "both" | undefined,
+  carId: string,
+  newStartsAt: string,
+  newEndsAt: string,
+): Record<string, unknown> {
+  if (!req || (leg !== "out" && leg !== "return")) {
+    return { car_id: carId, depart_at: newStartsAt, return_at: newEndsAt, origin_id: ride.origin_id, destination_id: ride.destination_id, ride_id: ride.id };
+  }
+  const moved = (base: string | null, from: string | null, to: string) =>
+    new Date(Date.parse(base ?? from ?? to) + (from ? Date.parse(to) - Date.parse(from) : 0)).toISOString();
+  return {
+    car_id: carId, ride_id: ride.id, ride_starts_at: newStartsAt, ride_ends_at: newEndsAt,
+    ...(tripTypeOf(req) === "drop_off" ? { leg } : {}),
+    ...(leg === "out" ? { depart_at: moved(req.depart_at, ride.starts_at, newStartsAt) } : { return_at: moved(req.return_at, ride.ends_at, newEndsAt) }),
+  };
+}

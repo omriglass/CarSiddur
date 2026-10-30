@@ -16,6 +16,7 @@ import {
   unmetMergeHost,
   unmetPlacement,
   unmetRequestPassengers,
+  rideShiftPayload,
   unmetShiftPayload,
   type BoardDropContext,
 } from "./dropValidity";
@@ -472,5 +473,24 @@ describe("placedStartVersusDrop (R14B7)", () => {
     const at = (m: number) => minutesIso(ctx, m);
     expect(placedStartVersusDrop(ctx, { startsAt: at(810) }, 825)).toEqual({ startMinutes: 810, moved: true });
     expect(placedStartVersusDrop(ctx, { startsAt: at(825) }, 825)).toEqual({ startMinutes: 825, moved: false });
+  });
+});
+
+describe("rideShiftPayload (R16B4)", () => {
+  const ride = { id: "r1", starts_at: "2026-10-11T10:00:00.000Z", ends_at: "2026-10-11T11:00:00.000Z", origin_id: "dest", destination_id: "home" };
+  const dropOff = { depart_at: "2026-10-11T04:30:00.000Z", return_at: "2026-10-11T11:00:00.000Z", trip_type: "drop_off", trip_shape: "round_trip" } as Pick<WeekRequestRow, "depart_at" | "return_at" | "trip_type" | "trip_shape">;
+  it("one leg of a הקפצה: that leg and its own time moved by the drag, no places, no other leg", () => {
+    expect(rideShiftPayload(ride, dropOff, "return", "carA", "2026-10-11T12:00:00.000Z", "2026-10-11T13:00:00.000Z")).toEqual({
+      car_id: "carA", ride_id: "r1", leg: "return", return_at: "2026-10-11T13:00:00.000Z",
+      ride_starts_at: "2026-10-11T12:00:00.000Z", ride_ends_at: "2026-10-11T13:00:00.000Z",
+    });
+    const out = rideShiftPayload({ ...ride, starts_at: "2026-10-11T04:30:00.000Z", ends_at: "2026-10-11T05:30:00.000Z" }, dropOff, "out", "carA", "2026-10-11T05:00:00.000Z", "2026-10-11T06:00:00.000Z");
+    expect(out).toMatchObject({ leg: "out", depart_at: "2026-10-11T05:00:00.000Z" });
+    expect(out).not.toHaveProperty("return_at");
+  });
+  it("a ride carrying both legs keeps the window and places", () => {
+    expect(rideShiftPayload(ride, { ...dropOff, trip_type: "round_trip" }, "both", "carA", "2026-10-11T12:00:00.000Z", "2026-10-11T13:00:00.000Z")).toEqual({
+      car_id: "carA", depart_at: "2026-10-11T12:00:00.000Z", return_at: "2026-10-11T13:00:00.000Z", origin_id: "dest", destination_id: "home", ride_id: "r1",
+    });
   });
 });
