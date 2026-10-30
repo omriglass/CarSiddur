@@ -1,7 +1,8 @@
 // src/solver/invariants.ts
 //
 // assertInvariants() (docs/SOLVER.md §3.12): runs before solve() returns.
-// Checks no-overlap per car (buffer + maintenance), seat fit, every request
+// Checks no-overlap per car (buffer + maintenance), seat fit (solver placements; an over-full fixed ride is a
+// FIXED_RIDE_OVER_CAPACITY warning from solve()), every request
 // served exactly once, fixed rides unchanged, the location chain per car,
 // temporary cars only base -> base, and relay pairing consistency. The
 // day-end rule is retired (REQUIREMENTS §13.93): a car may legitimately end
@@ -71,10 +72,12 @@ export function assertInvariants(input: SolverInput, output: SolverOutput): void
           throw new SolverInvariantError(`ride ${a.rideId} crosses its scheduling day`, 'RIDE_OUTSIDE_DAY');
         }
       }
-      if (!fits(car, a.passengers)) {
+      // R16B8: seats and luggage are checked on the solver's own placements; a fixed ride over capacity is a
+      // warning from solve() (FIXED_RIDE_OVER_CAPACITY), not a reason to throw the whole run away.
+      if (a.source === 'solver' && !fits(car, a.passengers)) {
         throw new SolverInvariantError(`ride ${a.rideId} does not fit car ${carId}'s seat configs`, 'SEAT_OVERFLOW');
       }
-      if (!luggageFits(car, a.luggageCount)) {
+      if (a.source === 'solver' && !luggageFits(car, a.luggageCount)) {
         throw new SolverInvariantError(`ride ${a.rideId} exceeds car ${carId}'s luggage capacity`, 'LUGGAGE_OVERFLOW');
       }
       try {

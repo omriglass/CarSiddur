@@ -111,6 +111,7 @@ var TEMPLATES = {
   // (CarTimeline.chainBreaks()) and WARN_CAR_AWAY_AT_WEEK_END below.
   WARN_CHAIN_BROKEN: "\u05E0\u05E1\u05D9\u05E2\u05D4 \u05E7\u05D1\u05D5\u05E2\u05D4 \u05DE\u05EA\u05D7\u05D9\u05DC\u05D4 \u05D1\u05DE\u05E7\u05D5\u05DD \u05E9\u05D4\u05E8\u05DB\u05D1 \u05D0\u05D9\u05E0\u05D5 \u05E0\u05DE\u05E6\u05D0 \u05D1\u05D5 \u05D1\u05E4\u05D5\u05E2\u05DC",
   WARN_FIXED_RIDE_CONFLICT: "\u05E0\u05E1\u05D9\u05E2\u05D4 \u05E7\u05D1\u05D5\u05E2\u05D4 \u05D7\u05D5\u05E4\u05E4\u05EA \u05D0\u05D5 \u05E6\u05DE\u05D5\u05D3\u05D4 \u05DE\u05D3\u05D9 \u05DC\u05E0\u05E1\u05D9\u05E2\u05D4 \u05E7\u05D1\u05D5\u05E2\u05D4 \u05D0\u05D7\u05E8\u05EA \u05D1\u05D0\u05D5\u05EA\u05D5 \u05E8\u05DB\u05D1",
+  WARN_FIXED_RIDE_OVER_CAPACITY: "\u05D1\u05E0\u05E1\u05D9\u05E2\u05D4 \u05E7\u05D1\u05D5\u05E2\u05D4 \u05D9\u05E9 \u05D9\u05D5\u05EA\u05E8 \u05E0\u05D5\u05E1\u05E2\u05D9\u05DD \u05D0\u05D5 \u05E6\u05D9\u05D5\u05D3 \u05DE\u05DE\u05D4 \u05E9\u05D4\u05E8\u05DB\u05D1 \u05DE\u05DB\u05D9\u05DC",
   WARN_CAR_AWAY_AT_WEEK_END: "{car} \u05DE\u05E1\u05D9\u05D9\u05DD/\u05EA \u05D0\u05EA \u05D4\u05E9\u05D1\u05D5\u05E2 \u05D1{place} \u05D5\u05DC\u05D0 \u05D1\u05D1\u05E1\u05D9\u05E1\u05D5/\u05D4",
   WARN_UNKNOWN_RULE_TYPE: "\u05E1\u05D5\u05D2 \u05DB\u05DC\u05DC \u05DE\u05D3\u05D9\u05E0\u05D9\u05D5\u05EA \u05DC\u05D0 \u05DE\u05D5\u05DB\u05E8; \u05D4\u05DB\u05DC\u05DC \u05D3\u05D5\u05DC\u05D2"
 };
@@ -2769,10 +2770,10 @@ function assertInvariants(input, output) {
           throw new SolverInvariantError(`ride ${a.rideId} crosses its scheduling day`, "RIDE_OUTSIDE_DAY");
         }
       }
-      if (!fits(car, a.passengers)) {
+      if (a.source === "solver" && !fits(car, a.passengers)) {
         throw new SolverInvariantError(`ride ${a.rideId} does not fit car ${carId}'s seat configs`, "SEAT_OVERFLOW");
       }
-      if (!luggageFits(car, a.luggageCount)) {
+      if (a.source === "solver" && !luggageFits(car, a.luggageCount)) {
         throw new SolverInvariantError(`ride ${a.rideId} exceeds car ${carId}'s luggage capacity`, "LUGGAGE_OVERFLOW");
       }
       try {
@@ -4801,6 +4802,10 @@ function solveExpanded(input) {
         locationNeutral: fr.locationNeutral,
         seriesId: fr.seriesId
       });
+    }
+    const fixedCar = carsMap.get(fr.carId);
+    if (fixedCar && (!fits(fixedCar, fr.passengers) || !luggageFits(fixedCar, fr.luggageCount))) {
+      warnings.push({ code: "FIXED_RIDE_OVER_CAPACITY", message: reason("WARN_FIXED_RIDE_OVER_CAPACITY"), requestId: fr.id });
     }
     fixedAssignments.push({
       rideId: fr.id,

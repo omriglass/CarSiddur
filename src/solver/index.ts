@@ -187,6 +187,12 @@ function solveExpanded(input: SolverInput): SolverOutput {
         seriesId: fr.seriesId,
       });
     }
+    // R16B8: a fixed ride is the database's truth; one already over its car's seats (e.g. two stacked merge
+    // drafts) is reported, never a crash — the solver itself never adds anyone to it.
+    const fixedCar = carsMap.get(fr.carId);
+    if (fixedCar && (!fits(fixedCar, fr.passengers) || !luggageFits(fixedCar, fr.luggageCount))) {
+      warnings.push({ code: 'FIXED_RIDE_OVER_CAPACITY', message: reason('WARN_FIXED_RIDE_OVER_CAPACITY'), requestId: fr.id });
+    }
     fixedAssignments.push({
       rideId: fr.id,
       carId: fr.carId,

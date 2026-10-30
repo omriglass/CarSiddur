@@ -242,3 +242,20 @@ describe('assertInvariants', () => {
     expect(() => assertInvariants(input, output)).not.toThrow();
   });
 });
+
+describe('R16B8: a fixed ride already over its car', () => {
+  it('is a FIXED_RIDE_OVER_CAPACITY warning, never a crash', async () => {
+    const { solve } = await import('../index');
+    const input = baseInput({
+      cars: [makeCar('C1', { seatConfigs: [passengers(4, 2, 0)] })],
+      requests: [],
+      fixedRides: [{
+        id: 'F', carId: 'C1', window: { start: 32, end: 48 }, originId: 'home', destinationId: 'home',
+        legs: [], servedRequestIds: [], passengers: passengers(3, 4, 0), luggageCount: 0, overnightAck: false, kind: 'pinned',
+      }],
+    });
+    const out = solve(input);
+    expect(out.warnings.map((w) => w.code)).toContain('FIXED_RIDE_OVER_CAPACITY');
+    expect(out.assignments.find((a) => a.rideId === 'F')).toBeTruthy();
+  });
+});
