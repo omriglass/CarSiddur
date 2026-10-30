@@ -1284,3 +1284,36 @@ First run of `/qa-concurrent`: **two QA Sadranim at once** (both Sonnet; Sadran 
 - RC1M2 — A warning at send time when two open proposals use the same car in overlapping hours (two Sadrans).
 
 **Tooling (QA only):** `qa:member siddur` prints only requesters, not companions (the app's `people` has them — checked); `qa:sadran day` prints "SOLVER WARNING … req <ride id>"; flexibility "-day/+daym"; Playwright scripts closing a page mid-request log a `client_errors` row ("An invalid response was received from the upstream server", 499 at the gateway) — consider not reporting aborted fetches.
+
+## QA run 16 findings (2026-10-30, seed 3454, department `qa-s3454`, week 1–7.11; branch `o28-o29-followups` @ 3284a4c; QA Sadran = Opus, **Monday via UI**; QA user = Sonnet; emphasis: O28-5 drafts as a look + "only the draft holds the car", O29-2 (2)–(4)) — **owner 2026-10-30: R16B1/B2 first ("a draft takes no space other than what the Sadran sees" — more important than auto-placement); rest awaiting triage**
+
+### Bugs
+- R16B1 — **A drafted ride's old time still holds the car for manual actions.** Mon, ride 945caaf8 drafted 13:45→16:45 (`draft_hold` true): dragging ride ba0c7043 into 14:15–15:00 on the same Corolla → "הרכב אינו זמין בזמן הזה"; CLI `reserve` at 13:45–14:45 → `ride_unavailable`. Only the solver frees it. Cause: ~30 SQL overlap checks ignore `draft_hold` (`prepare_manual_ride_window[_before_planning]`, `edit_ride_before_series`, `place_request_on_car`, `_merge_window_conflict[_side]`, `move_series`, `swap_day_cars`, `_apply_proposal_group`, placement/healing helpers…).
+- R16B2 — **A ride placed into a drafted ride's old time shows as a conflict.** Mon: auto-fill put Inbal (bdbc6ca0, ride c6af5508) into Netta's old minivan slot → red "2 התנגשויות בלוח", both blocks red (the draft lost its colour), readiness conflicts=2 (`publication_conflict_details`, `refresh_ride_flags`, board conflict scan).
+- R16B3 — A declined draft whose slot was taken (Netta 189f45e3, ride 4ed9f55e `DRAFT_SLOT_TAKEN`): the Sadran gets two notices ("השעה … כבר תפוסה" + "… דחה/תה") instead of one; the member none — the day was not published yet (no outcome notices before publishing), so only the publish notice's "ברשימת המתנה" line told her. Decide: one combined Sadran notice; member wording before/after publishing.
+- R16B4 — A shift draft of ONE leg (return-only chauffeur ride 945caaf8) carries the whole request's times: "יציאה 16:45 במקום 07:15 · חזרה 17:45 במקום 14:45"; accepting would move the out leg too.
+- R16B5 — `cancel-ride --continue` of a non-driver return leg (Thu ride 277d81c3, driver Shaked closed, Ori Amram continues): the ride ended `cancelled`/REQUEST_EDITED, Ori's leg unmet while his request stayed `merged` (blocks publishing).
+- R16B6 — `cancel-ride --continue` with a continuing pickup leg keeps the old host's window (Mon ride 0da4b61d stays 12:00–13:00 Haifa for Tomer's 13:30 Binyamina pickup); the UI case where a guest takes over (9ce02183) was right.
+- R16B7 — A merge ignored the guest's own stop (Talia e979586d, home→Tel Aviv→Gan Shmuel merged into a Haifa ride routed via Gan Shmuel only).
+- R16B8 — Two stacked merge drafts (each 1a+2cs) accepted on a van holding 2 child seats (Sun ride ffa57af3); then the solver preview crashed ("does not fit car … seat configs").
+- R16B9 — Change log: drafts/sent proposals never appear (filter on or off); an accepted origin change does not appear (Michal 53a89f3a); "לא שובץ" always reads "כל הרכבים תפוסים… תקבל/י הודעה" (member wording, wrong reason) for UNMET_NO_CAR_AT_ORIGIN / ONE_WAY_STRANDS / DRAFT_SLOT_TAKEN.
+- R16B10 — Mobile list mode shows a draft (934eb408) with no chip or dashed border.
+- R16B11 — Dragging a drafted ride back inside the flexibility discards the draft but ignores the dropped end (preview 11:30–16:15, ride stays 11:30–15:45).
+- R16B12 — A member's edit dropped her named companion silently: m13 edited 09795f13 (4.11, 07:00–16:30 → 07:30–17:00); m06 (companion) is off the ride with no notice.
+- R16B13 — Ask-to-join: the asker gets no confirmation notice (m31 1d23ba08, m19 60ef3505); the driver's notice is an `outcome_changed`.
+- R16B14 — CLI only: `move ba0c7043 --start 14:15 --end 15:00` says "beyond flexibility" where the board moved the same ride within it.
+- (minor) The closing notice inherits the Sadran's gendered reason text ("ולא יוצע לה רכב"); generator artefacts: series legs 00:00–23:59, edits ending at 00:00 (`ride_same_day`).
+
+### UI changes
+- "דיברת עם…?" shows no old → new time; the draft banner does not say what the draft is, and the sheet's time fields show the ride's real time while the block shows the draft's; no "requested → draft" delta on a drafted block; stale drag-preview text ("מתחילה ב-13:45" while at 16:45).
+- Merge question wording "שי קרמר שוחרר/ה על הנסיעה של…" and no detour/route check shown; the Sadran notice title "מונית לסדרן/ית" reads as "taxi"; needs-driver red dash vs draft dash easily confused.
+- `/my` on mobile: the install / stay-updated cards push the list below the fold; "שינוי בסידור שלך" after an accepted origin proposal does not say what changed; a merge proposal says "ממשיכה לחריש" to someone going to Pardes Hanna; raw reason codes (`WAITLISTED_NOT_AT_ORIGIN`) and `proposed(WAITLISTED_NO_CAR)` reach members.
+
+### Missing obvious features
+- No "use your own car" suggestion for a member with a private car at an origin with no shared car (Michal / Zichron, Shi / Yokneam).
+- "השעה … כבר תפוסה" does not say who took the slot; a driver's edit that releases passengers does not show them first; a refused edit (`no_car`) suggests no alternative time.
+
+### Additional features
+- One click to give a declined draft its old time back by moving the newcomer elsewhere; a "what changed and why" line on a released/waitlisted request in "my rides".
+
+Not tested: car-now (QA week is not the current week); a restore of a closed request whose notice the member had read; a decline after publishing (the member-notice path of R16B3).
