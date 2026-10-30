@@ -1980,6 +1980,7 @@ declare
   v_err text; v_start timestamptz; v_end timestamptz; v_day date; v_unknown boolean;
   v_features text[]; v_luggage boolean; v_guest public.requests%rowtype; v_swap boolean; v_boarding timestamptz; v_anchor timestamptz; v_tol interval; v_overlaps jsonb := '[]'::jsonb; v_conflict boolean := false; v_side text; v_lug_problem boolean := false;
   v_time_far boolean := false; v_far_eta timestamptz; v_far_wanted timestamptz; v_soft_far boolean;
+  v_other record;
 begin
   select * into v_ride from public.rides where id = p_ride_id;
   if v_ride.id is null then return jsonb_build_object('ok', false, 'error', 'ride_not_found', 'code', 'ride_not_found'); end if;
@@ -2126,11 +2127,35 @@ begin
 
   -- R7B3/R6B1: the same rolled-back seat probe `merge_preview` always ran, so every caller (create, send, apply,
   -- preview) refuses what the apply would refuse. The apply counts the ride's driver once (assert_ride_seats_fit).
+  -- R16B8: the guests of the other open (draft / sent / accepted) merges onto this ride are seated in the probe too —
+  -- two merge drafts that each fit alone can no longer stack past the car's seats. A guest whose row cannot be
+  -- written for any other reason is skipped (its own sub-block), never a reason to skip the seat check.
   if v_err is null then
     begin
       delete from public.ride_requests where request_id = p_request_id and ride_id <> p_ride_id;
       insert into public.ride_requests (ride_id, request_id, role, leg, car_mode)
       values (p_ride_id, p_request_id, 'passenger', p_leg, 'passenger');
+      for v_other in
+        select p.request_id,
+               case when bool_or(coalesce(l->>'leg', 'both') in ('out', 'both')) and bool_or(coalesce(l->>'leg', 'both') in ('return', 'both')) then 'both'
+                    when bool_or(coalesce(l->>'leg', 'both') in ('out', 'both')) then 'out' else 'return' end as leg
+        from public.proposals p
+        cross join lateral jsonb_array_elements(coalesce(p.payload -> 'legs', '[]'::jsonb)) l
+        where p.type = 'merge' and p.status in ('draft', 'sent', 'accepted')
+          and p.request_id is not null and p.request_id <> p_request_id
+          and (l->>'ride_id')::uuid = p_ride_id and coalesce(l->>'role', 'passenger') <> 'driver'
+          and p.id::text is distinct from nullif(current_setting('app.applying_proposal', true), '')
+          and not exists (select 1 from public.ride_requests x where x.ride_id = p_ride_id and x.request_id = p.request_id)
+        group by p.request_id
+        order by p.request_id
+      loop
+        begin
+          delete from public.ride_requests where request_id = v_other.request_id and ride_id <> p_ride_id;
+          insert into public.ride_requests (ride_id, request_id, role, leg, car_mode)
+          values (p_ride_id, v_other.request_id, 'passenger', v_other.leg::public.ride_leg, 'passenger');
+        exception when others then null;
+        end;
+      end loop;
       perform public.assert_ride_seats_fit(p_ride_id);
       raise exception 'merge_probe_ok' using errcode = 'P0001';
     exception when others then
@@ -2604,7 +2629,11 @@ begin
     end if;
   elsif p_type in ('shift', 'origin') then
     if coalesce(v_dep, v_ret) is null then return; end if;
-    car_id := v_car; from_at := coalesce(v_dep, v_ret); to_at := coalesce(v_ret, v_dep + interval '2 hours'); return next;
+    -- R16B4: a one-leg shift of a placed ride carries the leg ride's window as the board draws it.
+    car_id := v_car;
+    from_at := coalesce(nullif(p_payload ->> 'ride_starts_at', '')::timestamptz, v_dep, v_ret);
+    to_at := coalesce(nullif(p_payload ->> 'ride_ends_at', '')::timestamptz, v_ret, v_dep + interval '2 hours');
+    return next;
   end if;
 end $$;
 
@@ -2690,7 +2719,7 @@ CREATE OR REPLACE FUNCTION "public"."_proposal_holds_ride"("p" "public"."proposa
   select p.type in ('shift', 'origin') and p.status in ('draft', 'sent', 'accepted') and p.applied_at is null
     and nullif(p.payload ->> 'car_id', '') is not null
     and (nullif(p.payload ->> 'depart_at', '') is not null or nullif(p.payload ->> 'return_at', '') is not null)
-    and not (p.payload ? 'leg') and not (p.payload ? 'series_span')
+    and not (p.payload ? 'series_span')
 $$;
 
 
@@ -3607,7 +3636,13 @@ begin
   select * into v_prop from public.proposals p
   where p.request_id = p_request_id and public._proposal_holds_ride(p)
   order by (p.status = 'draft'), p.created_at desc limit 1;
-  if v_prop.id is not null
+  -- R16B4: a one-leg shift holds the ride carrying that leg (the other leg's ride is untouched).
+  if v_prop.id is not null and v_prop.payload ->> 'leg' in ('out', 'return') then
+    select rd.id into v_ride from public.ride_requests rr join public.rides rd on rd.id = rr.ride_id
+    where rr.request_id = p_request_id and rd.status <> 'cancelled'
+      and case when v_prop.payload ->> 'leg' = 'out' then rr.covers_out else rr.covers_return end
+    order by (rd.id::text = coalesce(v_prop.payload ->> 'ride_id', '')) desc, rd.id limit 1;
+  elsif v_prop.id is not null
      and (select count(*) from public.ride_requests rr join public.rides rd on rd.id = rr.ride_id
           where rr.request_id = p_request_id and rd.status <> 'cancelled') = 1 then
     select rd.id into v_ride from public.ride_requests rr join public.rides rd on rd.id = rr.ride_id
@@ -16695,6 +16730,7 @@ declare
   v_reason text := nullif(btrim(coalesce(p_reason, '')), '');
   v_rides uuid[]; v_served uuid[]; v_close uuid[]; v_keep uuid[]; v_continue uuid[]; v_closed uuid[] := '{}'; v_id uuid;
   v_is_relay boolean; v_who record; v_car record; v_offer uuid; v_rd public.rides%rowtype; v_name text;
+  v_status public.request_status; v_status_reason text;
   v_prev_notify text := coalesce(nullif(current_setting('app.notify_now', true), ''), 'off');
   v_prev_sys text := coalesce(current_setting('app.system_status_transition', true), 'off');
 begin
@@ -16750,15 +16786,22 @@ begin
   end loop;
 
   if cardinality(v_continue) > 0 then
-    -- O29-2 (3) "ממשיך/ה בנסיעה": the ride stays; a request kept on the waiting list is taken off it, ride by ride
-    -- (a closed one is released whole by _close_request below - release_request_booking keeps the ride the same way).
-    foreach v_id in array v_keep loop
+    -- O29-2 (3) "ממשיך/ה בנסיעה": the ride stays; every request that leaves is taken off it, ride by ride, first.
+    -- R16B5: a closed one too, before _close_request releases the rest of its bookings - on an unpublished day that
+    -- release (release_request_draft_rides) cancels every draft ride the request is on, which took the continuing
+    -- requests' legs with it.
+    foreach v_id in array v_keep || v_close loop
+      select status, status_reason into v_status, v_status_reason from public.requests where id = v_id;
       for v_rd in select rd.* from public.rides rd where rd.id = any(v_rides) and rd.status <> 'cancelled'
                     and exists (select 1 from public.ride_requests rr where rr.ride_id = rd.id and rr.request_id = v_id)
                   order by rd.starts_at, rd.id for update loop
         if v_rd.driver_id is not null and v_rd.driver_id = (select requester_id from public.requests where id = v_id) then
           -- the driver leaves: as a host who cancels (a driving guest takes over, else needs a driver)
           perform public.cancel_ride_before_series(v_rd.id, coalesce(v_reason, 'SADRAN_EDIT'), v_rd.version);
+          -- (it ends the driver's own request as RIDE_CANCELLED; the Sadran's choice - wait or close - decides below)
+          perform set_config('app.system_status_transition', 'on', true);
+          update public.requests set status = v_status, status_reason = v_status_reason where id = v_id;
+          perform set_config('app.system_status_transition', v_prev_sys, true);
         else
           perform set_config('app.system_status_transition', 'on', true);
           delete from public.ride_requests where ride_id = v_rd.id and request_id = v_id;
@@ -18854,7 +18897,7 @@ declare
   v_locked boolean := false;
   v_fallback public.request_fallback := 'none';
   v_is_edit boolean := nullif(payload ->> 'request_id', '') is not null;
-  v_prev_fallback public.request_fallback := 'none'; v_prev_depart timestamptz;
+  v_prev_fallback public.request_fallback := 'none'; v_prev_depart timestamptz; v_companion uuid;
   v_unchanged boolean := false; v_neutral boolean := false;
   -- REQ §13.127: filed for someone else; a member doing so follows the member's own flow (the requester's).
   v_on_behalf boolean;
@@ -19679,6 +19722,20 @@ begin
       perform public.enqueue_notification(v_requester_id, 'outcome_changed', v_department_id, v_week_start,
         '{}'::jsonb, jsonb_build_object('variant', 'edit_applied', 'request_id', v_request_id, 'ride_id', v_auto_result->>'ride_id'),
         format('edit_applied:%s:%s', v_request_id, clock_timestamp()));
+    end if;
+    -- R16B12: the member companions ride at the new hours too - each is told (never the person who edited).
+    if (v_existing.depart_at, v_existing.return_at) is distinct from (v_depart_at, v_return_at) then
+      for v_companion in select c.profile_id from public.request_companions c
+                         where c.request_id = v_request_id and c.profile_id is distinct from v_actor loop
+        perform public.enqueue_notification(v_companion, 'outcome_changed', v_department_id, v_week_start,
+          jsonb_build_object('byName', coalesce((select full_name from public.profiles where id = v_requester_id), ''),
+            'route', coalesce(public.request_route_label(v_request_id), ''),
+            'day', public.day_date_label(coalesce(v_existing.depart_at, v_existing.return_at)),
+            'timeChange', public._time_change_line(v_existing.depart_at, v_existing.return_at, v_depart_at, v_return_at),
+            'carLine', ''),
+          jsonb_build_object('variant', 'time_changed', 'request_id', v_request_id, 'ride_id', v_auto_result->>'ride_id'),
+          format('companion_time_changed:%s:%s:%s', v_request_id, v_companion, clock_timestamp()));
+      end loop;
     end if;
   end if;
 
