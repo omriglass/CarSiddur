@@ -257,3 +257,99 @@ test("a board change on a published day reaches the member only with \"send all\
     await cleanupFixture();
   }
 });
+
+test("a draft of a placed ride is drawn on the ride itself; dragging it updates the draft, dragging it back discards it (O28-5)", { tag: ["@board", "@proposals"] }, async ({ browser }) => {
+  test.slow();
+  const service = serviceRoleClient();
+  const week = "2042-01-26";
+  const member = "00000000-0000-0000-0000-000000000103";
+  const home = "00000000-0000-0000-0000-000000000010";
+  const { data: cars } = await service.from("cars").select("id").eq("department_id", NEVO_DEPARTMENT_ID).eq("type", "shared").eq("status", "active").limit(1);
+  const carId = cars![0]!.id;
+  await ensureUnpublishedWeek(service, week);
+  const at = (time: string) => `${week}T${time}:00+02:00`;
+  const boardUrl = `/sadran/${NEVO_DEPARTMENT_ID}/${week}/board`;
+  const contexts: { close: () => Promise<void> }[] = [];
+  async function cleanupFixture() {
+    await service.from("proposals").delete().eq("department_id", NEVO_DEPARTMENT_ID).eq("week_start", week);
+    const { data: leftovers } = await service.from("rides").select("id").eq("department_id", NEVO_DEPARTMENT_ID).eq("week_start", week);
+    if (leftovers?.length) await service.from("ride_requests").delete().in("ride_id", leftovers.map((ride) => ride.id));
+    await service.from("rides").delete().eq("department_id", NEVO_DEPARTMENT_ID).eq("week_start", week);
+    await service.from("requests").delete().eq("department_id", NEVO_DEPARTMENT_ID).eq("week_start", week);
+    await service.from("notifications").delete().eq("department_id", NEVO_DEPARTMENT_ID).eq("week_start", week);
+  }
+  await cleanupFixture();
+  try {
+    const { data: request, error } = await service.from("requests").insert({
+      department_id: NEVO_DEPARTMENT_ID, week_start: week, requester_id: member, filed_by: member,
+      ride_type_id: "00000000-0000-0000-0000-000000000021", destination_id: "00000000-0000-0000-0000-000000000011",
+      trip_shape: "round_trip", trip_type: "round_trip", depart_at: at("07:00"), return_at: at("10:00"), status: "assigned",
+      flex_depart_early: "00:00:00", flex_depart_late: "00:00:00", flex_return_early: "00:00:00", flex_return_late: "00:00:00",
+    }).select("id").single();
+    if (error) throw error;
+    const { data: ride, error: rideError } = await service.from("rides").insert({
+      department_id: NEVO_DEPARTMENT_ID, week_start: week, car_id: carId, starts_at: at("07:00"), ends_at: at("10:00"),
+      origin_id: home, destination_id: home, driver_id: member, status: "draft", is_pinned: true, pin_reason: "SADRAN_MANUAL", created_by: "00000000-0000-0000-0000-000000000102",
+    }).select("id, starts_at, ends_at").single();
+    if (rideError) throw rideError;
+    const { error: linkError } = await service.from("ride_requests").insert({ ride_id: ride.id, request_id: request.id, role: "driver", leg: "both", car_mode: "keep" });
+    if (linkError) throw linkError;
+
+    const sadran = await newSignedInPage(browser, SEEDED_USERS.sadran);
+    contexts.push(sadran.context);
+    const page = sadran.page;
+    // tall enough that the whole day fits the grid: no auto-scroll while dragging
+    await page.setViewportSize({ width: 1600, height: 2600 });
+    await page.goto(boardUrl);
+    const block = page.locator(`button[data-ride-id="${ride.id}"]:visible`);
+    await expect(block).toBeVisible();
+
+    // Drag the ride block by `minutes` (the column spans 06:00-24:00 = 1080 minutes).
+    async function dragBy(minutes: number) {
+      await block.scrollIntoViewIfNeeded();
+      const box = await block.boundingBox();
+      const column = await page.locator(`[data-car-col-id="${carId}"]`).boundingBox();
+      if (!box || !column) throw new Error("missing ride block / car column");
+      const x = box.x + box.width / 2;
+      const y = box.y + box.height / 2;
+      await page.mouse.move(x, y);
+      await page.mouse.down();
+      await page.mouse.move(x, y + Math.sign(minutes) * 10, { steps: 3 });
+      await page.mouse.move(x, y + (minutes / 1080) * column.height, { steps: 12 });
+      await page.mouse.up();
+    }
+    const openDrafts = async () => (await service.from("proposals").select("id,status,payload").eq("request_id", request.id).eq("status", "draft")).data ?? [];
+
+    // Two hours later (flexibility 0) -> "דיברת עם…?" -> draft: the ride itself is drawn dashed with the chip, at its new time.
+    await dragBy(120);
+    await page.getByTestId("draft-choice-draft").click();
+    await expect.poll(async () => (await openDrafts()).length).toBe(1);
+    await expect(page.locator(`button[data-ride-id="${ride.id}"][data-draft="true"]:visible`)).toHaveCount(1);
+    await expect(block.getByTestId("draft-tag")).toHaveText(he.boardDrafts.tag);
+    await expect(page.locator('button[data-ride-id^="draft:"]:visible')).toHaveCount(0);
+    const { data: unchanged } = await service.from("rides").select("starts_at, ends_at").eq("id", ride.id).single();
+    expect(unchanged).toEqual({ starts_at: ride.starts_at, ends_at: ride.ends_at });
+
+    // Its sheet carries the draft banner.
+    await openRideDetails(page, block);
+    await expect(page.getByTestId("ride-draft-banner")).toBeVisible();
+    await page.keyboard.press("Escape");
+
+    // Dragging the drafted ride again updates the same draft (one open draft, new time).
+    const first = (await openDrafts())[0]!;
+    await dragBy(60);
+    await expect.poll(async () => { const drafts = await openDrafts(); return drafts.length === 1 && drafts[0]!.id !== first.id; }).toBe(true);
+    const updated = (await openDrafts())[0]!.payload as { depart_at: string };
+    expect(Date.parse(updated.depart_at) - Date.parse(ride.starts_at)).toBe(3 * 3_600_000);
+
+    // Back to the requested time: inside the flexibility -> the draft is discarded and the ride is as before.
+    await dragBy(-180);
+    await expect.poll(async () => (await openDrafts()).length).toBe(0);
+    await expect(page.locator(`button[data-ride-id="${ride.id}"][data-draft="true"]:visible`)).toHaveCount(0);
+    const { data: back } = await service.from("rides").select("starts_at, ends_at").eq("id", ride.id).single();
+    expect(Date.parse(back!.starts_at)).toBe(Date.parse(ride.starts_at));
+  } finally {
+    for (const context of contexts) await context.close().catch(() => undefined);
+    await cleanupFixture();
+  }
+});

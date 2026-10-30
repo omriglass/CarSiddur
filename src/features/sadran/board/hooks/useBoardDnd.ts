@@ -697,6 +697,8 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
       return;
     }
     if (id.startsWith("draft:")) { setSelectedProposalId(id.slice(6)); return; }
+    // O28-5 (REQ §13.161 b): a drafted ride opens like any ride; its sheet carries the draft banner.
+    if (board.draftByRideId.has(id)) { setSelectedRideId(id); return; }
     // A ride with a sent/accepted shift proposal waiting for an answer: its proposal sheet (withdraw) (REQ §13.94).
     const awaiting = proposals.find((p) => p.type === "shift" && p.ride_id === id && (p.status === "sent" || p.status === "accepted"));
     if (awaiting) { setSelectedProposalId(awaiting.id); return; }
@@ -777,8 +779,11 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
       return;
     }
 
-    const oldStartMinutes = isoToDayMinutes(ride.starts_at, selectedDay);
-    const oldEndMinutes = isoToDayMinutes(ride.ends_at, selectedDay);
+    // O28-5: a drafted ride is drawn (and dragged) at its draft's time; the drag edits the draft, not the ride.
+    const drafted = board.draftByRideId.get(rideId);
+    const draftProposal = drafted ? proposals.find((p) => p.id === drafted.proposalId) : undefined;
+    const oldStartMinutes = isoToDayMinutes(drafted?.startsAt ?? ride.starts_at, selectedDay);
+    const oldEndMinutes = isoToDayMinutes(drafted?.endsAt ?? ride.ends_at, selectedDay);
     const durationMinutes = oldEndMinutes - oldStartMinutes;
     const rawEndMinutes = resizedEndMinutes ?? startMinutes + durationMinutes;
     const newEndMinutes = rawEndMinutes === 1439 ? 1439 : Math.round(rawEndMinutes / 15) * 15;
@@ -812,10 +817,31 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
       if (!asked.ok) return;
       allowSmallTrunk = asked.waived;
     }
-    const otherRidesOnTargetCar = rides
+    // (the drop checks' view: a drafted ride stands at its draft's time, its old time is free - REQ §13.161 b)
+    const otherRidesOnTargetCar = dropCtx.rides
       .filter((r) => r.id !== ride.id && r.car_id === carId && r.starts_at && r.ends_at)
       .map((r) => ({ startsAt: r.starts_at as string, endsAt: r.ends_at as string }));
     const hasCollision = wouldOverlap({ startsAt: newStartsAt, endsAt: newEndsAt }, otherRidesOnTargetCar, 0);
+
+    if (drafted && draftProposal) {
+      // Back inside the request's flexibility on its own car: the draft goes, the ride is moved there as usual.
+      if (withinDepartFlex && carId === ride.car_id && !hasCollision) {
+        try {
+          if (draftProposal.status === "draft") await discardProposalMutation.mutateAsync({ proposalId: draftProposal.id, departmentId, weekStart });
+          else await withdrawProposalMutation.mutateAsync({ proposalId: draftProposal.id, departmentId, weekStart });
+        } catch { return; }
+        toast.success(he.boardDrafts.movedBackDiscarded);
+        if (newStartsAt === ride.starts_at && newEndsAt === ride.ends_at) return;
+      } else if (driverRequest) {
+        // Still beyond it: the same draft, updated (a new Sadran draft supersedes the old one - `create_proposal`).
+        const id = await saveDraft({
+          requestId: driverRequest.id, rideId: ride.id, type: "shift",
+          payload: { car_id: carId, depart_at: newStartsAt, return_at: newEndsAt, origin_id: ride.origin_id, destination_id: ride.destination_id, ride_id: ride.id, ...(allowSmallTrunk ? { allow_small_trunk: true } : {}) },
+        }, true);
+        if (id) toast.success(he.boardDrafts.draftUpdated);
+        return;
+      } else return;
+    }
 
     if (withinDepartFlex || onlyMine || (hasCollision && ride.status !== "draft")) {
       const prevInput: EditRideInput = {
@@ -908,12 +934,14 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
   function handleRideResize(rideId: string, edge: "start" | "end", minutes: number) {
     const ride = rides.find((r) => r.id === rideId);
     if (!ride?.car_id) return;
-    const oldStartMinutes = isoToDayMinutes(ride.starts_at as string, selectedDay);
-    const oldEndMinutes = isoToDayMinutes(ride.ends_at as string, selectedDay);
+    // O28-5: a drafted ride resizes from its draft's time and car
+    const drafted = board.draftByRideId.get(rideId);
+    const oldStartMinutes = isoToDayMinutes(drafted?.startsAt ?? (ride.starts_at as string), selectedDay);
+    const oldEndMinutes = isoToDayMinutes(drafted?.endsAt ?? (ride.ends_at as string), selectedDay);
     const newStart = edge === "start" ? minutes : oldStartMinutes;
     const newEnd = edge === "end" ? minutes : oldEndMinutes;
     if (newEnd <= newStart) return;
-    void handleRideDrop(rideId, ride.car_id, newStart, undefined, newEnd);
+    void handleRideDrop(rideId, drafted?.carId ?? ride.car_id, newStart, undefined, newEnd);
   }
 
   function handleUnmetDecision(item: UnmetListItem, type: "deny" | "shift" | "external") {

@@ -93,6 +93,8 @@ export interface WeekGridRide {
    * `pendingConsent` dash.
    */
   draft?: boolean;
+  /** REQ §13.161 (b), O28-5: a ride whose change was sent and awaits an answer - the same dashed look, chip "נשלח". */
+  sentDraft?: boolean;
   /**
    * REQ §13.94 (G10): the block is a merged ride (an applied merge, or a draft/sent merge drawn
    * as the ride it would become) - one block on the base car with a small "· מאוחד" marker.
@@ -1347,7 +1349,8 @@ export function WeekGrid({
                 ride.conflict &&
                   "border-2 border-destructive bg-[repeating-linear-gradient(45deg,hsl(var(--destructive)/0.25),hsl(var(--destructive)/0.25)_6px,hsl(var(--destructive)/0.08)_6px,hsl(var(--destructive)/0.08)_12px)]",
                 ride.pendingConsent && "border-2 border-dashed border-maintenance",
-                ride.draft && "border-2 border-dashed border-primary bg-primary/10",
+                // REQ §13.161 (b): a draft keeps the ride-type colour - only the border and the chip say "draft".
+                (ride.draft || ride.sentDraft) && "border-2 border-dashed border-primary",
                 onRideClick && "cursor-pointer",
                 dragEnabled && (canDragRide?.(ride) ?? true) && "touch-none",
                 ride.shadowed && "opacity-50",
@@ -1391,7 +1394,7 @@ export function WeekGrid({
                   absolutely positioned outside the wrapper. */}
               <div className="sticky z-[1] flex min-h-0 w-full flex-col" style={{ top: HEADER_ROW_HEIGHT_PX }}>
               {ride.guests?.length ? <GuestChips guests={ride.guests} passClick={!!ride.draft} enabled={dragEnabled && !!onGuestDrop} resolveTarget={guestTargetAt} onHover={onGuestHover} onDrop={onGuestDrop} /> : null}
-              {(ride.kind || ride.isMine || ride.needsDriver || ride.tightSchedule || ride.chainBrokenWarning || ride.driverOverlapWarning || ride.handoverLines?.length || ride.draft || ride.merged || ride.connected || ride.luggage) ? <span className="flex w-full flex-wrap gap-1 px-1.5 pt-1 text-[10px] leading-tight">
+              {(ride.kind || ride.isMine || ride.needsDriver || ride.tightSchedule || ride.chainBrokenWarning || ride.driverOverlapWarning || ride.handoverLines?.length || ride.draft || ride.sentDraft || ride.merged || ride.connected || ride.luggage) ? <span className="flex w-full flex-wrap gap-1 px-1.5 pt-1 text-[10px] leading-tight">
                 {ride.kind ? (
                   <span
                     className={cn("rounded-sm px-1 font-bold uppercase", ride.kind === "suggestion" ? "border border-dotted border-muted-foreground/70" : ride.kind === "proposal" ? "bg-amber-500 text-white" : "bg-foreground/10")}
@@ -1401,6 +1404,7 @@ export function WeekGrid({
                   </span>
                 ) : null}
                 {ride.draft ? <span className="rounded-sm bg-primary px-1 font-semibold text-primary-foreground" data-testid="draft-tag">{he.boardDrafts.tag}</span> : null}
+                {ride.sentDraft ? <span className="rounded-sm bg-primary/80 px-1 font-semibold text-primary-foreground" data-testid="sent-tag">{he.boardDrafts.sentTag}</span> : null}
                 {ride.merged ? <span className="rounded-sm bg-foreground/10 px-1 font-medium" data-testid="merged-marker">{he.mergedRide.marker}</span> : null}
                 {ride.luggage ? <span className="rounded-sm bg-foreground/10 px-1 font-medium" data-testid="luggage-marker" data-waived={ride.luggageWaived ? "true" : undefined}>{ride.luggageWaived ? he.smallTrunk.waivedLabel : he.request.luggageChip}</span> : null}
                 {ride.connected ? <span className="rounded-sm bg-foreground/10 px-1 font-medium" data-testid="connected-marker">{he.connectedPair.marker}</span> : null}

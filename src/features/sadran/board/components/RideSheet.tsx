@@ -87,6 +87,8 @@ interface RideSheetProps {
   driverCandidates?: readonly DriverCandidate[];
   /** R8U2: a merge proposal waiting for the guest's answer on this ride; the ride stays editable, this links to the proposal. */
   pendingMerge?: { guestName: string; onOpen: () => void } | null;
+  /** O28-5 (REQ §13.161 b): the ride carries an open draft (or a sent change) - its banner and actions. */
+  pendingDraft?: { sent: boolean; busy?: boolean; onAgree: () => void; onSend: () => void; onDiscard: () => void } | null;
   /** Every ride of the week - lets the volunteer-driver picker mark who is busy then (R2U3). */
   otherRides?: readonly BoardRide[];
 }
@@ -97,7 +99,7 @@ interface RideSheetProps {
  * fallback for reassigning a car via the "העבר לרכב" select below instead of
  * dragging.
  */
-export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenChange, onSave, onTogglePin, onCancel, onUnassign, onJoinLegs, saving, tightSchedule, onClaimDriver, coordinatorNotes, isPlanning, requests = [], departmentId, weekStart, destinations, onSaveRoute, onRemoveAddedPerson, driverCandidates, otherRides = [], pendingMerge }: RideSheetProps) {
+export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenChange, onSave, onTogglePin, onCancel, onUnassign, onJoinLegs, saving, tightSchedule, onClaimDriver, coordinatorNotes, isPlanning, requests = [], departmentId, weekStart, destinations, onSaveRoute, onRemoveAddedPerson, driverCandidates, otherRides = [], pendingMerge, pendingDraft }: RideSheetProps) {
   // Bug-fix pass (owner bug #2): the previous re-sync condition compared
   // `ride.car_id !== carId` to detect "a different ride opened" — but that's
   // exactly as true the moment the Sadran picks a *different* car for the
@@ -166,6 +168,14 @@ export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenCha
               {ride.needs_driver ? <div className="space-y-2 rounded-md border border-destructive bg-destructive/10 p-3 text-destructive">
                 <p className="font-semibold">{he.boardCoordination.needsDriver}</p><p>{he.boardCoordination.needsDriverHelp}</p>
                 {onClaimDriver ? <Button disabled={saving} onClick={onClaimDriver}>{he.boardCoordination.claimDriver}</Button> : null}
+              </div> : null}
+              {pendingDraft ? <div className="space-y-2 rounded-md border-2 border-dashed border-primary p-3" data-testid="ride-draft-banner">
+                <p className="text-sm font-medium">{pendingDraft.sent ? he.boardDrafts.rideBannerSent : he.boardDrafts.rideBanner}</p>
+                <div className="flex flex-wrap gap-2">
+                  <Button type="button" className="min-h-11" disabled={pendingDraft.busy} onClick={pendingDraft.onAgree} data-testid="ride-draft-agree">{he.boardDrafts.talkedYes}</Button>
+                  {pendingDraft.sent ? null : <Button type="button" variant="outline" className="min-h-11" disabled={pendingDraft.busy} onClick={pendingDraft.onSend} data-testid="ride-draft-send">{he.boardDrafts.send}</Button>}
+                  <Button type="button" variant="outline" className="min-h-11" disabled={pendingDraft.busy} onClick={pendingDraft.onDiscard} data-testid="ride-draft-discard">{pendingDraft.sent ? he.boardDrafts.withdraw : he.boardDrafts.discard}</Button>
+                </div>
               </div> : null}
               {pendingMerge ? <div className="space-y-2 rounded-md border border-dashed p-3" data-testid="ride-pending-merge">
                 <p>{tv("sadranRideSheet.pendingMerge", { name: pendingMerge.guestName })}</p>

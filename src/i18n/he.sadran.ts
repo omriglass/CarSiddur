@@ -504,6 +504,13 @@ export const heSadran = {
     /** R5B11: a pickup draft reads "איסוף מ<place>", never just "ל<place>". */
     pickupLabel: "איסוף מ{{place}}",
     tag: "טיוטה",
+    /** REQ §13.161 (b): the chip on a ride whose change was sent. */
+    sentTag: "נשלח",
+    /** O28-5: the banner on a drafted ride's sheet. */
+    rideBanner: "יש לנסיעה טיוטת שינוי (עוד לא אצל החבר/ה)",
+    rideBannerSent: "שינוי בנסיעה נשלח וממתין לתשובה",
+    movedBackDiscarded: "הנסיעה חזרה לגמישות הבקשה — הטיוטה נמחקה",
+    draftUpdated: "הטיוטה עודכנה",
     saveDraft: "שמור כטיוטה",
     send: "שלח",
     edit: "ערוך",

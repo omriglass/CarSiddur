@@ -574,6 +574,13 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
   const draftPlacements = resolveDraftPlacements(proposalsQuery.data ?? [], boardRequests, rides, department?.home_destination_id ?? undefined, routeCtx, serverMergeWindows);
   const draftPlacedRequestIds = new Set(draftPlacements.map((placement) => placement.requestId));
   const draftHiddenRideIds = new Set(draftPlacements.flatMap((placement) => (placement.replacesRideId ? [placement.replacesRideId] : [])));
+  // REQ §13.161 (b), O28-5: a draft that changes a placed ride is drawn ON that ride (its id, colour, sheet), at the
+  // draft's car and time; only the draft holds the car, so the drop checks see the ride there, not at its old time.
+  const draftByRideId = new Map(draftPlacements.flatMap((placement) => (placement.replacesRideId && placement.type !== "merge" ? [[placement.replacesRideId, placement] as const] : [])));
+  const ridesAsDrafted = rides.map((ride) => {
+    const placement = ride.id ? draftByRideId.get(ride.id) : undefined;
+    return placement ? { ...ride, car_id: placement.carId, starts_at: placement.startsAt, ends_at: placement.endsAt } : ride;
+  });
 
   // REQ §13.94 (G10): a pending merge (draft, sent or accepted) is ONE block on the host's car -
   // the host window grown by the added driving. The host's own block and the guest's own
@@ -601,7 +608,10 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
   const activeDayRidesAll = rides.filter(
     (r) => r.starts_at && dateKey(new Date(r.starts_at)) === selectedDay,
   );
-  const activeDayRides = activeDayRidesAll.filter((r) => !(r.id && (draftHiddenRideIds.has(r.id) || mergeHiddenRideIds.has(r.id))));
+  // (list mode) a drafted ride is listed itself, at its draft's car and time (O28-5)
+  const activeDayRides = activeDayRidesAll
+    .filter((r) => !(r.id && ((draftHiddenRideIds.has(r.id) && !draftByRideId.has(r.id)) || mergeHiddenRideIds.has(r.id))))
+    .map((r) => ridesAsDrafted.find((drafted) => drafted.id === r.id) ?? r);
 
   const weekStartMs = fromZonedTime(`${weekStart}T00:00:00`, TZ).getTime();
 
@@ -826,6 +836,17 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
     if (placement.type === "merge" || dateKey(placement.startsAt) !== selectedDay) continue;
     const request = boardRequests.find((r) => r.id === placement.requestId);
     const original = placement.replacesRideId ? weekGridRides.find((ride) => ride.id === placement.replacesRideId) : undefined;
+    if (original && draftByRideId.get(original.id) === placement) {
+      // O28-5: the ride itself, moved to the draft's car and time - a look (dashed border + chip), not a second block.
+      Object.assign(original, {
+        carId: placement.carId,
+        startMinutes: isoToDayMinutes(placement.startsAt, selectedDay),
+        endMinutes: isoToDayMinutes(placement.endsAt, selectedDay),
+        draft: placement.status === "draft",
+        sentDraft: placement.status !== "draft",
+      });
+      continue;
+    }
     weekGridRides.push({
       id: `draft:${placement.proposalId}`,
       carId: placement.carId,
@@ -850,7 +871,8 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
   }
   // The draft block replaces the original ride's block (kept in the list above only to borrow its label).
   for (let index = weekGridRides.length - 1; index >= 0; index--) {
-    if (draftHiddenRideIds.has(weekGridRides[index]!.id) || mergeHiddenRideIds.has(weekGridRides[index]!.id)) weekGridRides.splice(index, 1);
+    const id = weekGridRides[index]!.id;
+    if ((draftHiddenRideIds.has(id) && !draftByRideId.has(id)) || mergeHiddenRideIds.has(id)) weekGridRides.splice(index, 1);
   }
 
   for (const change of rideChangesQuery.data ?? []) {
@@ -966,7 +988,7 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
   // QB19: a draft/pending merge or shift hides the joiner's old booking - the drop checks must
   // ignore that booking too (it is replaced), or the next drop reports a phantom conflict.
   const dropCtx: BoardDropContext = {
-    rides: rides.filter((ride) => !(ride.id && (draftHiddenRideIds.has(ride.id) || mergeGuestRideIds.has(ride.id)))),
+    rides: ridesAsDrafted.filter((ride) => !(ride.id && ((draftHiddenRideIds.has(ride.id) && !draftByRideId.has(ride.id)) || mergeGuestRideIds.has(ride.id)))),
     requests: boardRequests,
     cars: carsQuery.data ?? [],
     maintenanceBlocks: maintenanceQuery.data ?? [],
@@ -1037,6 +1059,7 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
     boardCanSwapCars,
     pendingMerges,
     draftPlacements,
+    draftByRideId,
     shadowedRideIds,
     weekGridRides,
     awayByCarId,

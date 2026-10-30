@@ -285,7 +285,8 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
 
   const draftRideIds = new Set([
     ...board.pendingMerges.filter((merge) => merge.isDraft).map((merge) => `merge:${merge.proposal.id}`),
-    ...board.draftPlacements.filter((placement) => placement.type !== "merge" && placement.status === "draft").map((placement) => `draft:${placement.proposalId}`),
+    ...board.draftPlacements.filter((placement) => placement.type !== "merge" && placement.status === "draft")
+      .map((placement) => (placement.replacesRideId && board.draftByRideId.get(placement.replacesRideId) === placement ? placement.replacesRideId : `draft:${placement.proposalId}`)),
   ]);
   const requesterNameOf = (requestId: string) => board.requestsQuery.data?.find((request) => request.id === requestId)?.requester_full_name?.split(" ")[0] || undefined;
   const selectedProposalRequest = board.requestsQuery.data?.find((request) => request.id === dnd.selectedProposal?.request_id);
@@ -512,7 +513,8 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
                 driverName: merge.host.driver_name, carName: (board.carsQuery.data ?? []).find((car) => car.id === merge.host.car_id)?.name ?? null,
               })),
               // REQ §13.94: shift/origin drafts as "result" cards, same as the grid's dashed blocks.
-              ...board.draftPlacements.filter((placement) => placement.type !== "merge" && dateKey(placement.startsAt) === board.selectedDay).map((placement) => ({
+              ...board.draftPlacements.filter((placement) => placement.type !== "merge" && dateKey(placement.startsAt) === board.selectedDay
+                && !(placement.replacesRideId && board.draftByRideId.get(placement.replacesRideId) === placement)).map((placement) => ({
                 id: `draft:${placement.proposalId}`, startsAt: placement.startsAt, endsAt: placement.endsAt,
                 originName: "", destinationName: board.weekGridRides.find((ride) => ride.id === `draft:${placement.proposalId}`)?.label ?? "",
                 driverName: null, carName: (board.carsQuery.data ?? []).find((car) => car.id === placement.carId)?.name ?? null,
@@ -779,6 +781,19 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
         pendingMerge={(() => {
           const pending = selectedRide?.id && !selectedPlanningChange ? board.pendingMerges.find((merge) => merge.host.id === selectedRide.id && !merge.isDraft) : undefined;
           return pending ? { guestName: pending.guest.requester_full_name ?? "", onOpen: () => { dnd.setSelectedRideId(null); dnd.setSelectedProposalId(pending.proposal.id); } } : null;
+        })()}
+        pendingDraft={(() => {
+          // O28-5: a drafted ride's sheet carries the draft: "כן, כבר סיכמנו" / send / discard (withdraw once sent).
+          const placement = selectedRide?.id && !selectedPlanningChange ? board.draftByRideId.get(selectedRide.id) : undefined;
+          const proposal = placement ? (board.proposalsQuery.data ?? []).find((p) => p.id === placement.proposalId) : undefined;
+          if (!proposal) return null;
+          const done = () => dnd.setSelectedRideId(null);
+          return {
+            sent: proposal.status !== "draft", busy: dnd.proposalActionPending,
+            onAgree: () => { done(); void dnd.agreeOffline(proposal); },
+            onSend: () => { done(); dnd.sendDraft(proposal); },
+            onDiscard: () => { done(); void (proposal.status === "draft" ? dnd.discardDraft(proposal) : dnd.withdrawSent(proposal)); },
+          };
         })()}
         driverCandidates={(dnd.reservationMembersQuery.data ?? []).map((m) => ({ ...m, homePlaceId: m.homeOriginId }))}
         otherRides={board.rides}
