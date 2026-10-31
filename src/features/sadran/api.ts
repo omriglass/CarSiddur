@@ -928,6 +928,8 @@ export interface FreedOfferCandidate {
   planB: boolean;
   departAt: string | null;
   returnAt: string | null;
+  /** Where the trip goes — for a plan-B candidate the main trip's destination (owner 2026-11-01). */
+  destination: string | null;
 }
 
 export async function fetchFreedOfferCandidates(offerId: string): Promise<FreedOfferCandidate[]> {
@@ -935,7 +937,8 @@ export async function fetchFreedOfferCandidates(offerId: string): Promise<FreedO
     .from("freed_slot_claims")
     .select(
       `request_id, profile_id, status,
-       request:requests!freed_slot_claims_request_id_fkey(depart_at, return_at, served_by_alternative,
+       request:requests!freed_slot_claims_request_id_fkey(depart_at, return_at, served_by_alternative, destination_text,
+         destination:destinations!requests_destination_id_fkey(name),
          requester:profiles!requests_requester_id_fkey(full_name),
          alternative:request_alternatives!request_alternatives_request_id_fkey(original_main))`,
     )
@@ -949,13 +952,30 @@ export async function fetchFreedOfferCandidates(offerId: string): Promise<FreedO
       depart_at: string | null;
       return_at: string | null;
       served_by_alternative: boolean;
+      destination_text: string | null;
+      destination: { name: string | null } | null;
       requester: { full_name: string | null } | null;
-      alternative: { original_main: { depart_at?: string; return_at?: string } | null } | null;
+      alternative: { original_main: { depart_at?: string; return_at?: string; destination_id?: string | null; destination_text?: string | null } | null } | null;
     } | null;
   }
-  return ((data ?? []) as unknown as Raw[]).map((row) => {
+  const rows = (data ?? []) as unknown as Raw[];
+  // a plan-B request's own destination is its drop place: name the main trip's destination instead
+  const mainDestinationIds = [...new Set(rows.flatMap((row) => {
+    const id = row.request?.served_by_alternative ? row.request.alternative?.original_main?.destination_id : null;
+    return id ? [id] : [];
+  }))];
+  const mainNames = new Map<string, string>();
+  if (mainDestinationIds.length > 0) {
+    const { data: places, error: placesError } = await supabase.from("destinations").select("id, name").in("id", mainDestinationIds);
+    if (placesError) throw toAppError(placesError);
+    for (const place of places ?? []) mainNames.set(place.id, place.name);
+  }
+  return rows.map((row) => {
     const planB = !!row.request?.served_by_alternative;
     const main = planB ? row.request?.alternative?.original_main ?? null : null;
+    const destination = main
+      ? (main.destination_id ? mainNames.get(main.destination_id) ?? null : main.destination_text ?? null)
+      : row.request?.destination?.name ?? row.request?.destination_text ?? null;
     return {
       requestId: row.request_id,
       profileId: row.profile_id,
@@ -964,6 +984,7 @@ export async function fetchFreedOfferCandidates(offerId: string): Promise<FreedO
       planB,
       departAt: main?.depart_at ?? row.request?.depart_at ?? null,
       returnAt: main?.return_at ?? row.request?.return_at ?? null,
+      destination,
     };
   });
 }

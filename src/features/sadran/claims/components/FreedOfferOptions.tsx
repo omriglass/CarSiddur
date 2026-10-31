@@ -25,6 +25,7 @@ function PersonLine({ person }: { person: FreedOfferCandidate }) {
     <span className="flex flex-wrap items-center gap-x-2">
       <span className="font-medium">{person.name}</span>
       <span dir="ltr" className="text-muted-foreground">{timeRange(person)}</span>
+      {person.destination ? <span className="text-muted-foreground">{tv("route.to", { destination: person.destination })}</span> : null}
       {person.planB ? <Badge variant="outline" className="text-[10px]">{he.sadranClaims.planB}</Badge> : null}
       {person.claimStatus === "withdrawn" ? <span className="text-muted-foreground line-through">{he.sadranClaims.steppedOut}</span> : null}
       {person.claimStatus === "declined" ? <span className="text-muted-foreground line-through">{he.sadranClaims.placedElsewhere}</span> : null}

@@ -4,7 +4,7 @@ import type { FreedOfferCandidate } from "../api";
 import { freedOptionRows, openFreedCandidates } from "./freedOptions";
 
 const cand = (requestId: string, departAt: string, extra: Partial<FreedOfferCandidate> = {}): FreedOfferCandidate => ({
-  requestId, profileId: `p-${requestId}`, name: requestId, claimStatus: "offered", planB: false, departAt, returnAt: departAt, ...extra,
+  requestId, profileId: `p-${requestId}`, name: requestId, claimStatus: "offered", planB: false, departAt, returnAt: departAt, destination: null, ...extra,
 });
 
 describe("freedOptionRows (REQ §13.168)", () => {
