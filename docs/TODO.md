@@ -1304,6 +1304,9 @@ First run of `/qa-concurrent`: **two QA Sadranim at once** (both Sonnet; Sadran 
 - R16B14 — CLI only: `move ba0c7043 --start 14:15 --end 15:00` says "beyond flexibility" where the board moved the same ride within it.
 - (minor) The closing notice inherits the Sadran's gendered reason text ("ולא יוצע לה רכב"); generator artefacts: series legs 00:00–23:59, edits ending at 00:00 (`ride_same_day`).
 
+- O31-1 (bug, production 2026-10-31, owner) — **A member's pending ride-change request outlives a Sadran move of the ride.** אלי asked 07:45 (ride 17782f5c, Sun 1.11); the Sadran then moved the ride (edit_ride ×n, apply_proposal) to exactly 07:45; the request stayed `pending` and Aviv Biran (party) was still asked to approve. Fix: when a ride is edited/moved, settle its pending `ride_change_requests` — `accepted` when the ride now has the requested car + times, else `cancelled` with the requester told — and clear the party's approval notice; SQL test. (The production row 97c1e450 was set to `accepted` by hand with the owner's approval.)
+- O30-2 (open question) — the pencil shows on the phone siddur's list view, where nothing drags; proposed: show it only in the table view.
+
 - O30-1 ✅ (2026-10-30, owner: "it is too easy to drag a ride") — **Edit mode (REQ §13.165)** on the member's siddur and "my rides" (not the board): pencil next to the spyglass and the eye; off by default (every app start, after 5 min untouched), shared by both screens; off, everything drags only after a long press; hint toasts after repeated failed drags ("not yours" / "turn on edit mode"). `holdGesture.ts`, `features/rides/editMode.ts`, e2e `edit-mode.spec.ts`.
 
 ### UI changes
