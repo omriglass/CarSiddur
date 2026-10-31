@@ -832,7 +832,8 @@
         "supabase/tests/ride_day_end.sql",
         "supabase/migrations/**/*ride_end_to_day*",
         "scripts/qa/**",
-        "scripts/replay/**"
+        "scripts/replay/**",
+        "scripts/debug/**"
       ],
       "vitest": [
         "src/solver",

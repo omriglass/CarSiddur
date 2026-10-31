@@ -103,7 +103,7 @@ const SIDDUR_MAY_NOT_IMPORT_SADRAN = {
 };
 
 export default tseslint.config(
-  { ignores: ["dist", "coverage", "playwright-report", "supabase/functions/_shared/solver.js", ".replay"] },
+  { ignores: ["dist", "coverage", "playwright-report", "supabase/functions/_shared/solver.js", ".replay", ".debug"] },
   {
     extends: [js.configs.recommended, ...tseslint.configs.recommended],
     files: ["**/*.{ts,tsx}"],

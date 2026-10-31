@@ -39,6 +39,7 @@
     "qa:sadran": "node scripts/qa/run.mjs sadran",
     "qa:member": "node scripts/qa/run.mjs member",
     "qa:ui": "node scripts/qa/ui.mjs",
+    "debug": "node scripts/debug/debug.mjs",
     "replay:stack": "node scripts/replay/stack.mjs",
     "replay:load": "node scripts/replay/load-week.mjs",
     "replay:compare": "node scripts/replay/compare.mjs",
