@@ -854,6 +854,7 @@ export const he = {
     test_notification: "התראת בדיקה",
     changelog: "מה חדש",
     companion_added: "נרשמת כנוסע/ת בבקשה של מישהו",
+    ride_edited: "מישהו שינה את הנסיעה שלך",
   } satisfies Record<NotificationEvent, string>,
   car: {
     status: {

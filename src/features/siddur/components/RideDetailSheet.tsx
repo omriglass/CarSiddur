@@ -80,8 +80,8 @@ interface RideDetailSheetProps {
   /** REQ §13.128: a non-driver passenger removes only themselves (`remove_ride_person`), never the whole ride. */
   onRemoveMe?: () => void;
   removingMe?: boolean;
-  /** REQ §13.101 f (QM5): edit link to the member's own (non-series) request on this ride. */
-  editRequestHref?: string;
+  /** The edit entries: the member's own / related request, or every request on the ride (REQ §13.169 a). */
+  editRequestLinks?: readonly { href: string; label: string }[];
   /**
    * The "+ נוסעים" button and the unified people list's remove (×) affordance (REQ §13.85):
    * true once the ride's week is public (or the caller manages it) and the ride itself isn't
@@ -108,7 +108,7 @@ interface RideDetailSheetProps {
  * §13.85; the `/requests/new?ride=` prefill path itself is untouched, still reachable from the
  * joinable-rides dialog after a waiting-list outcome).
  */
-export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = null, onOpenChange, editor, coordinatorNotes, canEditPublicNotes, onRemoveOwnRide, removingOwnRide = false, onRemoveMe, removingMe = false, editRequestHref, showAddPassengers = false, weekRides, moveToCarOptions = [], onMoveToCar, movingToCar = false, handOverOptions = [], onHandOver, handingOver = false }: RideDetailSheetProps) {
+export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = null, onOpenChange, editor, coordinatorNotes, canEditPublicNotes, onRemoveOwnRide, removingOwnRide = false, onRemoveMe, removingMe = false, editRequestLinks = [], showAddPassengers = false, weekRides, moveToCarOptions = [], onMoveToCar, movingToCar = false, handOverOptions = [], onHandOver, handingOver = false }: RideDetailSheetProps) {
   const [confirmCancel, setConfirmCancel] = useState(false);
   const viewerId = useSession().session?.user.id;
   const [confirmRemoveMe, setConfirmRemoveMe] = useState(false);
@@ -211,11 +211,11 @@ export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = 
                 />
               ) : null}
 
-              {editRequestHref ? (
-                <Button asChild className="w-full" size="lg" variant="outline">
-                  <Link to={editRequestHref}>{he.requestsList.edit}</Link>
+              {editRequestLinks.map((link) => (
+                <Button key={link.href} asChild className="w-full" size="lg" variant="outline">
+                  <Link to={link.href} data-testid="ride-edit-request">{link.label}</Link>
                 </Button>
-              ) : null}
+              ))}
 
               {onMoveToCar && moveToCarOptions.length ? (
                 <>

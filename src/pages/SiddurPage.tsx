@@ -47,7 +47,7 @@ import { siddurCarName } from "@/lib/siddurCarName";
 import { VolunteerDriverPanel } from "@/features/rides/components/VolunteerDriverPanel";
 import { RideDetailSheet } from "@/features/siddur/components/RideDetailSheet";
 import { MemberRideEditor } from "@/features/siddur/components/MemberRideEditor";
-import { isRideRelated, relatedRequestIdToEdit } from "@/features/rides/relatedRide";
+import { isRideRelated, relatedRequestIdToEdit, rideEditTargets } from "@/features/rides/relatedRide";
 import { useMemberRideMoves } from "@/features/rides/useMemberRideMoves";
 import { useRideSheetCarActions } from "@/features/rides/useRideSheetCarActions";
 import { awayBandBlocks } from "@/features/siddur/awayBands";
@@ -285,6 +285,19 @@ export function SiddurPage() {
   // per-day, since `add_ride_passengers()`'s own authorization checks the week's phase only.
   const weekIsPublic = !!resolvedWeek && (resolvedWeek.phase === "published" || resolvedWeek.phase === "live" || resolvedWeek.phase === "archived");
   const now = new Date();
+  // REQ §13.169 (a): with the department's switch on, any member edits any request on any ride (one entry per request).
+  const editLinksForRide = (() => {
+    const selected = selectedRideId ? rides.find((r) => r.id === selectedRideId) : undefined;
+    if (!settingsQuery.data?.anyone_edits_rides || !isMyDepartment || !selected || selected.status === "cancelled"
+        || (selected.ends_at && Date.parse(selected.ends_at) <= now.getTime())) {
+      return editHrefForRide ? [{ href: editHrefForRide, label: he.requestsList.edit }] : [];
+    }
+    const targets = rideEditTargets(selected);
+    return targets.map((target) => ({
+      href: paths.requests.edit(target.requestId),
+      label: targets.length === 1 ? he.requestsList.edit : tv("rideDetail.editRequestOf", { name: target.requester }),
+    }));
+  })();
   const dayFreeWindows = useDayFreeWindows(departmentId, isLiveDay ? weekStart : undefined, isLiveDay ? (activeDay ?? undefined) : undefined, now);
 
   /**
@@ -737,7 +750,7 @@ export function SiddurPage() {
           return () => removeMeMutation.mutate({ rideId: id, expectedVersion: version, key: myKey, departmentId: department_id, weekStart: week_start }, { onSuccess: () => setSelectedRideId(null) });
         })()}
         removingMe={removeMeMutation.isPending}
-        editRequestHref={editHrefForRide}
+        editRequestLinks={editLinksForRide}
         editor={selectedRide?.needs_driver && canEditWeek && selectedRide.ends_at && Date.parse(selectedRide.ends_at) > now.getTime() ? (
           <VolunteerDriverPanel ride={selectedRide} onDone={() => setSelectedRideId(null)} />
         ) : selectedRide?.id && ownsEditableRide(selectedRide.id) ? <MemberRideEditor key={`${selectedRide.id}:${selectedRide.version}:editor`} ride={selectedRide} cars={carsQuery.data ?? []} viewerId={profileId} saving={rideMoves.saving} onSave={(move) => void saveMove(move)} /> : undefined}

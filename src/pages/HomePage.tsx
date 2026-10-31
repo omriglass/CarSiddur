@@ -690,7 +690,7 @@ export function HomePage() {
         })()}
         removingMe={removeMeMutation.isPending}
         // Owner 2026-10-11: the same "edit" button as on the siddur — opens my own request on this ride (day, stops, …).
-        editRequestHref={selectedRideEditHref}
+        editRequestLinks={selectedRideEditHref ? [{ href: selectedRideEditHref, label: he.requestsList.edit }] : []}
         canEditPublicNotes={canEditSelectedRideNotes}
         editor={selectedMyRide?.needs_driver && selectedMyRide.status !== "cancelled" && !profileQuery.data?.does_not_drive ? (
           // R13M5: a passenger whose driver cancelled can take the wheel from "my rides" too.

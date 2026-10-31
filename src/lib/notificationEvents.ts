@@ -64,6 +64,8 @@ export const NOTIFICATION_EVENT_META: Record<NotificationEvent, NotificationEven
   test_notification: { category: "account", memberMutable: false, sadranRole: false, weekScoped: false },
   // Owner 2026-10-16 (REQ §13.135): someone named you as a passenger on their request.
   companion_added: { category: "siddur", memberMutable: true, sadranRole: false, weekScoped: true },
+  // REQ §13.169 (e): always in the inbox; the push follows the profile switch `push_on_ride_edits`, not a mute.
+  ride_edited: { category: "siddur", memberMutable: false, sadranRole: false, weekScoped: true },
   changelog: { category: "account", memberMutable: false, sadranRole: false, weekScoped: false },
 };
 

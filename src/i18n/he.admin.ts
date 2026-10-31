@@ -80,6 +80,8 @@ export const heAdmin = {
     fieldDetourKm: "סטייה מרבית בק\"מ",
     fieldClosingReminders: "תזכורות סגירה (שעות לפני, מופרד בפסיקים)",
     fieldAutoApply: "החל אוטומטית הצעות שאושרו על ידי כולם",
+    fieldAnyoneEditsRides: "כל אחד/ת יכול/ה לערוך כל נסיעה",
+    fieldAnyoneEditsRidesHint: "כל חבר/ת מחלקה יכול/ה לפתוח נסיעה בסידור ולשנות בה הכול. הנוסעים מקבלים הודעה עם השינויים.",
     fieldBoardStart: "שעת התחלת לוח",
     fieldJoinRadiusKm: 'רדיוס להצעת הצטרפות (ק"מ)',
     fieldJoinRadiusKmHelp: 'לפני כניסה לרשימת המתנה, מוצעות נסיעות קיימות באותו יום ליעד במרחק זה או פחות.',

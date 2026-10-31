@@ -25,9 +25,13 @@ interface WhoSheetProps {
   members: { id: string; name: string }[];
   /** REQ §13.127 (a): "אני" is on (default); a new weekly request may switch it off (`allowOnBehalf`). */
   includeMe: boolean;
+  /** The requester chip toggles: a new weekly request ("אני"), or an edit (REQ §13.169 b — the requester rides or not). */
   allowOnBehalf: boolean;
-  /** Edit of a request whose requester is someone else: shown instead of "אני", locked. */
+  /** Edit of a request whose requester is someone else: shown instead of "אני". */
   requesterName?: string | null;
+  /** REQ §13.169 (b), edit: the riders who drive; two or more show "מי נוהג/ת?". */
+  driverOptions?: readonly { id: string; name: string }[];
+  driverId?: string | null;
   childOptions: { id: string; name: string; age: number | null; isPriority?: boolean }[];
   recentCompanionIds: readonly string[];
   companions: readonly string[];
@@ -50,7 +54,7 @@ function toggle(list: readonly string[], id: string): string[] {
   return list.includes(id) ? list.filter((value) => value !== id) : [...list, id];
 }
 
-export function WhoSheet({ form, members, includeMe, allowOnBehalf, requesterName, childOptions, recentCompanionIds, companions, children, guestNames, extraAdults, unnamedChildSeats, boosters, guestNamesError, companionsError, onChildAdded }: WhoSheetProps) {
+export function WhoSheet({ form, members, includeMe, allowOnBehalf, requesterName, driverOptions = [], driverId = null, childOptions, recentCompanionIds, companions, children, guestNames, extraAdults, unnamedChildSeats, boosters, guestNamesError, companionsError, onChildAdded }: WhoSheetProps) {
   const [mode, setMode] = useState<"member" | "guest" | null>(null);
   const [guestDraft, setGuestDraft] = useState("");
   const guests = guestPassengerNames(guestNames);
@@ -93,7 +97,7 @@ export function WhoSheet({ form, members, includeMe, allowOnBehalf, requesterNam
             onClick={() => form.setValue("includeMe", !includeMe, { shouldDirty: true, shouldValidate: true })}
             data-testid="who-me"
           >
-            {he.requestSentence.me}
+            {requesterName ?? he.requestSentence.me}
           </PillChip>
         ) : (
           <PillChip pressed disabled aria-disabled="true" data-testid="who-me">{requesterName ?? he.requestSentence.me}</PillChip>
@@ -122,6 +126,24 @@ export function WhoSheet({ form, members, includeMe, allowOnBehalf, requesterNam
         <PillChip dashed onClick={() => setMode(mode === "member" ? null : "member")} data-testid="who-add-member">{he.requestSentence.whoAddMember}</PillChip>
         <PillChip dashed onClick={() => setMode(mode === "guest" ? null : "guest")} data-testid="who-add-guest">{he.requestSentence.whoAddGuest}</PillChip>
       </div>
+
+      {driverOptions.length > 1 ? (
+        <div className="space-y-1.5" data-testid="who-driver">
+          <p className="text-sm">{he.requestSentence.whoDriver}</p>
+          <div className="flex flex-wrap gap-1.5">
+            {driverOptions.map((option) => (
+              <PillChip
+                key={option.id}
+                pressed={option.id === driverId}
+                onClick={() => form.setValue("driverId", option.id, { shouldDirty: true, shouldValidate: true })}
+                data-testid={`who-driver-${option.id}`}
+              >
+                {option.name}
+              </PillChip>
+            ))}
+          </div>
+        </div>
+      ) : null}
 
       <div className="flex items-center justify-between gap-3" data-testid="who-extra-adults">
         <span className="text-sm">{he.requestSentence.whoExtraAdults}</span>

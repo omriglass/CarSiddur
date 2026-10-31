@@ -70,6 +70,7 @@ export function DepartmentForm({ department, onSaved, settingsOnly = false }: { 
           detour_limit_km: settingsQuery.data.detour_limit_km,
           closing_reminder_hours: settingsQuery.data.closing_reminder_hours,
           auto_apply_accepted_proposals: settingsQuery.data.auto_apply_accepted_proposals,
+          anyone_edits_rides: settingsQuery.data.anyone_edits_rides,
           board_start_time: settingsQuery.data.board_start_time,
           join_radius_km: settingsQuery.data.join_radius_km,
           stop_minutes: settingsQuery.data.stop_minutes,
@@ -523,6 +524,21 @@ export function DepartmentForm({ department, onSaved, settingsOnly = false }: { 
                       <Checkbox checked={field.value} onCheckedChange={(v) => field.onChange(!!v)} />
                     </FormControl>
                     <FormLabel className="!mt-0">{he.adminDepartments.fieldAutoApply}</FormLabel>
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={settingsForm.control}
+                name="anyone_edits_rides"
+                render={({ field }) => (
+                  <FormItem className="col-span-2 space-y-1">
+                    <div className="flex flex-row items-center gap-2">
+                      <FormControl>
+                        <Checkbox checked={field.value} onCheckedChange={(v) => field.onChange(!!v)} data-testid="setting-anyone-edits-rides" />
+                      </FormControl>
+                      <FormLabel className="!mt-0">{he.adminDepartments.fieldAnyoneEditsRides}</FormLabel>
+                    </div>
+                    <p className="text-xs text-muted-foreground">{he.adminDepartments.fieldAnyoneEditsRidesHint}</p>
                   </FormItem>
                 )}
               />

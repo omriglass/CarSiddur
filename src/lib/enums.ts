@@ -430,6 +430,7 @@ export const NOTIFICATION_EVENTS = [
   "car_swapped",
   "test_notification",
   "companion_added",
+  "ride_edited",
   "changelog",
 ] as const satisfies readonly Enums<"notification_event">[];
 export type NotificationEvent = (typeof NOTIFICATION_EVENTS)[number];

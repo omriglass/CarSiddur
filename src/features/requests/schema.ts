@@ -228,6 +228,11 @@ export const requestFormSchema = z
      * department member (`onBehalf.ts`); absent/true = the filer is the requester. Never sent as such (`requester_id` is).
      */
     includeMe: z.boolean().optional(),
+    /**
+     * REQ §13.169 (b), edit only: the rider picked in "מי נוהג/ת?". The request moves to them (`requester_id`) when they
+     * are not its requester; absent = the requester while riding, else the first named rider who drives.
+     */
+    driverId: z.string().optional(),
   })
   .superRefine((value, ctx) => {
     if (value.includeMe === false && value.companions.length === 0) {

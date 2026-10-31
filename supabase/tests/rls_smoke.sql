@@ -698,6 +698,7 @@ begin
     ('profiles', 'is_admin', 'public'),
     ('profiles', 'muted_events', 'public'),
     ('profiles', 'my_rides_week_view', 'public'),
+    ('profiles', 'push_on_ride_edits', 'public'),
     ('profiles', 'updated_at', 'public'),
     ('text_fragments', 'key', 'public'),
     ('text_fragments', 'body', 'public'),

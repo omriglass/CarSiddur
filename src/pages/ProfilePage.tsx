@@ -366,6 +366,16 @@ export function ProfilePage() {
                 />
               </div>
             ))}
+            {/* REQ §13.169 (e): the inbox entry always comes; this decides the phone push. */}
+            <div className="flex items-center justify-between">
+              <Label htmlFor="profile-push-ride-edits" className="text-sm font-normal">{he.profileExtra.pushRideEditsLabel}</Label>
+              <Switch
+                id="profile-push-ride-edits"
+                checked={profileQuery.data?.push_on_ride_edits ?? true}
+                onCheckedChange={(checked) => updateProfileMutation.mutate({ push_on_ride_edits: checked })}
+                data-testid="profile-push-ride-edits"
+              />
+            </div>
             <div className="flex items-center justify-between opacity-60">
               <span className="text-sm">{he.nav.sadran}</span>
               <span className="text-xs text-muted-foreground">{he.profileExtra.sadranEventsNote}</span>

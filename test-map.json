@@ -925,7 +925,13 @@
         "supabase/migrations/**/*close_request_rpcs*",
         "supabase/tests/draft_holds.sql",
         "supabase/tests/member_edit_companions.sql",
-        "supabase/migrations/**/*draft_holds_the_car*"
+        "supabase/migrations/**/*draft_holds_the_car*",
+        "supabase/tests/ride_edited_notices.sql",
+        "supabase/migrations/**/*ride_edited_notification_event*",
+        "supabase/migrations/**/*anyone_edits_rides*",
+        "supabase/migrations/**/*submit_request_edit_moves_requester*",
+        "supabase/migrations/**/*release_booking_by_related_editor*",
+        "src/lib/appSurface.ts"
       ],
       "vitest": [
         "src/features/inbox",
@@ -942,7 +948,8 @@
         "leave_notices_merge.sql",
         "close_request.sql",
         "draft_holds.sql",
-        "member_edit_companions.sql"
+        "member_edit_companions.sql",
+        "ride_edited_notices.sql"
       ],
       "playwrightTags": [
         "@notifications"

@@ -39,6 +39,8 @@ export const FIXTURE_WEEKS = {
   planBCycle: "2045-01-15",
   largeTrunk: "2045-01-22",
   memberFallback: "2045-01-29",
+  anyoneEdits: "2045-02-05",
+  freedCar: "2045-02-12",
 } as const;
 
 /** `yyyy-MM-dd` of the `index`-th day (0 = Sunday) of a week. */
@@ -111,6 +113,10 @@ export async function removeWeek(service: SupabaseClient, week: string, options:
   const { data: rides } = await service.from("rides").select("id").match(scope);
   if (rides?.length) await service.from("ride_requests").delete().in("ride_id", rides.map((ride) => ride.id));
   await service.from("ride_change_requests").delete().match(scope);
+  // a released ride is offered as a freed car (REQ §13.168): the offers (and their claims) point at the cancelled ride
+  const { data: offers } = await service.from("freed_slot_offers").select("id").match(scope);
+  if (offers?.length) await service.from("freed_slot_claims").delete().in("offer_id", offers.map((offer) => offer.id));
+  await service.from("freed_slot_offers").delete().match(scope);
   await service.from("rides").delete().match(scope);
   await service.from("request_alternatives").delete().match(scope);
   // A plan-B pickup sibling points at its parent: remove the children first.

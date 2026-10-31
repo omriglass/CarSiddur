@@ -1252,6 +1252,7 @@ export type Database = {
       }
       department_settings: {
         Row: {
+          anyone_edits_rides: boolean
           auto_apply_accepted_proposals: boolean
           board_start_time: string
           chauffeur_dwell_minutes: number
@@ -1289,6 +1290,7 @@ export type Database = {
           weeks_open_ahead: number
         }
         Insert: {
+          anyone_edits_rides?: boolean
           auto_apply_accepted_proposals?: boolean
           board_start_time?: string
           chauffeur_dwell_minutes?: number
@@ -1326,6 +1328,7 @@ export type Database = {
           weeks_open_ahead?: number
         }
         Update: {
+          anyone_edits_rides?: boolean
           auto_apply_accepted_proposals?: boolean
           board_start_time?: string
           chauffeur_dwell_minutes?: number
@@ -2215,6 +2218,7 @@ export type Database = {
           muted_events: Database["public"]["Enums"]["notification_event"][]
           my_rides_week_view: boolean
           phone: string | null
+          push_on_ride_edits: boolean
           updated_at: string
         }
         Insert: {
@@ -2238,6 +2242,7 @@ export type Database = {
           muted_events?: Database["public"]["Enums"]["notification_event"][]
           my_rides_week_view?: boolean
           phone?: string | null
+          push_on_ride_edits?: boolean
           updated_at?: string
         }
         Update: {
@@ -2261,6 +2266,7 @@ export type Database = {
           muted_events?: Database["public"]["Enums"]["notification_event"][]
           my_rides_week_view?: boolean
           phone?: string | null
+          push_on_ride_edits?: boolean
           updated_at?: string
         }
         Relationships: [
@@ -5316,6 +5322,7 @@ export type Database = {
         Args: { p_department_id: string; p_payload: Json }
         Returns: Json
       }
+      _and_list: { Args: { p_items: string[] }; Returns: string }
       _apply_alternative: { Args: { p_proposal_id: string }; Returns: string }
       _apply_or_wait: {
         Args: { p_proposal_id: string; p_silent?: boolean }
@@ -5577,6 +5584,10 @@ export type Database = {
         Args: { p_actor: string; p_request: string }
         Returns: undefined
       }
+      _notify_ride_edited: {
+        Args: { p_before: Json; p_request: string }
+        Returns: undefined
+      }
       _notify_rider_left: {
         Args: {
           p_day: string
@@ -5655,6 +5666,11 @@ export type Database = {
         Args: { p_request_id: string }
         Returns: undefined
       }
+      _ride_edit_capture: { Args: { p_request: string }; Returns: undefined }
+      _ride_edit_lines: { Args: { a: Json; b: Json }; Returns: string[] }
+      _ride_edit_notice_applies: { Args: never; Returns: boolean }
+      _ride_edit_pending: { Args: never; Returns: boolean }
+      _ride_edit_snapshot: { Args: { p_request: string }; Returns: Json }
       _ride_fp: {
         Args: { p_ride_id: string; p_status?: string }
         Returns: string
@@ -7537,6 +7553,7 @@ export type Database = {
         | "companion_added"
         | "changelog"
         | "car_task"
+        | "ride_edited"
       party_response: "pending" | "accepted" | "declined"
       proposal_status:
         | "draft"
@@ -7780,6 +7797,7 @@ export const Constants = {
         "companion_added",
         "changelog",
         "car_task",
+        "ride_edited",
       ],
       party_response: ["pending", "accepted", "declined"],
       proposal_status: [

@@ -99,6 +99,9 @@ export interface SentenceFieldsProps {
    * a request whose requester is someone else, `requesterName` is shown as the first, locked chip instead of "אני".
    */
   allowOnBehalf?: boolean;
+  /** REQ §13.169 (b), edit: the riders who drive and the one who drives now (`WhoSheet`). */
+  driverOptions?: readonly { id: string; name: string }[];
+  driverId?: string | null;
   /** REQ §13.154 (a): the sentence fills a reservation — no plan B and no "repeat weekly". */
   reservation?: boolean;
   requesterName?: string | null;
@@ -177,7 +180,7 @@ function Seg({ prefix, suffix, loose, spaced, children }: { prefix?: string; suf
 
 export function SentenceFields(props: SentenceFieldsProps) {
   const {
-    form, variant, weekStart, departmentId, day, errors, destinations, rideTypes, preferredCars, initialPreferredCarName, members, allowOnBehalf, reservation, requesterName, childOptions,
+    form, variant, weekStart, departmentId, day, errors, destinations, rideTypes, preferredCars, initialPreferredCarName, members, allowOnBehalf, driverOptions, driverId, reservation, requesterName, childOptions,
     tripShape, tripType, dropOffPickup, canDrive, seeksDriver, isQuickContext, showReturnDayPicker,
     returnAnotherDay, setReturnAnotherDay, isMultiDay, multiDaySpan, routeMinutes, rush, recentDestinations, recentCompanionIds, stage, onStageChange,
     invalidSignal, quickContext, quickWindow, notices, onChildAdded, mode, guide,
@@ -698,6 +701,8 @@ export function SentenceFields(props: SentenceFieldsProps) {
           members={members}
           includeMe={includeMe}
           allowOnBehalf={!!allowOnBehalf}
+          driverOptions={driverOptions}
+          driverId={driverId}
           requesterName={requesterName}
           childOptions={childOptions}
           recentCompanionIds={recentCompanionIds}

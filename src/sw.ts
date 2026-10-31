@@ -36,6 +36,8 @@ interface PushPayload {
   title?: string;
   body?: string;
   url?: string;
+  /** REQ §13.169 (d): a `replace:` tag swaps the phone's earlier notice with the same tag instead of adding one. */
+  tag?: string;
 }
 
 function parsePushPayload(event: PushEvent): PushPayload {
@@ -48,7 +50,7 @@ function parsePushPayload(event: PushEvent): PushPayload {
 }
 
 self.addEventListener("push", (event: PushEvent) => {
-  const { title, body, url } = parsePushPayload(event);
+  const { title, body, url, tag } = parsePushPayload(event);
 
   event.waitUntil(
     // Documented exception to CLAUDE.md hard rule 3 (Hebrew in exactly three
@@ -64,6 +66,7 @@ self.addEventListener("push", (event: PushEvent) => {
       dir: "rtl",
       lang: "he",
       data: { url: url ?? "/" },
+      ...(tag?.startsWith("replace:") ? { tag } : {}),
     }),
   );
 });

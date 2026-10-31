@@ -25,6 +25,9 @@ export function editSignature(values: RequestFormValues, options: EditSignatureO
     children: [...values.children].sort(),
     extraAdults: values.extraAdults ?? 0,
     legacyChildSeats: values.legacyChildSeats ?? 0,
+    // REQ §13.169 (b): the requester leaving the ride or another rider driving is a change
+    includeMe: values.includeMe !== false,
+    driverId: values.driverId ?? null,
     repeatWeekly: !!values.repeatWeekly,
     repeatEveryWeeks: values.repeatWeekly ? (values.repeatEveryWeeks ?? 1) : null,
   });

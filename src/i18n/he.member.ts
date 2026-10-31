@@ -98,6 +98,10 @@ export const heMember = {
     onBehalfTitle: "הנסיעה תיווצר בשם {{name}}",
     onBehalfBody: "הנסיעה תופיע אצל {{name}} ב״הנסיעות שלי״ והוא/היא יוכל/תוכל לערוך אותה.",
     onBehalfConfirm: "יצירת הנסיעה",
+    /** REQ §13.169 (b): an edit moves the request to the rider who drives. */
+    moveRequesterTitle: "הנסיעה תעבור ל{{name}}",
+    moveRequesterBody: "{{name}} נוהג/ת, ולכן הבקשה תהיה מעכשיו שלו/שלה. כל מי שנוסע/ת יקבל/תקבל הודעה על השינוי.",
+    moveRequesterConfirm: "שמירה",
     /** The overlap dialog names the other request ("חיפה · ד׳ 13.10 07:30–12:00"); a multi-day one cannot be cancelled from here. */
     overlapOther: "הבקשה החופפת: {{name}}",
     overlapSeriesBody: "הבקשה החופפת היא חלק מבקשה רב-יומית ({{count}} ימים), ואי אפשר לבטל אותה מכאן. אפשר להשאיר את שתיהן או לחזור לעריכה.",
@@ -402,6 +406,8 @@ export const heMember = {
     arrivesFromCarMove: "הרכב מועבר אליך ב-{{time}}, ממש לפני הנסיעה שלך",
   },
   rideDetail: {
+    /** REQ §13.169 (a): one edit entry per request on a ride serving several. */
+    editRequestOf: "עריכת הבקשה של {{name}}",
     removeMe: "הסר אותי",
     removeMeConfirmTitle: "להסיר אותך מהנסיעה?",
     /** REQ §13.129 (a): the private car's owner moves the ride onto their own car. */
@@ -581,6 +587,7 @@ export const heMember = {
     /** REQ §13.110 (e): the member's choice of the old field-by-field request form. */
     classicRequestFormLabel: "טופס הבקשה הקלאסי",
     classicRequestFormHelp: "הטופס הישן, שדה אחרי שדה",
+    pushRideEditsLabel: "התראה כשמישהו משנה את הנסיעות שלי",
     historyLink: "היסטוריה וסטטיסטיקה",
     managementTitle: "ניהול",
     themeTitle: "מראה",
@@ -873,6 +880,7 @@ export const heMember = {
     whoNeedMember: "יש לבחור לפחות חבר/ה אחד/ת מהמחלקה",
     /** The "אני" chip toggle's accessible hint. */
     whoMeToggle: "אני נוסע/ת ברכב",
+    whoDriver: "מי נוהג/ת?",
     whoGuestPlaceholder: "שם האורח/ת",
     whoGuestAdd: "הוספה",
     whoNoMembers: "לא נמצאו חברים",

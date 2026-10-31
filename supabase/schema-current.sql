@@ -240,7 +240,8 @@ CREATE TYPE "public"."notification_event" AS ENUM (
     'test_notification',
     'companion_added',
     'changelog',
-    'car_task'
+    'car_task',
+    'ride_edited'
 );
 
 
@@ -466,6 +467,21 @@ end $$;
 
 
 ALTER FUNCTION "public"."_alternative_vars"("p_payload" "jsonb", "p_department_id" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."_and_list"("p_items" "text"[]) RETURNS "text"
+    LANGUAGE "sql" STABLE
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  select case
+    when coalesce(cardinality(p_items), 0) = 0 then ''
+    when cardinality(p_items) = 1 then p_items[1]
+    else array_to_string(p_items[1:cardinality(p_items) - 1], ', ') || public._frag('list.and') || p_items[cardinality(p_items)]
+  end;
+$$;
+
+
+ALTER FUNCTION "public"."_and_list"("p_items" "text"[]) OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."_apply_alternative"("p_proposal_id" "uuid") RETURNS "uuid"
@@ -2412,6 +2428,79 @@ $$;
 ALTER FUNCTION "public"."_notify_request_edited_by_manager"("p_request" "uuid", "p_actor" "uuid") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."_notify_ride_edited"("p_request" "uuid", "p_before" "jsonb") RETURNS "void"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  v_actor uuid := (select auth.uid());
+  q public.requests%rowtype;
+  v_after jsonb;
+  v_to uuid;
+  v_old record;
+  v_old_ids uuid[];
+  v_base jsonb;
+  v_editors jsonb;
+  v_lines text[];
+  v_notif uuid;
+  v_actor_name text;
+begin
+  select * into q from public.requests where id = p_request;
+  if q.id is null or v_actor is null or p_before is null then return; end if;
+  v_after := public._ride_edit_snapshot(p_request);
+  -- a call of the same save that changed nothing a rider sees (e.g. the repeat-weekly template) re-sends nothing
+  if v_after = p_before then return; end if;
+  select full_name into v_actor_name from public.profiles where id = v_actor;
+  for v_to in
+    select distinct x::uuid from jsonb_array_elements_text(coalesce(p_before -> 'recipients', '[]') || coalesce(v_after -> 'recipients', '[]')) x
+    where x::uuid <> v_actor
+  loop
+    -- the form saves companions and children in parallel: one merge at a time per rider and request
+    perform pg_advisory_xact_lock(hashtextextended(format('ride_edited:%s:%s', p_request, v_to), 0));
+    v_base := p_before; v_editors := '[]'::jsonb; v_old_ids := null;
+    for v_old in
+      select n.id, n.data from public.notifications n
+      where n.recipient_id = v_to and n.event = 'ride_edited' and n.read_at is null and n.data ->> 'request_id' = p_request::text
+      order by n.created_at, n.id
+    loop
+      if v_old_ids is null and v_old.data ? 'before' then v_base := v_old.data -> 'before'; end if;
+      v_old_ids := array_append(v_old_ids, v_old.id);
+      v_editors := v_editors || coalesce(v_old.data -> 'editors', '[]'::jsonb);
+    end loop;
+    v_editors := v_editors || to_jsonb(array[coalesce(v_actor_name, '')]);
+    select coalesce(jsonb_agg(nm order by o), '[]'::jsonb) into v_editors
+    from (select nm, min(o) as o from jsonb_array_elements_text(v_editors) with ordinality u(nm, o) group by nm) x;
+    if v_old_ids is not null then
+      delete from public.notifications where id = any(v_old_ids);   -- their outbox rows go with them (cascade)
+    end if;
+    v_lines := public._ride_edit_lines(v_base, v_after);
+    continue when coalesce(cardinality(v_lines), 0) = 0;   -- edited back to what the rider last saw
+    v_notif := public.enqueue_notification(v_to, 'ride_edited', q.department_id, q.week_start,
+      jsonb_build_object(
+        'byName', public._and_list(array(select jsonb_array_elements_text(v_editors))),
+        'route', coalesce(v_after ->> 'route', ''),
+        'day', public.day_date_label(coalesce(q.depart_at, q.return_at)),
+        'changes', array_to_string(v_lines, ' · ')),
+      jsonb_build_object('request_id', p_request, 'before', v_base, 'editors', v_editors)
+        -- a rider taken off the request no longer sees it: their link is the week's siddur
+        || case when v_after -> 'recipients' ? v_to::text then '{}'::jsonb
+                else jsonb_build_object('url', format('/siddur/%s/%s', q.department_id, q.week_start)) end,
+      format('ride_edited:%s:%s:%s', p_request, v_to, clock_timestamp()));
+    if v_notif is not null then
+      if coalesce((select p.push_on_ride_edits from public.profiles p where p.id = v_to), true) then
+        update public.push_outbox set payload = payload || jsonb_build_object('tag', format('replace:ride_edited:%s', p_request))
+        where notification_id = v_notif;
+      else
+        delete from public.push_outbox where notification_id = v_notif;   -- (e) inbox only
+      end if;
+    end if;
+  end loop;
+end $$;
+
+
+ALTER FUNCTION "public"."_notify_ride_edited"("p_request" "uuid", "p_before" "jsonb") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."_notify_rider_left"("p_recipient" "uuid", "p_ride_id" "uuid", "p_leaver_name" "text", "p_route" "text", "p_day" "text", "p_dedupe" "text") RETURNS "void"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -3019,6 +3108,221 @@ end $$;
 
 
 ALTER FUNCTION "public"."_restore_original_main"("p_request_id" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."_ride_edit_capture"("p_request" "uuid") RETURNS "void"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  v_map jsonb := coalesce(nullif(current_setting('app.ride_edit_before', true), ''), '{}')::jsonb;
+begin
+  if p_request is null or v_map ? p_request::text or not public._ride_edit_notice_applies() then return; end if;
+  perform set_config('app.ride_edit_before',
+    (v_map || jsonb_build_object(p_request::text, public._ride_edit_snapshot(p_request)))::text, true);
+end $$;
+
+
+ALTER FUNCTION "public"."_ride_edit_capture"("p_request" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."_ride_edit_capture_request"() RETURNS "trigger"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+begin
+  perform public._ride_edit_capture(old.id);
+  return new;
+end $$;
+
+
+ALTER FUNCTION "public"."_ride_edit_capture_request"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."_ride_edit_capture_row"() RETURNS "trigger"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+begin
+  perform public._ride_edit_capture(case when tg_op = 'DELETE' then old.request_id else new.request_id end);
+  return case when tg_op = 'DELETE' then old else new end;
+end $$;
+
+
+ALTER FUNCTION "public"."_ride_edit_capture_row"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."_ride_edit_flush"() RETURNS "trigger"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  v_map jsonb := coalesce(nullif(current_setting('app.ride_edit_before', true), ''), '{}')::jsonb;
+  v_key text;
+begin
+  if v_map = '{}'::jsonb then return null; end if;
+  perform set_config('app.ride_edit_before', '{}', true);
+  for v_key in select k from jsonb_object_keys(v_map) k order by k loop
+    perform public._notify_ride_edited(v_key::uuid, v_map -> v_key);
+  end loop;
+  return null;
+end $$;
+
+
+ALTER FUNCTION "public"."_ride_edit_flush"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."_ride_edit_lines"("b" "jsonb", "a" "jsonb") RETURNS "text"[]
+    LANGUAGE "plpgsql" STABLE
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  v_lines text[] := '{}';
+  v_time text;
+  v_joined text[]; v_left text[];
+  v_named_b int; v_named_a int;
+begin
+  v_time := public._time_change_line((b ->> 'depart_at')::timestamptz, (b ->> 'return_at')::timestamptz,
+    (a ->> 'depart_at')::timestamptz, (a ->> 'return_at')::timestamptz);
+  if nullif(v_time, '') is not null then v_lines := v_lines || v_time; end if;
+  if (b ->> 'trip_type') is distinct from (a ->> 'trip_type') then
+    v_lines := v_lines || public._frag('ride_edit.trip_type', jsonb_build_object(
+      'new', public._frag('trip_type.' || (a ->> 'trip_type')), 'old', public._frag('trip_type.' || (b ->> 'trip_type'))));
+  end if;
+  if (b ->> 'route') is distinct from (a ->> 'route') then
+    v_lines := v_lines || public._frag('ride_edit.route', jsonb_build_object('new', a ->> 'route', 'old', b ->> 'route'));
+  end if;
+  if (b ->> 'driver') is distinct from (a ->> 'driver') then
+    v_lines := v_lines || case
+      when a ->> 'driver' is null then public._frag('ride_edit.driver_none')
+      when b ->> 'driver' is null then public._frag('change.driver', jsonb_build_object('driverName', a ->> 'driver'))
+      else public._frag('ride_edit.driver', jsonb_build_object('new', a ->> 'driver', 'old', b ->> 'driver')) end;
+  end if;
+  if (b ->> 'car') is distinct from (a ->> 'car') then
+    v_lines := v_lines || case
+      when a ->> 'car' is null then public._frag('ride_edit.car_none')
+      when b ->> 'car' is null then public._frag('ride_edit.car_set', jsonb_build_object('car', a ->> 'car'))
+      else public._frag('change.car', jsonb_build_object('newCar', a ->> 'car', 'oldCar', b ->> 'car')) end;
+  end if;
+  -- who rides: members by id, children and guests by name
+  select array_agg(m ->> 'name' order by o) into v_joined from jsonb_array_elements(a -> 'members') with ordinality x(m, o)
+    where not exists (select 1 from jsonb_array_elements(b -> 'members') y where y ->> 'id' = m ->> 'id');
+  select array_agg(m ->> 'name' order by o) into v_left from jsonb_array_elements(b -> 'members') with ordinality x(m, o)
+    where not exists (select 1 from jsonb_array_elements(a -> 'members') y where y ->> 'id' = m ->> 'id');
+  v_joined := coalesce(v_joined, '{}') || coalesce(array(select n from jsonb_array_elements_text(a -> 'children') n
+      where not (b -> 'children') ? n), '{}') || coalesce(array(select n from jsonb_array_elements_text(a -> 'guests') n
+      where not (b -> 'guests') ? n), '{}');
+  v_left := coalesce(v_left, '{}') || coalesce(array(select n from jsonb_array_elements_text(b -> 'children') n
+      where not (a -> 'children') ? n), '{}') || coalesce(array(select n from jsonb_array_elements_text(b -> 'guests') n
+      where not (a -> 'guests') ? n), '{}');
+  if cardinality(v_joined) > 0 then v_lines := v_lines || public._frag('ride_edit.joined', jsonb_build_object('names', public._and_list(v_joined))); end if;
+  if cardinality(v_left) > 0 then v_lines := v_lines || public._frag('ride_edit.left', jsonb_build_object('names', public._and_list(v_left))); end if;
+  -- passengers without a name: the seats nobody named
+  v_named_b := jsonb_array_length(b -> 'members') + jsonb_array_length(b -> 'children') + jsonb_array_length(b -> 'guests');
+  v_named_a := jsonb_array_length(a -> 'members') + jsonb_array_length(a -> 'children') + jsonb_array_length(a -> 'guests');
+  if greatest((b ->> 'seats')::int - v_named_b, 0) <> greatest((a ->> 'seats')::int - v_named_a, 0) then
+    v_lines := v_lines || public._frag('ride_edit.unnamed', jsonb_build_object(
+      'new', greatest((a ->> 'seats')::int - v_named_a, 0), 'old', greatest((b ->> 'seats')::int - v_named_b, 0)));
+  end if;
+  if (b ->> 'luggage') is distinct from (a ->> 'luggage') then
+    v_lines := v_lines || public._frag(case when (a ->> 'luggage')::boolean then 'ride_edit.luggage_on' else 'ride_edit.luggage_off' end);
+  end if;
+  if (b ->> 'ride_type') is distinct from (a ->> 'ride_type') then
+    v_lines := v_lines || public._frag('ride_edit.ride_type', jsonb_build_object('new', a ->> 'ride_type', 'old', b ->> 'ride_type'));
+  end if;
+  if (b ->> 'notes') is distinct from (a ->> 'notes') then
+    v_lines := v_lines || case when coalesce(a ->> 'notes', '') = '' then public._frag('ride_edit.note_cleared')
+      else public._frag('ride_edit.note', jsonb_build_object('note', a ->> 'notes')) end;
+  end if;
+  if (b ->> 'description') is distinct from (a ->> 'description') and coalesce(a ->> 'description', '') <> '' then
+    v_lines := v_lines || public._frag('ride_edit.description', jsonb_build_object('text', a ->> 'description'));
+  end if;
+  return v_lines;
+end $$;
+
+
+ALTER FUNCTION "public"."_ride_edit_lines"("b" "jsonb", "a" "jsonb") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."_ride_edit_notice_applies"() RETURNS boolean
+    LANGUAGE "plpgsql" STABLE
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  v_headers json;
+begin
+  if (select auth.uid()) is null then return false; end if;
+  begin
+    v_headers := nullif(current_setting('request.headers', true), '')::json;
+  exception when others then
+    return false;
+  end;
+  return coalesce(v_headers ->> 'x-request-form', '') = '1'
+     and coalesce(v_headers ->> 'x-app-surface', '') <> 'board';
+end $$;
+
+
+ALTER FUNCTION "public"."_ride_edit_notice_applies"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."_ride_edit_pending"() RETURNS boolean
+    LANGUAGE "sql" STABLE
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  select coalesce(nullif(current_setting('app.ride_edit_before', true), ''), '{}') <> '{}';
+$$;
+
+
+ALTER FUNCTION "public"."_ride_edit_pending"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."_ride_edit_snapshot"("p_request" "uuid") RETURNS "jsonb"
+    LANGUAGE "plpgsql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  q public.requests%rowtype;
+  v_public boolean;
+  v_ride record;
+begin
+  select * into q from public.requests where id = p_request;
+  if q.id is null then return null; end if;
+  v_public := public.is_day_public(q.department_id, q.week_start,
+    (coalesce(q.depart_at, q.return_at) at time zone 'Asia/Jerusalem')::date);
+  select r.driver_id, d.full_name as driver_name, c.name as car_name into v_ride
+  from public.ride_requests rr join public.rides r on r.id = rr.ride_id
+  left join public.profiles d on d.id = r.driver_id left join public.cars c on c.id = r.car_id
+  where v_public and rr.request_id = q.id and r.status <> 'cancelled'
+  order by r.starts_at, r.id limit 1;
+  return jsonb_build_object(
+    'depart_at', q.depart_at, 'return_at', q.return_at, 'trip_type', q.trip_type,
+    'route', coalesce(public.request_route_label(q.id), ''),
+    'members', coalesce((select jsonb_agg(jsonb_build_object('id', m.id, 'name', m.full_name) order by m.ord, m.full_name, m.id) from (
+        select p.id, p.full_name, 0 as ord from public.profiles p where p.id = q.requester_id
+        union all
+        select p.id, p.full_name, 1 from public.request_companions rc join public.profiles p on p.id = rc.profile_id
+        where rc.request_id = q.id and rc.profile_id <> q.requester_id) m), '[]'::jsonb),
+    'children', coalesce((select jsonb_agg(ch.full_name order by ch.full_name, ch.id)
+        from public.request_children rc join public.children ch on ch.id = rc.child_id where rc.request_id = q.id), '[]'::jsonb),
+    'guests', to_jsonb(coalesce(q.guest_passenger_names, '{}'::text[])),
+    'seats', coalesce(q.adults, 0) + coalesce(q.child_seats, 0) + coalesce(q.boosters, 0),
+    'luggage', coalesce(q.has_luggage, false),
+    'notes', coalesce(q.notes, ''),
+    'description', coalesce(q.ride_description, ''),
+    'ride_type', coalesce((select t.name_he from public.ride_types t where t.id = q.ride_type_id), ''),
+    'driver', coalesce(v_ride.driver_name, case when q.trip_type <> 'drop_off'
+        then (select p.full_name from public.profiles p where p.id = public.eligible_leg_driver(q.id)) end),
+    'car', v_ride.car_name,
+    'recipients', coalesce((select jsonb_agg(distinct x) from (
+        select q.requester_id as x
+        union select rc.profile_id from public.request_companions rc where rc.request_id = q.id
+        union select r.driver_id from public.ride_requests rr join public.rides r on r.id = rr.ride_id
+          where v_public and rr.request_id = q.id and r.status <> 'cancelled' and r.driver_id is not null) s
+        where x is not null), '[]'::jsonb));
+end $$;
+
+
+ALTER FUNCTION "public"."_ride_edit_snapshot"("p_request" "uuid") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."_ride_fp"("p_ride_id" "uuid", "p_status" "text" DEFAULT NULL::"text") RETURNS "text"
@@ -14365,7 +14669,7 @@ CREATE OR REPLACE FUNCTION "public"."release_request_booking"("p_request_id" "uu
     AS $$
 declare
   v_req public.requests%rowtype; r public.rides%rowtype; v_ride_id uuid; v_actor uuid := (select auth.uid());
-  v_names text; v_prev text;
+  v_names text; v_prev text; v_claims text;
 begin
   select * into v_req from public.requests where id = p_request_id;
   if v_req.id is null then raise exception 'request_not_found' using errcode = 'P0001'; end if;
@@ -14377,7 +14681,18 @@ begin
     select * into r from public.rides where id = v_ride_id for update;
     if r.status = 'cancelled' then continue; end if;
     if r.driver_id is not distinct from v_req.requester_id then
-      perform public.cancel_ride_before_series(r.id, 'REQUEST_RELEASED', r.version);
+      -- REQ §13.127/§13.169: someone else related to the request (a rider, or any member with the department's
+      -- "anyone edits rides" switch) releases the requester's own ride on the requester's behalf — only its driver or
+      -- the Sadran may cancel a ride.
+      if v_actor is not null and v_actor is distinct from r.driver_id and not public.can_manage_week(r.department_id, r.week_start)
+         and public.request_related(p_request_id, v_actor) then
+        v_claims := current_setting('request.jwt.claims', true);
+        perform set_config('request.jwt.claims', jsonb_build_object('sub', v_req.requester_id, 'role', 'authenticated')::text, true);
+        perform public.cancel_ride_before_series(r.id, 'REQUEST_RELEASED', r.version);
+        perform set_config('request.jwt.claims', coalesce(v_claims, ''), true);
+      else
+        perform public.cancel_ride_before_series(r.id, 'REQUEST_RELEASED', r.version);
+      end if;
     else
       v_prev := coalesce(current_setting('app.system_status_transition', true), 'off');
       perform set_config('app.audit_reason', 'request_released', true);
@@ -15159,7 +15474,12 @@ CREATE OR REPLACE FUNCTION "public"."request_related"("p_request" "uuid", "p_act
       q.requester_id = p_actor or q.filed_by = p_actor
       or exists (select 1 from public.request_companions rc where rc.request_id = q.id and rc.profile_id = p_actor)
       or exists (select 1 from public.ride_requests rr join public.rides r on r.id = rr.ride_id
-                 where rr.request_id = q.id and r.status <> 'cancelled' and public.ride_related(r.id, p_actor))));
+                 where rr.request_id = q.id and r.status <> 'cancelled' and public.ride_related(r.id, p_actor))
+      -- REQ §13.169 (a): with the department's switch on, every approved member of the department.
+      or (exists (select 1 from public.department_settings s where s.department_id = q.department_id and s.anyone_edits_rides)
+          and exists (select 1 from public.department_members dm join public.profiles p on p.id = dm.profile_id
+                      where dm.department_id = q.department_id and dm.profile_id = p_actor and dm.removed_at is null
+                        and p.approval_status = 'approved'))));
 $$;
 
 
@@ -19207,6 +19527,9 @@ declare
   -- REQ §13.135 (c): a private car chosen in the form (the car's owner is the filer, the requester or who filed it).
   v_own_car uuid; v_own_turnaround int; v_own_by text;
   v_hold_group uuid;
+  -- REQ §13.169 (b): an edit may move the request to another rider (who drives); (c) a save from the request form.
+  v_requester_changed boolean := false;
+  v_form_notice boolean := public._ride_edit_notice_applies();
 begin
   -- REQ §13.127: an edit without `requester_id` keeps the stored requester (the editor may be anyone related).
   if v_request_id is not null and nullif(payload ->> 'requester_id', '') is null then
@@ -19341,7 +19664,11 @@ begin
        and not public.can_manage_week(v_existing.department_id, v_existing.week_start) then
       raise exception 'not_authorized' using errcode = 'P0001';
     end if;
-    if v_existing.department_id is distinct from v_department_id or v_existing.week_start is distinct from v_week_start or v_existing.requester_id is distinct from v_requester_id then raise exception 'not_authorized'; end if;
+    if v_existing.department_id is distinct from v_department_id or v_existing.week_start is distinct from v_week_start then raise exception 'not_authorized'; end if;
+    -- REQ §13.169 (b): the who chip moves the request to the rider who drives (a member of the department, checked above).
+    v_requester_changed := v_existing.requester_id is distinct from v_requester_id;
+    -- REQ §13.169 (c): what the riders saw before this save.
+    perform public._ride_edit_capture(v_request_id);
     -- REQ §13.77 v1: a multi-day series is cancelled and resubmitted, never edited leg by leg.
     if v_existing.series_id is not null or v_series_id is not null then
       raise exception 'series_edit_not_supported' using errcode = 'MDR02';
@@ -19364,7 +19691,7 @@ begin
     v_neutral := v_published_edit and not v_unchanged and public._request_save_unchanged(v_request_id, payload, v_trip_type, v_trip_shape, v_needs_car,
       v_one_way_mode, v_origin_id, v_origin_text, v_depart_at, v_return_at, true);
     -- REQ §13.126 g: turning "the car is available at the destination" on or off changes how the trip is placed.
-    if v_existing.keep_car_at_destination is distinct from v_keep_car then
+    if v_existing.keep_car_at_destination is distinct from v_keep_car or v_requester_changed then
       v_unchanged := false;
       v_neutral := false;
     end if;
@@ -19403,7 +19730,7 @@ begin
         jsonb_build_object('requestId', v_request_id::text), jsonb_build_object('request_id', v_request_id),
         format('request_changed:%s:%s', v_request_id, now()))
       from public.sadranim_of(v_department_id, v_week_start) as s(profile_id);
-      perform public._notify_request_edited_by_manager(v_request_id, v_actor);
+      if not v_form_notice then perform public._notify_request_edited_by_manager(v_request_id, v_actor); end if;
       return jsonb_build_object('ok', true, 'placement_neutral', true, 'unchanged', false, 'request_id', v_request_id,
         'status', v_existing.status, 'is_late', v_existing.is_late, 'warnings', '[]'::jsonb, 'overlaps', '[]'::jsonb);
     end if;
@@ -19594,6 +19921,7 @@ begin
     perform set_config('app.request_anchors_explicit', case when v_anchors_explicit then 'on' else 'off' end, true);
     perform set_config('app.duration_lock_explicit', 'on', true);
     update public.requests set
+      requester_id = v_requester_id,
       destination_id = nullif(payload ->> 'destination_id', '')::uuid,
       destination_text = nullif(payload ->> 'destination_text', ''),
       ride_type_id = (payload ->> 'ride_type_id')::uuid,
@@ -19622,6 +19950,10 @@ begin
     returning status into v_status;
     perform set_config('app.request_anchors_explicit', 'off', true);
     perform set_config('app.duration_lock_explicit', 'off', true);
+    -- REQ §13.169 (b): the new requester is no longer a companion of their own request (the form sends the rest).
+    if v_requester_changed then
+      delete from public.request_companions where request_id = v_request_id and profile_id = v_requester_id;
+    end if;
 
     if v_week.phase in ('solving','published','live') then
       perform public.enqueue_notification(s.profile_id, 'request_changed', v_department_id, v_week_start,
@@ -19629,7 +19961,7 @@ begin
         format('request_changed:%s:%s', v_request_id, now()))
       from public.sadranim_of(v_department_id, v_week_start) as s(profile_id);
     end if;
-    perform public._notify_request_edited_by_manager(v_request_id, v_actor);
+    if not v_form_notice then perform public._notify_request_edited_by_manager(v_request_id, v_actor); end if;
   end if;
 
   perform set_config('app.reset_request_baseline','off',true);
@@ -19984,9 +20316,12 @@ begin
         || jsonb_build_object('status', 'waitlisted', 'reason', coalesce(v_auto_result ->> 'reason', 'WAITLISTED_EDITED'));
     end if;
     -- R6B13: the editor is told the edit was saved and the request now waits (nothing was said before).
+    -- REQ §13.169 (c): a requester who did not make the form's edit gets the riders' `ride_edited` notice instead.
+    if not v_form_notice or v_requester_id = v_actor then
     perform public.enqueue_notification(v_requester_id, 'outcome_changed', v_department_id, v_week_start,
       '{}'::jsonb, jsonb_build_object('variant', 'edit_waitlisted', 'request_id', v_request_id),
       format('edit_waitlisted:%s:%s', v_request_id, clock_timestamp()));
+    end if;
   end if;
 
   if v_is_late and coalesce(v_auto_result->>'status','') <> 'assigned' and coalesce(v_series_index, 1) = 1 then
@@ -20013,7 +20348,10 @@ begin
   perform set_config('app.edit_kept_rides', '', true);
   if v_published_edit and coalesce(v_auto_result->>'status', '') = 'assigned' then
     -- R3B14: when the car changed, the confirmation says old -> new including the car.
-    if v_old_edit_car is not null and (v_auto_result->>'car_id') is not null and (v_auto_result->>'car_id')::uuid <> v_old_edit_car then
+    -- REQ §13.169 (c): only to a requester who made the form's edit themselves; the other riders get `ride_edited`.
+    if v_form_notice and v_requester_id is distinct from v_actor then
+      null;
+    elsif v_old_edit_car is not null and (v_auto_result->>'car_id') is not null and (v_auto_result->>'car_id')::uuid <> v_old_edit_car then
       perform public.enqueue_notification(v_requester_id, 'outcome_changed', v_department_id, v_week_start,
         jsonb_build_object('changeLine', public._frag('change.car', jsonb_build_object(
           'newCar', coalesce((select name from public.cars where id = (v_auto_result->>'car_id')::uuid), ''),
@@ -20026,7 +20364,8 @@ begin
         format('edit_applied:%s:%s', v_request_id, clock_timestamp()));
     end if;
     -- R16B12: the member companions ride at the new hours too - each is told (never the person who edited).
-    if (v_existing.depart_at, v_existing.return_at) is distinct from (v_depart_at, v_return_at) then
+    -- REQ §13.169 (c): a save from the request form tells them with `ride_edited` instead.
+    if not v_form_notice and (v_existing.depart_at, v_existing.return_at) is distinct from (v_depart_at, v_return_at) then
       for v_companion in select c.profile_id from public.request_companions c
                          where c.request_id = v_request_id and c.profile_id is distinct from v_actor loop
         perform public.enqueue_notification(v_companion, 'outcome_changed', v_department_id, v_week_start,
@@ -21991,6 +22330,7 @@ CREATE TABLE IF NOT EXISTS "public"."department_settings" (
     "planning_good_pct" smallint DEFAULT 75 NOT NULL,
     "planning_week_cost_pct" smallint DEFAULT 10 NOT NULL,
     "planning_car_multiplier" numeric(3,2) DEFAULT 1.20 NOT NULL,
+    "anyone_edits_rides" boolean DEFAULT false NOT NULL,
     CONSTRAINT "department_settings_close_dow_ck" CHECK ((("close_dow" >= 0) AND ("close_dow" <= 6))),
     CONSTRAINT "department_settings_expiry_mode_ck" CHECK (("proposal_expiry_mode" = ANY (ARRAY['at_publish'::"text", 'fixed_hours'::"text"]))),
     CONSTRAINT "department_settings_join_radius_km_ck" CHECK ((("join_radius_km" >= (0)::numeric) AND ("join_radius_km" <= (100)::numeric))),
@@ -23089,6 +23429,7 @@ CREATE TABLE IF NOT EXISTS "public"."profiles" (
     "does_not_drive" boolean DEFAULT false NOT NULL,
     "classic_request_form" boolean DEFAULT false NOT NULL,
     "my_rides_week_view" boolean DEFAULT false NOT NULL,
+    "push_on_ride_edits" boolean DEFAULT true NOT NULL,
     CONSTRAINT "profiles_default_boosters_ck" CHECK (("default_boosters" >= 0)),
     CONSTRAINT "profiles_default_child_seats_ck" CHECK (("default_child_seats" >= 0)),
     CONSTRAINT "profiles_phone_format" CHECK ((("phone" IS NULL) OR ("phone" ~ '^\+[1-9][0-9]{7,14}$'::"text")))
@@ -26002,11 +26343,27 @@ CREATE OR REPLACE TRIGGER "push_outbox_notify_dispatch" AFTER INSERT ON "public"
 
 
 
+CREATE OR REPLACE TRIGGER "request_children_ride_edit_capture" BEFORE INSERT OR DELETE ON "public"."request_children" FOR EACH ROW WHEN ("public"."_ride_edit_notice_applies"()) EXECUTE FUNCTION "public"."_ride_edit_capture_row"();
+
+
+
+CREATE CONSTRAINT TRIGGER "request_children_ride_edit_notify" AFTER INSERT OR DELETE ON "public"."request_children" DEFERRABLE INITIALLY DEFERRED FOR EACH ROW WHEN ("public"."_ride_edit_pending"()) EXECUTE FUNCTION "public"."_ride_edit_flush"();
+
+
+
 CREATE OR REPLACE TRIGGER "request_companion_added_notify" AFTER INSERT ON "public"."request_companions" FOR EACH ROW EXECUTE FUNCTION "public"."on_request_companion_added"();
 
 
 
 CREATE OR REPLACE TRIGGER "request_companions_not_requester" BEFORE INSERT OR UPDATE ON "public"."request_companions" FOR EACH ROW EXECUTE FUNCTION "public"."request_companions_not_requester"();
+
+
+
+CREATE OR REPLACE TRIGGER "request_companions_ride_edit_capture" BEFORE INSERT OR DELETE ON "public"."request_companions" FOR EACH ROW WHEN ("public"."_ride_edit_notice_applies"()) EXECUTE FUNCTION "public"."_ride_edit_capture_row"();
+
+
+
+CREATE CONSTRAINT TRIGGER "request_companions_ride_edit_notify" AFTER INSERT OR DELETE ON "public"."request_companions" DEFERRABLE INITIALLY DEFERRED FOR EACH ROW WHEN ("public"."_ride_edit_pending"()) EXECUTE FUNCTION "public"."_ride_edit_flush"();
 
 
 
@@ -26079,6 +26436,14 @@ CREATE OR REPLACE TRIGGER "requests_public_details" BEFORE INSERT OR UPDATE OF "
 
 
 CREATE OR REPLACE TRIGGER "requests_reserved_at" BEFORE INSERT ON "public"."requests" FOR EACH ROW EXECUTE FUNCTION "public"."requests_reserved_at"();
+
+
+
+CREATE OR REPLACE TRIGGER "requests_ride_edit_capture" BEFORE UPDATE ON "public"."requests" FOR EACH ROW WHEN ("public"."_ride_edit_notice_applies"()) EXECUTE FUNCTION "public"."_ride_edit_capture_request"();
+
+
+
+CREATE CONSTRAINT TRIGGER "requests_ride_edit_notify" AFTER UPDATE ON "public"."requests" DEFERRABLE INITIALLY DEFERRED FOR EACH ROW WHEN ("public"."_ride_edit_pending"()) EXECUTE FUNCTION "public"."_ride_edit_flush"();
 
 
 
@@ -28177,6 +28542,10 @@ CREATE POLICY "request_alternatives_select" ON "public"."request_alternatives" F
 
 
 
+CREATE POLICY "request_alternatives_select_editor" ON "public"."request_alternatives" FOR SELECT TO "authenticated" USING ("public"."can_edit_request"("request_id"));
+
+
+
 ALTER TABLE "public"."request_children" ENABLE ROW LEVEL SECURITY;
 
 
@@ -28439,6 +28808,11 @@ GRANT USAGE ON SCHEMA "public" TO "service_role";
 
 REVOKE ALL ON FUNCTION "public"."_alternative_vars"("p_payload" "jsonb", "p_department_id" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."_alternative_vars"("p_payload" "jsonb", "p_department_id" "uuid") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."_and_list"("p_items" "text"[]) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_and_list"("p_items" "text"[]) TO "service_role";
 
 
 
@@ -28712,6 +29086,11 @@ GRANT ALL ON FUNCTION "public"."_notify_request_edited_by_manager"("p_request" "
 
 
 
+REVOKE ALL ON FUNCTION "public"."_notify_ride_edited"("p_request" "uuid", "p_before" "jsonb") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_notify_ride_edited"("p_request" "uuid", "p_before" "jsonb") TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."_notify_rider_left"("p_recipient" "uuid", "p_ride_id" "uuid", "p_leaver_name" "text", "p_route" "text", "p_day" "text", "p_dedupe" "text") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."_notify_rider_left"("p_recipient" "uuid", "p_ride_id" "uuid", "p_leaver_name" "text", "p_route" "text", "p_day" "text", "p_dedupe" "text") TO "service_role";
 
@@ -28790,6 +29169,48 @@ GRANT ALL ON FUNCTION "public"."_request_save_unchanged"("p_request_id" "uuid", 
 
 REVOKE ALL ON FUNCTION "public"."_restore_original_main"("p_request_id" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."_restore_original_main"("p_request_id" "uuid") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."_ride_edit_capture"("p_request" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_ride_edit_capture"("p_request" "uuid") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."_ride_edit_capture_request"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_ride_edit_capture_request"() TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."_ride_edit_capture_row"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_ride_edit_capture_row"() TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."_ride_edit_flush"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_ride_edit_flush"() TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."_ride_edit_lines"("b" "jsonb", "a" "jsonb") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_ride_edit_lines"("b" "jsonb", "a" "jsonb") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."_ride_edit_notice_applies"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_ride_edit_notice_applies"() TO "service_role";
+GRANT ALL ON FUNCTION "public"."_ride_edit_notice_applies"() TO "authenticated";
+
+
+
+REVOKE ALL ON FUNCTION "public"."_ride_edit_pending"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_ride_edit_pending"() TO "service_role";
+GRANT ALL ON FUNCTION "public"."_ride_edit_pending"() TO "authenticated";
+
+
+
+REVOKE ALL ON FUNCTION "public"."_ride_edit_snapshot"("p_request" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_ride_edit_snapshot"("p_request" "uuid") TO "service_role";
 
 
 
@@ -31705,6 +32126,10 @@ GRANT SELECT("classic_request_form") ON TABLE "public"."profiles" TO "authentica
 
 
 GRANT SELECT("my_rides_week_view") ON TABLE "public"."profiles" TO "authenticated";
+
+
+
+GRANT SELECT("push_on_ride_edits") ON TABLE "public"."profiles" TO "authenticated";
 
 
 

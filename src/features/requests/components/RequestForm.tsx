@@ -32,6 +32,7 @@ import { siddurKeys } from "@/features/siddur/queryKeys";
 import { paths } from "@/app/routes";
 import { useSaveReservationMutation } from "@/features/planning/hooks";
 import { he, t, tv } from "@/i18n/he";
+import { asRequestFormSave } from "@/lib/appSurface";
 import { showErrorToast } from "@/lib/rpc";
 import { dateKey, formatTime, weekdayIndex } from "@/lib/time";
 import { DEFAULT_HOP_MINUTES } from "@/lib/rideRoute";
@@ -575,23 +576,50 @@ export function RequestForm({
     appliedOriginKeyRef.current = resolvedOriginKey;
   }, [form, shouldApplyOrigin, resolvedOriginKey]);
 
-  /** The department member the ride is filed for (null = me) and the companions left once the requester is out of the list. */
-  function whoOf(formValues: Pick<RequestFormValues, "includeMe" | "companions">) {
-    return mode === "new" && variant === "weekly" && !joinRide && !isReservation ? splitWho(formValues, membersQuery.data ?? []) : { requesterId: null, companions: [...formValues.companions] };
-  }
-  const onBehalfWho = whoOf({ includeMe: values.includeMe, companions: values.companions ?? [] });
-  const onBehalfName = onBehalfWho.requesterId ? (membersQuery.data ?? []).find((m) => m.id === onBehalfWho.requesterId)?.name ?? "" : "";
-  // REQ §13.127 (b): editing a request that is someone else's (I filed it, ride on it, own its car, ...).
-  const editingForOther = mode === "edit" && !!initial && !!session?.user.id && initial.requesterId !== session.user.id;
-  // REQ §13.127: whose overlapping requests the duplicate warning looks at.
-  const overlapRequesterId = editingForOther ? initial?.requesterId : onBehalfWho.requesterId ?? session?.user.id;
   // REQ §13.88/§13.93: a non-driver with no driving companion selected may only file a drop-off.
   const companionDoesNotDriveById = new Map((membersQuery.data ?? []).map((m) => [m.id, m.doesNotDrive]));
+  // REQ §13.127 (b): editing a request that is someone else's (I filed it, ride on it, own its car, ...).
+  const editingForOther = mode === "edit" && !!initial && !!session?.user.id && initial.requesterId !== session.user.id;
+  // REQ §13.169 (b): in an edit the requester chip toggles and "מי נוהג/ת?" picks the driver; the request moves to them.
+  const editRequesterId = mode === "edit" && initial && variant === "weekly" && !isReservation ? initial.requesterId : null;
+  function editRidersOf(formValues: Pick<RequestFormValues, "includeMe" | "companions">): string[] {
+    return editRequesterId ? [...(formValues.includeMe !== false ? [editRequesterId] : []), ...formValues.companions] : [];
+  }
+  function riderDrives(id: string): boolean {
+    return id === session?.user.id ? !(profileQuery.data?.does_not_drive ?? false) : !(companionDoesNotDriveById.get(id) ?? false);
+  }
+  function editDriverOf(formValues: Pick<RequestFormValues, "includeMe" | "companions" | "driverId">): string | null {
+    const riders = editRidersOf(formValues);
+    const drivers = riders.filter(riderDrives);
+    if (formValues.driverId && drivers.includes(formValues.driverId)) return formValues.driverId;
+    if (editRequesterId && formValues.includeMe !== false) return editRequesterId;
+    return drivers[0] ?? riders[0] ?? null;
+  }
+
+  /** The department member the ride is filed for (null = me / unchanged) and the companions left once the requester is out of the list. */
+  function whoOf(formValues: Pick<RequestFormValues, "includeMe" | "companions" | "driverId">) {
+    if (editRequesterId) {
+      const driver = editDriverOf(formValues) ?? editRequesterId;
+      return { requesterId: driver === editRequesterId ? null : driver, companions: editRidersOf(formValues).filter((id) => id !== driver) };
+    }
+    return mode === "new" && variant === "weekly" && !joinRide && !isReservation ? splitWho(formValues, membersQuery.data ?? []) : { requesterId: null, companions: [...formValues.companions] };
+  }
+  const onBehalfWho = whoOf({ includeMe: values.includeMe, companions: values.companions ?? [], driverId: values.driverId });
+  const editDriverOptions = editRidersOf({ includeMe: values.includeMe, companions: values.companions ?? [] })
+    .filter(riderDrives)
+    .map((id) => ({
+      id,
+      name: id === editRequesterId ? (editingForOther ? initial?.requesterName ?? "" : he.requestSentence.me)
+        : (membersQuery.data ?? []).find((m) => m.id === id)?.name ?? "",
+    }));
+  const onBehalfName = onBehalfWho.requesterId ? (membersQuery.data ?? []).find((m) => m.id === onBehalfWho.requesterId)?.name ?? "" : "";
+  // REQ §13.127: whose overlapping requests the duplicate warning looks at.
+  const overlapRequesterId = editingForOther ? initial?.requesterId : onBehalfWho.requesterId ?? session?.user.id;
   // REQ §13.127 (a): with "אני" out the filer is not on the ride — a driving named member has to be the requester.
   // Editing someone else's request: the requester's own driving decides, not mine.
-  const requesterDoesNotDrive = editingForOther && initial
+  const requesterDoesNotDrive = (editingForOther && initial
     ? companionDoesNotDriveById.get(initial.requesterId) ?? false
-    : (profileQuery.data?.does_not_drive ?? false) || values.includeMe === false;
+    : profileQuery.data?.does_not_drive ?? false) || values.includeMe === false;
   // With "אני" out and nobody named yet the requester is not known: nothing is forced (else the trip turned into a
   // הקפצה for good before the member picked a driver).
   const requesterUnknown = values.includeMe === false && (values.companions ?? []).length === 0;
@@ -983,7 +1011,12 @@ export function RequestForm({
     invalidateSubmittedRequest(queryClient, session?.user.id, { departmentId: payload.department_id, weekStart: payload.week_start, requestId }, { ...options, refetchType });
   }
 
-  async function performSubmit(formValues: RequestFormValues, options: { confirmRelease?: boolean; confirmLose?: boolean; ignoreChildOverlap?: boolean } = {}) {
+  // REQ §13.169 (c): every call of one save is marked as the request form's, so the riders get one notice of it.
+  function performSubmit(formValues: RequestFormValues, options: { confirmRelease?: boolean; confirmLose?: boolean; ignoreChildOverlap?: boolean } = {}) {
+    return asRequestFormSave(() => performSubmitCalls(formValues, options));
+  }
+
+  async function performSubmitCalls(formValues: RequestFormValues, options: { confirmRelease?: boolean; confirmLose?: boolean; ignoreChildOverlap?: boolean } = {}) {
     if (quickContext && (isPast || invalidTime)) return;
     setSubmitError(null);
     // Editing a multi-day request always replaces the whole series, even when it shrinks to one day (REQ §13.142).
@@ -1384,8 +1417,10 @@ export function RequestForm({
           rideTypes={rideTypesQuery.data ?? []}
           preferredCars={preferredCars}
           initialPreferredCarName={initial?.preferredCarName}
-          members={membersQuery.data ?? []}
-          allowOnBehalf={mode === "new" && variant === "weekly" && !joinRide && !isReservation}
+          members={editRequesterId ? (membersQuery.data ?? []).filter((m) => m.id !== editRequesterId) : membersQuery.data ?? []}
+          allowOnBehalf={(mode === "new" && variant === "weekly" && !joinRide && !isReservation) || !!editRequesterId}
+          driverOptions={editDriverOptions}
+          driverId={editRequesterId ? editDriverOf({ includeMe: values.includeMe, companions: values.companions ?? [], driverId: values.driverId }) : null}
           reservation={isReservation}
           requesterName={editingForOther ? initial?.requesterName : null}
           childOptions={childrenQuery.data ?? []}
@@ -1629,9 +1664,9 @@ export function RequestForm({
     <ConfirmDialog
       open={!!pendingOnBehalf}
       onOpenChange={(open) => { if (!open) setPendingOnBehalf(null); }}
-      title={tv("request.onBehalfTitle", { name: onBehalfName })}
-      description={tv("request.onBehalfBody", { name: onBehalfName })}
-      confirmLabel={t("request.onBehalfConfirm")}
+      title={tv(mode === "edit" ? "request.moveRequesterTitle" : "request.onBehalfTitle", { name: onBehalfName })}
+      description={tv(mode === "edit" ? "request.moveRequesterBody" : "request.onBehalfBody", { name: onBehalfName })}
+      confirmLabel={t(mode === "edit" ? "request.moveRequesterConfirm" : "request.onBehalfConfirm")}
       cancelLabel={t("request.overlapBack")}
       loading={submitMutation.isPending}
       onConfirm={() => {
