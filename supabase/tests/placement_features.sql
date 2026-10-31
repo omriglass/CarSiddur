@@ -353,10 +353,10 @@ begin
   select body_he into v from public.notifications where recipient_id=m1 and event='freed_slot' and data->>'offer_id'=off::text;
   assert v like (select name from public.cars where id=car40)||', %', format('R15B6: freed_slot names the car, got %s',v);
   select body_he into v from public.notifications where recipient_id=sadran and event='claim_contested' and data->>'offer_id'=off::text
-    and coalesce(data->>'variant','')='';
+    and data->>'variant'='options';   -- REQ §13.168: several candidates -> the Sadran's options notice
   assert v like (select name from public.cars where id=car40)||', יום '||public.day_date_label(dt)||' %', format('R15B6: claim_contested names car and day, got %s',v);
   assert (select data->>'url' from public.notifications where recipient_id=sadran and event='claim_contested' and data->>'offer_id'=off::text
-          and coalesce(data->>'variant','')='') = format('/sadran/%s/%s/claims/%s',dept,w,off), 'R15U13: claim_contested opens the claims page';
+          and data->>'variant'='options') = format('/sadran/%s/%s/claims/%s',dept,w,off), 'R15U13: claim_contested opens the claims page';
   assert public.notification_default_url('late_request',jsonb_build_object('request_id',q1),dept,w,sadran) = format('/sadran/%s/%s/board?day=%s',dept,w,w+2),
     'R15U13: a late request opens the board on its day for the Sadran';
   assert public.notification_default_url('late_request',jsonb_build_object('request_id',q1),dept,w,m1) like '/requests?focus=%',

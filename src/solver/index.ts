@@ -32,7 +32,7 @@ export * from './types';
 export { fits, dominates, slack, sum, luggageFits, chauffeurLoad } from './seatFit';
 export { ruleRegistry, type RuleType } from './rules/index';
 export { alternativeServedWeightOf, DEFAULT_ALTERNATIVE_SERVED_WEIGHT } from './rules/fairness';
-export { matchFreedSlot } from './live';
+export { freedSlotOptions, matchFreedSlot } from './live';
 export { CarTimeline, buildTimelines } from './timeline';
 export type { NormalizedRequest, NormalizedLeg, SeriesLeg, SeriesUnit } from './slots';
 // REQUIREMENTS §13.93 (docs/SOLVER.md §1.3a): origin helpers, for callers

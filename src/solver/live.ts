@@ -120,3 +120,67 @@ export function matchFreedSlot(
   });
   return results;
 }
+
+/** One candidate for `freedSlotOptions`: its own requested window (slots) and policy score. */
+export interface FreedSlotOptionItem {
+  requestId: string;
+  window: Window;
+  score: number;
+  /** Served by its plan B today (REQ §13.168): taking the car means leaving the plan B. */
+  planB: boolean;
+}
+
+/** REQ §13.168: one way to use a freed car — one request, or several one after another. */
+export interface FreedSlotOption {
+  requestIds: string[];
+  /** Sum of the requests' policy scores — what auto-solving by the policy would maximise. */
+  score: number;
+  /** Free slots of the gap this option leaves unused. */
+  unusedSlots: number;
+  /** How many of its requests leave a plan B. */
+  planB: number;
+  /** The top-ranked option (exactly one per non-empty list). */
+  recommended: boolean;
+}
+
+/** Enumeration stops after this many options (a long gap with many short requests grows combinatorially). */
+export const FREED_OPTIONS_ENUMERATION_CAP = 500;
+
+/**
+ * REQ §13.168: every way the freed gap can be used — each candidate alone, and every chain of candidates
+ * that fit inside the gap one after another with the turnaround (`bufferSlots`) between them (no size
+ * limit, owner 2026-10-31). Ranked: higher total policy score, then less unused time, then fewer people
+ * leaving a plan B, then the request ids (deterministic). The first option is the recommendation.
+ */
+export function freedSlotOptions(items: readonly FreedSlotOptionItem[], freedWindow: Window, bufferSlots: number): FreedSlotOption[] {
+  const inside = items
+    .filter((it) => it.window.start >= freedWindow.start && it.window.end <= freedWindow.end && it.window.end > it.window.start)
+    .sort((a, b) => a.window.start - b.window.start || a.window.end - b.window.end || byId({ id: a.requestId }, { id: b.requestId }));
+  const gap = freedWindow.end - freedWindow.start;
+  const found: Omit<FreedSlotOption, 'recommended'>[] = [];
+  const chain: FreedSlotOptionItem[] = [];
+  const walk = (from: number) => {
+    for (let i = from; i < inside.length && found.length < FREED_OPTIONS_ENUMERATION_CAP; i++) {
+      const last = chain[chain.length - 1];
+      if (last && inside[i].window.start < last.window.end + bufferSlots) continue;
+      chain.push(inside[i]);
+      const used = chain.reduce((sum, it) => sum + (it.window.end - it.window.start), 0);
+      found.push({
+        requestIds: chain.map((it) => it.requestId),
+        score: chain.reduce((sum, it) => sum + it.score, 0),
+        unusedSlots: Math.max(0, gap - used),
+        planB: chain.filter((it) => it.planB).length,
+      });
+      walk(i + 1);
+      chain.pop();
+    }
+  };
+  walk(0);
+  found.sort((a, b) =>
+    b.score - a.score
+    || a.unusedSlots - b.unusedSlots
+    || a.planB - b.planB
+    || a.requestIds.length - b.requestIds.length
+    || (a.requestIds.join(',') < b.requestIds.join(',') ? -1 : a.requestIds.join(',') > b.requestIds.join(',') ? 1 : 0));
+  return found.map((option, index) => ({ ...option, recommended: index === 0 }));
+}
