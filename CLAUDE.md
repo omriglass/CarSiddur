@@ -219,7 +219,7 @@ scripts/
   check-migrations.mjs         `node scripts/check-migrations.mjs <base-ref>` — flags a new migration that drops/renames without a matching `supabase/rollback/<ts>_down.sql`
   impact.test.mjs              Vitest: the glob matcher, migrationContentRules, and test-map.json/docs/TEST_MAP.md area-id consistency
 .claude/
-  skills/                      14 playbooks with exact steps and file paths (incl. `/qa-week`, `/qa-concurrent` (two Sadrans at once), the QA simulation — docs/QA_SIMULATION.md; `/write-changelog`, the release's "מה חדש")
+  skills/                      15 playbooks with exact steps and file paths (incl. `/qa-week`, `/qa-concurrent` (two Sadrans at once), the QA simulation — docs/QA_SIMULATION.md; `/write-changelog`, the release's "מה חדש")
   agents/                      5 specialized agents: solver-dev, db-migrator, ui-dev, docs-keeper, e2e-tester
 ```
 
@@ -299,6 +299,7 @@ scripts/
 | Mock week / end-to-end QA with role-played members | `/qa-week` (docs/QA_SIMULATION.md) | QA Sadran (opus) + QA user (sonnet) |
 | Two Sadrans editing one week at once (concurrency QA, synchronized races) | `/qa-concurrent` (docs/QA_SIMULATION.md "Two Sadrans at once", `scripts/qa/race.mjs`) | two QA Sadrans + QA user (all sonnet) |
 | "מה חדש" for the next announced release (minor releases have none), WhatsApp what's-new text | `/write-changelog` (src/i18n/he.changelog.ts, REQ §13.139) | none |
+| Reproduce a production problem on a local copy of production, root cause, fix risk, fix (trivial) or report | `/replicate-prod-issue` (`npm run debug`, scripts/debug/README.md) | none |
 | Periodic review of a real week: replay it, first solver run vs the Sadran's final week | `/solver-review` (scripts/replay/README.md, docs/SOLVER_REVIEWS.md) | lead reviews; solver-dev for accepted changes |
 
 ## Owner batch 2026-10-04 — origins, three trip types, cars stay where they are left (REQ §13.93; `docs/ORIGINS_PLAN_2026-10.md`; docs/TODO.md O1–O6)
