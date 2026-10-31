@@ -41,6 +41,7 @@
     "qa:ui": "node scripts/qa/ui.mjs",
     "debug": "node scripts/debug/debug.mjs",
     "replay:stack": "node scripts/replay/stack.mjs",
+    "replay:export": "node scripts/replay/export-from-debug.mjs",
     "replay:load": "node scripts/replay/load-week.mjs",
     "replay:compare": "node scripts/replay/compare.mjs",
     "replay:explain": "node scripts/replay/explain.mjs"

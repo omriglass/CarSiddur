@@ -10,7 +10,18 @@ editor and hands over the downloaded file; every script below only writes to the
 database container. Exports and the stack copy live in `.replay/` (gitignored — they hold member
 names and rides; never commit them).
 
-## 1. Export (owner, Supabase dashboard)
+## 1. Export
+
+From the local debug copy of production (scripts/debug/README.md — the same read-only query, no dashboard step):
+
+```sh
+npm run debug -- pull && npm run debug -- load --all        # a fresh copy with every week
+npm run replay:export -- --dept <department id> --week <YYYY-MM-DD, the Sunday>
+# → .replay/data/<dept>-<week>.json (checked 2026-10-31: per-table row counts equal the same query on production,
+#   apart from rows created after the pull)
+```
+
+Or by hand in the Supabase dashboard:
 
 1. Open `scripts/replay/export-week.sql`, set `dept` and `week` (the Sunday) in `params`.
 2. Run it in the SQL editor. It is a single `SELECT` (no writes, no function calls with side

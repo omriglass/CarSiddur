@@ -11,14 +11,14 @@ Tooling: `scripts/replay/` (README there). Background and the first review: REQU
 
 ## Ground rules
 
-- **Production is never touched.** The owner runs `scripts/replay/export-week.sql` in the Supabase SQL editor (one read-only `select`) and drops the download into `.replay/data/`. Never ask for a connection string or password. Everything else runs on the replay stack (`carshare-replay`, API 56321). The scripts refuse any other database; never point them at 54321/54322.
+- **Production is only read.** The export comes from the local debug copy of production (`npm run debug -- pull`, a read-only dump; scripts/debug/README.md) — or, as before, the owner runs `scripts/replay/export-week.sql` in the Supabase SQL editor. Never ask for a connection string or password. Everything else runs on the replay stack (`carshare-replay`, API 56321). The scripts refuse any other database; never point them at 54321/54322.
 - `.replay/` holds member names and rides. It is gitignored: never commit it, never paste exports into chat or docs beyond the names a finding needs.
 - **Review first, change later.** The output is a report plus proposals. Code changes start only after the owner answers (memory: todo → questions → go). Behaviour changes go to `docs/REQUIREMENTS.md` first (hard rule 2).
 - Use the week **after it was published** and the Sadran finished, so "final" means final.
 
 ## Steps
 
-1. **Export (owner).** Ask the owner to set `dept` and `week` (the Sunday) in `params` of `scripts/replay/export-week.sql`, run it, and download the result to `.replay/data/`. Rename the file to `<dept-slug>-<week>.exported-<date>.csv`. `readExport` refuses a cut download (row_count check).
+1. **Export.** `npm run debug -- pull && npm run debug -- load --all`, then `npm run replay:export -- --dept <id> --week <Sunday>` (the same `export-week.sql`, run on the debug copy; writes `.replay/data/<dept>-<week>.json`). Fallback when the debug copy is not available: ask the owner to set `dept` and `week` (the Sunday) in `params` of `scripts/replay/export-week.sql`, run it, and download the result to `.replay/data/`. Rename the file to `<dept-slug>-<week>.exported-<date>.csv`. `readExport` refuses a cut download (row_count check).
 
 2. **Code parity.** Find the release that ran that week (`git tag --sort=-creatordate`; the solver runs' `started_at`). If `main` differs from that tag in `src/solver`, `src/features/solverBridge`, `src/features/sadran/applySolve.ts` or the migrations, run the replay from a worktree of that tag (`git worktree add ../replay-<tag> <tag>`), or the parity check below will measure code, not data.
 
