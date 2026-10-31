@@ -1023,6 +1023,7 @@
         "13.78"
       ],
       "qaChecklist": [
+        "Statistics: the people tile counts every rider (children, unnamed passengers) with 'N different members · M drivers' below; the heatmap shows 06:00–21:00 × days + a separate average column, and switches busy hours / start times / end times; tapping a cell reads its value (REQ §13.167)",
         "Open the statistics screen and pick a date range; confirm the five metrics render (REQ §13.78)",
         "Cross-check the ride-type pie / weekly-unmet chart against seeded data (REQ §13.78)"
       ]

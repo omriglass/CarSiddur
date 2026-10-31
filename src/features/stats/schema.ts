@@ -75,10 +75,18 @@ export const cancellationsStatSchema = z.object({
   sameDayRate: z.number(),
 });
 
-/** One `requestsByHour` entry (S4, owner request 2026-09-14): `hour` is 0..23 (Asia/Jerusalem). */
-export const hourStatSchema = z.object({
+/**
+ * One `hourly` cell (REQ §13.167 b): weekday (`dow` 0=Sunday) × Asia/Jerusalem hour 6..21. `busyRate` is the
+ * average share (0..1) of the shared cars on a ride during that hour (turnaround included); `starts`/`ends`
+ * the average number of rides starting/ending in it; `occurrences` how many of that weekday the range has.
+ */
+export const hourCellSchema = z.object({
+  dow: z.number().int().min(0).max(6),
   hour: z.number().int().min(0).max(23),
-  count: z.number(),
+  occurrences: z.number(),
+  busyRate: z.number(),
+  starts: z.number(),
+  ends: z.number(),
 });
 
 /** `department_stats` jsonb return shape, validated at the `stats/api.ts` boundary before it reaches the UI. */
@@ -128,5 +136,8 @@ export const departmentStatsSchema = z.object({
   // tile/chart when its field is absent.
   sharing: sharingStatSchema.optional(),
   cancellations: cancellationsStatSchema.optional(),
-  requestsByHour: z.array(hourStatSchema).optional(),
+  // REQ §13.167: passengers carried (every adult, child and added passenger, once per ride) and the
+  // weekday × hour heatmap. Optional while the migration is in flight, as above.
+  passengersCarried: z.number().optional(),
+  hourly: z.array(hourCellSchema).optional(),
 });

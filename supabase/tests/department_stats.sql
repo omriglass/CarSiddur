@@ -717,19 +717,26 @@ begin
     assert (cancel_obj ->> 'sameDay')::int = 1, '(l) cancellations.sameDay mismatch';
     assert (cancel_obj ->> 'sameDayRate')::numeric = 0.5, '(l) cancellations.sameDayRate mismatch';
 
-    hour_arr := sh_result -> 'requestsByHour';
-    assert jsonb_array_length(hour_arr) = 24, '(l) requestsByHour must always have 24 entries';
-
-    select item into hour_row from jsonb_array_elements(hour_arr) item where (item ->> 'hour')::int = 8;
-    assert (hour_row ->> 'count')::int = 1, '(l) hour 8 count mismatch (ow_req1)';
-    select item into hour_row from jsonb_array_elements(hour_arr) item where (item ->> 'hour')::int = 9;
-    assert (hour_row ->> 'count')::int = 2, '(l) hour 9 count mismatch (req1 + req2)';
-    select item into hour_row from jsonb_array_elements(hour_arr) item where (item ->> 'hour')::int = 14;
-    assert (hour_row ->> 'count')::int = 1, '(l) hour 14 count mismatch (ow_req2)';
-    select item into hour_row from jsonb_array_elements(hour_arr) item where (item ->> 'hour')::int = 10;
-    assert (hour_row ->> 'count')::int = 0, '(l) hour 10 must stay 0 -- the only request there is a draft';
-    select item into hour_row from jsonb_array_elements(hour_arr) item where (item ->> 'hour')::int = 17;
-    assert (hour_row ->> 'count')::int = 0, '(l) hour 17 must stay 0 -- ow_req3 has no depart_at to bucket by (one_way_from)';
+    -- REQ §13.167 (a): passengers carried = every rider once per ride = the same 3+1+5 as above.
+    assert (sh_result ->> 'passengersCarried')::int = 9, '(l) passengersCarried mismatch';
+    -- REQ §13.167 (b): weekday × hour grid 06–21, one shared car, 30-minute turnaround, each weekday once.
+    hour_arr := sh_result -> 'hourly';
+    assert jsonb_array_length(hour_arr) = 7 * 16, '(l) hourly must have 7 weekdays x 16 hours';
+    assert not (sh_result ? 'requestsByHour'), '(l) requestsByHour is replaced by hourly';
+    -- Monday: ride 09–11 (+30 min turnaround), ride 13–14 (+30).
+    select item into hour_row from jsonb_array_elements(hour_arr) item where (item ->> 'dow')::int = 1 and (item ->> 'hour')::int = 9;
+    assert (hour_row ->> 'busyRate')::numeric = 1 and (hour_row ->> 'starts')::numeric = 1 and (hour_row ->> 'ends')::numeric = 0, format('(l) Mon 09 mismatch %s', hour_row);
+    select item into hour_row from jsonb_array_elements(hour_arr) item where (item ->> 'dow')::int = 1 and (item ->> 'hour')::int = 11;
+    assert (hour_row ->> 'busyRate')::numeric = 0.5 and (hour_row ->> 'starts')::numeric = 0 and (hour_row ->> 'ends')::numeric = 1, format('(l) Mon 11 (turnaround half hour, one end) mismatch %s', hour_row);
+    select item into hour_row from jsonb_array_elements(hour_arr) item where (item ->> 'dow')::int = 1 and (item ->> 'hour')::int = 12;
+    assert (hour_row ->> 'busyRate')::numeric = 0, format('(l) Mon 12 must be free %s', hour_row);
+    select item into hour_row from jsonb_array_elements(hour_arr) item where (item ->> 'dow')::int = 1 and (item ->> 'hour')::int = 14;
+    assert (hour_row ->> 'busyRate')::numeric = 0.5 and (hour_row ->> 'ends')::numeric = 1, format('(l) Mon 14 mismatch %s', hour_row);
+    -- Tuesday 09–11; the cancelled Wednesday/Thursday rides never count.
+    select item into hour_row from jsonb_array_elements(hour_arr) item where (item ->> 'dow')::int = 2 and (item ->> 'hour')::int = 10;
+    assert (hour_row ->> 'busyRate')::numeric = 1, format('(l) Tue 10 mismatch %s', hour_row);
+    select item into hour_row from jsonb_array_elements(hour_arr) item where (item ->> 'dow')::int = 3 and (item ->> 'hour')::int = 10;
+    assert (hour_row ->> 'busyRate')::numeric = 0 and (hour_row ->> 'starts')::numeric = 0, format('(l) cancelled ride counted %s', hour_row);
   end;
 
   -- ---------------------------------------------------------------------------
@@ -790,14 +797,27 @@ begin
     insert into public.ride_passengers (ride_id, department_id, week_start, person_id, display_name, seat_kind, added_by)
     values (up_ride_id, up_dept, up_week, member2, 'Added passenger', 'adult', sadran_id);
 
+    -- REQ §13.167 (a): a reservation (no served request) naming its driver first plus an unnamed guest
+    -- carries 2 people, not 3 — the named driver is not counted again as an added passenger.
+    insert into public.rides (id, department_id, week_start, car_id, starts_at, ends_at, origin_id,
+      destination_id, driver_id, status, created_by)
+    values (gen_random_uuid(), up_dept, up_week, up_car, (up_day + time '13:00') at time zone 'Asia/Jerusalem',
+      (up_day + time '14:00') at time zone 'Asia/Jerusalem', up_home, up_home, member1, 'confirmed', sadran_id)
+    returning id into up_ride_id;
+    insert into public.ride_passengers (ride_id, department_id, week_start, person_id, display_name, seat_kind, added_by)
+    values (up_ride_id, up_dept, up_week, member1, 'Driver', 'adult', sadran_id),
+           (up_ride_id, up_dept, up_week, null, 'Unnamed guest', 'adult', sadran_id);
+
     execute 'set local role authenticated';
     perform set_config('request.jwt.claims', jsonb_build_object('sub', admin_id, 'role', 'authenticated')::text, true);
     up_result := public.department_stats(up_dept, up_week, up_week + 6);
 
     assert (up_result ->> 'distinctPeople')::int = 2,
       format('(m) distinctPeople must include the ride_passengers person (member1 + member2), got %s', up_result ->> 'distinctPeople');
-    assert ((up_result -> 'sharing') ->> 'peopleUtilization')::numeric = round(3.0 / 4, 4),
-      format('(m) sharing.peopleUtilization must add the ride_passengers row (2 served + 1 added = 3) over 4 seats, got %s', (up_result -> 'sharing') ->> 'peopleUtilization');
+    assert ((up_result -> 'sharing') ->> 'peopleUtilization')::numeric = round(5.0 / 8, 4),
+      format('(m) sharing.peopleUtilization: (2 served + 1 added) + (driver + unnamed guest) = 5 over 2 rides x 4 seats, got %s', (up_result -> 'sharing') ->> 'peopleUtilization');
+    assert (up_result ->> 'passengersCarried')::int = 5,
+      format('(m) passengersCarried must count the unnamed guest and the reservation driver once, got %s', up_result ->> 'passengersCarried');
   end;
 
   -- ---------------------------------------------------------------------------

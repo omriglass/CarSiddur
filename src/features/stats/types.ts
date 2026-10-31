@@ -3,7 +3,7 @@ import type { z } from "zod";
 import type {
   cancellationsStatSchema,
   departmentStatsSchema,
-  hourStatSchema,
+  hourCellSchema,
   rideTypeStatSchema,
   sharingStatSchema,
   weekdayStatSchema,
@@ -15,5 +15,5 @@ export type RideTypeStat = z.infer<typeof rideTypeStatSchema>;
 export type WeeklyStat = z.infer<typeof weeklyStatSchema>;
 export type SharingStat = z.infer<typeof sharingStatSchema>;
 export type CancellationsStat = z.infer<typeof cancellationsStatSchema>;
-export type HourStat = z.infer<typeof hourStatSchema>;
+export type HourCell = z.infer<typeof hourCellSchema>;
 export type DepartmentStats = z.infer<typeof departmentStatsSchema>;

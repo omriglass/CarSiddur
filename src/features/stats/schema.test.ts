@@ -55,10 +55,11 @@ describe("departmentStatsSchema", () => {
     expect(parsed.weekly).toBeUndefined();
     expect(parsed.sharing).toBeUndefined();
     expect(parsed.cancellations).toBeUndefined();
-    expect(parsed.requestsByHour).toBeUndefined();
+    expect(parsed.hourly).toBeUndefined();
+    expect(parsed.passengersCarried).toBeUndefined();
   });
 
-  it("parses the S1-S4 statistics-group fields (sharing/cancellations/requestsByHour) when the RPC provides them", () => {
+  it("parses the statistics-group fields (sharing/cancellations/hourly/passengersCarried) when the RPC provides them", () => {
     const withStatsGroup = {
       ...stats,
       sharing: {
@@ -71,16 +72,18 @@ describe("departmentStatsSchema", () => {
         oneWayTotal: 3,
       },
       cancellations: { total: 2, sameDay: 1, sameDayRate: 0.5 },
-      requestsByHour: Array.from({ length: 24 }, (_, hour) => ({ hour, count: hour === 8 ? 3 : 0 })),
+      passengersCarried: 9,
+      hourly: [{ dow: 1, hour: 9, occurrences: 1, busyRate: 1, starts: 1, ends: 0 }],
     };
     const parsed = departmentStatsSchema.parse(withStatsGroup);
     expect(parsed.sharing?.peopleUtilization).toBe(0.6);
     expect(parsed.cancellations?.sameDayRate).toBe(0.5);
-    expect(parsed.requestsByHour).toHaveLength(24);
+    expect(parsed.hourly).toHaveLength(1);
+    expect(parsed.passengersCarried).toBe(9);
   });
 
-  it("rejects a requestsByHour entry with an hour outside 0..23", () => {
-    const bad = { ...stats, requestsByHour: [{ hour: 24, count: 0 }] };
+  it("rejects an hourly cell with a weekday outside 0..6", () => {
+    const bad = { ...stats, hourly: [{ dow: 7, hour: 9, occurrences: 1, busyRate: 0, starts: 0, ends: 0 }] };
     expect(() => departmentStatsSchema.parse(bad)).toThrow();
   });
 

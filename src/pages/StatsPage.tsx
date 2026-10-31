@@ -7,7 +7,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
 import { PageHeader } from "@/components/PageHeader";
 import { CardListSkeleton } from "@/components/skeletons/CardListSkeleton";
-import { HourBarList } from "@/features/stats/components/HourBarList";
+import { HourHeatmap } from "@/features/stats/components/HourHeatmap";
 import { RideTypePie } from "@/features/stats/components/RideTypePie";
 import { SharingTiles } from "@/features/stats/components/SharingTile";
 import { StatsDateRangePicker } from "@/features/stats/components/StatsDateRangePicker";
@@ -126,19 +126,25 @@ export function StatsPage() {
               value={<span dir="ltr">{stats.rides}</span>}
               help={he.stats.tiles.rides.help}
             />
-            {stats.distinctPeople !== undefined ? (
+            {stats.passengersCarried !== undefined || stats.distinctPeople !== undefined ? (
               <StatTile
                 testId="stats-tile-people"
                 label={he.stats.tiles.people.label}
                 value={
                   <>
-                    <span dir="ltr">{stats.distinctPeople}</span> {he.stats.tiles.people.headlineSuffix}
+                    <span dir="ltr">{stats.passengersCarried ?? stats.distinctPeople}</span> {he.stats.tiles.people.headlineSuffix}
                   </>
                 }
                 sub={
-                  stats.distinctDrivers === undefined ? undefined : (
+                  stats.distinctPeople === undefined ? undefined : (
                     <>
-                      <span dir="ltr">{stats.distinctDrivers}</span> {he.stats.tiles.people.subUnit}
+                      <span dir="ltr">{stats.distinctPeople}</span> {he.stats.tiles.people.subMembers}
+                      {stats.distinctDrivers === undefined ? null : (
+                        <>
+                          {" · "}
+                          <span dir="ltr">{stats.distinctDrivers}</span> {he.stats.tiles.people.subUnit}
+                        </>
+                      )}
                     </>
                   )
                 }
@@ -201,9 +207,7 @@ export function StatsPage() {
 
           {stats.byRideType !== undefined ? <RideTypePie data={stats.byRideType} /> : null}
 
-          {stats.requestsByHour && stats.requestsByHour.length > 0 ? (
-            <HourBarList hours={stats.requestsByHour} />
-          ) : null}
+          {stats.hourly && stats.hourly.length > 0 ? <HourHeatmap cells={stats.hourly} /> : null}
 
           {stats.weekly && stats.weekly.length > 0 ? <WeeklyUnmetChart weekly={stats.weekly} /> : null}
         </>

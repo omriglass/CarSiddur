@@ -7566,8 +7566,8 @@ declare
   v_cancel_total int;
   v_cancel_same_day int;
   v_cancel_same_day_rate numeric;
-  -- S4 requests by hour
-  v_requests_by_hour jsonb;
+  -- REQ §13.167 (b): weekday × hour heatmap
+  v_hourly jsonb;
 begin
   if not (public.is_admin() or public.is_sadran_any(p_department_id)) then
     raise exception 'not_authorized' using errcode = 'P0001';
@@ -7907,10 +7907,13 @@ begin
   -- Unified ride-people model (20260914190000): a directly-added `ride_passengers` row is
   -- one more occupied seat on top of whatever the ride's served requests already account
   -- for (each row is exactly one person, regardless of its `seat_kind`).
+  -- REQ §13.167 (a): every named, unnamed and child row is one person; the driver named first on a
+  -- reservation is counted once (below), not again as an added passenger.
   added_totals as (
     select rp.ride_id, count(*) as added_people
     from public.ride_passengers rp
-    where rp.ride_id in (select id from sharing_rides)
+    join sharing_rides sr on sr.id = rp.ride_id
+    where rp.person_id is distinct from sr.driver_id
     group by rp.ride_id
   ),
   ride_people as (
@@ -7980,27 +7983,58 @@ begin
   v_cancel_same_day_rate := case when v_cancel_total = 0 then 0
     else round(v_cancel_same_day::numeric / v_cancel_total, 4) end;
 
-  -- S4: requests per hour of day. Always 24 entries; a request with no `depart_at` at all
-  -- (a `one_way_from` return-only request) has nothing to bucket by and is simply absent
-  -- from the count, not folded into hour 0.
-  with hour_series as (
-    select gs as hour from generate_series(0, 23) gs
+  -- REQ §13.167 (b): weekday × hour heatmap over 06:00–22:00, same shared-car ride set as `utilization`.
+  -- busyRate = average share of the shared cars on a ride (turnaround included, as in S1) during that hour
+  -- on that weekday; starts / ends = average number of rides starting / ending in that hour on that weekday.
+  with days as (
+    select gs::date as d, extract(dow from gs)::int as dow
+    from generate_series(p_from::timestamp, p_to::timestamp, interval '1 day') gs
   ),
-  req_hours as (
-    select extract(hour from (q.depart_at at time zone 'Asia/Jerusalem'))::int as hour
-    from public.requests q
-    where q.department_id = p_department_id
-      and q.status not in ('draft', 'withdrawn')
-      and q.depart_at is not null
-      and (q.depart_at at time zone 'Asia/Jerusalem')::date between p_from and p_to
+  occ as (
+    select gs as dow, (select count(*) from days d where d.dow = gs) as occurrences from generate_series(0, 6) gs
   ),
-  by_hour as (
-    select hour, count(*) as n from req_hours group by hour
+  slots as (
+    select dd.d, dd.dow, h.hour,
+      ((dd.d + make_time(h.hour, 0, 0)) at time zone 'Asia/Jerusalem') as s,
+      ((dd.d + make_time(h.hour, 0, 0) + interval '1 hour') at time zone 'Asia/Jerusalem') as e
+    from days dd cross join generate_series(6, 21) h(hour)
+  ),
+  hour_rides as (
+    select r.starts_at, r.ends_at + make_interval(mins => v_turnaround_minutes) as busy_until, r.ends_at
+    from public.rides r
+    join public.cars c on c.id = r.car_id
+    where r.department_id = p_department_id
+      and c.type = 'shared'
+      and r.status <> 'cancelled'
+      and r.starts_at < ((p_to + 1)::timestamp at time zone 'Asia/Jerusalem')
+      and r.ends_at + make_interval(mins => v_turnaround_minutes) > (p_from::timestamp at time zone 'Asia/Jerusalem')
+  ),
+  per_slot as (
+    select sl.dow, sl.hour,
+      -- hr is null on a free slot (LEFT JOIN); LEAST/GREATEST ignore NULLs, so guard it or it reads as a full hour.
+      coalesce(sum(case when hr.starts_at is null then 0
+        else greatest(0::numeric, extract(epoch from (least(hr.busy_until, sl.e) - greatest(hr.starts_at, sl.s))) / 3600.0) end), 0) as busy_hours,
+      count(*) filter (where hr.starts_at >= sl.s and hr.starts_at < sl.e) as starts,
+      count(*) filter (where hr.ends_at >= sl.s and hr.ends_at < sl.e) as ends
+    from slots sl
+    left join hour_rides hr on hr.starts_at < sl.e and (hr.busy_until > sl.s or (hr.ends_at >= sl.s and hr.ends_at < sl.e))
+    group by sl.dow, sl.hour
+  ),
+  grid as (
+    select o.dow, h.hour, o.occurrences,
+      coalesce(sum(ps.busy_hours), 0) as busy_hours, coalesce(sum(ps.starts), 0) as starts, coalesce(sum(ps.ends), 0) as ends
+    from occ o cross join generate_series(6, 21) h(hour)
+    left join per_slot ps on ps.dow = o.dow and ps.hour = h.hour
+    group by o.dow, h.hour, o.occurrences
   )
-  select coalesce(jsonb_agg(jsonb_build_object('hour', hs.hour, 'count', coalesce(bh.n, 0)) order by hs.hour), '[]'::jsonb)
-  into v_requests_by_hour
-  from hour_series hs
-  left join by_hour bh on bh.hour = hs.hour;
+  select coalesce(jsonb_agg(jsonb_build_object(
+      'dow', dow, 'hour', hour, 'occurrences', occurrences,
+      'busyRate', case when occurrences = 0 or v_shared_cars = 0 then 0 else round(busy_hours / (occurrences * v_shared_cars), 4) end,
+      'starts', case when occurrences = 0 then 0 else round(starts::numeric / occurrences, 4) end,
+      'ends', case when occurrences = 0 then 0 else round(ends::numeric / occurrences, 4) end
+    ) order by dow, hour), '[]'::jsonb)
+  into v_hourly
+  from grid;
 
   return jsonb_build_object(
     'from', p_from, 'to', p_to, 'days', v_days, 'earliest', v_earliest,
@@ -8034,7 +8068,8 @@ begin
     'cancellations', jsonb_build_object(
       'total', v_cancel_total, 'sameDay', v_cancel_same_day, 'sameDayRate', v_cancel_same_day_rate
     ),
-    'requestsByHour', v_requests_by_hour
+    'passengersCarried', v_sharing_people,
+    'hourly', v_hourly
   );
 end;
 $$;

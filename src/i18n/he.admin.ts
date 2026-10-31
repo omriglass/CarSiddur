@@ -467,11 +467,14 @@ export const heAdmin = {
         label: "נסיעות",
         help: "מספר הנסיעות השונות ברכבים המשותפים בטווח שנבחר.",
       },
+      // REQ §13.167 (a): the headline counts every rider (children and unnamed passengers too);
+      // the sub-line keeps the distinct members and drivers.
       people: {
-        label: "אנשים שנסעו",
-        headlineSuffix: "אנשים שונים נסעו",
+        label: "נוסעים",
+        headlineSuffix: "נוסעים",
+        subMembers: "חברים שונים",
         subUnit: "נהגים/ות",
-        help: "חברים שונים שנסעו כנהגים או כנוסעים בטווח שנבחר. ילדים ואורחים אינם נספרים.",
+        help: "כמה נוסעים היו בנסיעות של הטווח שנבחר — כל מבוגר, ילד ונוסע נוסף (גם בלי שם) נספר פעם אחת בכל נסיעה. מתחת: כמה חברים שונים נסעו וכמה מהם נהגו.",
       },
       policyScore: {
         label: "ציון מדיניות ממוצע",
@@ -525,9 +528,21 @@ export const heAdmin = {
       noCancellations: "אין ביטולים בטווח שנבחר",
     },
     // S4 requests-per-hour histogram.
-    requestsByHour: {
-      title: "בקשות לפי שעה ביום",
-      help: "כמות הבקשות שהוגשו, לפי שעת היציאה המבוקשת (שעון ישראל).",
+    // REQ §13.167 (b): weekday × hour heatmap (replaces "requests by hour").
+    heatmap: {
+      title: "מתי הרכבים בשימוש",
+      modes: { busy: "שעות עמוסות", starts: "שעות יציאה", ends: "שעות חזרה" },
+      units: { busy: "מהרכבים בשימוש", starts: "נסיעות יוצאות בממוצע", ends: "נסיעות חוזרות בממוצע" },
+      help: {
+        busy: "כמה מהרכבים המשותפים היו בדרך בכל שעה (כולל זמן ההתארגנות אחרי נסיעה), בממוצע לכל יום בשבוע.",
+        starts: "כמה נסיעות יצאו בכל שעה, בממוצע לכל יום בשבוע — שעה עמוסה ביציאות היא שעה טובה למצוא שותפים לנסיעה.",
+        ends: "כמה נסיעות חזרו בכל שעה, בממוצע לכל יום בשבוע.",
+      },
+      readout: "{{day}} {{hour}}: {{value}} {{unit}}",
+      average: "ממוצע",
+      hourColumn: "שעה",
+      legendLow: "מעט",
+      legendHigh: "הרבה",
     },
     empty: "אין נתונים לטווח התאריכים שנבחר",
   },
