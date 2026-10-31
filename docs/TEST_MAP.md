@@ -185,6 +185,7 @@ gap is closed.
 `src/lib/routeStops.ts` (multi-stop rides ride-detail route display, REQ §13.93, step O6).
 `src/features/rides/carHandover*`, `components/CarHandoverNotice.tsx`, `components/RideCarHandover.tsx`, `src/features/requests/rowHandover*`,
 migrations `*ride_car_neighbours*`, `supabase/tests/car_handover_notes.sql` ("be back on time" note, REQ §13.108 f).
+Migrations `*ride_move_settles_ride_change*`, `supabase/tests/ride_change_settles.sql` (REQ §13.166, O31-1: moving the requester's or a party's ride settles a pending member ride-change request — accepted when the ride reaches the asked car and hours, else cancelled `ride_moved` and re-accepted by a later matching move; the party's notice is removed).
 
 **Automated**:
 - Vitest: `npx vitest run src/features/siddur src/features/rides/carHandover.test.ts src/features/requests/rowHandover.test.ts src/components/WeekGrid.test.ts src/components/WeekGrid.gestures.test.tsx src/components/weekGridCars.test.ts`

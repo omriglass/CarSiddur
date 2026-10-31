@@ -3570,6 +3570,7 @@ export type Database = {
         Row: {
           allow_small_trunk: boolean
           car_id: string
+          closed_reason: string | null
           created_at: string
           department_id: string
           ends_at: string
@@ -3587,6 +3588,7 @@ export type Database = {
         Insert: {
           allow_small_trunk?: boolean
           car_id: string
+          closed_reason?: string | null
           created_at?: string
           department_id: string
           ends_at: string
@@ -3604,6 +3606,7 @@ export type Database = {
         Update: {
           allow_small_trunk?: boolean
           car_id?: string
+          closed_reason?: string | null
           created_at?: string
           department_id?: string
           ends_at?: string

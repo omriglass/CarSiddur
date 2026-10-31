@@ -15936,6 +15936,25 @@ $$;
 ALTER FUNCTION "public"."resume_request_template"("p_template_id" "uuid") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."ride_change_requests_clear_inbox"() RETURNS "trigger"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+begin
+  if new.status = 'cancelled' then
+    delete from public.notifications where event = 'proposal_received' and data ->> 'ride_change_id' = new.id::text;
+    delete from public.held_notices where event = 'proposal_received' and data ->> 'ride_change_id' = new.id::text;
+  else
+    update public.notifications set read_at = now(), data = coalesce(data, '{}'::jsonb) || jsonb_build_object('cleared_by', 'system')
+    where event = 'proposal_received' and read_at is null and data ->> 'ride_change_id' = new.id::text;
+  end if;
+  return new;
+end $$;
+
+
+ALTER FUNCTION "public"."ride_change_requests_clear_inbox"() OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."ride_changes_same_day"() RETURNS "trigger"
     LANGUAGE "plpgsql"
     SET "search_path" TO 'public', 'pg_temp'
@@ -16514,6 +16533,38 @@ end $$;
 
 
 ALTER FUNCTION "public"."rides_release_join_requests"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."rides_settle_ride_changes"() RETURNS "trigger"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare ch public.ride_change_requests%rowtype; r public.rides%rowtype;
+begin
+  -- respond_ride_change_before_planning moves and cancels these rides itself and settles the change.
+  if current_setting('app.audit_reason', true) = 'accepted_ride_change' then return new; end if;
+  for ch in select c.* from public.ride_change_requests c
+    where c.status = 'pending' and not c.is_planning
+      and (c.ride_id = new.id or exists (select 1 from public.ride_change_parties p where p.change_id = c.id and p.ride_id = new.id))
+    order by c.id for update loop
+    select * into r from public.rides where id = ch.ride_id;
+    if r.status <> 'cancelled' and r.car_id = ch.car_id and r.starts_at = ch.starts_at and r.ends_at = ch.ends_at then
+      update public.ride_change_requests set status = 'accepted' where id = ch.id;
+    else
+      update public.ride_change_requests set status = 'cancelled', closed_reason = 'ride_moved' where id = ch.id;
+    end if;
+  end loop;
+  if new.status <> 'cancelled' then
+    update public.ride_change_requests c set status = 'accepted', closed_reason = null
+    where c.id = (select x.id from public.ride_change_requests x where x.ride_id = new.id order by x.created_at desc, x.id desc limit 1)
+      and c.status = 'cancelled' and c.closed_reason = 'ride_moved' and not c.is_planning
+      and c.car_id = new.car_id and c.starts_at = new.starts_at and c.ends_at = new.ends_at and c.starts_at > now();
+  end if;
+  return new;
+end $$;
+
+
+ALTER FUNCTION "public"."rides_settle_ride_changes"() OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."rides_sync_request_coverage"() RETURNS "trigger"
@@ -23079,7 +23130,9 @@ CREATE TABLE IF NOT EXISTS "public"."ride_change_requests" (
     "version" integer DEFAULT 1 NOT NULL,
     "is_planning" boolean DEFAULT false NOT NULL,
     "allow_small_trunk" boolean DEFAULT false NOT NULL,
+    "closed_reason" "text",
     CONSTRAINT "ride_change_requests_check" CHECK ((("ends_at" > "starts_at") AND "public"."is_quarter_hour"("starts_at") AND ("public"."is_quarter_hour"("ends_at") OR "public"."is_same_day_end"("ends_at")))),
+    CONSTRAINT "ride_change_requests_closed_reason_check" CHECK ((("closed_reason" IS NULL) OR ("closed_reason" = 'ride_moved'::"text"))),
     CONSTRAINT "ride_change_requests_status_check" CHECK (("status" = ANY (ARRAY['pending'::"text", 'accepted'::"text", 'declined'::"text", 'cancelled'::"text"])))
 );
 
@@ -24826,6 +24879,10 @@ CREATE INDEX "ride_change_parties_ride_id_idx" ON "public"."ride_change_parties"
 
 
 
+CREATE INDEX "ride_change_ride_moved" ON "public"."ride_change_requests" USING "btree" ("ride_id") WHERE ("closed_reason" = 'ride_moved'::"text");
+
+
+
 CREATE INDEX "ride_change_week" ON "public"."ride_change_requests" USING "btree" ("department_id", "week_start", "status");
 
 
@@ -25785,6 +25842,10 @@ CREATE OR REPLACE TRIGGER "requests_within_week" BEFORE INSERT OR UPDATE ON "pub
 
 
 
+CREATE OR REPLACE TRIGGER "ride_change_requests_clear_inbox" AFTER UPDATE OF "status" ON "public"."ride_change_requests" FOR EACH ROW WHEN ((("old"."status" = 'pending'::"text") AND ("new"."status" <> 'pending'::"text"))) EXECUTE FUNCTION "public"."ride_change_requests_clear_inbox"();
+
+
+
 CREATE OR REPLACE TRIGGER "ride_changes_same_day" BEFORE INSERT OR UPDATE ON "public"."ride_change_requests" FOR EACH ROW EXECUTE FUNCTION "public"."ride_changes_same_day"();
 
 
@@ -25882,6 +25943,10 @@ CREATE OR REPLACE TRIGGER "rides_release_join_requests" AFTER UPDATE OF "status"
 
 
 CREATE CONSTRAINT TRIGGER "rides_request_day" AFTER INSERT OR UPDATE ON "public"."rides" DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION "public"."check_ride_request_day"();
+
+
+
+CREATE OR REPLACE TRIGGER "rides_settle_ride_changes" AFTER UPDATE OF "car_id", "starts_at", "ends_at", "status" ON "public"."rides" FOR EACH ROW WHEN ((("old"."car_id" IS DISTINCT FROM "new"."car_id") OR ("old"."starts_at" IS DISTINCT FROM "new"."starts_at") OR ("old"."ends_at" IS DISTINCT FROM "new"."ends_at") OR ("old"."status" IS DISTINCT FROM "new"."status"))) EXECUTE FUNCTION "public"."rides_settle_ride_changes"();
 
 
 
@@ -30188,6 +30253,11 @@ GRANT ALL ON FUNCTION "public"."resume_request_template"("p_template_id" "uuid")
 
 
 
+REVOKE ALL ON FUNCTION "public"."ride_change_requests_clear_inbox"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."ride_change_requests_clear_inbox"() TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."ride_changes_same_day"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."ride_changes_same_day"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."ride_changes_same_day"() TO "service_role";
@@ -30343,6 +30413,11 @@ GRANT ALL ON FUNCTION "public"."rides_refresh_flags"() TO "service_role";
 
 REVOKE ALL ON FUNCTION "public"."rides_release_join_requests"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."rides_release_join_requests"() TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."rides_settle_ride_changes"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."rides_settle_ride_changes"() TO "service_role";
 
 
 

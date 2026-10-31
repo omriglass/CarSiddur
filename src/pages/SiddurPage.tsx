@@ -496,7 +496,8 @@ export function SiddurPage() {
         <h1 className="sr-only">{t("screen.siddur.title")}</h1>
         <WeekSwitcherTitle resolution={thisNextWeek} activeWeekStart={weekStart} onSelect={(next) => goTo(departmentId as string, next)} onArchive={goToArchive} />
         <div className="flex items-center gap-2">
-          {canDragSomething ? <EditModeButton on={editMode} onChange={setEditMode} /> : null}
+          {/* O30-2: the phone's list view drags nothing — the pencil only with the table. */}
+          {canDragSomething && tableView ? <EditModeButton on={editMode} onChange={setEditMode} /> : null}
           {departmentId ? <LongRangeMenu departmentId={departmentId} /> : null}
           <SiddurDisplayMenu
             table={tableView}
@@ -545,7 +546,8 @@ export function SiddurPage() {
         <>
           {/* Desktop: the same display menu as mobile; "show early hours" lives only here. */}
           <div className="hidden md:flex md:justify-end md:gap-2">
-            {canDragSomething ? <EditModeButton on={editMode} onChange={setEditMode} /> : null}
+            {/* Below lg without the table this is the list view (see the day list below). */}
+            {canDragSomething ? <span className={tableView ? "contents" : "hidden lg:contents"}><EditModeButton on={editMode} onChange={setEditMode} /></span> : null}
             {departmentId ? <LongRangeMenu departmentId={departmentId} /> : null}
             <SiddurDisplayMenu
               table={tableView}

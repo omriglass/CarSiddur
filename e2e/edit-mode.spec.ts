@@ -72,6 +72,11 @@ test("a siddur ride drags only after a long press or in edit mode", { tag: ["@si
     await expect(pencil).toHaveAttribute("data-on", "true");
     await dragDown(page, page.locator(`[data-ride-id="${ride!.id}"]:visible`), 80);
     await expect.poll(startsAt).toBe("2041-03-17T10:00:00.000Z");
+
+    // O30-2: the phone's list view drags nothing, so it has no pencil (the table view keeps it).
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect(page.getByTestId("siddur-desktop-week-switcher")).toBeHidden();
+    await expect(page.getByTestId("edit-mode-button").locator("visible=true")).toHaveCount(0);
   } finally {
     await member1.context.close().catch(() => undefined);
     await service.from("ride_requests").delete().eq("ride_id", ride!.id);
