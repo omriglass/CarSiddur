@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Locator } from "@playwright/test";
 import { publishedFixtureWeek } from "./published-week";
 import { he } from "../src/i18n/he";
 import { NEVO_DEPARTMENT_ID, newSignedInPage, SEEDED_USERS, serviceRoleClient, openRideDetails } from "./helpers";
@@ -38,6 +38,22 @@ test("members resize owned rides and resolve a shadow collision through explicit
     const member1 = await newSignedInPage(browser, SEEDED_USERS.member1);
     contexts.push(member1.context);
     const page = member1.page;
+    /** Drags from the middle of `handle` downwards until the drag preview reads `preview`, then drops. */
+    async function dragUntil(handle: Locator, preview: string) {
+      await handle.scrollIntoViewIfNeeded();
+      const box = (await handle.boundingBox())!;
+      const x = box.x + box.width / 2;
+      let y = box.y + box.height / 2;
+      await page.mouse.move(x, y);
+      await page.mouse.down();
+      for (let step = 0; step < 400; step += 1) {
+        y += 2;
+        await page.mouse.move(x, y);
+        if (((await page.locator("[data-drag-preview]").textContent().catch(() => "")) ?? "").includes(preview)) break;
+      }
+      await expect(page.locator("[data-drag-preview]")).toContainText(preview);
+      await page.mouse.up();
+    }
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto(`/siddur/${NEVO_DEPARTMENT_ID}/${week}`);
     const own = page.locator(`[data-ride-id="${rideIds[0]}"]:visible`);
@@ -45,17 +61,17 @@ test("members resize owned rides and resolve a shadow collision through explicit
     await openRideDetails(page, other);
     await expect(page.getByText(he.rideEditing.edit, { exact: true })).toHaveCount(0);
     await page.keyboard.press("Escape");
+    // REQ §13.171: my own ride's sheet is a summary (its edit is the form) — hours change on the grid, in edit mode.
     await openRideDetails(page, own);
-    await page.getByRole("dialog").getByLabel(he.field.return, { exact: true }).fill("11:30");
-    await page.getByRole("dialog").getByRole("button", { name: he.common.save, exact: true }).click();
-    await expect(page.getByRole("dialog")).not.toBeVisible();
-    const { data: resized } = await service.from("rides").select("ends_at").eq("id", rideIds[0]).single();
-    expect(new Date(resized!.ends_at).toISOString()).toBe("2041-01-06T09:30:00.000Z");
+    await expect(page.getByTestId("ride-edit-request")).toBeVisible();
+    await expect(page.getByRole("dialog").getByLabel(he.field.return, { exact: true })).toHaveCount(0);
+    await page.keyboard.press("Escape");
+    await page.getByTestId("edit-mode-button").locator("visible=true").click();
+    await dragUntil(own.locator(".bottom-0"), "10:00–11:30");
+    await expect.poll(async () => new Date((await service.from("rides").select("ends_at").eq("id", rideIds[0]).single()).data!.ends_at).toISOString())
+      .toBe("2041-01-06T09:30:00.000Z");
 
-    await openRideDetails(page, own);
-    await page.getByRole("dialog").getByLabel(he.field.return, { exact: true }).fill("14:00");
-    await page.getByRole("dialog").getByLabel(he.field.depart, { exact: true }).fill("12:00");
-    await page.getByRole("dialog").getByRole("button", { name: he.common.save, exact: true }).click();
+    await dragUntil(own, "12:00–13:30");
     await expect(page.getByRole("heading", { name: he.rideEditing.collisionTitle })).toBeVisible();
     await page.getByRole("button", { name: he.rideEditing.acknowledge }).click();
     await expect(page.locator('[data-ride-id^="change:"]')).toBeVisible();

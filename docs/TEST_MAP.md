@@ -184,12 +184,13 @@ gap is closed.
 `e2e/siddur-mobile.spec.ts`, `siddur-desktop.spec.ts` (REQ §13.111 b: week switcher + car names without sideways overflow at 1280 px), `ride-editing.spec.ts`, `edit-mode.spec.ts` (REQ §13.165: off, a drag moves nothing and the second try hints; a long press drags; the pencil drags at once — unit `WeekGrid.holdToDrag.test.tsx`, `features/rides/editMode.test.ts`; paths `src/components/holdGesture.ts`, `src/features/rides/editMode.ts`, `EditModeButton.tsx`), `member.spec.ts`, `car-swap.spec.ts`, `car-handover.spec.ts` ("be back on time" note);
 `src/features/rides/servedOf.ts`, `src/features/rides/components/RideRouteStops.tsx`,
 `src/lib/routeStops.ts` (multi-stop rides ride-detail route display, REQ §13.93, step O6).
+`src/features/rides/driverWanted*`, `components/DriverWantedButton.tsx`, `components/VolunteerDriverPanel.tsx`, `src/pages/RideOfferPage.tsx`, `e2e/driver-wanted.spec.ts` (REQ §13.170: "who can drive?" on WhatsApp for a ride with no driver, `/ride/:id` "אני אקח"). The ride sheet's summary mode for an editable ride (REQ §13.171) is `RideDetailSheet.tsx` (`ride-editing.spec.ts` resizes on the grid now, `anyone-edits-rides.spec.ts` opens the form from it).
 `src/features/rides/carHandover*`, `components/CarHandoverNotice.tsx`, `components/RideCarHandover.tsx`, `src/features/requests/rowHandover*`,
 migrations `*ride_car_neighbours*`, `supabase/tests/car_handover_notes.sql` ("be back on time" note, REQ §13.108 f).
 Migrations `*ride_move_settles_ride_change*`, `supabase/tests/ride_change_settles.sql` (REQ §13.166, O31-1: moving the requester's or a party's ride settles a pending member ride-change request — accepted when the ride reaches the asked car and hours, else cancelled `ride_moved` and re-accepted by a later matching move; the party's notice is removed).
 
 **Automated**:
-- Vitest: `npx vitest run src/features/siddur src/features/rides/carHandover.test.ts src/features/requests/rowHandover.test.ts src/components/WeekGrid.test.ts src/components/WeekGrid.gestures.test.tsx src/components/weekGridCars.test.ts`
+- Vitest: `npx vitest run src/features/siddur src/features/rides/driverWanted.test.ts src/features/rides/carHandover.test.ts src/features/requests/rowHandover.test.ts src/components/WeekGrid.test.ts src/components/WeekGrid.gestures.test.tsx src/components/weekGridCars.test.ts`
 - SQL: `selected_day_publication.sql`, `day_car_swap.sql`, `car_handover_notes.sql`, `my_upcoming_rides.sql` (the "my rides" read: same visibility as the old people filter), `week_board_rides.sql` (the week read of siddur/board: identical rows and content to `v_board_rides` for every role and every week in the database)
 - Playwright: `npx playwright test --grep "@siddur"`
 

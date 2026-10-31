@@ -695,7 +695,7 @@ export function HomePage() {
         editor={selectedMyRide?.needs_driver && selectedMyRide.status !== "cancelled" && !profileQuery.data?.does_not_drive ? (
           // R13M5: a passenger whose driver cancelled can take the wheel from "my rides" too.
           <VolunteerDriverPanel ride={selectedMyRide} onDone={() => setSelectedMyRide(null)} />
-        ) : editableRide && ownsEditableRide ? (
+        ) : editableRide && ownsEditableRide && !selectedRideEditHref ? (
           <MemberRideEditor
             key={`${editableRide.id}:${editableRide.version}:editor`}
             ride={editableRide}

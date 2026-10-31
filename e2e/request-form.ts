@@ -41,6 +41,7 @@ export const FIXTURE_WEEKS = {
   memberFallback: "2045-01-29",
   anyoneEdits: "2045-02-05",
   freedCar: "2045-02-12",
+  driverWanted: "2045-02-19",
 } as const;
 
 /** `yyyy-MM-dd` of the `index`-th day (0 = Sunday) of a week. */

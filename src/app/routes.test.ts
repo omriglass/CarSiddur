@@ -32,6 +32,7 @@ const ROUTE_PATTERNS = [
   "/inbox",
   "/changelog",
   "/p/:token",
+  "/ride/:rideId",
   "/privacy",
   "/terms",
   "/cars",
@@ -167,6 +168,12 @@ describe("paths.requests", () => {
       "/requests/new?week=2027-01-10&day=2027-01-12&waitlist=1",
     );
     expect(paths.requests.new({ template: "template-1" })).toBe("/requests/new?template=template-1");
+  });
+});
+
+describe("paths.ride", () => {
+  it("matches /ride/:rideId", () => {
+    expectRoutable(paths.ride("ride-1"));
   });
 });
 

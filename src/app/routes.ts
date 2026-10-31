@@ -106,6 +106,9 @@ export const paths = {
     edit: (requestId: string) => `/requests/${requestId}/edit`,
   },
 
+  /** `/ride/:rideId` — one ride's details with "אני אקח" for a ride with no driver (REQ §13.170, the WhatsApp link). */
+  ride: (rideId: string) => `/ride/${rideId}`,
+
   /** `/p/:token` — no-sign-in-required proposal answering (ARCHITECTURE.md §8). */
   proposalToken: (token: string) => `/p/${token}`,
 

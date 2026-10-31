@@ -24,7 +24,7 @@ import { NotFoundPage } from "@/pages/NotFoundPage";
 import { OnboardingPage } from "@/pages/OnboardingPage";
 import { PendingPage } from "@/pages/PendingPage";
 import { RequestOverlayLayout } from "./RequestOverlayLayout";
-import { ChangelogPage, InboxPage, LegalPage, NewRequestPage, ProfilePage, ProposalTokenPage, SiddurPage } from "./lazyPages";
+import { ChangelogPage, InboxPage, LegalPage, NewRequestPage, ProfilePage, ProposalTokenPage, RideOfferPage, SiddurPage } from "./lazyPages";
 
 // Route list from UX_FLOWS.md §2.1, nested under the auth guards (features/auth/guards.tsx):
 // RequireAuth (no session -> /login) > RequireApproved (not approved -> /pending) >
@@ -69,6 +69,7 @@ export const router = createBrowserRouter([
                       { path: "/inbox", element: <Suspense fallback={<GuardLoading />}><InboxPage /></Suspense> },
                       { path: "/profile", element: <Suspense fallback={<GuardLoading />}><ProfilePage /></Suspense> },
                       { path: "/changelog", element: <Suspense fallback={<GuardLoading />}><ChangelogPage /></Suspense> },
+                      { path: "/ride/:rideId", element: <Suspense fallback={<GuardLoading />}><RideOfferPage /></Suspense> },
                       ...memberRoutes,
                       {
                         element: <RequireSadran />,

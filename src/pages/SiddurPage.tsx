@@ -753,7 +753,7 @@ export function SiddurPage() {
         editRequestLinks={editLinksForRide}
         editor={selectedRide?.needs_driver && canEditWeek && selectedRide.ends_at && Date.parse(selectedRide.ends_at) > now.getTime() ? (
           <VolunteerDriverPanel ride={selectedRide} onDone={() => setSelectedRideId(null)} />
-        ) : selectedRide?.id && ownsEditableRide(selectedRide.id) ? <MemberRideEditor key={`${selectedRide.id}:${selectedRide.version}:editor`} ride={selectedRide} cars={carsQuery.data ?? []} viewerId={profileId} saving={rideMoves.saving} onSave={(move) => void saveMove(move)} /> : undefined}
+        ) : selectedRide?.id && ownsEditableRide(selectedRide.id) && !editLinksForRide.length ? <MemberRideEditor key={`${selectedRide.id}:${selectedRide.version}:editor`} ride={selectedRide} cars={carsQuery.data ?? []} viewerId={profileId} saving={rideMoves.saving} onSave={(move) => void saveMove(move)} /> : undefined}
       />
 
       <WaitlistGroupSheet

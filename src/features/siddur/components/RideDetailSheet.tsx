@@ -128,6 +128,9 @@ export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = 
   ].filter(Boolean).join(", ");
   const moveCar = moveToCarOptions.find((option) => option.id === moveCarId);
   const rideOwnerName = ride ? (ride.driver_name ?? served.find((entry) => entry.requester)?.requester ?? "") : "";
+  // REQ §13.171: a ride I can edit is a read-only summary; "עריכה" opens the form, where everything is edited at once.
+  const summary = editRequestLinks.length > 0;
+  const viewerRides = !!ride && !!viewerId && peopleOf(ride).some((person) => person.person_id === viewerId);
 
   return (
     <Sheet open={!!ride} onOpenChange={onOpenChange}>
@@ -168,7 +171,7 @@ export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = 
 
               {carModeLabel(ride, viewerId) ? <p className="text-muted-foreground">{carModeLabel(ride, viewerId)}</p> : null}
               {routeHasIntermediates(parseRideRoute(ride.route)) ? <RideRoute route={ride.route} served={served} /> : <RideRouteStops served={served} />}
-              {canEditPublicNotes && ride.id && ride.version != null ? (
+              {canEditPublicNotes && !summary && ride.id && ride.version != null ? (
                 <RidePublicNotesEditor key={`${ride.id}:${ride.version}:notes`} rideId={ride.id} expectedVersion={ride.version} initialNotes={ride.notes} departmentId={ride.department_id ?? ""} weekStart={ride.week_start ?? ""} />
               ) : ride.notes ? <p className="whitespace-pre-wrap break-words">{ride.notes}</p> : null}
               {/* Owner 2026-10-12: who rides is listed once, in the passenger list below — here only the requests' descriptions. */}
@@ -192,7 +195,7 @@ export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = 
                 rideId={ride.id}
                 expectedVersion={ride.version}
                 people={peopleOf(ride)}
-                canManagePeople={showAddPassengers}
+                canManagePeople={showAddPassengers && !summary}
                 rideCancelled={ride.status === "cancelled"}
                 departmentId={ride.department_id}
                 weekStart={ride.week_start}
@@ -200,7 +203,7 @@ export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = 
 
               {unnamedLine ? <p className="text-muted-foreground">{unnamedLine}</p> : null}
 
-              {showAddPassengers && ride.id && ride.version != null ? (
+              {showAddPassengers && !(summary && viewerRides) && ride.id && ride.version != null ? (
                 <AddPassengersDialog
                   key={`${ride.id}:${ride.version}:add-passengers`}
                   rideId={ride.id}
@@ -210,12 +213,6 @@ export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = 
                   people={peopleOf(ride)}
                 />
               ) : null}
-
-              {editRequestLinks.map((link) => (
-                <Button key={link.href} asChild className="w-full" size="lg" variant="outline">
-                  <Link to={link.href} data-testid="ride-edit-request">{link.label}</Link>
-                </Button>
-              ))}
 
               {onMoveToCar && moveToCarOptions.length ? (
                 <>
@@ -235,6 +232,12 @@ export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = 
                   />
                 </>
               ) : null}
+
+              {editRequestLinks.map((link) => (
+                <Button key={link.href} asChild className="w-full" size="lg">
+                  <Link to={link.href} data-testid="ride-edit-request">{link.label}</Link>
+                </Button>
+              ))}
 
               {onRemoveMe ? (
                 <>

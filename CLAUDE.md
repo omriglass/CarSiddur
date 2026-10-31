@@ -182,6 +182,7 @@ e2e/
   export.spec.ts                 Sadran downloads the week as a Hebrew Excel workbook
   freed-slot.spec.ts             freed slot, live week, single candidate
   freed-car-options.spec.ts      REQ §13.168: cancel → edge function → the Sadran's ranked options; a candidate steps out, the plan-B member gets the car
+  driver-wanted.spec.ts          REQ §13.170: a driverless הקפצה asks on WhatsApp who can drive (rider, day, place, hour, link); `/ride/<id>` "אני אקח" takes the wheel
   anyone-edits-rides.spec.ts     REQ §13.169: department switch on — a member edits another member's ride from the siddur, moves it to the driving rider; one merged `ride_edited` notice
   merge-verdict.spec.ts          merge popup enables/refuses legs from the server's merge_preview verdict (REQ §13.108 e)
   large-trunk-waiver.spec.ts     board: dropping a large-luggage request on a small car asks "לשבץ בכל זאת?"; confirm marks the waiver, decline leaves it unmet (REQ §13.111 a)

@@ -19,3 +19,4 @@ export const ProfilePage = lazy(() => import("@/pages/ProfilePage").then((m) => 
 export const ChangelogPage = lazy(() => import("@/pages/ChangelogPage").then((m) => ({ default: m.ChangelogPage })));
 export const ProposalTokenPage = lazy(() => import("@/pages/ProposalTokenPage").then((m) => ({ default: m.ProposalTokenPage })));
 export const LegalPage = lazy(() => import("@/pages/LegalPage").then((m) => ({ default: m.LegalPage })));
+export const RideOfferPage = lazy(() => import("@/pages/RideOfferPage").then((m) => ({ default: m.RideOfferPage })));
