@@ -90,6 +90,9 @@ export const heSadran = {
     missingDriverPublish: "יש נסיעות שממתינות לנהג/ת. הן יסומנו באדום גם בסידור שיפורסם.",
   },
   sadranBoard: {
+    // REQ §13.168 (c): freed cars waiting for the Sadran's decision.
+    freedPendingBanner: "{{count}} רכבים שהתפנו מחכים להחלטה שלך — אין בחירה אחת ברורה",
+    freedPendingOpen: "לבחירה",
     driverOverlapWarning: "הנהג/ת בנסיעה נוספת באותן שעות",
     autoFill: {
       title: "השלמה אוטומטית",
@@ -376,8 +379,24 @@ export const heSadran = {
   },
   sadranClaims: {
     empty: "אין בקשות שנויות במחלוקת השבוע",
-    claimedAt: "ביקש/ה בחזרה ב-{{time}}",
-    approveConfirm: "שאר המבקשים יקבלו הודעה שהרכב נמסר",
+    // REQ §13.168: the freed car's options, the system's pick, give / discuss.
+    optionsTitle: "אין בחירה אחת ברורה — מה עושים עם הרכב?",
+    recommended: "המלצת המערכת",
+    planB: "כרגע בתוכנית ב׳",
+    steppedOut: "ויתר/ה הפעם",
+    placedElsewhere: "כבר קיבל/ה רכב אחר",
+    give: "תן/י את הרכב",
+    giveConfirm: "הרכב יינתן ל{{names}}. שאר המועמדים יקבלו הודעה.",
+    giveConfirmPlanB: "תוכנית ב׳ של {{names}} תשוחרר.",
+    moreOptions: "עוד {{count}} אפשרויות",
+    moreOptionOne: "עוד אפשרות אחת",
+    fewerOptions: "פחות אפשרויות",
+    discussTitle: "או: העבר/י כמה מהם לדיון ביניהם",
+    discussHint: "מי שיסומן ייכנס ל״בדיון״ על הרכב, כמו ברשימת ההמתנה; תוכנית ב׳ נשארת עד שמישהו נבחר.",
+    discuss: "העבר/י לדיון ({{count}})",
+    discussConfirm: "{{names}} ייכנסו לדיון על הרכב. האחרים יקבלו הודעה שהרכב לא אצלם.",
+    given: "הרכב נמסר",
+    discussed: "נפתח דיון על הרכב",
   },
   sadranPublish: {
     versionLabel: "גרסה {{n}}",

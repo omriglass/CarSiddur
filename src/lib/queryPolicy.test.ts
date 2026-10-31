@@ -66,7 +66,7 @@ describe("query cache policy: key factories", () => {
     heldNotices: "live", carStartLocations: "live", mergePreviews: "live", mergePreview: "live", placeTravel: "live",
     seriesLegs: "live", rideTypes: "catalog", departmentSettings: "catalog", activePolicy: "catalog",
     maintenanceBlocks: "live", solverRuns: "live", proposals: "live", proposalParties: "live", freedOffers: "live",
-    freedClaims: "live", siddurVersions: "live", auditLog: "live", departmentMembers: "permissions",
+    freedCandidates: "live", siddurVersions: "live", auditLog: "live", departmentMembers: "permissions",
     whatsappTemplates: "catalog", mySadranDepartments: "permissions", policyOptions: "catalog", profilesByIds: "live",
     publicationConflicts: "live", publicationReadiness: "live", switchableWeeks: "permissions", reopenFingerprint: "live",
     excelExport: "live", proposalHostRide: "live",

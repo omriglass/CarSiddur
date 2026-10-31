@@ -20,7 +20,7 @@ import { corsHeaders, handleCorsPreflight } from '../_shared/cors.ts';
 import { buildWeekDays, minutesToSlots, toSlotCeil, toSlotFloor, zonedMidnightMs } from '../_shared/tz.ts';
 import { errorResponse, jsonResponse, optionalEnv, timingSafeEqual } from '../_shared/env.ts';
 import { getServiceRoleClient } from '../_shared/supabaseAdmin.ts';
-import { buildTimelines, matchFreedSlot } from '../_shared/solver.js';
+import { buildTimelines, freedSlotOptions, matchFreedSlot } from '../_shared/solver.js';
 
 // NOTE: types below are a hand-written, intentionally minimal mirror of the
 // subset of src/solver/types.ts this function constructs (Car, Destination,
@@ -143,6 +143,8 @@ interface FreedSlotInput {
 }
 
 const DEFAULT_LOOKBACK_WEEKS = 3;
+/** REQ §13.168: the offer keeps the best options only (the Sadran sees a few, the rest behind a "more" link). */
+const MAX_STORED_OPTIONS = 30;
 
 /** Parses the six domain values of requests.flex_* (interval columns) as PostgREST/postgres-style text. */
 function parseFlexInterval(raw: string | null | undefined): number | 'day' {
@@ -237,8 +239,8 @@ async function handle(req: Request, onOffer: (id: string) => void): Promise<Resp
   }
   const priorityRequestIds = (priorityRows ?? []) as string[];
 
-  async function resolve(ranked: { request_id: string; requester_id: string }[]) {
-    const { error } = await client.rpc('resolve_freed_offer', { p_offer_id: offer.id, p_ranked_candidates: ranked });
+  async function resolve(ranked: { request_id: string; requester_id: string }[], options: unknown[] = []) {
+    const { error } = await client.rpc('resolve_freed_offer', { p_offer_id: offer.id, p_ranked_candidates: ranked, p_options: options });
     if (error) throw new Error(error.message);
   }
 
@@ -261,6 +263,7 @@ async function handle(req: Request, onOffer: (id: string) => void): Promise<Resp
     { data: carStartLocationRows },
     { data: travelRows },
     { data: stopRows },
+    { data: alternativeRows },
   ] = await Promise.all([
       client
         .from('requests')
@@ -269,7 +272,7 @@ async function handle(req: Request, onOffer: (id: string) => void): Promise<Resp
             'origin_id, origin_text, trip_type, ' +
             'adults, child_seats, boosters, has_luggage, needs_car_at_destination, ' +
             'flex_depart_early, flex_depart_late, flex_return_early, flex_return_late, duration_locked, ' +
-            'submitted_at, created_at, is_late, manual_boost, manual_boost_reason, ride_types(code)',
+            'submitted_at, created_at, is_late, manual_boost, manual_boost_reason, served_by_alternative, ride_types(code)',
         )
         .in('id', candidateIds),
       client.from('cars').select('id, name, type, owner_id, features, base_location_id').eq('id', offer.car_id).maybeSingle(),
@@ -299,11 +302,31 @@ async function handle(req: Request, onOffer: (id: string) => void): Promise<Resp
       client.rpc('place_travel_for_week', { p_department_id: offer.department_id, p_week_start: offer.week_start }),
       // REQUIREMENTS §13.93 "Multi-stop rides" (ORIGINS_PLAN §6.1): candidates' own stops.
       client.from('request_stops').select('request_id, leg, position, place_id').in('request_id', candidateIds),
+      // REQ §13.168: a candidate served by its plan B competes with its main trip (kept whole in original_main).
+      client.from('request_alternatives').select('request_id, original_main').in('request_id', candidateIds).not('original_main', 'is', null),
     ]);
 
   if (!carRow || !department || !settings) {
     return errorResponse(500, 'missing_reference_data', corsHeaders);
   }
+
+  // REQ §13.168: a plan-B candidate is read as its main trip — times, trip type, destination, flexibility, stops.
+  const mainById = new Map(
+    ((alternativeRows ?? []) as { request_id: string; original_main: Record<string, unknown> }[]).map((a) => [a.request_id, a.original_main]),
+  );
+  const planBIds = new Set<string>();
+  for (const r of (requestRows ?? []) as Record<string, unknown>[]) {
+    const main = r.served_by_alternative ? mainById.get(r.id as string) : undefined;
+    if (!main) continue;
+    planBIds.add(r.id as string);
+    for (const key of ['depart_at', 'return_at', 'trip_type', 'trip_shape', 'destination_id', 'destination_text', 'needs_car_at_destination',
+      'flex_depart_early', 'flex_depart_late', 'flex_return_early', 'flex_return_late', 'duration_locked']) {
+      if (key in main) r[key] = main[key] === '' ? null : main[key];
+    }
+  }
+  const mainStops = ((alternativeRows ?? []) as { request_id: string; original_main: { stops?: { leg: 'out' | 'return'; position: number; place_id: string | null }[] } }[])
+    .filter((a) => planBIds.has(a.request_id))
+    .flatMap((a) => (a.original_main.stops ?? []).map((st) => ({ request_id: a.request_id, leg: st.leg, position: st.position, place_id: st.place_id ?? null })));
 
   const homeLocationId = department.home_destination_id as string;
 
@@ -452,7 +475,11 @@ async function handle(req: Request, onOffer: (id: string) => void): Promise<Resp
   // counts only when its request has a return (the table has no `active` column; views compute it).
   const hasReturnById = new Set(((requestRows ?? []) as { id: string; return_at?: string | null }[])
     .filter((r) => r.return_at != null).map((r) => r.id));
-  for (const s of (stopRows ?? []) as { request_id: string; leg: 'out' | 'return'; position: number; place_id: string | null }[]) {
+  const candidateStops = [
+    ...((stopRows ?? []) as { request_id: string; leg: 'out' | 'return'; position: number; place_id: string | null }[]).filter((st) => !planBIds.has(st.request_id)),
+    ...mainStops,
+  ];
+  for (const s of candidateStops) {
     if (s.leg === 'return' && !hasReturnById.has(s.request_id)) continue;
     const list = stopsByRequestId.get(s.request_id) ?? [];
     list.push(s);
@@ -517,14 +544,36 @@ async function handle(req: Request, onOffer: (id: string) => void): Promise<Resp
   const ranked = matchFreedSlot(matchInput, { priorityRequestIds });
   const rankedForRpc = ranked.map((c) => ({ request_id: c.requestId, requester_id: requesterById.get(c.requestId) ?? '' }));
 
-  await resolve(rankedForRpc);
+  // REQ §13.168: every way to use the gap — one request, or several one after another at their own times (that is
+  // how SQL places them), ranked by the policy score. Stored on the offer for the Sadran when it is not obvious.
+  const requestById = new Map(solverRequests.map((sr) => [sr.id, sr]));
+  const optionItems = ranked.flatMap((c) => {
+    const sr = requestById.get(c.requestId);
+    if (sr?.departureMs === undefined || sr.returnMs === undefined) return [];
+    return [{
+      requestId: c.requestId,
+      window: { start: toSlotFloor(sr.departureMs, weekStartMs), end: toSlotCeil(sr.returnMs, weekStartMs) },
+      score: c.score,
+      planB: planBIds.has(c.requestId),
+    }];
+  });
+  const options = freedSlotOptions(optionItems, freedWindow, bufferSlots).slice(0, MAX_STORED_OPTIONS).map((o) => ({
+    request_ids: o.requestIds,
+    score: Math.round(o.score * 10000) / 10000,
+    unused_minutes: o.unusedSlots * 15,
+    plan_b: o.planB,
+    recommended: o.recommended,
+  }));
+
+  await resolve(rankedForRpc, options);
 
   return jsonResponse(
     {
       offerId: offer.id,
-      outcome: rankedForRpc.length === 0 ? 'closed' : rankedForRpc.length === 1 ? 'auto_assigned' : 'pending_approval',
+      outcome: rankedForRpc.length === 0 ? 'closed' : rankedForRpc.length === 1 && planBIds.size === 0 ? 'auto_assigned' : 'pending_approval',
       candidates: rankedForRpc.length,
       ranked: ranked.map((c) => ({ requestId: c.requestId, score: c.score, reason: c.reason })),
+      options: options.length,
     },
     { headers: corsHeaders },
   );

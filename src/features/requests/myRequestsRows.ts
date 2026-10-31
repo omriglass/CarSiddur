@@ -165,7 +165,7 @@ export function groupByWeek(rows: readonly DisplayRow[]): { weekStart: string; d
 export function confirmDialogLabel(action: ConfirmAction | null): string {
   if (!action) return "";
   if (action.kind === "withdrawAll") return he.requestsList.withdrawAll;
-  if (action.kind === "withdrawFreedClaim") return he.requestsList.withdrawClaim;
+  if (action.kind === "withdrawFreedClaim") return he.freedSlot.stepOut;
   return action.kind === "withdraw" ? he.requestsList.withdraw : he.requestsList.cancelRide;
 }
 

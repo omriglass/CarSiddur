@@ -154,21 +154,21 @@ describe('freedSlotOptions (REQ §13.168)', () => {
       ['planB7to17'],
       ['wait19to22'],
     ]);
-    expect(options[0].recommended).toBe(true);
+    expect(options[0]?.recommended).toBe(true);
     expect(options.filter((o) => o.recommended)).toHaveLength(1);
-    expect(options[1].planB).toBe(1);
+    expect(options[1]?.planB).toBe(1);
   });
 
   it('needs the turnaround between two requests of a chain', () => {
     const tight = freedSlotOptions([item('A', 28, 40, 1), item('B', 41, 50, 1)], gap, 2);
     expect(tight.some((o) => o.requestIds.length === 2)).toBe(false);
     const ok = freedSlotOptions([item('A', 28, 40, 1), item('B', 42, 50, 1)], gap, 2);
-    expect(ok[0].requestIds).toEqual(['A', 'B']);
+    expect(ok[0]?.requestIds).toEqual(['A', 'B']);
   });
 
   it('has no size limit on a chain and leaves out what does not fit the gap', () => {
     const four = freedSlotOptions([item('A', 28, 32, 1), item('B', 34, 38, 1), item('C', 40, 44, 1), item('D', 46, 50, 1), item('late', 90, 100, 5)], gap, 2);
-    expect(four[0].requestIds).toEqual(['A', 'B', 'C', 'D']);
+    expect(four[0]?.requestIds).toEqual(['A', 'B', 'C', 'D']);
     expect(four.some((o) => o.requestIds.includes('late'))).toBe(false);
   });
 

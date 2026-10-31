@@ -79,6 +79,20 @@ begin
   assert (select array_agg(request_id order by request_id) from public.freed_slot_candidates(off)) = (select array_agg(x order by x) from unnest(array[qw1, qw2, qp]) x),
     format('TEST 1 FAILED: candidates %s', (select array_agg(request_id) from public.freed_slot_candidates(off)));
 
+  -- the edge function probes as the service role (no auth.uid()): a plan-B candidate is still placeable (090400)
+  perform set_config('request.jwt.claims', '', true);
+  assert public.freed_candidate_placeable(off, qp), 'TEST 1 FAILED: a plan-B candidate is placeable when probed with no signed-in user';
+  perform set_config('request.jwt.claims', jsonb_build_object('sub', sadran, 'role', 'authenticated')::text, true);
+  -- a plan B whose chauffeur ride still waits for a driver ('waitlisted') is a candidate too, with its main trip (090400)
+  begin
+    perform set_config('app.system_status_transition', 'on', true);
+    update public.requests set status = 'waitlisted', status_reason = 'UNMET_NEEDS_DRIVER' where id = qp;
+    perform set_config('app.system_status_transition', 'off', true);
+    assert exists (select 1 from public.freed_slot_candidates(off) where request_id = qp), 'TEST 1 FAILED: a plan B waiting for its driver is a candidate';
+    raise exception 'fco_rollback';
+  exception when others then if sqlerrm <> 'fco_rollback' then raise; end if;
+  end;
+
   ranked := jsonb_build_array(jsonb_build_object('request_id', qw1, 'requester_id', m103), jsonb_build_object('request_id', qp, 'requester_id', m101),
     jsonb_build_object('request_id', qw2, 'requester_id', m104));
   opts := jsonb_build_array(
@@ -87,6 +101,17 @@ begin
     jsonb_build_object('request_ids', jsonb_build_array(qw1), 'score', 0.7, 'unused_minutes', 900, 'plan_b', 0, 'recommended', false),
     jsonb_build_object('request_ids', jsonb_build_array(qp), 'score', 0.6, 'unused_minutes', 420, 'plan_b', 1, 'recommended', false),
     jsonb_build_object('request_ids', jsonb_build_array(qw2), 'score', 0.5, 'unused_minutes', 840, 'plan_b', 0, 'recommended', false));
+
+  -- TEST 1b (rolled back): when the recommended option is dropped (a candidate not placeable), the best remaining one is recommended
+  begin
+    perform public.resolve_freed_offer(off, jsonb_build_array(ranked -> 1, ranked -> 2), opts);
+    assert (select jsonb_array_length(options) = 3 and (options -> 0 ->> 'recommended')::boolean
+                   and (options -> 0 -> 'request_ids') = jsonb_build_array(qp, qw2)
+                   and not (options -> 1 ->> 'recommended')::boolean from public.freed_slot_offers where id = off),
+      format('TEST 1b FAILED: %s', (select options from public.freed_slot_offers where id = off));
+    raise exception 'fco_rollback';
+  exception when others then if sqlerrm <> 'fco_rollback' then raise; end if;
+  end;
 
   -- TEST 2 (rolled back): one waiting-list candidate alone is still placed at once; a lone plan-B candidate goes to the Sadran
   begin
@@ -139,6 +164,36 @@ begin
       'TEST 4 FAILED: the chosen plan-B member rides with its main trip';
     assert exists (select 1 from public.ride_requests rr join public.rides r on r.id = rr.ride_id where rr.request_id = qp and r.car_id = car40 and r.status <> 'cancelled'),
       'TEST 4 FAILED: on the freed car';
+    raise exception 'fco_rollback';
+  exception when others then if sqlerrm <> 'fco_rollback' then raise; end if;
+  end;
+
+  -- TEST 4c (rolled back): a candidate who gets a car elsewhere leaves the offer; neither discussion nor award takes them (090400)
+  begin
+    perform public.place_request_on_car(qw1, '00000000-0000-0000-0000-000000000042', true, sadran, null, null, null, 'MANUAL');
+    assert (select status::text from public.freed_slot_claims where offer_id = off and request_id = qw1) = 'declined', 'TEST 4c FAILED: the claim closes';
+    begin
+      perform public.discuss_freed_candidates(off, array[qw1, qp]);
+      raise exception 'TEST 4c FAILED: a placed candidate went to a discussion';
+    exception when raise_exception then if sqlerrm <> 'freed_discussion_invalid' then raise; end if;
+    end;
+    begin
+      perform public.award_freed_option(off, array[qw1]);
+      raise exception 'TEST 4c FAILED: a placed candidate was awarded';
+    exception when raise_exception then if sqlerrm not in ('freed_candidate_placed', 'freed_candidate_stepped_out') then raise; end if;
+    end;
+    raise exception 'fco_rollback';
+  exception when others then if sqlerrm <> 'fco_rollback' then raise; end if;
+  end;
+
+  -- TEST 4b (rolled back): awarding a combination places both requests on the freed car, one after another (090400)
+  begin
+    perform public.award_freed_option(off, array[qw2, qw1]);
+    assert (select count(*) from public.ride_requests rr join public.rides r on r.id = rr.ride_id
+            where rr.request_id in (qw1, qw2) and r.car_id = car40 and r.status <> 'cancelled') = 2, 'TEST 4b FAILED: both on the freed car';
+    assert (select count(*) from public.freed_slot_claims where offer_id = off and status = 'approved') = 2, 'TEST 4b FAILED: both claims approved';
+    assert exists (select 1 from public.notifications where recipient_id = m101 and event = 'claim_declined' and data ->> 'variant' = 'plan_b_kept'),
+      'TEST 4b FAILED: the plan-B member hears its plan B stays';
     raise exception 'fco_rollback';
   exception when others then if sqlerrm <> 'fco_rollback' then raise; end if;
   end;

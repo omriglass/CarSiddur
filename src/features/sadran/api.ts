@@ -919,14 +919,63 @@ export async function fetchFreedOffersForWeek(departmentId: string, weekStart: s
   return data ?? [];
 }
 
-export async function fetchClaimsForOffer(offerId: string): Promise<FreedSlotClaimRow[]> {
-  const { data, error } = await supabase.from("freed_slot_claims").select("*").eq("offer_id", offerId);
-  if (error) throw toAppError(error);
-  return data ?? [];
+/** REQ §13.168: one candidate of a freed-car offer — who, their times (a plan-B request: its main trip), and whether they stepped out. */
+export interface FreedOfferCandidate {
+  requestId: string;
+  profileId: string;
+  name: string;
+  claimStatus: FreedSlotClaimRow["status"];
+  planB: boolean;
+  departAt: string | null;
+  returnAt: string | null;
 }
 
-export async function approveClaim(offerId: string, requestId: string): Promise<string> {
-  return rpc("approve_claim", { p_offer_id: offerId, p_request_id: requestId });
+export async function fetchFreedOfferCandidates(offerId: string): Promise<FreedOfferCandidate[]> {
+  const { data, error } = await supabase
+    .from("freed_slot_claims")
+    .select(
+      `request_id, profile_id, status,
+       request:requests!freed_slot_claims_request_id_fkey(depart_at, return_at, served_by_alternative,
+         requester:profiles!requests_requester_id_fkey(full_name),
+         alternative:request_alternatives!request_alternatives_request_id_fkey(original_main))`,
+    )
+    .eq("offer_id", offerId);
+  if (error) throw toAppError(error);
+  interface Raw {
+    request_id: string;
+    profile_id: string;
+    status: FreedSlotClaimRow["status"];
+    request: {
+      depart_at: string | null;
+      return_at: string | null;
+      served_by_alternative: boolean;
+      requester: { full_name: string | null } | null;
+      alternative: { original_main: { depart_at?: string; return_at?: string } | null } | null;
+    } | null;
+  }
+  return ((data ?? []) as unknown as Raw[]).map((row) => {
+    const planB = !!row.request?.served_by_alternative;
+    const main = planB ? row.request?.alternative?.original_main ?? null : null;
+    return {
+      requestId: row.request_id,
+      profileId: row.profile_id,
+      name: row.request?.requester?.full_name ?? "",
+      claimStatus: row.status,
+      planB,
+      departAt: main?.depart_at ?? row.request?.depart_at ?? null,
+      returnAt: main?.return_at ?? row.request?.return_at ?? null,
+    };
+  });
+}
+
+/** REQ §13.168 (d): give the car to one listed option (one request or several one after another). */
+export async function awardFreedOption(offerId: string, requestIds: string[]): Promise<void> {
+  await rpc("award_freed_option", { p_offer_id: offerId, p_request_ids: requestIds });
+}
+
+/** REQ §13.168 (d): send several candidates to a contested group ("בדיון") holding this car. */
+export async function discussFreedCandidates(offerId: string, requestIds: string[]): Promise<string> {
+  return rpc("discuss_freed_candidates", { p_offer_id: offerId, p_request_ids: requestIds });
 }
 
 export async function closeOffer(offerId: string): Promise<void> {

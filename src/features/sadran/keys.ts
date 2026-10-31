@@ -49,7 +49,7 @@ export const sadranKeys = {
   proposalParties: (proposalId: string) => [...sadranKeys.all, "proposalParties", proposalId] as const,
   freedOffers: (departmentId: string, weekStart: string) =>
     [...sadranKeys.week(departmentId, weekStart), "freedOffers"] as const,
-  freedClaims: (offerId: string) => [...sadranKeys.all, "freedClaims", offerId] as const,
+  freedCandidates: (offerId: string) => [...sadranKeys.all, "freedCandidates", offerId] as const,
   siddurVersions: (departmentId: string, weekStart: string) =>
     [...sadranKeys.week(departmentId, weekStart), "siddurVersions"] as const,
   auditLog: (departmentId: string, weekStart: string) =>

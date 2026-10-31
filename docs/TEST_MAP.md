@@ -119,6 +119,7 @@ the sentence layout (REQ §13.110: `requestForm/sentence/**`, `timeAnchors.ts`, 
 `components/JoinableRidesDialog.tsx`, `components/RequestForm.tsx`; `src/i18n/he.member.ts`,
 `he.sadran.ts`; migrations matching `*waitlist*`, `*freed_slot*`, `*joinable_rides*`,
 `*join_radius*`; `e2e/waitlist-groups.spec.ts`, `freed-slot.spec.ts`.
+Freed car vs plan B (REQ §13.168): migrations `*freed_car*`, `*freed_candidates*`, `*waitlist_groups_plan_b*`, `src/features/sadran/claims/**` (`freedOptions.test.ts`), solver `freedSlotOptions` (`src/solver/__tests__/live.test.ts`), SQL `freed_car_options.sql`; QA scenario `scripts/qa/freed-car-scenario.sql` (needs the on-ride-cancelled edge function wired on the stack).
 
 **Automated**:
 - Vitest: `npx vitest run src/features/waitlist src/features/requests/joinableRides.test.ts`

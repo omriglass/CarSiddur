@@ -56,7 +56,7 @@ import { applyServerMergeTimes, mergeInvalidReason, mergeLegOptions, mergePayloa
 import { requestRouteLine } from "../requestRoute";
 import { parseTimeToMinutes } from "@/features/solverBridge/buildSolverInput";
 import { representativeRideTypeCode, servedOf, servedToEditRideLegs, withChildNames } from "../../solverRun";
-import { useHeldNoticesQuery, useMergePreview, useMergePreviews, type MergePreviewSpec } from "../../hooks";
+import { useFreedOffersForWeek, useHeldNoticesQuery, useMergePreview, useMergePreviews, type MergePreviewSpec } from "../../hooks";
 import { heldUpdateCount } from "../heldUpdates";
 import { useBoardSurface, useUnsentLeaveGuard } from "../useBoardSurface";
 import { useBoardData } from "../hooks/useBoardData";
@@ -93,6 +93,9 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
   const weeksQuery = useWeeks(departmentId);
   const thisWeekRow = (weeksQuery.data ?? []).find((week) => week.week_start === weekStart);
   const weekIsPast = !!thisWeekRow && isPastWeek(thisWeekRow, dateKey(new Date()));
+  // REQ §13.168 (c): freed cars waiting for the Sadran's decision get a card on the board too, not only the push.
+  const freedOffersQuery = useFreedOffersForWeek(departmentId, weekStart);
+  const freedPending = (freedOffersQuery.data ?? []).filter((offer) => offer.status === "pending_approval").length;
   // REQ item 149: every change of this week by anyone else (another Sadran, members, the cron) shows without a reload.
   useWeekChangeWatch(departmentId, [weekStart], "sadran");
 
@@ -405,6 +408,14 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
             time: `\u2066${formatTime(new Date(board.focusedConflict.starts_at))}–${formatTime(new Date(board.focusedConflict.ends_at))}\u2069`,
             car: board.carsQuery.data?.find((car) => car.id === board.focusedConflict!.car_id)?.name ?? "",
           })}</span> : null}
+        </button>
+      ) : null}
+
+      {freedPending > 0 ? (
+        <button type="button" onClick={() => navigate(paths.sadran.claims(departmentId, weekStart))} data-testid="freed-pending-banner"
+          className="w-full rounded-md border border-primary/40 bg-primary/5 p-2 text-start text-sm hover:bg-primary/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring">
+          {tv("sadranBoard.freedPendingBanner", { count: String(freedPending) })}
+          <span className="ms-2 text-xs text-primary">{he.sadranBoard.freedPendingOpen}</span>
         </button>
       ) : null}
 

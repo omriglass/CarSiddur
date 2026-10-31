@@ -18,7 +18,6 @@ import type { CarFreeWindow } from "@/features/siddur/freeWindows";
 import {
   canEditRequest,
   cancelRide,
-  claimFreedSlot,
   placeOnOwnCar,
   restoreDuplicateRequest,
   fetchJoinableRides,
@@ -310,22 +309,6 @@ export function useMyFreedSlotOffers() {
     queryFn: () => fetchMyFreedSlotOffers(profileId as string),
     enabled: !!profileId,
     staleTime: 15_000,
-  });
-}
-
-export function useClaimFreedSlotMutation() {
-  const { session } = useSession();
-  const profileId = session?.user.id;
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: ({ offerId, requestId }: { offerId: string; requestId: string }) =>
-      claimFreedSlot(offerId, requestId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: requestsKeys.freedOffers(profileId) });
-      queryClient.invalidateQueries({ queryKey: requestsKeys.mine(profileId) });
-    },
-    onError: showErrorToast,
   });
 }
 

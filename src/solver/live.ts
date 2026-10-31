@@ -161,9 +161,11 @@ export function freedSlotOptions(items: readonly FreedSlotOptionItem[], freedWin
   const chain: FreedSlotOptionItem[] = [];
   const walk = (from: number) => {
     for (let i = from; i < inside.length && found.length < FREED_OPTIONS_ENUMERATION_CAP; i++) {
+      const next = inside[i];
+      if (!next) continue;
       const last = chain[chain.length - 1];
-      if (last && inside[i].window.start < last.window.end + bufferSlots) continue;
-      chain.push(inside[i]);
+      if (last && next.window.start < last.window.end + bufferSlots) continue;
+      chain.push(next);
       const used = chain.reduce((sum, it) => sum + (it.window.end - it.window.start), 0);
       found.push({
         requestIds: chain.map((it) => it.requestId),

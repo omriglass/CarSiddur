@@ -18,14 +18,14 @@ import type { WatchChange, WatchScope } from "./watcher";
  *  - `["requests", "mine"|"freedOffers", ...]` (not a single request's form data)
  *  - `["waitlist", dept, week]`
  *  - Sadran scope only: `["sadran", dept, week, ...]` (board, requests, proposals, held notices, readiness, …)
- *    and the not-week-keyed `["sadran", "mergePreview"|"seriesLegs"|"proposalParties"|"freedClaims"|"proposalHostRide", ...]`.
+ *    and the not-week-keyed `["sadran", "mergePreview"|"seriesLegs"|"proposalParties"|"freedCandidates"|"proposalHostRide", ...]`.
  */
 const WEEK_KEYED_SIDDUR = new Set<unknown>(["boardRides", "carLocations", "carStartLocations"]);
 const ANY_WEEK_SIDDUR = new Set<unknown>(["carNeighbours", "boardRideById"]);
 // Not `byId`/`companions`: they feed an open request form, which must not reload under the member's hands
 // (a conflicting change still surfaces as stale_version on save, as before).
 const REQUEST_FAMILIES = new Set<unknown>(["mine", "freedOffers"]);
-const SADRAN_UNSCOPED = new Set<unknown>(["mergePreview", "seriesLegs", "proposalParties", "freedClaims", "proposalHostRide"]);
+const SADRAN_UNSCOPED = new Set<unknown>(["mergePreview", "seriesLegs", "proposalParties", "freedCandidates", "proposalHostRide"]);
 
 export function isWatchedWeekQuery(key: QueryKey, departmentId: string, weeks: ReadonlySet<string>, scope: WatchScope): boolean {
   const [root, family] = key;

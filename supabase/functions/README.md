@@ -46,9 +46,11 @@ timeline) — noted here per the task instead of stubbed.
   `SolverInput`-compatible structure (this car's remaining-week timeline, the department's active
   policy, a fairness-history proxy — see the function's own comment for why it isn't the
   `fairness_stats()` RPC), ranks with the bundled solver's `matchFreedSlot()`, and hands the ranked
-  list to `resolve_freed_offer()`, which does the actual writes (0 candidates → closed; 1 → assign +
-  notify; >1 → notify all + Sadran contest — REQUIREMENTS §8). `enqueue_notification` is called by
-  that RPC, not by this function.
+  list to `resolve_freed_offer()`, which does the actual writes (0 candidates → closed; one waiting-list
+  candidate → assign + notify; anything else → the Sadran decides from the ranked options —
+  REQUIREMENTS §13.168). A candidate served by plan B is read with its main trip (`original_main`);
+  `freedSlotOptions()` builds the options (one request or several one after another) passed as
+  `p_options`. `enqueue_notification` is called by that RPC, not by this function.
 
 ## How the DB invokes them
 

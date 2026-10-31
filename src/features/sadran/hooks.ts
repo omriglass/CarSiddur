@@ -575,21 +575,37 @@ export function useFreedOffersForWeek(departmentId: string | undefined, weekStar
   });
 }
 
-export function useClaimsForOffer(offerId: string | undefined) {
+export function useFreedOfferCandidates(offerId: string | undefined) {
   return useQuery({
-    queryKey: sadranKeys.freedClaims(offerId ?? ""),
-    queryFn: () => api.fetchClaimsForOffer(offerId as string),
+    queryKey: sadranKeys.freedCandidates(offerId ?? ""),
+    queryFn: () => api.fetchFreedOfferCandidates(offerId as string),
     enabled: !!offerId,
     staleTime: 10_000,
   });
 }
 
-export function useApproveClaimMutation() {
+export function useAwardFreedOptionMutation() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ offerId, requestId }: { offerId: string; requestId: string; departmentId: string; weekStart: string }) =>
-      api.approveClaim(offerId, requestId),
-    onSuccess: (_data, { departmentId, weekStart }) => invalidateBoard(queryClient, departmentId, weekStart),
+    mutationFn: ({ offerId, requestIds }: { offerId: string; requestIds: string[]; departmentId: string; weekStart: string }) =>
+      api.awardFreedOption(offerId, requestIds),
+    onSuccess: (_data, { departmentId, weekStart }) => {
+      invalidateBoard(queryClient, departmentId, weekStart);
+      void queryClient.invalidateQueries({ queryKey: sadranKeys.freedOffers(departmentId, weekStart) });
+    },
+    onError: showErrorToast,
+  });
+}
+
+export function useDiscussFreedCandidatesMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ offerId, requestIds }: { offerId: string; requestIds: string[]; departmentId: string; weekStart: string }) =>
+      api.discussFreedCandidates(offerId, requestIds),
+    onSuccess: (_data, { departmentId, weekStart }) => {
+      invalidateBoard(queryClient, departmentId, weekStart);
+      void queryClient.invalidateQueries({ queryKey: sadranKeys.freedOffers(departmentId, weekStart) });
+    },
     onError: showErrorToast,
   });
 }

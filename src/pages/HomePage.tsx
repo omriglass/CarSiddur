@@ -33,7 +33,6 @@ import {
   useCancelRideMutation,
   usePlaceOnOwnCarMutation,
   useRestoreDuplicateMutation,
-  useClaimFreedSlotMutation,
   useMyFreedSlotOffers,
   useMyRequests,
   useSetFreedSlotOptOutMutation,
@@ -180,7 +179,6 @@ export function HomePage() {
   const ownCars = (ownCarsQuery.data ?? []).filter((car) => car.status === "active" && !car.retired_at).map((car) => ({ id: car.id, name: car.name }));
   const withdrawMutation = useWithdrawRequestMutation();
   const withdrawAllMutation = useWithdrawAllRequestsMutation();
-  const claimMutation = useClaimFreedSlotMutation();
   const withdrawClaimMutation = useWithdrawFreedSlotClaimMutation();
   const optOutMutation = useSetFreedSlotOptOutMutation();
   const selectedRideWeekStart = selectedMyRide?.week_start ?? undefined;
@@ -316,7 +314,8 @@ export function HomePage() {
     : null;
   const phaseOf = (weekStart: string) => weeks.find((w) => w.weekStart === weekStart)?.phase;
   const openOffers = (freedOffersQuery.data ?? []).filter(
-    (o) => o.offerStatus === "open" && (o.claimStatus === "offered" || o.claimStatus === "claimed"),
+    // REQ §13.168: an offer with several options waits for the Sadran (pending_approval); the member may step out.
+    (o) => (o.offerStatus === "open" || o.offerStatus === "pending_approval") && (o.claimStatus === "offered" || o.claimStatus === "claimed"),
   );
   // Fetch the selected ride's complete week before editing. The Home card is
   // intentionally small, but the same conflict and pending-change safeguards
@@ -548,23 +547,20 @@ export function HomePage() {
                 {tv("requestsList.freedSlotOffer", {
                   car: offer.carName,
                   day: "",
-                  depart: formatTime(new Date(offer.startsAt)),
-                  return: formatTime(new Date(offer.endsAt)),
+                  // the range reads left to right inside the Hebrew sentence (isolate marks around both times)
+                  depart: `\u2066${formatTime(new Date(offer.startsAt))}`,
+                  return: `${formatTime(new Date(offer.endsAt))}\u2069`,
                 })}
               </p>
-              {offer.claimStatus === "offered" ? (
-                <Button size="sm" onClick={() => claimMutation.mutate({ offerId: offer.offerId, requestId: offer.requestId })}>
-                  {t("action.stillWant")}
-                </Button>
-              ) : (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => setConfirmAction({ kind: "withdrawFreedClaim", offerId: offer.offerId, requestId: offer.requestId })}
-                >
-                  {he.requestsList.withdrawClaim}
-                </Button>
-              )}
+              <p className="text-xs text-muted-foreground">{he.freedSlot.sadranDeciding}</p>
+              <Button
+                size="sm"
+                variant="outline"
+                data-testid="freed-step-out"
+                onClick={() => setConfirmAction({ kind: "withdrawFreedClaim", offerId: offer.offerId, requestId: offer.requestId })}
+              >
+                {he.freedSlot.stepOut}
+              </Button>
             </div>
           ))}
         </section>

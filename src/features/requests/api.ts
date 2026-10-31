@@ -1063,11 +1063,6 @@ export async function fetchFreedOfferOutcome(rideId: string): Promise<RawFreedOf
   return (data ?? []) as unknown as RawFreedOfferOutcome[];
 }
 
-/** "I still want it" on a freed-slot offer addressed to me (DATA_MODEL §3.10). */
-export async function claimFreedSlot(offerId: string, requestId: string): Promise<void> {
-  await rpc("claim_freed_slot", { p_offer_id: offerId, p_request_id: requestId });
-}
-
 export async function withdrawFreedSlotClaim(offerId: string, requestId: string): Promise<void> {
   await rpc("withdraw_freed_slot_claim", { p_offer_id: offerId, p_request_id: requestId });
 }

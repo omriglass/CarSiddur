@@ -240,6 +240,12 @@
         "src/i18n/he.sadran.ts",
         "supabase/migrations/**/*waitlist*",
         "supabase/migrations/**/*freed_slot*",
+        "supabase/migrations/**/*freed_car*",
+        "supabase/migrations/**/*freed_candidates*",
+        "supabase/migrations/**/*waitlist_groups_plan_b*",
+        "supabase/tests/freed_car_options.sql",
+        "scripts/qa/freed-car-scenario.sql",
+        "src/features/sadran/claims/**",
         "supabase/migrations/**/*joinable_rides*",
         "supabase/migrations/**/*join_radius*",
         "supabase/tests/waitlist_groups.sql",
@@ -255,6 +261,7 @@
         "src/features/requests/joinableRides.test.ts"
       ],
       "sql": [
+        "freed_car_options.sql",
         "waitlist_groups.sql",
         "waitlist_group_hold.sql",
         "joinable_rides.sql",
@@ -274,6 +281,7 @@
         "13.143"
       ],
       "qaChecklist": [
+        "Freed car vs plan B (REQ §13.168): run scripts/qa/freed-car-scenario.sql on a disposable stack with the edge function wired; cancel the ride; the Sadran sees the board banner and the options page (recommendation, plan-B badge), gives a combination or sends two to a discussion; a candidate steps out from 'my rides'; a plan-B member who gets the car loses the plan B, one not chosen keeps it",
         "Submit against a published day with no free car; confirm waitlist + joinable-rides dialog (REQ §13.83)",
         "Tap the join-ride button; confirm it joins the ride and withdraws the waitlisted request (REQ §13.83)",
         "Cancel a live-week ride; confirm an overlapping waitlisted request auto-assigns (REQ §13.66)",

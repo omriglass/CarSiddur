@@ -253,8 +253,6 @@ export const heMember = {
     cancelRide: "בטל נסיעה",
     /** Owner 2026-10-13: the one red cancel button on a /my item — removes the request, or cancels its ride once placed. */
     cancel: "ביטול",
-    stillWantIt: "אני עדיין רוצה",
-    withdrawClaim: "בטל בקשת הצטרפות",
     freedSlotOffer: "התפנה רכב — {{car}}, {{day}} {{depart}}–{{return}}",
   },
   /**
@@ -602,8 +600,11 @@ export const heMember = {
   freedSlot: {
     title: "רכב שהתפנה",
     body: "{{car}}, {{day}} {{depart}}–{{return}}. עדיין רלוונטי?",
-    withdrawClaimTitle: "לבטל את בקשת ההצטרפות?",
-    withdrawClaimBody: "הבקשה שלך לרכב שהתפנה תבוטל.",
+    // REQ §13.168: several options -> the Sadran decides; a candidate may step out this time.
+    sadranDeciding: "יש כמה אפשרויות לרכב הזה, והסדרן/ית מחליט/ה. מישהו אחר צריך אותו יותר? אפשר לוותר הפעם — עדיין יוצעו לך רכבים שיתפנו.",
+    stepOut: "לוותר הפעם",
+    withdrawClaimTitle: "לוותר על הרכב הזה?",
+    withdrawClaimBody: "תצא/י מהשיקולים על הרכב הזה. הבקשה שלך (או תוכנית ב׳) נשארת כמו שהיא, ועדיין יוצעו לך רכבים שיתפנו.",
   },
   /**
    * `/my/history` (REQ §13 item 91, owner 2026-09-16, E3): a small, lazily loaded, read-only

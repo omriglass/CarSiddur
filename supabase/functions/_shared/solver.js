@@ -4696,6 +4696,34 @@ function matchFreedSlot(input, opts) {
   });
   return results;
 }
+var FREED_OPTIONS_ENUMERATION_CAP = 500;
+function freedSlotOptions(items, freedWindow, bufferSlots) {
+  const inside = items.filter((it) => it.window.start >= freedWindow.start && it.window.end <= freedWindow.end && it.window.end > it.window.start).sort((a, b) => a.window.start - b.window.start || a.window.end - b.window.end || byId({ id: a.requestId }, { id: b.requestId }));
+  const gap = freedWindow.end - freedWindow.start;
+  const found = [];
+  const chain = [];
+  const walk = (from) => {
+    for (let i = from; i < inside.length && found.length < FREED_OPTIONS_ENUMERATION_CAP; i++) {
+      const next = inside[i];
+      if (!next) continue;
+      const last = chain[chain.length - 1];
+      if (last && next.window.start < last.window.end + bufferSlots) continue;
+      chain.push(next);
+      const used = chain.reduce((sum2, it) => sum2 + (it.window.end - it.window.start), 0);
+      found.push({
+        requestIds: chain.map((it) => it.requestId),
+        score: chain.reduce((sum2, it) => sum2 + it.score, 0),
+        unusedSlots: Math.max(0, gap - used),
+        planB: chain.filter((it) => it.planB).length
+      });
+      walk(i + 1);
+      chain.pop();
+    }
+  };
+  walk(0);
+  found.sort((a, b) => b.score - a.score || a.unusedSlots - b.unusedSlots || a.planB - b.planB || a.requestIds.length - b.requestIds.length || (a.requestIds.join(",") < b.requestIds.join(",") ? -1 : a.requestIds.join(",") > b.requestIds.join(",") ? 1 : 0));
+  return found.map((option, index) => ({ ...option, recommended: index === 0 }));
+}
 
 // src/solver/index.ts
 function peopleOf(nr) {
@@ -5102,6 +5130,7 @@ export {
   dominates,
   effectiveTripType,
   fits,
+  freedSlotOptions,
   luggageFits,
   matchFreedSlot,
   originIdOf,

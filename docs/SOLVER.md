@@ -792,6 +792,8 @@ No other file changes. The engine, the sort and the UI breakdown pick the rule u
 
 ### 5.2 After publish: no automatic solve
 
+**Freed-car options (REQ §13.168, `freedSlotOptions()` in `live.ts`).** After `matchFreedSlot()` ranks the candidates, the edge function passes each candidate's own requested window (SQL places them at those times, never shifted), its policy score and whether it is served by plan B. `freedSlotOptions()` lists every candidate alone and every chain that fits the freed gap one after another with the turnaround between them (no size limit; enumeration capped at 500), ranked by total policy score, then unused gap, then fewer plan-B moves, then ids; the first is the recommendation. Pure and deterministic (unit tests in `__tests__/live.test.ts`).
+
 Post-publish the solver is **never** run automatically, and **nothing already placed is ever displaced or relocated** (REQUIREMENTS §13.19) — the two helpers below only *add* a ride into free time. Two small functions cover REQUIREMENTS §8:
 
 ```ts

@@ -257,7 +257,8 @@ function load(args) {
   ].join("\n");
   psql(sql);
 
-  const pruned = psql("select coalesce(string_agg(format('%s %s %s (%s)', action, sum, tbl, fk), E'\\n' order by tbl, fk), '') from (select tbl, fk, action, sum(n) from public._debug_prune_log group by 1, 2, 3) x; drop table public._debug_prune_log;").trim();
+  const pruned = psql("select coalesce(string_agg(format('%s %s %s (%s)', action, sum, tbl, fk), E'\\n' order by tbl, fk), '') from (select tbl, fk, action, sum(n) from public._debug_prune_log group by 1, 2, 3) x;").trim();
+  psql("drop table public._debug_prune_log;");
   if (pruned) console.log(`debug: rows pointing at other weeks:\n${pruned.replace(/^/gm, "  ")}`);
   if (args.migrate) migrate();
   writeLogins();

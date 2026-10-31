@@ -1570,6 +1570,7 @@ export type Database = {
           expires_at: string
           group_id: string | null
           id: string
+          options: Json
           resolved_at: string | null
           resolved_by: string | null
           starts_at: string
@@ -1588,6 +1589,7 @@ export type Database = {
           expires_at: string
           group_id?: string | null
           id?: string
+          options?: Json
           resolved_at?: string | null
           resolved_by?: string | null
           starts_at: string
@@ -1606,6 +1608,7 @@ export type Database = {
           expires_at?: string
           group_id?: string | null
           id?: string
+          options?: Json
           resolved_at?: string | null
           resolved_by?: string | null
           starts_at?: string
@@ -5872,6 +5875,10 @@ export type Database = {
         Args: { p_end: string; p_start: string }
         Returns: undefined
       }
+      award_freed_option: {
+        Args: { p_offer_id: string; p_request_ids: string[] }
+        Returns: Json
+      }
       can_define_car_checklist: {
         Args: { p_department_id: string }
         Returns: boolean
@@ -6130,6 +6137,10 @@ export type Database = {
         | { Args: { data: string; type: string }; Returns: string }
         | { Args: { data: string; type: string }; Returns: string }
       discard_proposal: { Args: { p_proposal_id: string }; Returns: undefined }
+      discuss_freed_candidates: {
+        Args: { p_offer_id: string; p_request_ids: string[] }
+        Returns: string
+      }
       dispatch_push_outbox_row: { Args: { _id: number }; Returns: undefined }
       dissolve_unservable_waitlist_groups: {
         Args: { p_day: string; p_department_id: string; p_week_start: string }
@@ -6872,7 +6883,11 @@ export type Database = {
         Returns: Json
       }
       resolve_freed_offer: {
-        Args: { p_offer_id: string; p_ranked_candidates: Json }
+        Args: {
+          p_offer_id: string
+          p_options?: Json
+          p_ranked_candidates: Json
+        }
         Returns: undefined
       }
       resolve_waitlist_group: {
