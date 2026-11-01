@@ -7,7 +7,8 @@ import { publishedFixtureWeek } from "./published-week";
 import { dayOfWeek, FIXTURE_WEEKS, insertRequest, PLACES, PROFILE_IDS, removeWeek, sharedCarIdByName, winterAt } from "./request-form";
 
 // REQ §13.170: a הקפצה with no driver — the ride sheet asks on WhatsApp who can drive, naming the rider, the day,
-// the place and the hour, with a link to /ride/<id>; there "אני אקח" makes the volunteer its driver.
+// the place and the hour, with a link to /ride/<id>; there "אני אקח" makes the volunteer its driver. REQ §13.174: the
+// volunteer may step down, and another member may take the wheel from them.
 test.use({ viewport: { width: 390, height: 844 } });
 
 test("a driverless הקפצה asks on WhatsApp and the link's page takes the wheel", { tag: ["@siddur"] }, async ({ browser }) => {
@@ -58,8 +59,30 @@ test("a driverless הקפצה asks on WhatsApp and the link's page takes the whe
     await page.getByTestId("ride-offer-take").click();
     await expect.poll(async () => (await service.from("rides").select("driver_id, needs_driver").eq("id", ride.id).single()).data)
       .toEqual({ driver_id: PROFILE_IDS.member1, needs_driver: false });
-    await expect(page.getByTestId("ride-offer-has-driver")).toHaveText(he.driverWanted.taken);
+    // REQ §13.174: the volunteer can step down — offered on the ride's page once they drive it
+    await page.reload();
+    await expect(page.getByTestId("volunteer-step-down")).toBeVisible();
     await member1.context.close();
+
+    // REQ §13.174: another member takes the wheel from the volunteer, after "X already volunteered — take it from them?"
+    const admin2 = await newSignedInPage(browser, SEEDED_USERS.admin);
+    await admin2.page.goto(paths.siddur({ dept: NEVO_DEPARTMENT_ID, week, rideId: ride.id }));
+    await admin2.page.getByTestId("volunteer-take-over").click();
+    const takeOver = admin2.page.getByRole("dialog");
+    await expect(takeOver).toContainText(SEEDED_USERS.member1.fullName);
+    await takeOver.getByRole("button", { name: he.rideCoordination.takeOverConfirm }).click();
+    await expect.poll(async () => (await service.from("rides").select("driver_id").eq("id", ride.id).single()).data?.driver_id)
+      .toBe(PROFILE_IDS.admin);
+
+    // ... and steps down again: "the ride will be left without a driver — sure?"
+    await admin2.page.goto(paths.ride(ride.id));
+    await admin2.page.getByTestId("volunteer-step-down").click();
+    const stepDown = admin2.page.getByRole("dialog");
+    await expect(stepDown).toContainText(he.rideCoordination.stepDownBody);
+    await stepDown.getByRole("button", { name: he.rideCoordination.stepDownConfirm }).click();
+    await expect.poll(async () => (await service.from("rides").select("driver_id, needs_driver").eq("id", ride.id).single()).data)
+      .toEqual({ driver_id: null, needs_driver: true });
+    await admin2.context.close();
   } finally {
     await removeWeek(service, week);
   }

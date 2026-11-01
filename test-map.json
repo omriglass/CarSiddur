@@ -402,7 +402,10 @@
         "src/features/rides/components/DriverWantedButton.tsx",
         "src/features/rides/components/VolunteerDriverPanel.tsx",
         "src/pages/RideOfferPage.tsx",
-        "e2e/driver-wanted.spec.ts"
+        "e2e/driver-wanted.spec.ts",
+        "src/features/rides/components/VolunteerDriverChange.tsx",
+        "supabase/migrations/**/*volunteer_driver_step_down_take_over*",
+        "supabase/tests/volunteer_driver_change.sql"
       ],
       "vitest": [
         "src/features/rides/driverWanted.test.ts",
@@ -419,7 +422,8 @@
         "car_handover_notes.sql",
         "unpublished_day_requests.sql",
         "ride_change_settles.sql",
-        "production_fixes_2026_11_01.sql"
+        "production_fixes_2026_11_01.sql",
+        "volunteer_driver_change.sql"
       ],
       "playwrightTags": [
         "@siddur"

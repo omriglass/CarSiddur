@@ -66,6 +66,17 @@ export function driverWantedText(ride: BoardRide, viewerId: string | undefined, 
     : tv("driverWanted.textPickup", vars);
 }
 
+/**
+ * REQ §13.174: the ride's driver when they are a volunteer — driving others, with no request of their own on it (the
+ * SQL `release_ride_driver` / `take_over_ride_driver` rule). Only a volunteer may step down or be taken over from.
+ */
+export function volunteerDriverOf(ride: BoardRide): { id: string; name: string } | null {
+  if (!ride.driver_id || ride.needs_driver || ride.status === "cancelled") return null;
+  const served = servedOf(ride);
+  if (!served.length || served.some((entry) => entry.role === "driver")) return null;
+  return { id: ride.driver_id, name: ride.driver_name ?? "" };
+}
+
 /** REQ §13.170 (R17B1): the viewer is being driven on this ride (a rider of its chauffeur leg) — they cannot drive it. */
 export function isDrivenOnRide(ride: BoardRide, viewerId: string | undefined): boolean {
   if (!viewerId) return false;

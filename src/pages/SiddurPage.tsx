@@ -44,8 +44,9 @@ import { ridePublicDetails } from "@/lib/ridePublicDetails";
 import { ridePassengerSummary } from "@/lib/ridePassengerSummary";
 import { rideCoordinatorNotes } from "@/lib/rideCoordinatorNotes";
 import { siddurCarName } from "@/lib/siddurCarName";
+import { VolunteerDriverChange } from "@/features/rides/components/VolunteerDriverChange";
 import { VolunteerDriverPanel } from "@/features/rides/components/VolunteerDriverPanel";
-import { isDrivenOnRide } from "@/features/rides/driverWanted";
+import { isDrivenOnRide, volunteerDriverOf } from "@/features/rides/driverWanted";
 import { RideDetailSheet } from "@/features/siddur/components/RideDetailSheet";
 import { MemberRideEditor } from "@/features/siddur/components/MemberRideEditor";
 import { isRideRelated, relatedRequestIdToEdit, rideEditTargets } from "@/features/rides/relatedRide";
@@ -502,6 +503,10 @@ export function SiddurPage() {
     </Select>
   ) : null;
 
+  const memberRideEditor = selectedRide?.id && ownsEditableRide(selectedRide.id) && !editLinksForRide.length
+    ? <MemberRideEditor key={`${selectedRide.id}:${selectedRide.version}:editor`} ride={selectedRide} cars={carsQuery.data ?? []} viewerId={profileId} saving={rideMoves.saving} onSave={(move) => void saveMove(move)} />
+    : null;
+
   return (
     <div className="mx-auto max-w-5xl space-y-4 p-4 pb-24 lg:max-w-none">
       {/* On a computer the published siddur uses the whole width (owner 2026-10-06). */}
@@ -747,7 +752,7 @@ export function SiddurPage() {
         locationBadge={selectedLocation}
         homeDestinationId={homeDestinationId}
         onOpenChange={(open) => !open && setSelectedRideId(null)}
-        onRemoveOwnRide={selectedRide?.id && selectedRide.driver_id === profileId && selectedRide.version != null ? () => cancelRideMutation.mutate({ rideId: selectedRide.id!, expectedVersion: selectedRide.version!, reason: "CANCELLED_BY_MEMBER" }, { onSuccess: () => setSelectedRideId(null) }) : undefined}
+        onRemoveOwnRide={selectedRide?.id && selectedRide.driver_id === profileId && !volunteerDriverOf(selectedRide) && selectedRide.version != null ? () => cancelRideMutation.mutate({ rideId: selectedRide.id!, expectedVersion: selectedRide.version!, reason: "CANCELLED_BY_MEMBER" }, { onSuccess: () => setSelectedRideId(null) }) : undefined}
         removingOwnRide={cancelRideMutation.isPending}
         onRemoveMe={(() => {
           const myKey = selectedRide ? myRidePersonKey(selectedRide, profileId) : null;
@@ -760,7 +765,14 @@ export function SiddurPage() {
         editor={selectedRide?.needs_driver && canEditWeek && selectedRide.ends_at && Date.parse(selectedRide.ends_at) > now.getTime() ? (
           <VolunteerDriverPanel ride={selectedRide} onDone={() => setSelectedRideId(null)}
             canDrive={!profileQuery.data?.does_not_drive && !isDrivenOnRide(selectedRide, profileId)} />
-        ) : selectedRide?.id && ownsEditableRide(selectedRide.id) && !editLinksForRide.length ? <MemberRideEditor key={`${selectedRide.id}:${selectedRide.version}:editor`} ride={selectedRide} cars={carsQuery.data ?? []} viewerId={profileId} saving={rideMoves.saving} onSave={(move) => void saveMove(move)} /> : undefined}
+        ) : selectedRide && canEditWeek && volunteerDriverOf(selectedRide) ? (
+          // REQ §13.174: the volunteer steps down, or someone else takes the wheel from them.
+          <>
+            <VolunteerDriverChange ride={selectedRide} viewerId={profileId} now={now.getTime()} onDone={() => setSelectedRideId(null)}
+              canDrive={!profileQuery.data?.does_not_drive && !isDrivenOnRide(selectedRide, profileId)} />
+            {memberRideEditor}
+          </>
+        ) : memberRideEditor ?? undefined}
       />
 
       <WaitlistGroupSheet

@@ -61,8 +61,9 @@ import { isRideDayEditable } from "@/features/rides/rideDayEditable";
 import { useRideSheetCarActions } from "@/features/rides/useRideSheetCarActions";
 import { myRidePersonKey } from "@/features/rides/ridePeople";
 import { isRideOfMine, selectRelatedRides } from "@/features/rides/myRides";
+import { VolunteerDriverChange } from "@/features/rides/components/VolunteerDriverChange";
 import { VolunteerDriverPanel } from "@/features/rides/components/VolunteerDriverPanel";
-import { isDrivenOnRide } from "@/features/rides/driverWanted";
+import { isDrivenOnRide, volunteerDriverOf } from "@/features/rides/driverWanted";
 import { MyCarTasksCard } from "@/features/carTasks/components/MyCarTasksCard";
 import { RideDetailSheet } from "@/features/siddur/components/RideDetailSheet";
 import { MemberRideEditor } from "@/features/siddur/components/MemberRideEditor";
@@ -414,6 +415,17 @@ export function HomePage() {
     } catch { /* Mutation shows a localized error; keep confirmation open for retry. */ }
   }
 
+  const myRideEditor = editableRide && ownsEditableRide && !selectedRideEditHref ? (
+    <MemberRideEditor
+      key={`${editableRide.id}:${editableRide.version}:editor`}
+      ride={editableRide}
+      cars={carsQuery.data ?? []}
+      viewerId={profileQuery.data?.id}
+      saving={editMutation.isPending || changeMutation.isPending}
+      onSave={(move) => void saveMyRideMove(move)}
+    />
+  ) : null;
+
   return (
     <div className={cn("mx-auto space-y-6 p-4 pb-24", weekView ? "max-w-5xl lg:max-w-none" : "max-w-2xl")}>
       <PageHeader
@@ -683,7 +695,7 @@ export function HomePage() {
         // once solved/published, before that only draft/manual-reservation pins do); the
         // RPC itself is the real gate (`week_archived`/`not_authorized` surface as toasts).
         showAddPassengers={!!selectedMyRide && selectedMyRide.status !== "cancelled" && isRideOfMine(selectedMyRide, viewerId, myRequestIds)}
-        onRemoveOwnRide={selectedMyRide?.id && selectedMyRide.driver_id === profileQuery.data?.id && selectedMyRide.version != null ? () => cancelRideMutation.mutate({ rideId: selectedMyRide.id!, expectedVersion: selectedMyRide.version!, reason: "CANCELLED_BY_MEMBER" }, { onSuccess: () => setSelectedMyRide(null) }) : undefined}
+        onRemoveOwnRide={selectedMyRide?.id && selectedMyRide.driver_id === profileQuery.data?.id && !volunteerDriverOf(selectedMyRide) && selectedMyRide.version != null ? () => cancelRideMutation.mutate({ rideId: selectedMyRide.id!, expectedVersion: selectedMyRide.version!, reason: "CANCELLED_BY_MEMBER" }, { onSuccess: () => setSelectedMyRide(null) }) : undefined}
         removingOwnRide={cancelRideMutation.isPending}
         onRemoveMe={(() => {
           const myKey = selectedMyRide ? myRidePersonKey(selectedMyRide, profileQuery.data?.id) : null;
@@ -700,16 +712,14 @@ export function HomePage() {
           // on it, nor someone who does not drive — they get the WhatsApp ask only, R17B2).
           <VolunteerDriverPanel ride={selectedMyRide} onDone={() => setSelectedMyRide(null)}
             canDrive={!profileQuery.data?.does_not_drive && !isDrivenOnRide(selectedMyRide, profileQuery.data?.id)} />
-        ) : editableRide && ownsEditableRide && !selectedRideEditHref ? (
-          <MemberRideEditor
-            key={`${editableRide.id}:${editableRide.version}:editor`}
-            ride={editableRide}
-            cars={carsQuery.data ?? []}
-            viewerId={profileQuery.data?.id}
-            saving={editMutation.isPending || changeMutation.isPending}
-            onSave={(move) => void saveMyRideMove(move)}
-          />
-        ) : undefined}
+        ) : selectedMyRide && volunteerDriverOf(selectedMyRide) ? (
+          // REQ §13.174: the volunteer steps down, or someone else takes the wheel from them.
+          <>
+            <VolunteerDriverChange ride={selectedMyRide} viewerId={profileQuery.data?.id} now={now.getTime()} onDone={() => setSelectedMyRide(null)}
+              canDrive={!profileQuery.data?.does_not_drive && !isDrivenOnRide(selectedMyRide, profileQuery.data?.id)} />
+            {myRideEditor}
+          </>
+        ) : myRideEditor ?? undefined}
       />
       {/* "My rides" week view: a tapped request opens the same row (and actions) the list shows; a tapped suggestion the same three actions. */}
       <MyWeekItemSheet

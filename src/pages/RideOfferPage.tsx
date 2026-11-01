@@ -10,8 +10,9 @@ import { CardListSkeleton } from "@/components/skeletons/CardListSkeleton";
 import { Button } from "@/components/ui/button";
 import { useProfile } from "@/features/auth/useProfile";
 import { useCars } from "@/features/fleet/hooks";
+import { VolunteerDriverChange } from "@/features/rides/components/VolunteerDriverChange";
 import { useClaimRideDriverMutation } from "@/features/rides/hooks";
-import { driverWantedRiders, isDrivenOnRide } from "@/features/rides/driverWanted";
+import { driverWantedRiders, isDrivenOnRide, volunteerDriverOf } from "@/features/rides/driverWanted";
 import { relayPartnerOf, servedOf } from "@/features/rides/servedOf";
 import { useBoardRideById, useDepartments } from "@/features/siddur/hooks";
 import { he, tv } from "@/i18n/he";
@@ -22,7 +23,8 @@ import { formatTime } from "@/lib/time";
 
 /**
  * `/ride/:rideId` (REQ §13.170): the page the "who can drive?" WhatsApp message links to — just the ride's details
- * and "אני אקח" (`claim_ride_driver`, the same as the ride sheet's "אני אנהג בנסיעה הזו").
+ * and "אני אקח" (`claim_ride_driver`, the same as the ride sheet's "אני אנהג בנסיעה הזו"); once a volunteer drives it, the
+ * volunteer may step down and anyone else may take it from them (REQ §13.174).
  */
 export function RideOfferPage() {
   const { rideId } = useParams<{ rideId: string }>();
@@ -67,6 +69,9 @@ export function RideOfferPage() {
   const doesNotDrive = !!profileQuery.data?.does_not_drive;
   const drivenOnIt = isDrivenOnRide(ride, profileQuery.data?.id);
   const open = !!ride.needs_driver && !cancelled && !past;
+  const volunteer = volunteerDriverOf(ride);
+  const started = Date.parse(ride.starts_at) <= openedAt;
+  const changeDriver = !!volunteer && !started && (volunteer.id === profileQuery.data?.id || (!doesNotDrive && !drivenOnIt));
 
   return (
     <div className="mx-auto max-w-2xl space-y-4 p-4 text-sm">
@@ -84,7 +89,10 @@ export function RideOfferPage() {
 
       {cancelled ? <p className="font-medium text-muted-foreground">{he.driverWanted.cancelled}</p>
         : past ? <p className="font-medium text-muted-foreground">{he.driverWanted.past}</p>
-          : !ride.needs_driver ? (
+          : !ride.needs_driver && changeDriver ? (
+            <VolunteerDriverChange ride={ride} viewerId={profileQuery.data?.id} now={openedAt} canDrive={!doesNotDrive && !drivenOnIt}
+              onDone={() => void rideQuery.refetch()} />
+          ) : !ride.needs_driver ? (
             <p className="font-medium" data-testid="ride-offer-has-driver">
               {ride.driver_id && ride.driver_id === profileQuery.data?.id ? he.driverWanted.taken : tv("driverWanted.hasDriver", { name: ride.driver_name ?? "" })}
             </p>

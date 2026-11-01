@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { driverWantedDay, driverWantedText } from "./driverWanted";
+import { driverWantedDay, driverWantedText, volunteerDriverOf } from "./driverWanted";
 import type { BoardRide } from "./api";
 
 const person = (id: string, name: string) => ({
@@ -46,5 +46,20 @@ describe("driverWantedText (REQ §13.170)", () => {
   });
   it("words a pickup leg as a pickup from the place", () => {
     expect(driverWantedText(ride({}, "return"), "me", now, "L")).toContain("יאסוף את שלמה מלכיאלי ביום חמישי מבנימינה, לצאת בשעה 08:00");
+  });
+});
+
+describe("volunteerDriverOf (REQ §13.174)", () => {
+  const driven = { needs_driver: false, status: "confirmed", driver_id: "v1", driver_name: "דנה" } as Partial<BoardRide>;
+  it("is the driver of a ride they drive for others only", () => {
+    expect(volunteerDriverOf(ride(driven))).toEqual({ id: "v1", name: "דנה" });
+  });
+  it("is nobody on a ride that needs a driver, is cancelled, or is the driver's own trip", () => {
+    expect(volunteerDriverOf(ride())).toBeNull();
+    expect(volunteerDriverOf(ride({ ...driven, status: "cancelled" } as Partial<BoardRide>))).toBeNull();
+    const own = ride(driven);
+    (own.served as unknown as { role: string }[])[0]!.role = "driver";
+    expect(volunteerDriverOf(own)).toBeNull();
+    expect(volunteerDriverOf(ride({ ...driven, served: [] } as Partial<BoardRide>))).toBeNull();
   });
 });

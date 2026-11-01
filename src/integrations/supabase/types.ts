@@ -6730,6 +6730,10 @@ export type Database = {
         Args: { p_request_id: string }
         Returns: undefined
       }
+      release_ride_driver: {
+        Args: { p_expected_version: number; p_ride_id: string }
+        Returns: undefined
+      }
       remind_unsent_board_changes: {
         Args: { p_now?: string }
         Returns: undefined
@@ -7171,6 +7175,10 @@ export type Database = {
       }
       sync_request_coverage: {
         Args: { p_request_id: string }
+        Returns: undefined
+      }
+      take_over_ride_driver: {
+        Args: { p_expected_version: number; p_ride_id: string }
         Returns: undefined
       }
       try_auto_approve: { Args: { p_request_id: string }; Returns: Json }
