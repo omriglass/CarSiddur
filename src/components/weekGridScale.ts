@@ -51,3 +51,16 @@ export function scaledBoxStyles(
     },
   };
 }
+
+/**
+ * The pinned start column (the hours, the header's corner) of a scaled grid. `position: sticky` inside a transformed
+ * box goes wrong — Chrome moves it by the zoom factor (the hours "floated" while scrolling sideways), WebKit does not
+ * stick at all (owner 2026-11-01) — so that column is drawn outside the scaled box: a sticky strip, itself not
+ * transformed, at the scaled width, holding its own copy of the column scaled the same way.
+ */
+export function pinnedStartStyles(zoom: number, width: number): { strip: CSSProperties; inner: CSSProperties } {
+  return {
+    strip: { position: "sticky", insetInlineStart: 0, zIndex: 10, width: Math.round(width * zoom * 100) / 100, height: "100%" },
+    inner: { width, height: `calc(100% / ${zoom})`, transform: `scale(${zoom})`, transformOrigin: "top right" },
+  };
+}

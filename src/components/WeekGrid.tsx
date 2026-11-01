@@ -5,6 +5,7 @@ import { Fragment, useEffect, useMemo, useRef, useState, useCallback, useSyncExt
 import { edgeScrollStep } from "@/components/dragAutoScroll";
 import { nextZoom } from "@/components/pinchZoom";
 import { ScaledGrid } from "@/components/ScaledGrid";
+import { isIdentityZoom } from "@/components/weekGridScale";
 import { formatMinutes } from "@/components/timeField15Format";
 import {
   DropdownMenu,
@@ -1523,10 +1524,40 @@ export function WeekGrid({
     );
   }
 
+  // Zoomed, the hours and the header's corner are drawn outside the scaled grid (`ScaledGrid` `pinnedStart`): sticky
+  // inside a transform floated (Chrome) or did not stick (iPhone), owner 2026-11-01.
+  const pinStartColumn = !isIdentityZoom(zoom);
+  const cornerCell = (pinned: boolean) => (
+    <div className={cn(pinned ? "h-full" : "sticky start-0 top-0 z-30", "border-b border-e bg-muted shadow-[0_2px_6px_-2px_hsl(var(--foreground)/0.12)]")} style={{ gridColumn: 1, gridRow: 1 }} />
+  );
+  const hourCells = (pinned: boolean) => hours.map((h, i) => {
+    const quarterHere = nowQuarterMinutes != null && Math.floor(nowQuarterMinutes / 60) === h ? nowQuarterMinutes : null;
+    return (
+      <div
+        key={h}
+        className={cn(pinned ? "relative" : "sticky start-0", "z-10 flex items-start justify-end border-b border-e bg-muted px-px pt-0.5 tabular-nums text-xs font-medium text-muted-foreground shadow-[2px_0_6px_-2px_hsl(var(--foreground)/0.12)]")}
+        style={{ gridColumn: 1, gridRow: i + 2 }}
+      >
+        {/* On the hour the band covers the label's place and carries the same time: one label, not two on top of each other. */}
+        {quarterHere != null && quarterHere % 60 === 0 ? null : <span dir="ltr">{formatMinutes(h * 60)}</span>}
+        {quarterHere != null ? (
+          <span
+            className="absolute inset-x-0 flex items-center justify-center border-y border-mine bg-mine/25 text-[10px] font-bold text-foreground"
+            style={{ top: `${((quarterHere % 60) / 60) * 100}%`, height: "25%" }}
+            data-testid="week-grid-now-quarter"
+            dir="ltr"
+          >
+            {formatMinutes(quarterHere)}
+          </span>
+        ) : null}
+      </div>
+    );
+  });
+
   /** Corner + car headers + discussion header, one render for both placements (in the grid below `lg`, pinned above the box on `lg`). */
   const headerCells = (
       <>
-        <div className="sticky start-0 top-0 z-30 border-b border-e bg-muted shadow-[0_2px_6px_-2px_hsl(var(--foreground)/0.12)]" style={{ gridColumn: 1, gridRow: 1 }} />
+        {pinStartColumn && pageScroll ? null : cornerCell(false)}
         {allCars.map((car, i) => {
           const swappable = canSwapCars && !!onCarSwap && car.group !== "phantom";
           const hasCarMenu = car.group !== "phantom" && (swappable || !!enableCarReport || !!onOpenCarPage);
@@ -1657,7 +1688,8 @@ export function WeekGrid({
         // Below `md` the app shell's own sticky `h-14` header sits above (top-14); from `md` it is hidden.
         className="sticky top-14 z-30 md:top-0 overflow-hidden rounded-t-md border border-b-0 bg-muted"
       >
-        <ScaledGrid zoom={zoom} gridTemplateColumns={gridTemplateColumns} gridTemplateRows={`minmax(${HEADER_ROW_HEIGHT_PX}px, auto)`} minWidth={gridMinWidth}>
+        <ScaledGrid zoom={zoom} gridTemplateColumns={gridTemplateColumns} gridTemplateRows={`minmax(${HEADER_ROW_HEIGHT_PX}px, auto)`} minWidth={gridMinWidth}
+          pinnedStart={pinStartColumn ? { width: HOUR_COL_WIDTH_PX, rows: "1fr", children: cornerCell(true) } : undefined}>
           {headerCells}
         </ScaledGrid>
       </div>
@@ -1669,31 +1701,10 @@ export function WeekGrid({
       style={{ touchAction: "pan-x pan-y", scrollSnapType: "x proximity", scrollPaddingInlineStart: HOUR_COL_WIDTH_PX * zoom }}
       data-week-grid-scroll-viewport
     >
-      <ScaledGrid zoom={zoom} gridTemplateColumns={gridTemplateColumns} gridTemplateRows={gridTemplateRows} minWidth={gridMinWidth}>
+      <ScaledGrid zoom={zoom} gridTemplateColumns={gridTemplateColumns} gridTemplateRows={gridTemplateRows} minWidth={gridMinWidth}
+        pinnedStart={pinStartColumn ? { width: HOUR_COL_WIDTH_PX, rows: gridTemplateRows, children: hourCells(true) } : undefined}>
         {pageScroll ? null : headerCells}
-        {hours.map((h, i) => {
-          const quarterHere = nowQuarterMinutes != null && Math.floor(nowQuarterMinutes / 60) === h ? nowQuarterMinutes : null;
-          return (
-            <div
-              key={h}
-              className="sticky start-0 z-10 flex items-start justify-end border-b border-e bg-muted px-px pt-0.5 tabular-nums text-xs font-medium text-muted-foreground shadow-[2px_0_6px_-2px_hsl(var(--foreground)/0.12)]"
-              style={{ gridColumn: 1, gridRow: i + 2 }}
-            >
-              {/* On the hour the band covers the label's place and carries the same time: one label, not two on top of each other. */}
-              {quarterHere != null && quarterHere % 60 === 0 ? null : <span dir="ltr">{formatMinutes(h * 60)}</span>}
-              {quarterHere != null ? (
-                <span
-                  className="absolute inset-x-0 flex items-center justify-center border-y border-mine bg-mine/25 text-[10px] font-bold text-foreground"
-                  style={{ top: `${((quarterHere % 60) / 60) * 100}%`, height: "25%" }}
-                  data-testid="week-grid-now-quarter"
-                  dir="ltr"
-                >
-                  {formatMinutes(quarterHere)}
-                </span>
-              ) : null}
-            </div>
-          );
-        })}
+        {pinStartColumn ? null : hourCells(false)}
         {allCars.map((car, i) => (
           Column({ car, colIndex: i })
         ))}
