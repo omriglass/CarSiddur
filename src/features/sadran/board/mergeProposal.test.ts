@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { makeHop } from "@/lib/rideRoute";
 
-import { addedGuestsOf, applyServerMergeTimes, combineMergeLegs, parseServerMergePreview, personOverlapWarning, defaultMergeLeg, mergeLegForCard, mergeLegOptions, mergePayloadFromLegs, mergePayloadLegs, mergePayload, mergePayloadLeg, mergeRefusalText, mergeVerdict, previewMerge, timeFarWarning, type ServerMergePreview } from "./mergeProposal";
+import { addedGuestsOf, applyServerMergeTimes, combineMergeLegs, longDetourText, mergeWaitChoice, parseServerMergePreview, personOverlapWarning, defaultMergeLeg, mergeLegForCard, mergeLegOptions, mergePayloadFromLegs, mergePayloadLegs, mergePayload, mergePayloadLeg, mergeRefusalText, mergeVerdict, previewMerge, timeFarWarning, type ServerMergePreview } from "./mergeProposal";
 import { he } from "@/i18n/he";
 
 import type { BoardRide, WeekRequestRow } from "../api";
@@ -143,7 +143,7 @@ describe("server merge times (R5B5 / TODO U2)", () => {
     joiner_depart_at: "2026-10-11T04:00:00+00:00", joiner_return_at: null, joiner_old_depart_at: "2026-10-11T03:45:00+00:00",
   };
   it("parses merge_preview's jsonb into the fields the UI reads", () => {
-    expect(parseServerMergePreview(raw)).toEqual({ ok: true, code: null, newStartsAt: raw.new_starts_at, newEndsAt: raw.new_ends_at, joinerDepartAt: raw.joiner_depart_at, joinerReturnAt: null, turnaroundSide: null, waivable: false, personOverlaps: [], timeFar: null });
+    expect(parseServerMergePreview(raw)).toEqual({ ok: true, code: null, newStartsAt: raw.new_starts_at, newEndsAt: raw.new_ends_at, joinerDepartAt: raw.joiner_depart_at, joinerReturnAt: null, turnaroundSide: null, waivable: false, luggageWaivable: false, longDetour: null, waitWindow: null, personOverlaps: [], timeFar: null });
     expect(parseServerMergePreview({ ...raw, person_overlaps: [{ ride_id: "r2", starts_at: raw.new_starts_at, ends_at: raw.new_ends_at, role: "driver" }] })?.personOverlaps).toEqual([{ rideId: "r2", startsAt: raw.new_starts_at, endsAt: raw.new_ends_at, role: "driver" }]);
     expect(personOverlapWarning(parseServerMergePreview({ ...raw, person_overlaps: [{ ride_id: "r2", starts_at: raw.new_starts_at, ends_at: raw.new_ends_at, role: "driver" }] }))).toContain("–");
     expect(personOverlapWarning(parseServerMergePreview(raw))).toBeNull();
@@ -241,5 +241,39 @@ describe("mergeVerdict / mergeRefusalText (REQ item 108 M1: the server decides)"
     expect(mergeVerdict([{ data: undefined, isError: true }], "boards_at_end"))
       .toMatchObject({ status: "refused", source: "twin", message: he.mergedRide.invalid.boards_at_end });
     expect(mergeVerdict([{ data: null, isError: false }], "detour_too_long")).toMatchObject({ status: "refused", source: "twin" });
+  });
+});
+
+describe("long detour and waiting for the guest (REQ §13.175)", () => {
+  const raw = {
+    ok: false, code: "detour", waivable: true, luggage_waivable: false, detour_waivable: true,
+    added_out_minutes: 0, added_return_minutes: 66, unknown_hops: [{ from: "פרדס חנה", to: "בנימינה" }],
+    new_starts_at: "2026-11-03T11:00:00Z", new_ends_at: "2026-11-03T12:45:00Z",
+    joiner_return_at: "2026-11-03T12:27:00Z", wait_ends_at: "2026-11-03T13:45:00Z",
+  };
+  it("reads a long detour as waivable, not a refusal", () => {
+    const parsed = parseServerMergePreview(raw);
+    expect(parsed?.luggageWaivable).toBe(false);
+    expect(parsed?.longDetour).toEqual({ outMinutes: 0, returnMinutes: 66, unknownHops: [{ from: "פרדס חנה", to: "בנימינה" }] });
+    expect(mergeVerdict([{ data: parsed, isError: false }], null)).toEqual({ status: "ok", longDetour: parsed!.longDetour });
+  });
+  it("an older server's waivable large trunk still asks about the trunk", () => {
+    const parsed = parseServerMergePreview({ ok: false, code: "luggage", waivable: true });
+    expect(mergeVerdict([{ data: parsed, isError: false }], null)).toEqual({ status: "ok", waivable: true });
+  });
+  it("names the ride, the guest's stop, the added minutes and the unknown hops", () => {
+    const text = longDetourText(parseServerMergePreview(raw)!.longDetour!, { host: "שי", hostPlace: "פרדס חנה", guest: "אלי", guestPlace: "בנימינה", leg: "return" });
+    expect(text).toBe("העיקוף ארוך (הנסיעה של שי לפרדס חנה, האיסוף של אלי מבנימינה): עוד 66 דק׳ נסיעה. לאחד בכל זאת? זמן הנסיעה בין פרדס חנה לבנימינה לא ידוע, ולכן נספר כשעה.");
+  });
+  const guest = { depart_at: "2026-11-03T05:30:00Z", return_at: "2026-11-03T13:30:00Z", flex_depart_late: "00:00:00", flex_return_early: "00:15:00" };
+  it("asks when the ride reaches the guest earlier than her flexibility allows, offering the ride's stretch", () => {
+    expect(mergeWaitChoice(parseServerMergePreview(raw), guest, "return")).toEqual({
+      side: "return", eta: "2026-11-03T12:27:00Z", wanted: "2026-11-03T13:30:00Z", startsAt: null, endsAt: "2026-11-03T13:45:00Z",
+    });
+  });
+  it("does not ask within the guest's flexibility, or with no window to offer", () => {
+    expect(mergeWaitChoice(parseServerMergePreview({ ...raw, joiner_return_at: "2026-11-03T13:20:00Z" }), guest, "return")).toBeNull();
+    expect(mergeWaitChoice(parseServerMergePreview({ ...raw, wait_ends_at: null }), guest, "return")).toBeNull();
+    expect(mergeWaitChoice(parseServerMergePreview(raw), guest, "out")).toBeNull();
   });
 });

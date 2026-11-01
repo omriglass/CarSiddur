@@ -52,7 +52,7 @@ import { peopleNames, peopleOf } from "@/features/rides/ridePeople";
 import { resolveRideRealDestination } from "../rideLabel";
 import { duplicateChildRuns, groupDuplicateRuns } from "../duplicateChildRuns";
 import { connectedMateOf, unmetItemId } from "../unmetLegs";
-import { applyServerMergeTimes, mergeInvalidReason, mergeLegOptions, mergePayloadLeg, mergePayloadLegs, mergeVerdict, previewMerge, timeFarWarning, type MergeLeg, type MergeVerdict } from "../mergeProposal";
+import { applyServerMergeTimes, longDetourText, mergeInvalidReason, mergeLegOptions, mergePayloadLeg, mergePayloadLegs, mergeVerdict, mergeWaitChoice, previewMerge, timeFarWarning, type MergeLeg, type MergeVerdict, type MergeWaitChoice } from "../mergeProposal";
 import { requestRouteLine } from "../requestRoute";
 import { parseTimeToMinutes } from "@/features/solverBridge/buildSolverInput";
 import { representativeRideTypeCode, servedOf, servedToEditRideLegs, withChildNames } from "../../solverRun";
@@ -72,6 +72,7 @@ import { DraftChoiceDialog } from "./DraftChoiceDialog";
 import type { PendingDraft } from "./SendAllDialog";
 import type { FewerDaysSupport } from "./FewerDaysAction";
 import type { ComposerPrefill } from "../draftInput";
+import { MergeWaitDialog } from "./MergeWaitDialog";
 import { MergePrefillDialog } from "./MergePrefillDialog";
 import { DropAskDialog } from "./DropAskDialog";
 import { ProposalActionSheet } from "./ProposalActionSheet";
@@ -102,6 +103,9 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
   const boardRef = useRef<HTMLDivElement>(null);
   const [conflictJump, setConflictJump] = useState<{ rideId: string; sequence: number } | null>(null);
   const [timeFarAsk, setTimeFarAsk] = useState<{ text: string; resolve: (accepted: boolean) => void } | null>(null);
+  // REQ §13.175: "the detour is long — merge anyway?" and "pick the guest up at another time, or stretch the ride?"
+  const [detourAsk, setDetourAsk] = useState<{ text: string; resolve: (accepted: boolean) => void } | null>(null);
+  const [waitAsk, setWaitAsk] = useState<{ choice: MergeWaitChoice; resolve: (answer: "extend" | "keep" | null) => void } | null>(null);
 
   // Board queries + the pure derivation of the week-grid data (cars/rides/
   // blocks/unmet list/policy preview) — `useBoardData` (docs/TODO.md "Code
@@ -228,14 +232,33 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
   // REQ §13.111 (a): a merge whose only problem is a missing large trunk is offered; sending or drafting it asks
   // "לשבץ בכל זאת?" first and carries `allow_small_trunk` in the proposal payload.
   async function withMergeWaiver(next: (prefill: ComposerPrefill) => void | Promise<void>) {
-    const prefill = dnd.mergePrefill;
+    let prefill = dnd.mergePrefill;
     if (!prefill) return;
-    // R13B9: far from the member's own time - allowed, but the Sadran confirms it first.
-    if (mergeVerdictNow?.status === "ok" && mergeVerdictNow.timeFar) {
+    // REQ §13.175 (b): the ride reaches the guest at another time than asked - never silently: take the guest at the
+    // ride's time, or stretch the host's ride to the guest's time (sent as the merge's explicit window).
+    const wait = !mergePair && mergeRequest && mergeVerdictNow?.status === "ok" ? mergeWaitChoice(serverMergeHost.data, mergeRequest, mergeLeg) : null;
+    if (wait) {
+      const answer = await new Promise<"extend" | "keep" | null>((resolve) => setWaitAsk({ choice: wait, resolve }));
+      setWaitAsk(null);
+      if (!answer) return;
+      if (answer === "extend") prefill = { ...prefill, payload: { ...prefill.payload, ...(wait.endsAt ? { ends_at: wait.endsAt } : { starts_at: wait.startsAt }) } };
+    } else if (mergeVerdictNow?.status === "ok" && mergeVerdictNow.timeFar) {
+      // R13B9: far from the member's own time - allowed, but the Sadran confirms it first.
       const timeFar = mergeVerdictNow.timeFar;
       const accepted = await new Promise<boolean>((resolve) => setTimeFarAsk({ text: timeFarWarning(timeFar) ?? "", resolve }));
       setTimeFarAsk(null);
       if (!accepted) return;
+    }
+    // REQ §13.175 (a): over the detour limit - the Sadran's call.
+    if (mergeVerdictNow?.status === "ok" && mergeVerdictNow.longDetour) {
+      const text = longDetourText(mergeVerdictNow.longDetour, {
+        host: mergeHostName, hostPlace: mergeHostRequest?.destination_resolved_name ?? mergeHost?.destination_name ?? "",
+        guest: mergeRequest?.requester_full_name ?? "", guestPlace: mergeRequest?.destination_resolved_name ?? "", leg: mergeLeg,
+      });
+      const accepted = await new Promise<boolean>((resolve) => setDetourAsk({ text, resolve }));
+      setDetourAsk(null);
+      if (!accepted) return;
+      prefill = { ...prefill, payload: { ...prefill.payload, allow_long_detour: true } };
     }
     if (mergeVerdictNow?.status === "ok" && mergeVerdictNow.waivable) {
       const accepted = await askSmallTrunk({
@@ -252,6 +275,7 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
   }
   const mergeHostDriverEntry = mergeHost ? (servedOf(mergeHost).find((entry) => entry.role === "driver") ?? servedOf(mergeHost)[0]) : undefined;
   const mergeHostRequest = mergeHostDriverEntry ? board.boardRequests.find((request) => request.id === mergeHostDriverEntry.request_id) : undefined;
+  const mergeHostName = mergeHost?.driver_name ?? mergeHostRequest?.requester_full_name ?? "";
 
   if (weekIsPast) {
     return <Navigate to={paths.siddur({ dept: departmentId, week: weekStart })} replace />;
@@ -754,6 +778,18 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
         confirmLabel={he.mergedRide.timeFarConfirm}
         onConfirm={() => timeFarAsk?.resolve(true)}
       />
+      <ConfirmDialog
+        open={!!detourAsk}
+        onOpenChange={(open) => { if (!open) detourAsk?.resolve(false); }}
+        title={he.mergedRide.longDetourTitle}
+        description={detourAsk?.text}
+        confirmLabel={he.mergedRide.longDetourConfirm}
+        onConfirm={() => detourAsk?.resolve(true)}
+      />
+      {waitAsk ? (
+        <MergeWaitDialog choice={waitAsk.choice} guest={mergeRequest?.requester_full_name ?? ""} host={mergeHostName}
+          place={mergeRequest?.destination_resolved_name ?? ""} onAnswer={waitAsk.resolve} />
+      ) : null}
       <ConfirmDialog
         open={!!dnd.seriesMoveConfirm}
         onOpenChange={(open) => { if (!open) dnd.setSeriesMoveConfirm(null); }}

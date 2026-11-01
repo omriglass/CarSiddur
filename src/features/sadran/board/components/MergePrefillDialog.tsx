@@ -37,7 +37,7 @@ export interface MergePrefillDialogProps {
   /** The base ride's own window (before the merge). */
   hostStartsAt?: string | null;
   hostEndsAt?: string | null;
-  request: (Pick<WeekRequestRow, "trip_shape" | "requester_full_name" | "depart_at" | "return_at"> & FlexSource) | undefined;
+  request: (Pick<WeekRequestRow, "trip_shape" | "requester_full_name" | "depart_at" | "return_at" | "destination_resolved_name"> & FlexSource) | undefined;
   /** REQ §13.101 (QU5): the base ride's own requester (flexibility shown next to the base). */
   hostRequest?: (Pick<WeekRequestRow, "requester_full_name"> & FlexSource) | null;
   /** REQ §13.101 (k): second ride of a connected pair, previewed with its own leg. */
@@ -159,6 +159,9 @@ function ResultBlock({ carName, hostDriverName, hostLabel, hostStartsAt, hostEnd
       <p className="text-xs text-muted-foreground">{he.mergedRide.resultHeading}</p>
       {carName ? <p className="font-medium" data-testid="merge-result-car">{tv("mergedRide.resultCar", { car: carName, driver: hostDriverName ?? hostLabel ?? "" })}</p> : null}
       {routeText ? <p data-testid="merge-result-route">{routeText}</p> : null}
+      {/* REQ §13.175 (c): which way the guest rides, in words. */}
+      {preview.joinerOutAt ? <p data-testid="merge-result-leg-out">{tv("mergedRide.resultLegOut", { name: guestName, place: request?.destination_resolved_name ?? "", time: timeOf(preview.joinerOutAt) })}</p> : null}
+      {preview.joinerReturnAt ? <p data-testid="merge-result-leg-return">{tv("mergedRide.resultLegReturn", { name: guestName, place: request?.destination_resolved_name ?? "", time: timeOf(preview.joinerReturnAt) })}</p> : null}
       {hostStartsAt && hostEndsAt ? <OldNew name={hostDriverName ?? hostLabel ?? ""} oldText={hoursOf(hostStartsAt, hostEndsAt)} newText={hoursOf(preview.startsAt, preview.endsAt)} /> : null}
       {request?.depart_at && joinerAt ? <OldNew name={guestName} oldText={timeOf(request.depart_at)} newText={timeOf(joinerAt)} /> : null}
     </div>
@@ -219,6 +222,11 @@ export function MergePrefillDialog({ prefill, carName, hostDriverName, hostLabel
             ) : null}
             {verdict?.status === "ok" && verdict.timeFar ? (
               <p className="font-medium text-amber-700 dark:text-amber-400" data-testid="merge-time-far">{timeFarWarning(verdict.timeFar)}</p>
+            ) : null}
+            {verdict?.status === "ok" && verdict.longDetour ? (
+              <p className="font-medium text-amber-700 dark:text-amber-400" data-testid="merge-long-detour">
+                {tv("mergedRide.longDetourNote", { minutes: String(Math.max(verdict.longDetour.outMinutes, verdict.longDetour.returnMinutes)) })}
+              </p>
             ) : null}
             {verdict?.status === "ok" && verdict.waivable ? (
               <p className="font-medium text-amber-700 dark:text-amber-400" data-testid="merge-waivable">{he.smallTrunk.dropWarning}</p>

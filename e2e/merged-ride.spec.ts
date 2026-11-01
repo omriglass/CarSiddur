@@ -114,6 +114,8 @@ test("a draft merge is one marked block without conflict stripes, and taking the
     await expect(dialog.getByTestId("merge-leg-fixed")).toHaveText(he.mergedRide.legOut);
     await expect(dialog.getByTestId("merge-eta")).toBeVisible();
     await dialog.getByTestId("merge-save-draft").click();
+    // REQ §13.175 (b): the ride reaches the guest later than asked — take the guest at the ride's time (no window).
+    await page.getByTestId("merge-wait-keep").click();
     await expect(dialog).not.toBeVisible();
 
     // Legs only, never a window; the draft is unsent.

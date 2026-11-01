@@ -3,6 +3,7 @@
 // keeps its start and its end grows by the added driving (computed by `apply_proposal` from the
 // ride route; `src/lib/rideRoute.ts` is the TS twin used to preview it). No React, no Supabase.
 import { he, tv } from "@/i18n/he";
+import { parseFlexInterval } from "@/features/solverBridge/buildSolverInput";
 import { formatTime } from "@/lib/time";
 import { fallbackRoute, mergePassengerIntoRoute, parseRideRoute, type Hop, type HopKm, type MergedRoute, type MergeInvalid } from "@/lib/rideRoute";
 
@@ -173,8 +174,17 @@ export interface ServerMergePreview {
   joinerReturnAt: string | null;
   /** R6B3: which neighbour a turnaround refusal clashes with (`previous` = the ride before, `next` = the ride after). */
   turnaroundSide?: "previous" | "next" | null;
-  /** REQ §13.111 (a): the only problem is a missing large trunk - the Sadran may accept it ("לשבץ בכל זאת", payload `allow_small_trunk`). */
+  /** REQ §13.111 (a) / §13.175 (a): the only problems are ones the Sadran may accept (see `luggageWaivable` / `longDetour`). */
   waivable?: boolean;
+  /** REQ §13.111 (a): a missing large trunk the Sadran may accept ("לשבץ בכל זאת", payload `allow_small_trunk`). */
+  luggageWaivable?: boolean;
+  /** REQ §13.175 (a): the detour is over the department's limit - the Sadran may accept it (payload `allow_long_detour`). */
+  longDetour?: LongDetour | null;
+  /**
+   * REQ §13.175 (b): the window that makes the ride reach the guest at the guest's own time - later on the way back
+   * (`endsAt`), earlier on the way out (`startsAt`); `null` when the ride already does, or the day cannot hold it.
+   */
+  waitWindow?: { startsAt: string | null; endsAt: string | null } | null;
   /** R12B4 (REQ §13.119): the guest's person is already on another live ride overlapping the merged ride - a warning, never a refusal. */
   personOverlaps?: { rideId: string; startsAt: string; endsAt: string; role: string }[];
   /** R13B9: the ride passes the guest's place far from the guest's own time - allowed for the Sadran, but unlikely. */
@@ -182,6 +192,24 @@ export interface ServerMergePreview {
 }
 
 const isoOrNull = (value: unknown): string | null => (typeof value === "string" && value ? value : null);
+
+/** REQ §13.175 (a): the added driving per leg of a long detour, and the hops whose travel time is not known. */
+export interface LongDetour {
+  outMinutes: number;
+  returnMinutes: number;
+  unknownHops: { from: string; to: string }[];
+}
+
+function parseLongDetour(r: Record<string, unknown>): LongDetour | null {
+  if (r.detour_waivable !== true) return null;
+  const hops = Array.isArray(r.unknown_hops)
+    ? r.unknown_hops.flatMap((hop) => {
+      const row = hop as Record<string, unknown>;
+      return typeof row.from === "string" && typeof row.to === "string" ? [{ from: row.from, to: row.to }] : [];
+    })
+    : [];
+  return { outMinutes: Number(r.added_out_minutes) || 0, returnMinutes: Number(r.added_return_minutes) || 0, unknownHops: hops };
+}
 
 export function parseServerMergePreview(raw: unknown): ServerMergePreview | null {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
@@ -195,6 +223,11 @@ export function parseServerMergePreview(raw: unknown): ServerMergePreview | null
     joinerReturnAt: isoOrNull(r.joiner_return_at),
     turnaroundSide: r.turnaround_side === "previous" || r.turnaround_side === "next" ? r.turnaround_side : null,
     waivable: r.waivable === true,
+    // an older server sent `waivable` for a large trunk only
+    luggageWaivable: r.luggage_waivable === true || (r.waivable === true && r.luggage_waivable === undefined && r.code === "luggage"),
+    longDetour: parseLongDetour(r),
+    waitWindow: isoOrNull(r.wait_ends_at) || isoOrNull(r.wait_starts_at)
+      ? { startsAt: isoOrNull(r.wait_starts_at), endsAt: isoOrNull(r.wait_ends_at) } : null,
     personOverlaps: Array.isArray(r.person_overlaps)
       ? r.person_overlaps.flatMap((o): { rideId: string; startsAt: string; endsAt: string; role: string }[] => {
         const row = o as Record<string, unknown>;
@@ -265,8 +298,11 @@ export function mergeRefusalText(code: string | null | undefined, turnaroundSide
  */
 export type MergeVerdict =
   | { status: "loading" }
-  /** `waivable`: allowed, but only after the Sadran accepts a car without a large trunk for a large-luggage request (REQ §13.111 a). */
-  | { status: "ok"; waivable?: boolean; timeFar?: { eta: string; wanted: string } }
+  /**
+   * `waivable`: allowed, but only after the Sadran accepts a car without a large trunk for a large-luggage request (REQ §13.111 a);
+   * `longDetour`: allowed after the Sadran accepts the long detour (REQ §13.175 a).
+   */
+  | { status: "ok"; waivable?: boolean; longDetour?: LongDetour; timeFar?: { eta: string; wanted: string } }
   | { status: "refused"; message: string; code: string | null; source: "server" | "twin" };
 
 /** What `useQuery` says about one `merge_preview` call (a subset, so tests need no React). */
@@ -283,12 +319,15 @@ export interface MergePreviewState {
 export function mergeVerdict(states: readonly MergePreviewState[], twinInvalid: MergeInvalid | null): MergeVerdict {
   let loading = false;
   let waivable = false;
+  let longDetour: LongDetour | undefined;
   let timeFar: { eta: string; wanted: string } | undefined;
   for (const state of states) {
     if (state.data) {
       if (state.data.timeFar && (state.data.ok || state.data.waivable)) timeFar ??= state.data.timeFar;
-      if (!state.data.ok && state.data.waivable) waivable = true;
-      else if (!state.data.ok) return { status: "refused", message: mergeRefusalText(state.data.code, state.data.turnaroundSide), code: state.data.code, source: "server" };
+      if (!state.data.ok && state.data.waivable) {
+        if (state.data.luggageWaivable ?? !state.data.longDetour) waivable = true;
+        if (state.data.longDetour) longDetour ??= state.data.longDetour;
+      } else if (!state.data.ok) return { status: "refused", message: mergeRefusalText(state.data.code, state.data.turnaroundSide), code: state.data.code, source: "server" };
     } else if (state.isError || state.data === null) {
       if (twinInvalid) return { status: "refused", message: he.mergedRide.invalid[twinInvalid], code: twinInvalid, source: "twin" };
     } else {
@@ -296,7 +335,7 @@ export function mergeVerdict(states: readonly MergePreviewState[], twinInvalid: 
     }
   }
   if (loading) return { status: "loading" };
-  return { status: "ok", ...(waivable ? { waivable: true } : {}), ...(timeFar ? { timeFar } : {}) };
+  return { status: "ok", ...(waivable ? { waivable: true } : {}), ...(longDetour ? { longDetour } : {}), ...(timeFar ? { timeFar } : {}) };
 }
 
 /**
@@ -320,4 +359,53 @@ export function addedGuestsOf(
   const base = served.find((entry) => entry.role === "driver") ?? served[0];
   return served.flatMap((entry) => (entry.request_id && entry.request_id !== base?.request_id
     ? [{ requestId: entry.request_id, rideId, name: entry.requester ?? "" }] : []));
+}
+
+/** REQ §13.175 (a): "העיקוף ארוך (הנסיעה של X ל…, האיסוף של Y מ…): עוד N דק׳ נסיעה. לאחד בכל זאת?" plus the unknown hops. */
+export function longDetourText(detour: LongDetour, names: { host: string; hostPlace: string; guest: string; guestPlace: string; leg: MergeLeg }): string {
+  const stop = tv(names.leg === "out" ? "mergedRide.longDetourDrop" : "mergedRide.longDetourPickup", { name: names.guest, place: names.guestPlace });
+  const body = tv("mergedRide.longDetourBody", {
+    ride: tv("mergedRide.longDetourRide", { name: names.host, place: names.hostPlace }),
+    stop,
+    minutes: String(Math.max(detour.outMinutes, detour.returnMinutes)),
+  });
+  return [body, ...detour.unknownHops.map((hop) => tv("mergedRide.longDetourUnknown", hop))].join(" ");
+}
+
+/**
+ * REQ §13.175 (b): the merged ride reaches the guest at another time than asked, beyond the guest's flexibility, and the
+ * host's ride can stretch to the guest's time - later on the way back (`endsAt`), earlier on the way out (`startsAt`).
+ * `null` when the guest's time holds (or no window can).
+ */
+export interface MergeWaitChoice {
+  side: "out" | "return";
+  /** When the merged ride reaches the guest. */
+  eta: string;
+  /** The guest's own time. */
+  wanted: string;
+  startsAt: string | null;
+  endsAt: string | null;
+}
+
+export function mergeWaitChoice(
+  server: ServerMergePreview | null | undefined,
+  request: Pick<WeekRequestRow, "depart_at" | "return_at" | "flex_depart_late" | "flex_return_early">,
+  leg: MergeLeg,
+): MergeWaitChoice | null {
+  const wait = server?.waitWindow;
+  if (!server || !wait) return null;
+  const minutes = (later: string, earlier: string) => (Date.parse(later) - Date.parse(earlier)) / 60_000;
+  if (wait.endsAt && leg !== "out" && server.joinerReturnAt && request.return_at) {
+    const early = parseFlexInterval(request.flex_return_early);
+    if (early !== "day" && minutes(request.return_at, server.joinerReturnAt) > early) {
+      return { side: "return", eta: server.joinerReturnAt, wanted: request.return_at, startsAt: null, endsAt: wait.endsAt };
+    }
+  }
+  if (wait.startsAt && leg !== "return" && server.joinerDepartAt && request.depart_at) {
+    const late = parseFlexInterval(request.flex_depart_late);
+    if (late !== "day" && minutes(server.joinerDepartAt, request.depart_at) > late) {
+      return { side: "out", eta: server.joinerDepartAt, wanted: request.depart_at, startsAt: wait.startsAt, endsAt: null };
+    }
+  }
+  return null;
 }

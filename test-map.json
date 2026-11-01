@@ -553,6 +553,10 @@
         "e2e/board-drafts.spec.ts",
         "e2e/merged-ride.spec.ts",
         "e2e/merge-verdict.spec.ts",
+        "e2e/merge-long-detour.spec.ts",
+        "src/features/sadran/board/components/MergeWaitDialog.tsx",
+        "supabase/migrations/**/*merge_long_detour_and_wait*",
+        "supabase/tests/merge_long_detour.sql",
         "e2e/pilot-p2-trip-type-placement.spec.ts",
         "src/lib/rideRoute.ts",
         "src/lib/rideRoute.test.ts",
@@ -627,7 +631,8 @@
         "qa_run12_package_a.sql",
         "keep_car_at_destination.sql",
         "plan_switch.sql",
-        "on_behalf_requests.sql"
+        "on_behalf_requests.sql",
+        "merge_long_detour.sql"
       ],
       "playwrightTags": [
         "@board"

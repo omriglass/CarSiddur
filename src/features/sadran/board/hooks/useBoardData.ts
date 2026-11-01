@@ -569,7 +569,17 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
   const serverMergeWindows = new Map<string, { startsAt: string; endsAt: string }>();
   openMergeSpecs.forEach((spec, index) => {
     const server = openMergeQueries[index]?.data;
-    if (server?.ok && server.newStartsAt && server.newEndsAt) serverMergeWindows.set(spec.proposalId, { startsAt: server.newStartsAt, endsAt: server.newEndsAt });
+    // REQ §13.175: a long detour the Sadran accepted is only waivable on the server; a merge that waits for its guest
+    // carries its explicit window (`starts_at` / `ends_at`), which the ride takes on apply.
+    if ((server?.ok || server?.waivable) && server.newStartsAt && server.newEndsAt) {
+      const payload = (proposalsQuery.data ?? []).find((proposal) => proposal.id === spec.proposalId)?.payload as Record<string, unknown> | null | undefined;
+      const explicitStart = typeof payload?.starts_at === "string" ? payload.starts_at : null;
+      const explicitEnd = typeof payload?.ends_at === "string" ? payload.ends_at : null;
+      serverMergeWindows.set(spec.proposalId, {
+        startsAt: explicitStart && Date.parse(explicitStart) < Date.parse(server.newStartsAt) ? explicitStart : server.newStartsAt,
+        endsAt: explicitEnd && Date.parse(explicitEnd) > Date.parse(server.newEndsAt) ? explicitEnd : server.newEndsAt,
+      });
+    }
   });
   const draftPlacements = resolveDraftPlacements(proposalsQuery.data ?? [], boardRequests, rides, department?.home_destination_id ?? undefined, routeCtx, serverMergeWindows);
   const draftPlacedRequestIds = new Set(draftPlacements.map((placement) => placement.requestId));

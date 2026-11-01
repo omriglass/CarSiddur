@@ -5542,6 +5542,7 @@ export type Database = {
         }
         Returns: Record<string, unknown>
       }
+      _long_detour_mode: { Args: { p_allow: boolean }; Returns: undefined }
       _maintenance_quarter_ceil: { Args: { p_t: string }; Returns: string }
       _maintenance_quarter_floor: { Args: { p_t: string }; Returns: string }
       _merge_check: {

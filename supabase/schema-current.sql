@@ -2009,6 +2009,18 @@ end $$;
 ALTER FUNCTION "public"."_joiner_times"("_ride_id" "uuid", "_request_id" "uuid", "_leg" "public"."ride_leg", OUT "dep" timestamp with time zone, OUT "ret" timestamp with time zone) OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."_long_detour_mode"("p_allow" boolean) RETURNS "void"
+    LANGUAGE "plpgsql"
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+begin
+  perform set_config('app.long_detour', case when coalesce(p_allow, false) then 'allow' else '' end, true);
+end $$;
+
+
+ALTER FUNCTION "public"."_long_detour_mode"("p_allow" boolean) OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."_maintenance_quarter_ceil"("p_t" timestamp with time zone) RETURNS timestamp with time zone
     LANGUAGE "sql" IMMUTABLE
     AS $$ select to_timestamp(ceil(extract(epoch from p_t) / 900) * 900) $$;
@@ -2038,6 +2050,7 @@ declare
   v_features text[]; v_luggage boolean; v_guest public.requests%rowtype; v_swap boolean; v_boarding timestamptz; v_anchor timestamptz; v_tol interval; v_overlaps jsonb := '[]'::jsonb; v_conflict boolean := false; v_side text; v_lug_problem boolean := false;
   v_time_far boolean := false; v_far_eta timestamptz; v_far_wanted timestamptz; v_soft_far boolean;
   v_other record;
+  v_detour_problem boolean := false; v_unknown_hops jsonb := '[]'::jsonb; v_hops jsonb;
 begin
   select * into v_ride from public.rides where id = p_ride_id;
   if v_ride.id is null then return jsonb_build_object('ok', false, 'error', 'ride_not_found', 'code', 'ride_not_found'); end if;
@@ -2091,6 +2104,14 @@ begin
     from (select r.place_id, lead(r.place_id) over (order by r.position) as next_id
           from public._ride_route_with(p_ride_id, p_request_id, p_leg) r where r.leg = v_leg::public.ride_leg) x
     where x.place_id is not null and x.next_id is not null;
+    -- REQ §13.175 (a): hops of the merged route with no known travel time (no stored route, no coordinates) - each
+    -- counts as the 60-minute default, so the board names them next to a long detour.
+    select coalesce(jsonb_agg(distinct jsonb_build_object('from', a.name, 'to', b.name)), '[]'::jsonb) into v_hops
+    from (select r.place_id, lead(r.place_id) over (order by r.position) as next_id
+          from public._ride_route_with(p_ride_id, p_request_id, p_leg) r where r.leg = v_leg::public.ride_leg) x
+    join public.destinations a on a.id = x.place_id join public.destinations b on b.id = x.next_id
+    where x.place_id <> x.next_id and (select pt.travel_minutes from public.place_travel(x.place_id, x.next_id) pt) is null;
+    v_unknown_hops := v_unknown_hops || v_hops;
 
     -- REQ §13.95: a free-text place on the merged route has no known travel time, so the added
     -- driving is unknown — the Sadran's judgement decides (no detour-limit refusal, no automatic
@@ -2102,7 +2123,12 @@ begin
     else
       v_add_min[v_ix] := greatest(coalesce(v_after, 0) - coalesce(v_before, 0), 0)::int;
       v_add_km[v_ix] := greatest(coalesce(v_km_after, 0) - coalesce(v_km_before, 0), 0);
-      if v_err is null and (v_add_min[v_ix] > v_lim_min or v_add_km[v_ix] > v_lim_km) then v_err := 'merge_detour_too_long'; end if;
+      -- REQ §13.175 (a): over the limit is a refusal, unless the caller waives it (app.long_detour = 'allow': the
+      -- Sadran's "לאחד בכל זאת", a proposal carrying allow_long_detour, merge_preview asking) - then it is only reported.
+      if v_add_min[v_ix] > v_lim_min or v_add_km[v_ix] > v_lim_km then
+        if coalesce(current_setting('app.long_detour', true), '') = 'allow' then v_detour_problem := true;
+        elsif v_err is null then v_err := 'merge_detour_too_long'; end if;
+      end if;
     end if;
   end loop;
 
@@ -2242,6 +2268,8 @@ begin
     'time_far', v_time_far, 'time_far_eta', v_far_eta, 'time_far_wanted', v_far_wanted, 'turnaround_conflict', v_conflict, 'turnaround_side', v_side,
     'added_out_minutes', v_add_min[1], 'added_return_minutes', v_add_min[2],
     'added_out_km', round(v_add_km[1], 1), 'added_return_km', round(v_add_km[2], 1),
+    'detour_problem', v_detour_problem, 'detour_limit_minutes', v_lim_min, 'detour_limit_km', v_lim_km,
+    'unknown_hops', (select coalesce(jsonb_agg(distinct h), '[]'::jsonb) from jsonb_array_elements(v_unknown_hops) h),
     'starts_at', v_ride.starts_at, 'new_starts_at', v_start,
     'ends_at', v_ride.ends_at, 'new_ends_at', v_end);
 end;
@@ -4972,6 +5000,8 @@ begin
   if v_prop.created_via = 'sadran' and coalesce((v_prop.payload ->> 'allow_small_trunk')::boolean, false) then
     perform public._small_trunk_mode(true);
   end if;
+  -- REQ §13.175 (a): the Sadran accepted a long detour for this merge.
+  perform public._long_detour_mode(v_prop.created_via = 'sadran' and coalesce((v_prop.payload ->> 'allow_long_detour')::boolean, false));
   -- Old values for the old -> new notification lines (REQ §13.101 b), taken before anything changes.
   -- R14B5: "old" is what the member holds now - the booked ride's times once a ride carries the request.
   select bt.dep, bt.ret into v_old_dep, v_old_ret from public._request_booked_times(v_req.id) bt;
@@ -7575,10 +7605,12 @@ begin
   -- REQ §13.111 (a): only a Sadran draft may carry `allow_small_trunk` (the large-trunk requirement waived by hand);
   -- it is kept in the payload so send and apply honour it, and the merge/series probes below run "as allowed".
   if p_created_via <> 'sadran' then
-    p_payload := coalesce(p_payload, '{}'::jsonb) - 'allow_small_trunk';
+    p_payload := coalesce(p_payload, '{}'::jsonb) - 'allow_small_trunk' - 'allow_long_detour';
   else
     v_allow := coalesce((p_payload ->> 'allow_small_trunk')::boolean, false);
     if v_allow then perform public._small_trunk_mode(true); end if;
+    -- REQ §13.175 (a): the Sadran's "לאחד בכל זאת" for a long detour, honoured the same way on send and apply.
+    perform public._long_detour_mode(coalesce((p_payload ->> 'allow_long_detour')::boolean, false));
     if p_type = 'shift' and nullif(p_payload ->> 'car_id', '') is not null then
       perform public._small_trunk_check(array[v_req.id], (p_payload ->> 'car_id')::uuid, v_allow);
     end if;
@@ -11144,7 +11176,8 @@ CREATE OR REPLACE FUNCTION "public"."merge_preview"("p_ride_id" "uuid", "p_reque
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
 declare v_ride public.rides%rowtype; v_req public.requests%rowtype; v jsonb; v_err text; v_jd timestamptz; v_jr timestamptz;
-  v_prev text; v_lug boolean := false;
+  v_prev text; v_prev_det text; v_lug boolean := false; v_det boolean := false;
+  v_day date; v_wait_end timestamptz; v_wait_start timestamptz;
 begin
   select * into v_ride from public.rides where id = p_ride_id;
   if v_ride.id is null then raise exception 'ride_not_found' using errcode = 'P0001'; end if;
@@ -11154,14 +11187,18 @@ begin
      or not public.can_manage_week(v_ride.department_id, v_ride.week_start) then
     raise exception 'not_authorized' using errcode = 'P0001';
   end if;
-  -- REQ §13.111 (a): checked "as if allowed" so every other verdict (detour, seats, turnaround...) is real; a large-trunk
-  -- problem alone comes back as a *waivable* refusal (code 'luggage', waivable true) the Sadran may accept.
+  -- REQ §13.111 (a) / §13.175 (a): checked "as if allowed" so every other verdict (seats, turnaround...) is real; a
+  -- large-trunk problem or a long detour alone comes back as a *waivable* refusal the Sadran may accept.
   v_prev := coalesce(current_setting('app.small_trunk', true), '');
+  v_prev_det := coalesce(current_setting('app.long_detour', true), '');
   perform set_config('app.small_trunk', 'allow', true);
+  perform set_config('app.long_detour', 'allow', true);
   v := public._merge_check(p_ride_id, p_request_id, p_leg);
   perform set_config('app.small_trunk', v_prev, true);
+  perform set_config('app.long_detour', v_prev_det, true);
   v_err := v ->> 'error';
   v_lug := coalesce((v ->> 'luggage_problem')::boolean, false);
+  v_det := coalesce((v ->> 'detour_problem')::boolean, false);
   select jt.dep, jt.ret into v_jd, v_jr from public._joiner_times(p_ride_id, p_request_id, p_leg) jt;
   if v_err is null and coalesce((v ->> 'turnaround_conflict')::boolean, false) then v_err := 'merge_turnaround_conflict'; end if;
   if v_err is null then
@@ -11172,12 +11209,30 @@ begin
     end;
   end if;
   if v_err is null and v_lug and v_prev <> 'allow' then v_err := 'merge_luggage_needs_large_trunk'; end if;
+  if v_err is null and v_det and v_prev_det <> 'allow' then v_err := 'merge_detour_too_long'; end if;
+
+  -- REQ §13.175 (b): the merged ride reaches the guest at a different time than asked. Besides taking the guest at that
+  -- time, the host's ride may stretch to the guest's own time: later on the way back (wait_ends_at - the return leg's
+  -- times count back from the ride's end), earlier on the way out (wait_starts_at). Quarter-hour grid, same day only.
+  v_day := (v_ride.starts_at at time zone 'Asia/Jerusalem')::date;
+  if p_leg in ('return', 'both') and v_jr is not null and v_req.return_at is not null and v_req.return_at > v_jr + interval '5 minutes' then
+    v_wait_end := to_timestamp(round(extract(epoch from ((v ->> 'new_ends_at')::timestamptz + (v_req.return_at - v_jr))) / 900) * 900);
+    if ((v_wait_end - interval '1 minute') at time zone 'Asia/Jerusalem')::date <> v_day then v_wait_end := null; end if;
+  end if;
+  if p_leg in ('out', 'both') and v_jd is not null and v_req.depart_at is not null and v_req.depart_at < v_jd - interval '5 minutes' then
+    v_wait_start := to_timestamp(round(extract(epoch from ((v ->> 'new_starts_at')::timestamptz - (v_jd - v_req.depart_at))) / 900) * 900);
+    if (v_wait_start at time zone 'Asia/Jerusalem')::date <> v_day then v_wait_start := null; end if;
+  end if;
+
   -- seats / luggage are part of _merge_check (R7B3): one verdict for preview, create, send and apply.
   return v || jsonb_build_object('ok', v_err is null, 'error', v_err, 'code', public._merge_error_code(v_err),
-    'waivable', coalesce(v_lug and v_err = 'merge_luggage_needs_large_trunk', false),
+    'waivable', coalesce(v_err in ('merge_luggage_needs_large_trunk', 'merge_detour_too_long'), false),
+    'luggage_waivable', coalesce(v_lug and v_err in ('merge_luggage_needs_large_trunk', 'merge_detour_too_long'), false),
+    'detour_waivable', coalesce(v_det and v_err in ('merge_luggage_needs_large_trunk', 'merge_detour_too_long'), false),
     'joiner_depart_at', v_jd, 'joiner_return_at', v_jr,
     'joiner_old_depart_at', case when p_leg in ('out', 'both') then v_req.depart_at end,
-    'joiner_old_return_at', case when p_leg in ('return', 'both') then v_req.return_at end);
+    'joiner_old_return_at', case when p_leg in ('return', 'both') then v_req.return_at end,
+    'wait_ends_at', v_wait_end, 'wait_starts_at', v_wait_start);
 end $$;
 
 
@@ -18157,6 +18212,8 @@ begin
   if v_prop.status<>'draft' then raise exception 'proposal_not_draft'; end if;
   -- REQ §13.111 (a): a Sadran draft that waives the large trunk is re-checked "as allowed".
   if v_prop.created_via='sadran' and coalesce((v_prop.payload->>'allow_small_trunk')::boolean,false) then perform public._small_trunk_mode(true); end if;
+  -- REQ §13.175 (a): a Sadran merge that accepted a long detour is re-checked "as allowed".
+  perform public._long_detour_mode(v_prop.created_via='sadran' and coalesce((v_prop.payload->>'allow_long_detour')::boolean,false));
   -- Owner decision (20260910098000): the day may have gone public between draft and send
   -- (create_proposal() guards at creation time, but a draft sitting unsent is never touched
   -- by expire_proposals(), which only expires status='sent' rows) — re-check at send time.
@@ -29268,6 +29325,11 @@ GRANT ALL ON FUNCTION "public"."_hold_notice"("_recipient" "uuid", "_event" "pub
 
 REVOKE ALL ON FUNCTION "public"."_joiner_times"("_ride_id" "uuid", "_request_id" "uuid", "_leg" "public"."ride_leg", OUT "dep" timestamp with time zone, OUT "ret" timestamp with time zone) FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."_joiner_times"("_ride_id" "uuid", "_request_id" "uuid", "_leg" "public"."ride_leg", OUT "dep" timestamp with time zone, OUT "ret" timestamp with time zone) TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."_long_detour_mode"("p_allow" boolean) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_long_detour_mode"("p_allow" boolean) TO "service_role";
 
 
 
