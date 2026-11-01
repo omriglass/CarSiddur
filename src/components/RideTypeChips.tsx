@@ -1,6 +1,6 @@
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { t } from "@/i18n/he";
-import { rideTypeColorClasses } from "@/lib/rideTypeColors";
+import { useRideTypeColorClasses } from "@/components/rideTypeColorsContext";
 import { cn } from "@/lib/utils";
 
 export interface RideTypeOption {
@@ -21,6 +21,7 @@ interface RideTypeChipsProps {
 
 /** Single-select ride-type chips (component inventory `RideTypeChips`, UX_FLOWS.md §3.4). */
 export function RideTypeChips({ types, value, onChange, dots }: RideTypeChipsProps) {
+  const rideTypeColorClasses = useRideTypeColorClasses();
   return (
     <ToggleGroup
       type="single"

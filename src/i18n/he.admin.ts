@@ -17,6 +17,8 @@
 // guaranteed to cover every event, including the two Sadran-only ones
 // this map used to add on top of the (then-incomplete) `he.notif`.
 
+import type { RideTypeColor } from "@/lib/enums";
+
 export const heAdmin = {
   adminHome: {
     subtitle: "ניהול מחלקות, חברים, רכבים, יעדים ומדיניות העדיפויות",
@@ -347,6 +349,17 @@ export const heAdmin = {
     fieldSortOrder: "סדר הופעה",
     fieldActive: "פעיל",
     deactivateConfirm: "סוג הנסיעה יוסתר מהטפסים אך יישאר בהיסטוריה",
+    fieldColor: "צבע בסידור",
+    color: {
+      blue: "כחול",
+      pink: "ורוד",
+      teal: "טורקיז",
+      orange: "כתום",
+      gray: "אפור",
+      green: "ירוק",
+      yellow: "צהוב",
+      red: "אדום",
+    } satisfies Record<RideTypeColor, string>,
   },
   adminPolicy: {
     title: "מדיניות עדיפויות",

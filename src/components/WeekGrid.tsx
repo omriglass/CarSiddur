@@ -18,7 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
 import { CarReportDialog } from "@/features/carCare/components/CarReportDialog";
 import { he, tv } from "@/i18n/he";
-import { rideTypeColorClasses } from "@/lib/rideTypeColors";
+import { useRideTypeColorClasses } from "@/components/rideTypeColorsContext";
 import { cn } from "@/lib/utils";
 import { GuestChips, type GuestDropTarget, type WeekGridGuest } from "./GuestChips";
 import { bottomNavInset, pageScroller, scrollerViewport } from "./pageScroller";
@@ -511,6 +511,7 @@ export function WeekGrid({
   enableCarReport,
   onOpenCarPage,
 }: WeekGridProps) {
+  const rideTypeColorClasses = useRideTypeColorClasses();
   const drafting = surface === "drafting";
   const hours = Array.from(
     { length: Math.ceil((dayEndMinutes - dayStartMinutes) / 60) },

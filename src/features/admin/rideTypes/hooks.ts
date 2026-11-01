@@ -1,6 +1,8 @@
 import { useActiveDepartment } from "@/features/auth/useActiveDepartment";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
+import { fleetKeys } from "@/features/fleet/queryKeys";
+
 import { createRideType, fetchAllRideTypes, updateRideType, type RideTypeInsert, type RideTypeUpdate } from "./api";
 
 const key = ["admin", "rideTypes"] as const;
@@ -14,7 +16,8 @@ export function useCreateRideTypeMutation() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (input: RideTypeInsert) => createRideType(input),
-    onSuccess: () => void queryClient.invalidateQueries({ queryKey: key }),
+    // the forms and the ride colours (RideTypeColorsProvider) read the fleet copy
+    onSuccess: () => { void queryClient.invalidateQueries({ queryKey: key }); void queryClient.invalidateQueries({ queryKey: fleetKeys.rideTypes() }); },
   });
 }
 
@@ -22,6 +25,7 @@ export function useUpdateRideTypeMutation() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ id, patch }: { id: string; patch: RideTypeUpdate }) => updateRideType(id, patch),
-    onSuccess: () => void queryClient.invalidateQueries({ queryKey: key }),
+    // the forms and the ride colours (RideTypeColorsProvider) read the fleet copy
+    onSuccess: () => { void queryClient.invalidateQueries({ queryKey: key }); void queryClient.invalidateQueries({ queryKey: fleetKeys.rideTypes() }); },
   });
 }

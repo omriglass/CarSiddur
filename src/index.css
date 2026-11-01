@@ -65,12 +65,15 @@ html {
 
     --radius: 0.5rem;
 
-    /* Ride-type accent colors (board/siddur grid, RideCard, UnmetList — src/lib/rideTypeColors.ts). */
+    /* Ride-type accent colors (board/siddur grid, RideCard, UnmetList — src/lib/rideTypeColors.ts; one per `ride_type_color`). */
     --ride-work: 231 48% 48%;
     --ride-childcare: 330 65% 55%;
     --ride-healthcare: 172 66% 40%;
     --ride-errands: 24 90% 50%;
     --ride-other: 220 9% 46%;
+    --ride-green: 142 55% 36%;
+    --ride-yellow: 45 90% 40%;
+    --ride-red: 0 70% 50%;
     /* Request delta tag (REQ §13.161): dark orange text on light orange. */
     --delta: 21 90% 37%;
     --delta-soft: 33 100% 92%;
@@ -150,6 +153,9 @@ html {
   --ride-healthcare: 172 55% 55%;
   --ride-errands: 24 85% 62%;
   --ride-other: 220 9% 65%;
+  --ride-green: 142 45% 56%;
+  --ride-yellow: 45 85% 60%;
+  --ride-red: 0 75% 66%;
   --delta: 27 95% 72%;
   --delta-soft: 21 60% 20%;
 

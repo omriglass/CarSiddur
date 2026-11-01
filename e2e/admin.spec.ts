@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 import { he } from "../src/i18n/he";
-import { SEEDED_USERS, signIn, primeLanding } from "./helpers";
+import { NEVO_DEPARTMENT_ID, SEEDED_USERS, serviceRoleClient, signIn, primeLanding } from "./helpers";
 
 // Admin screens smoke test (stage 2c, docs/UX_FLOWS.md §5): the seeded demo
 // admin (supabase/seed.sql) creates a car with a seat config, a destination
@@ -181,5 +181,26 @@ test.describe("Sadran operational administration", () => {
     await expect(dialog.getByLabel(he.adminDepartments.fieldTurnaround)).toHaveValue("30");
     await dialog.getByRole("button", { name: he.adminCommon.save, exact: true }).click();
     await expect(page.getByText(he.adminCommon.savedToast, { exact: true })).toBeVisible();
+  });
+
+  test("picks a ride type's colour; the siddur legend shows it (REQ §13.177 b)", async ({ page }) => {
+    const service = serviceRoleClient();
+    try {
+      await page.goto("/admin/ride-types");
+      await page.getByRole("row").filter({ hasText: "סידורים" }).click(); // seeded name_he, supabase/seed.sql
+      await page.getByTestId("ride-type-color-green").click();
+      await expect(page.getByTestId("ride-type-color-green")).toHaveAttribute("aria-checked", "true");
+      await page.getByRole("button", { name: he.adminCommon.save, exact: true }).click();
+      await expect(page.getByRole("row").filter({ hasText: "סידורים" })).toContainText(he.adminRideTypes.color.green);
+      await expect.poll(async () => (await service.from("ride_types").select("color").eq("department_id", NEVO_DEPARTMENT_ID).eq("code", "errands").single()).data?.color)
+        .toBe("green");
+
+      await page.setViewportSize({ width: 1440, height: 1000 });
+      await page.goto(`/siddur/${NEVO_DEPARTMENT_ID}`);
+      const legendDot = page.locator("span", { hasText: /^סידורים$/ }).locator("span.rounded-full").first();
+      await expect(legendDot).toHaveClass(/bg-rideGreen/);
+    } finally {
+      await service.from("ride_types").update({ color: "orange" }).eq("department_id", NEVO_DEPARTMENT_ID).eq("code", "errands");
+    }
   });
 });

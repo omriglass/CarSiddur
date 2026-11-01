@@ -1,16 +1,14 @@
 // src/lib/rideTypeColors.ts
 //
-// One tinted-background + strong start-border color per `ride_types.code`
-// (visual pass): board ride blocks, the member siddur grid, `RideCard`'s
-// icon chip and `UnmetList`'s row icon all read this single map so the same
-// ride is colored identically everywhere. Colors are CSS custom properties
-// (`--ride-<code>` in `src/index.css`, light + dark) — this module only
-// names Tailwind utility classes built on those tokens, never a literal
-// color. `ride_types` is a small admin-editable catalog table, not a fixed
-// SQL enum (CLAUDE.md's `enums.ts` mirror only applies to real enums), so
-// this map is keyed by the five seeded codes (`supabase/seed.sql`) with an
-// `"other"` fallback for any future/custom code — never a crash on an
-// unknown one.
+// One tinted-background + strong start-border color per ride type: board ride blocks, the member siddur grid,
+// `RideCard`'s icon chip, `UnmetList`'s row icon, the legend and the statistics pie all read this single map so the
+// same ride is colored identically everywhere. Colors are CSS custom properties (`--ride-<name>` in `src/index.css`,
+// light + dark) — this module only names Tailwind utility classes built on those tokens, never a literal color.
+//
+// REQ §13.177 (b): the admin picks each type's colour (`ride_types.color`, enum `ride_type_color`). A type with no
+// colour falls back by code for the five seeded codes (`supabase/seed.sql`), else gray — never a crash on an
+// unknown code. Callers that know the department's catalog pass `colorByCode` (`useRideTypeColors()`).
+import type { RideTypeColor } from "@/lib/enums";
 
 export interface RideTypeColorClasses {
   /** Tinted block/card background. */
@@ -23,35 +21,35 @@ export interface RideTypeColorClasses {
   dot: string;
 }
 
-const RIDE_TYPE_COLOR_CLASSES: Record<string, RideTypeColorClasses> = {
-  work: { bg: "bg-rideWork/15", border: "border-s-rideWork", text: "text-rideWork", dot: "bg-rideWork" },
-  childcare: {
-    bg: "bg-rideChildcare/15",
-    border: "border-s-rideChildcare",
-    text: "text-rideChildcare",
-    dot: "bg-rideChildcare",
-  },
-  healthcare: {
-    bg: "bg-rideHealthcare/15",
-    border: "border-s-rideHealthcare",
-    text: "text-rideHealthcare",
-    dot: "bg-rideHealthcare",
-  },
-  errands: {
-    bg: "bg-rideErrands/15",
-    border: "border-s-rideErrands",
-    text: "text-rideErrands",
-    dot: "bg-rideErrands",
-  },
-  other: { bg: "bg-rideOther/15", border: "border-s-rideOther", text: "text-rideOther", dot: "bg-rideOther" },
+const COLOR_CLASSES: Record<RideTypeColor, RideTypeColorClasses> = {
+  blue: { bg: "bg-rideWork/15", border: "border-s-rideWork", text: "text-rideWork", dot: "bg-rideWork" },
+  pink: { bg: "bg-rideChildcare/15", border: "border-s-rideChildcare", text: "text-rideChildcare", dot: "bg-rideChildcare" },
+  teal: { bg: "bg-rideHealthcare/15", border: "border-s-rideHealthcare", text: "text-rideHealthcare", dot: "bg-rideHealthcare" },
+  orange: { bg: "bg-rideErrands/15", border: "border-s-rideErrands", text: "text-rideErrands", dot: "bg-rideErrands" },
+  gray: { bg: "bg-rideOther/15", border: "border-s-rideOther", text: "text-rideOther", dot: "bg-rideOther" },
+  green: { bg: "bg-rideGreen/15", border: "border-s-rideGreen", text: "text-rideGreen", dot: "bg-rideGreen" },
+  yellow: { bg: "bg-rideYellow/15", border: "border-s-rideYellow", text: "text-rideYellow", dot: "bg-rideYellow" },
+  red: { bg: "bg-rideRed/15", border: "border-s-rideRed", text: "text-rideRed", dot: "bg-rideRed" },
 };
 
-const OTHER_COLOR_CLASSES = RIDE_TYPE_COLOR_CLASSES.other as RideTypeColorClasses;
+const SEEDED_CODE_COLORS: Record<string, RideTypeColor> = {
+  work: "blue",
+  childcare: "pink",
+  healthcare: "teal",
+  errands: "orange",
+  other: "gray",
+};
 
-/** Falls back to `"other"`'s classes for an unknown/missing code. */
-export function rideTypeColorClasses(code: string | null | undefined): RideTypeColorClasses {
-  return (code && RIDE_TYPE_COLOR_CLASSES[code]) || OTHER_COLOR_CLASSES;
+/** The colour a type shows: its own, else by seeded code, else gray. */
+export function rideTypeColorOf(code: string | null | undefined, colorByCode?: ReadonlyMap<string, RideTypeColor | null>): RideTypeColor {
+  return (code && (colorByCode?.get(code) ?? SEEDED_CODE_COLORS[code])) || "gray";
 }
 
-/** The five seeded codes, in the order the legend row displays them. */
-export const RIDE_TYPE_LEGEND_ORDER = ["work", "childcare", "healthcare", "errands", "other"] as const;
+export function rideTypeColorClasses(code: string | null | undefined, colorByCode?: ReadonlyMap<string, RideTypeColor | null>): RideTypeColorClasses {
+  return COLOR_CLASSES[rideTypeColorOf(code, colorByCode)];
+}
+
+/** The classes of one palette colour (the admin's colour picker). */
+export function colorClasses(color: RideTypeColor): RideTypeColorClasses {
+  return COLOR_CLASSES[color];
+}

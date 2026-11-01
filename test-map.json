@@ -427,7 +427,10 @@
         "supabase/migrations/**/*submit_request_overlap_asks*",
         "src/lib/personBusy.ts",
         "src/lib/personBusy.test.ts",
-        "src/components/PersonBusyHost.tsx"
+        "src/components/PersonBusyHost.tsx",
+        "src/components/RideTypeLegend.tsx",
+        "src/components/rideTypeColorsContext.ts",
+        "src/lib/rideTypeColors.ts"
       ],
       "vitest": [
         "src/lib/personBusy.test.ts",
@@ -1124,7 +1127,11 @@
         "src/features/admin/departments/components/DepartmentsScreen.tsx",
         "e2e/destinations-drop-points.spec.ts",
         "supabase/migrations/**/*place_texts*",
-        "supabase/tests/ignored_place_texts.sql"
+        "supabase/tests/ignored_place_texts.sql",
+        "src/components/RideTypeColorsProvider.tsx",
+        "src/components/rideTypeColorsContext.ts",
+        "src/lib/rideTypeColors.ts",
+        "supabase/migrations/**/*ride_type*"
       ],
       "vitest": [
         "src/features/admin",

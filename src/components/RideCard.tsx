@@ -8,7 +8,7 @@ import type { RideDeltaView } from "@/features/sadran/requestDelta";
 import { CarHandoverNotice } from "@/features/rides/components/CarHandoverNotice";
 import { he, tv } from "@/i18n/he";
 import { formatDayDate } from "@/lib/dayLabels";
-import { rideTypeColorClasses } from "@/lib/rideTypeColors";
+import { useRideTypeColorClasses } from "@/components/rideTypeColorsContext";
 import { dateKey, formatTime } from "@/lib/time";
 import { rideSpanKind } from "@/lib/wholeDay";
 import { cn } from "@/lib/utils";
@@ -70,6 +70,7 @@ interface RideCardProps {
 
 /** Siddur/Home ride card: time range, origin→destination, driver, car, free seats (UX_FLOWS.md §3.3/§3.5). */
 export function RideCard({ ride, onClick }: RideCardProps) {
+  const rideTypeColorClasses = useRideTypeColorClasses();
   const isRelay = ride.originName !== ride.destinationName;
   const start = new Date(ride.startsAt);
   const end = ride.endsAt ? new Date(ride.endsAt) : null;

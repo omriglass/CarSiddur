@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { he, tv } from "@/i18n/he";
 import { formatDayDate } from "@/lib/dayLabels";
-import { rideTypeColorClasses } from "@/lib/rideTypeColors";
+import { useRideTypeColorClasses } from "@/components/rideTypeColorsContext";
 import { formatTime } from "@/lib/time";
 import { cn } from "@/lib/utils";
 import { ridePassengerSummary } from "@/lib/ridePassengerSummary";
@@ -117,6 +117,7 @@ interface UnmetListProps {
  * exists for it, otherwise by departure time.
  */
 export function UnmetList({ items, onAction, onOpenProposal, onDecision, dayStartMinutes = 6 * 60, dayEndMinutes = 23 * 60 + 59, onDragHover, onDragDrop, showHeading = true, homeDestinationId, tripTypeScope, fewerDays, requesterNameOf, placeableCarsOf, onPlaceOnCar }: UnmetListProps) {
+  const rideTypeColorClasses = useRideTypeColorClasses();
   const [placing, setPlacing] = useState<UnmetListItem | null>(null);
   const dragEnabled = !!onDragDrop;
   const [drag, setDrag] = useState<DragState | null>(null);

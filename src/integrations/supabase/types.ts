@@ -3943,6 +3943,7 @@ export type Database = {
       ride_types: {
         Row: {
           code: string
+          color: Database["public"]["Enums"]["ride_type_color"] | null
           department_id: string
           id: string
           is_active: boolean
@@ -3951,6 +3952,7 @@ export type Database = {
         }
         Insert: {
           code: string
+          color?: Database["public"]["Enums"]["ride_type_color"] | null
           department_id: string
           id?: string
           is_active?: boolean
@@ -3959,6 +3961,7 @@ export type Database = {
         }
         Update: {
           code?: string
+          color?: Database["public"]["Enums"]["ride_type_color"] | null
           department_id?: string
           id?: string
           is_active?: boolean
@@ -7692,6 +7695,15 @@ export type Database = {
       ride_leg: "out" | "return" | "both"
       ride_role: "driver" | "passenger"
       ride_status: "draft" | "confirmed" | "flagged" | "cancelled"
+      ride_type_color:
+        | "blue"
+        | "pink"
+        | "teal"
+        | "orange"
+        | "gray"
+        | "green"
+        | "yellow"
+        | "red"
       role: "member" | "sadran" | "admin"
       solver_run_status: "succeeded" | "failed"
       template_schedule: "weekly" | "dated"
@@ -7940,6 +7952,16 @@ export const Constants = {
       ride_leg: ["out", "return", "both"],
       ride_role: ["driver", "passenger"],
       ride_status: ["draft", "confirmed", "flagged", "cancelled"],
+      ride_type_color: [
+        "blue",
+        "pink",
+        "teal",
+        "orange",
+        "gray",
+        "green",
+        "yellow",
+        "red",
+      ],
       role: ["member", "sadran", "admin"],
       solver_run_status: ["succeeded", "failed"],
       template_schedule: ["weekly", "dated"],

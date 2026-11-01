@@ -131,6 +131,7 @@ create type public.notification_event   as enum ('window_open','window_closing',
 create type public.push_outbox_status   as enum ('pending','sent','failed','dead');
 create type public.answer_channel       as enum ('token','session','sadran');
 create type public.audit_action         as enum ('insert','update','delete');
+create type public.ride_type_color      as enum ('blue','pink','teal','orange','gray','green','yellow','red');  -- REQ §13.177 b, 20261102100100
 ```
 
 Notes:
@@ -504,6 +505,7 @@ RLS enable + force; **SELECT / INSERT / DELETE** = `can_manage_operations(depart
 | name_he | text | NN | | |
 | sort_order | smallint | NN | 0 | |
 | is_active | boolean | NN | true | inactive types stay referenced by history |
+| color | ride_type_color | | | REQ §13.177 b (`20261102100100`): the colour of this type's rides (board, siddur, legend, statistics pie), picked by the admin; null = by seeded code (`work` blue, `childcare` pink, `healthcare` teal, `errands` orange, `other` gray), else gray (`src/lib/rideTypeColors.ts`). The migration filled every existing type: seeded codes their colour, any other the department's next unused colour in sort order (production: `job` blue, `garden` green) |
 
 #### `weekday_labels` (added 2026-09-10, `20260910096200`)
 

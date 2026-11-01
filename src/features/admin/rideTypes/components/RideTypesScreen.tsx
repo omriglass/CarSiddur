@@ -16,7 +16,10 @@ import { Input } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { he } from "@/i18n/he";
+import { RIDE_TYPE_COLORS } from "@/lib/enums";
+import { colorClasses, rideTypeColorClasses, rideTypeColorOf } from "@/lib/rideTypeColors";
 import { showErrorToast } from "@/lib/rpc";
+import { cn } from "@/lib/utils";
 
 import { useCreateRideTypeMutation, useRideTypesAdmin, useUpdateRideTypeMutation } from "../hooks";
 import { rideTypeSchema, type RideTypeFormValues } from "../schema";
@@ -34,6 +37,7 @@ function RideTypeForm({ rideType, onSaved }: { rideType: RideType | null; onSave
       code: rideType?.code ?? "",
       sort_order: rideType?.sort_order ?? 0,
       is_active: rideType?.is_active ?? true,
+      color: rideTypeColorOf(rideType?.code, new Map([[rideType?.code ?? "", rideType?.color ?? null]])),
     },
   });
 
@@ -80,6 +84,35 @@ function RideTypeForm({ rideType, onSaved }: { rideType: RideType | null; onSave
               <FormControl>
                 <Input {...field} dir="ltr" disabled={!!rideType} />
               </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+        <FormField
+          control={form.control}
+          name="color"
+          render={({ field }) => (
+            <FormItem data-field="color">
+              <FormLabel>{he.adminRideTypes.fieldColor}</FormLabel>
+              <div className="flex flex-wrap gap-2" role="radiogroup" aria-label={he.adminRideTypes.fieldColor}>
+                {RIDE_TYPE_COLORS.map((color) => (
+                  <button
+                    key={color}
+                    type="button"
+                    role="radio"
+                    aria-checked={field.value === color}
+                    aria-label={he.adminRideTypes.color[color]}
+                    title={he.adminRideTypes.color[color]}
+                    data-testid={`ride-type-color-${color}`}
+                    onClick={() => field.onChange(color)}
+                    className={cn(
+                      "size-8 rounded-full border-2 border-transparent ring-offset-background",
+                      colorClasses(color).dot,
+                      field.value === color && "ring-2 ring-foreground ring-offset-2",
+                    )}
+                  />
+                ))}
+              </div>
               <FormMessage />
             </FormItem>
           )}
@@ -141,6 +174,7 @@ export function RideTypesScreen() {
           <TableHeader>
             <TableRow>
               <TableHead>{he.adminRideTypes.fieldNameHe}</TableHead>
+              <TableHead>{he.adminRideTypes.fieldColor}</TableHead>
               <TableHead>{he.adminRideTypes.fieldCode}</TableHead>
               <TableHead>{he.adminCommon.active}</TableHead>
             </TableRow>
@@ -149,6 +183,12 @@ export function RideTypesScreen() {
             {rideTypes.map((rt) => (
               <TableRow key={rt.id} className="cursor-pointer" onClick={() => setEditing(rt)}>
                 <TableCell>{rt.name_he}</TableCell>
+                <TableCell>
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className={cn("size-3 rounded-full", rideTypeColorClasses(rt.code, new Map([[rt.code, rt.color]])).dot)} aria-hidden="true" />
+                    {he.adminRideTypes.color[rideTypeColorOf(rt.code, new Map([[rt.code, rt.color]]))]}
+                  </span>
+                </TableCell>
                 <TableCell dir="ltr">{rt.code}</TableCell>
                 <TableCell>
                   <Badge variant={rt.is_active ? "default" : "outline"}>

@@ -1,4 +1,4 @@
-import { rideTypeColorClasses } from "@/lib/rideTypeColors";
+import { useRideTypeColorClasses } from "@/components/rideTypeColorsContext";
 import { he, tv } from "@/i18n/he";
 
 import { formatDecimal } from "../format";
@@ -23,6 +23,7 @@ const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
  * value, plus a hidden text summary for screen readers.
  */
 export function RideTypePie({ data }: RideTypePieProps) {
+  const rideTypeColorClasses = useRideTypeColorClasses();
   const totalRides = data.reduce((sum, row) => sum + row.rides, 0);
   const segments = pieSegments(data.map((row) => row.rides));
 

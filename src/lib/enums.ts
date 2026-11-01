@@ -485,3 +485,20 @@ export const WAITLIST_GROUP_STATUSES = [
 export type WaitlistGroupStatus = (typeof WAITLIST_GROUP_STATUSES)[number];
 export const waitlistGroupStatusSchema = z.enum(WAITLIST_GROUP_STATUSES);
 assertSameEnum<WaitlistGroupStatus, Enums<"waitlist_group_status">>();
+
+// ---------------------------------------------------------------------------
+// ride_type_color (REQ §13.177 b)
+// ---------------------------------------------------------------------------
+export const RIDE_TYPE_COLORS = [
+  "blue",
+  "pink",
+  "teal",
+  "orange",
+  "gray",
+  "green",
+  "yellow",
+  "red",
+] as const satisfies readonly Enums<"ride_type_color">[];
+export type RideTypeColor = (typeof RIDE_TYPE_COLORS)[number];
+export const rideTypeColorSchema = z.enum(RIDE_TYPE_COLORS);
+assertSameEnum<RideTypeColor, Enums<"ride_type_color">>();

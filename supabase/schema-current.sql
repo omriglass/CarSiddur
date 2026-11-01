@@ -353,6 +353,21 @@ CREATE TYPE "public"."ride_status" AS ENUM (
 ALTER TYPE "public"."ride_status" OWNER TO "postgres";
 
 
+CREATE TYPE "public"."ride_type_color" AS ENUM (
+    'blue',
+    'pink',
+    'teal',
+    'orange',
+    'gray',
+    'green',
+    'yellow',
+    'red'
+);
+
+
+ALTER TYPE "public"."ride_type_color" OWNER TO "postgres";
+
+
 CREATE TYPE "public"."role" AS ENUM (
     'member',
     'sadran',
@@ -24389,13 +24404,18 @@ CREATE TABLE IF NOT EXISTS "public"."ride_types" (
     "name_he" "text" NOT NULL,
     "sort_order" smallint DEFAULT 0 NOT NULL,
     "is_active" boolean DEFAULT true NOT NULL,
-    "department_id" "uuid" NOT NULL
+    "department_id" "uuid" NOT NULL,
+    "color" "public"."ride_type_color"
 );
 
 ALTER TABLE ONLY "public"."ride_types" FORCE ROW LEVEL SECURITY;
 
 
 ALTER TABLE "public"."ride_types" OWNER TO "postgres";
+
+
+COMMENT ON COLUMN "public"."ride_types"."color" IS 'Ride blocks, legend and charts colour (REQ §13.177 b); null = by code for the seeded codes, else gray.';
+
 
 
 CREATE TABLE IF NOT EXISTS "public"."rides" (

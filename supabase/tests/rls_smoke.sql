@@ -667,6 +667,7 @@ begin
     ('ride_types', 'sort_order', 'public'),
     ('ride_types', 'is_active', 'public'),
     ('ride_types', 'department_id', 'public'),
+    ('ride_types', 'color', 'public'),
     ('weekday_labels', 'dow', 'public'),
     ('weekday_labels', 'short_he', 'public'),
     ('weekday_labels', 'long_he', 'public'),
