@@ -21,6 +21,8 @@ import { canMoveOntoMyCar, rideDayPublished } from "./ownCarMove";
 import { isRideRelated } from "./relatedRide";
 import { isRideDayEditable } from "./rideDayEditable";
 import { servedOf } from "./servedOf";
+import { memberMergeTarget } from "./memberMerge";
+import { useMemberMerge } from "./useMemberMerge";
 import { useOwnCarMove } from "./useOwnCarMove";
 
 export interface MemberRideMovesOptions {
@@ -52,6 +54,8 @@ export function useMemberRideMoves({ departmentId, weekStart, week, profileId, m
   // REQ §13.129 (a): a drag of someone else's ride onto my private car waits for the owner's confirmation.
   const [ownCarMove, setOwnCarMove] = useState<RideMove | null>(null);
   const { myCars } = useOwnCarMove(profileId);
+  // REQ §13.175 (d): my ride dropped onto someone's pickup / drop-off takes them along.
+  const memberMerge = useMemberMerge({ departmentId, weekStart, onDone });
 
   const rides = boardRidesQuery.data ?? [];
   const pendingChanges = changesQuery.data ?? [];
@@ -103,9 +107,17 @@ export function useMemberRideMoves({ departmentId, weekStart, week, profileId, m
   async function persistMove(move: RideMove) {
     const ride = rides.find((r) => r.id === move.rideId);
     if (!ride || !departmentId || !weekStart || !ride.origin_id || !ride.destination_id) return;
-    if (ownsEditableRide(move.rideId) && conflictingRides(move, rides, turnaroundMinutes).length) {
-      setCollisionMove({ ...move, departmentId, weekStart });
-      return;
+    if (ownsEditableRide(move.rideId)) {
+      const conflicts = conflictingRides(move, rides, turnaroundMinutes);
+      const target = memberMergeTarget(conflicts, profileId);
+      if (target) {
+        void memberMerge.start(ride, target);
+        return;
+      }
+      if (conflicts.length) {
+        setCollisionMove({ ...move, departmentId, weekStart });
+        return;
+      }
     }
     try {
       await editMutation.mutateAsync({
@@ -141,7 +153,10 @@ export function useMemberRideMoves({ departmentId, weekStart, week, profileId, m
     const move = moveOnRideDay(ride, carId, startMinutes, endMinutes);
     if (!move || !isRideDayEditable(move.startsAt, now)) return false;
     const buffer = turnaroundMinutes;
-    if (conflictingRides(move, rides, buffer).length) return false;
+    const conflicts = conflictingRides(move, rides, buffer);
+    // REQ §13.175 (d): onto someone's pickup / drop-off = take them along (my ride itself does not move there)
+    if (conflicts.length && ownsEditableRide(rideId) && memberMergeTarget(conflicts, profileId)) return true;
+    if (conflicts.length) return false;
     if ((maintenanceQuery.data ?? []).some((block) => block.car_id === carId && Date.parse(move.startsAt) < Date.parse(block.ends_at)
       && Date.parse(move.endsAt) + buffer * 60_000 > Date.parse(block.starts_at))) return false;
     const served = servedOf(ride);
@@ -191,6 +206,8 @@ export function useMemberRideMoves({ departmentId, weekStart, week, profileId, m
     moveRide,
     isValidTarget,
     collisionDialog,
+    /** REQ §13.175 (d): the "take them along" dialogs — render once next to the collision dialog. */
+    memberMergeElement: memberMerge.element,
     pendingChanges,
     turnaroundMinutes,
     saving: editMutation.isPending || changeMutation.isPending,

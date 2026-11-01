@@ -2,8 +2,9 @@ import { describe, expect, it } from "vitest";
 
 import { makeHop } from "@/lib/rideRoute";
 
-import { addedGuestsOf, applyServerMergeTimes, combineMergeLegs, longDetourText, mergeWaitChoice, parseServerMergePreview, personOverlapWarning, defaultMergeLeg, mergeLegForCard, mergeLegOptions, mergePayloadFromLegs, mergePayloadLegs, mergePayload, mergePayloadLeg, mergeRefusalText, mergeVerdict, previewMerge, timeFarWarning, type ServerMergePreview } from "./mergeProposal";
+import { addedGuestsOf, applyServerMergeTimes, combineMergeLegs, mergeWaitChoice, parseServerMergePreview, personOverlapWarning, defaultMergeLeg, mergeLegForCard, mergeLegOptions, mergePayloadFromLegs, mergePayloadLegs, mergePayload, mergePayloadLeg, mergeRefusalText, mergeVerdict, previewMerge, timeFarWarning, type ServerMergePreview } from "./mergeProposal";
 import { he } from "@/i18n/he";
+import { longDetourText } from "@/features/rides/mergeQuestions";
 
 import type { BoardRide, WeekRequestRow } from "../api";
 

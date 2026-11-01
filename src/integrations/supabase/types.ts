@@ -5545,6 +5545,14 @@ export type Database = {
       _long_detour_mode: { Args: { p_allow: boolean }; Returns: undefined }
       _maintenance_quarter_ceil: { Args: { p_t: string }; Returns: string }
       _maintenance_quarter_floor: { Args: { p_t: string }; Returns: string }
+      _member_merge_check: {
+        Args: {
+          p_request_id: string
+          p_ride_id: string
+          p_source_ride_id: string
+        }
+        Returns: Json
+      }
       _merge_check: {
         Args: {
           p_leg?: Database["public"]["Enums"]["ride_leg"]
@@ -5557,6 +5565,14 @@ export type Database = {
       _merge_guest_swapped: {
         Args: { p_request_id: string; p_ride_id: string }
         Returns: boolean
+      }
+      _merge_preview_core: {
+        Args: {
+          p_leg?: Database["public"]["Enums"]["ride_leg"]
+          p_request_id: string
+          p_ride_id: string
+        }
+        Returns: Json
       }
       _merge_union_legs: { Args: { _new: Json; _old: Json }; Returns: Json }
       _merge_window_conflict: {
@@ -6367,6 +6383,26 @@ export type Database = {
       maybe_apply_accepted_proposal: {
         Args: { p_proposal_id: string }
         Returns: undefined
+      }
+      member_merge_preview: {
+        Args: {
+          p_request_id: string
+          p_ride_id: string
+          p_source_ride_id: string
+        }
+        Returns: Json
+      }
+      member_merge_ride: {
+        Args: {
+          p_agreed?: boolean
+          p_allow_long_detour?: boolean
+          p_expected_version: number
+          p_request_id: string
+          p_ride_id: string
+          p_source_ride_id: string
+          p_wait?: boolean
+        }
+        Returns: Json
       }
       member_of: { Args: { _dept: string }; Returns: boolean }
       merge_destination: {

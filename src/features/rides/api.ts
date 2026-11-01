@@ -5,6 +5,7 @@ import { withSmallTrunkRetry } from "@/lib/smallTrunk";
 import type { Database, Json } from "@/integrations/supabase/types";
 
 import type { CarNeighbourRow } from "./carHandover";
+import { parseLongDetour, type LongDetour } from "./mergeQuestions";
 
 /**
  * Shared ride-level pieces the `siddur` and `sadran` features both need (moved out of
@@ -160,4 +161,57 @@ export async function fetchExportLayout(departmentId: string): Promise<ExportLay
   if (department.error) throw toAppError(department.error);
   if (settings.error) throw toAppError(settings.error);
   return { cars: cars.data ?? [], departmentName: department.data?.name ?? null, homeDestinationId: department.data?.home_destination_id ?? null, boardStartTime: settings.data?.board_start_time ?? null };
+}
+
+/** REQ §13.175 (d): the member's merge of a rider into the ride they drive — the server's verdict and the questions it needs. */
+export interface MemberMergePreview {
+  ok: boolean;
+  code: string | null;
+  leg: "out" | "return" | "both";
+  guestName: string;
+  longDetour: LongDetour | null;
+  /** A car without a large trunk — only the Sadran may accept it. */
+  luggageProblem: boolean;
+  joinerDepartAt: string | null;
+  joinerReturnAt: string | null;
+  wantedDepartAt: string | null;
+  wantedReturnAt: string | null;
+  waitStartsAt: string | null;
+  waitEndsAt: string | null;
+  /** The guest keeps their time as the ride is / once the ride stretches to it. */
+  timeKept: boolean;
+  waitKeepsTime: boolean;
+  /** Applies without "we talked": as the ride is / stretched. */
+  direct: boolean;
+  directWithWait: boolean;
+  sourceDriverName: string | null;
+  otherRiders: string[];
+}
+
+const isoOr = (value: unknown): string | null => (typeof value === "string" && value ? value : null);
+
+export async function memberMergePreview(rideId: string, sourceRideId: string, requestId: string): Promise<MemberMergePreview> {
+  const raw = (await rpc("member_merge_preview", { p_ride_id: rideId, p_source_ride_id: sourceRideId, p_request_id: requestId })) as Record<string, unknown>;
+  return {
+    ok: raw.ok === true,
+    code: typeof raw.code === "string" ? raw.code : null,
+    leg: raw.leg === "out" || raw.leg === "return" ? raw.leg : "both",
+    guestName: typeof raw.guest_name === "string" ? raw.guest_name : "",
+    longDetour: parseLongDetour(raw),
+    luggageProblem: raw.luggage_waivable === true,
+    joinerDepartAt: isoOr(raw.joiner_depart_at), joinerReturnAt: isoOr(raw.joiner_return_at),
+    wantedDepartAt: isoOr(raw.joiner_old_depart_at), wantedReturnAt: isoOr(raw.joiner_old_return_at),
+    waitStartsAt: isoOr(raw.wait_starts_at), waitEndsAt: isoOr(raw.wait_ends_at),
+    timeKept: raw.time_kept === true, waitKeepsTime: raw.wait_keeps_time === true,
+    direct: raw.direct === true, directWithWait: raw.direct_with_wait === true,
+    sourceDriverName: isoOr(raw.source_driver_name),
+    otherRiders: Array.isArray(raw.other_riders) ? raw.other_riders.filter((name): name is string => typeof name === "string") : [],
+  };
+}
+
+export async function memberMergeRide(input: { rideId: string; sourceRideId: string; requestId: string; expectedVersion: number; wait: boolean; allowLongDetour: boolean; agreed: boolean }): Promise<void> {
+  await rpc("member_merge_ride", {
+    p_ride_id: input.rideId, p_source_ride_id: input.sourceRideId, p_request_id: input.requestId, p_expected_version: input.expectedVersion,
+    p_wait: input.wait, p_allow_long_detour: input.allowLongDetour, p_agreed: input.agreed,
+  });
 }

@@ -3,6 +3,7 @@
 // keeps its start and its end grows by the added driving (computed by `apply_proposal` from the
 // ride route; `src/lib/rideRoute.ts` is the TS twin used to preview it). No React, no Supabase.
 import { he, tv } from "@/i18n/he";
+import { parseLongDetour, type LongDetour, type MergeWaitChoice } from "@/features/rides/mergeQuestions";
 import { parseFlexInterval } from "@/features/solverBridge/buildSolverInput";
 import { formatTime } from "@/lib/time";
 import { fallbackRoute, mergePassengerIntoRoute, parseRideRoute, type Hop, type HopKm, type MergedRoute, type MergeInvalid } from "@/lib/rideRoute";
@@ -193,24 +194,6 @@ export interface ServerMergePreview {
 
 const isoOrNull = (value: unknown): string | null => (typeof value === "string" && value ? value : null);
 
-/** REQ §13.175 (a): the added driving per leg of a long detour, and the hops whose travel time is not known. */
-export interface LongDetour {
-  outMinutes: number;
-  returnMinutes: number;
-  unknownHops: { from: string; to: string }[];
-}
-
-function parseLongDetour(r: Record<string, unknown>): LongDetour | null {
-  if (r.detour_waivable !== true) return null;
-  const hops = Array.isArray(r.unknown_hops)
-    ? r.unknown_hops.flatMap((hop) => {
-      const row = hop as Record<string, unknown>;
-      return typeof row.from === "string" && typeof row.to === "string" ? [{ from: row.from, to: row.to }] : [];
-    })
-    : [];
-  return { outMinutes: Number(r.added_out_minutes) || 0, returnMinutes: Number(r.added_return_minutes) || 0, unknownHops: hops };
-}
-
 export function parseServerMergePreview(raw: unknown): ServerMergePreview | null {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
   const r = raw as Record<string, unknown>;
@@ -359,32 +342,6 @@ export function addedGuestsOf(
   const base = served.find((entry) => entry.role === "driver") ?? served[0];
   return served.flatMap((entry) => (entry.request_id && entry.request_id !== base?.request_id
     ? [{ requestId: entry.request_id, rideId, name: entry.requester ?? "" }] : []));
-}
-
-/** REQ §13.175 (a): "העיקוף ארוך (הנסיעה של X ל…, האיסוף של Y מ…): עוד N דק׳ נסיעה. לאחד בכל זאת?" plus the unknown hops. */
-export function longDetourText(detour: LongDetour, names: { host: string; hostPlace: string; guest: string; guestPlace: string; leg: MergeLeg }): string {
-  const stop = tv(names.leg === "out" ? "mergedRide.longDetourDrop" : "mergedRide.longDetourPickup", { name: names.guest, place: names.guestPlace });
-  const body = tv("mergedRide.longDetourBody", {
-    ride: tv("mergedRide.longDetourRide", { name: names.host, place: names.hostPlace }),
-    stop,
-    minutes: String(Math.max(detour.outMinutes, detour.returnMinutes)),
-  });
-  return [body, ...detour.unknownHops.map((hop) => tv("mergedRide.longDetourUnknown", hop))].join(" ");
-}
-
-/**
- * REQ §13.175 (b): the merged ride reaches the guest at another time than asked, beyond the guest's flexibility, and the
- * host's ride can stretch to the guest's time - later on the way back (`endsAt`), earlier on the way out (`startsAt`).
- * `null` when the guest's time holds (or no window can).
- */
-export interface MergeWaitChoice {
-  side: "out" | "return";
-  /** When the merged ride reaches the guest. */
-  eta: string;
-  /** The guest's own time. */
-  wanted: string;
-  startsAt: string | null;
-  endsAt: string | null;
 }
 
 export function mergeWaitChoice(

@@ -5,7 +5,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { he, tv } from "@/i18n/he";
 import { formatTime } from "@/lib/time";
 
-import type { MergeWaitChoice } from "../mergeProposal";
+import type { MergeWaitChoice } from "../mergeQuestions";
 
 export function MergeWaitDialog({ choice, guest, host, place, onAnswer }: {
   choice: MergeWaitChoice;

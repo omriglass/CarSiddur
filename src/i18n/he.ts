@@ -297,6 +297,13 @@ export const he = {
     ownCarMoveBody: "{{name}} ינהג/תנהג ברכב {{car}}. כל מי שבנסיעה יקבל/תקבל הודעה.",
     ownCarMoveConfirm: "העברה לרכב שלי",
     collisionTitle: "כבר קיימת נסיעה בזמן הזה",
+    /** REQ §13.175 (d): my ride dragged onto someone's pickup / drop-off - take them along. */
+    mergeTitle: "לצרף את {{name}} לנסיעה שלך?",
+    mergeConfirm: "לצרף",
+    mergeDone: "{{name}} צורף/ה לנסיעה שלך",
+    mergeTalkedTitle: "דיברת עם {{names}} על השינוי?",
+    mergeTalkedBody: "השינוי יחול מיד, ו{{names}} יקבלו הודעה.",
+    mergeTalkedYes: "כן, כבר סיכמנו",
     collisionBody: "אפשר לבקש מהנהגים/ות לפנות את הזמן. הנסיעה הקיימת תישאר בתוקף עד שכולם יאשרו את הביטול. השינוי שלך יופיע בהמתנה לאישור.",
     acknowledge: "אני מודע/ת — שליחת בקשה",
     requested: "הבקשה נשלחה לנהגים/ות לאישור",

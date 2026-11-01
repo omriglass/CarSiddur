@@ -787,6 +787,7 @@ export function SiddurPage() {
 
       <ConfirmDialog {...rideMoves.collisionDialog} />
       <ConfirmDialog {...rideMoves.ownCarDialog} />
+      {rideMoves.memberMergeElement}
 
       {isMyDepartment ? (
         <AddRideFab />

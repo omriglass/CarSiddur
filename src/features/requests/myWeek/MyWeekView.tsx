@@ -319,6 +319,7 @@ export function MyWeekView({ departmentId, homeDestinationId, profileId, request
         />
       </div>
       <ConfirmDialog {...rideMoves.collisionDialog} />
+      {rideMoves.memberMergeElement}
       {calendar.available ? <CalendarDialog open={calendarOpen} onOpenChange={setCalendarOpen} /> : null}
     </div>
   );

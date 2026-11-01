@@ -403,6 +403,14 @@
         "src/features/rides/components/VolunteerDriverPanel.tsx",
         "src/pages/RideOfferPage.tsx",
         "e2e/driver-wanted.spec.ts",
+        "e2e/member-merge-ride.spec.ts",
+        "src/features/rides/memberMerge.ts",
+        "src/features/rides/memberMerge.test.ts",
+        "src/features/rides/useMemberMerge.tsx",
+        "src/features/rides/mergeQuestions.ts",
+        "src/features/rides/components/MergeWaitDialog.tsx",
+        "supabase/migrations/**/*member_merge_into_own_ride*",
+        "supabase/tests/member_merge_ride.sql",
         "src/features/rides/components/VolunteerDriverChange.tsx",
         "supabase/migrations/**/*volunteer_driver_step_down_take_over*",
         "supabase/tests/volunteer_driver_change.sql"
@@ -423,7 +431,8 @@
         "unpublished_day_requests.sql",
         "ride_change_settles.sql",
         "production_fixes_2026_11_01.sql",
-        "volunteer_driver_change.sql"
+        "volunteer_driver_change.sql",
+        "member_merge_ride.sql"
       ],
       "playwrightTags": [
         "@siddur"
@@ -554,7 +563,6 @@
         "e2e/merged-ride.spec.ts",
         "e2e/merge-verdict.spec.ts",
         "e2e/merge-long-detour.spec.ts",
-        "src/features/sadran/board/components/MergeWaitDialog.tsx",
         "supabase/migrations/**/*merge_long_detour_and_wait*",
         "supabase/tests/merge_long_detour.sql",
         "e2e/pilot-p2-trip-type-placement.spec.ts",
