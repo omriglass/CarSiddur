@@ -1,6 +1,6 @@
 # Changes for the next release (since v2026.10.30-1)
 
-Branches: `o28-o29-followups` + `debug-and-stats` (not yet merged into `main`). Status: **QA run 17 fixed (REQ §13.172) and verified by QA run 18; awaiting the owner's go.**
+Branches: `o28-o29-followups` + `debug-and-stats` (not yet merged into `main`). Status: **QA run 17 fixed (REQ §13.172) and verified by QA run 18; released by the owner's go 2026-11-01. R18B1 deliberately not fixed (owner: shrinking a ride and re-offering its hours could surprise people shortly before their ride); the rest of QA run 18 stays in docs/TODO.md.**
 
 ## What members see
 
@@ -52,7 +52,7 @@ Branches: `o28-o29-followups` + `debug-and-stats` (not yet merged into `main`). 
 - **New profile column:** `profiles.push_on_ride_edits`, default on.
 - **New route:** `/ride/:rideId`, which requires sign-in.
 - **New RPC:** `refresh_freed_offer` (Sadran; calls the edge function again).
-- **"מה חדש":** none written yet. Use `/write-changelog` before an announced release, or release as a minor one.
+- **"מה חדש":** entry `2026-11-01-driver-wanted` on top of `src/i18n/he.changelog.ts`.
 
 ## Tests
 
