@@ -98,14 +98,15 @@ export interface DepartmentMemberOption {
 /** Active members of a department (for `CompanionPicker`), excluding the current member. */
 export async function fetchDepartmentMembers(
   departmentId: string,
-  excludeProfileId: string,
+  excludeProfileId: string | null,
 ): Promise<DepartmentMemberOption[]> {
-  const { data, error } = await supabase
+  let query = supabase
     .from("department_members")
     .select("profile_id, default_origin_id, profile:profiles!department_members_profile_id_fkey(id, full_name, does_not_drive)")
     .eq("department_id", departmentId)
-    .is("removed_at", null)
-    .neq("profile_id", excludeProfileId);
+    .is("removed_at", null);
+  if (excludeProfileId) query = query.neq("profile_id", excludeProfileId);
+  const { data, error } = await query;
   if (error) throw toAppError(error);
   return ((data ?? []) as unknown as { profile_id: string; default_origin_id: string | null; profile: { id: string; full_name: string; does_not_drive: boolean } | null }[])
     .filter((row) => row.profile !== null)

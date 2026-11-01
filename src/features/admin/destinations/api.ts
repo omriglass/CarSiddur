@@ -97,26 +97,43 @@ export async function mergeFreeTextIntoDestination(destinationId: string, freeTe
 }
 
 
+/** The `destination-route` function's machine codes -> the admin's message. */
+async function mapsError(error: { context?: unknown }): Promise<AppError> {
+  let code: string | undefined;
+  if (error.context instanceof Response) {
+    try { code = (await error.context.json())?.error?.code; } catch { /* Gateway/network error has no function payload. */ }
+  }
+  const messages: Record<string, string> = {
+    maps_not_configured: he.adminDestinations.mapsNotConfigured,
+    home_not_configured: he.adminDestinations.mapsHomeMissing,
+    destination_not_found: he.adminDestinations.mapsDestinationMissing,
+    not_authorized: he.adminDestinations.mapsUnauthorized,
+    route_not_found: he.adminDestinations.mapsNoRoute,
+  };
+  return new AppError("unknown", messages[code ?? ""] ?? he.adminDestinations.mapsFailed);
+}
+
 export async function calculateDestinationRoute(departmentId: string, destinationId: string): Promise<{ distance_km: number; travel_minutes: number }> {
   const { data, error } = await supabase.functions.invoke("destination-route", {
     body: { department_id: departmentId, destination_id: destinationId },
   });
-  if (error) {
-    let code: string | undefined;
-    if (error.context instanceof Response) {
-      try { code = (await error.context.json())?.error?.code; } catch { /* Gateway/network error has no function payload. */ }
-    }
-    const messages: Record<string, string> = {
-      maps_not_configured: he.adminDestinations.mapsNotConfigured,
-      home_not_configured: he.adminDestinations.mapsHomeMissing,
-      destination_not_found: he.adminDestinations.mapsDestinationMissing,
-      not_authorized: he.adminDestinations.mapsUnauthorized,
-      route_not_found: he.adminDestinations.mapsNoRoute,
-    };
-    throw new AppError("unknown", messages[code ?? ""] ?? he.adminDestinations.mapsFailed);
-  }
+  if (error) throw await mapsError(error);
   if (!data || !Number.isFinite(data.distance_km) || data.distance_km < 0 || !Number.isInteger(data.travel_minutes) || data.travel_minutes < 0) {
     throw new AppError("unknown", he.adminDestinations.mapsFailed);
   }
   return { distance_km: data.distance_km, travel_minutes: data.travel_minutes };
+}
+
+/** At most this many places per call (the function's `LOCATE_BATCH`). */
+export const LOCATE_BATCH = 10;
+
+export type LocatedPlace = { id: string; lat: number; lng: number } | { id: string; error: string };
+
+/** REQ §13.175 (e): where each place is, from Google (`destination-route` mode `locate`; nothing is written there). */
+export async function locateDestinations(departmentId: string, destinationIds: readonly string[]): Promise<LocatedPlace[]> {
+  const { data, error } = await supabase.functions.invoke("destination-route", {
+    body: { department_id: departmentId, mode: "locate", destination_ids: destinationIds },
+  });
+  if (error) throw await mapsError(error);
+  return Array.isArray(data?.results) ? (data.results as LocatedPlace[]) : [];
 }

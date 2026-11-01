@@ -83,3 +83,31 @@ describe('Google route estimates', () => {
     expect(await (await handleDestinationRoute(request(), deps)).json()).toEqual({ error: { code: 'maps_request_failed' } });
   });
 });
+
+describe('locating places (REQ §13.175 e)', () => {
+  const second = '00000000-0000-0000-0000-000000000202';
+  const locate = (ids: unknown) => request({ department_id: department, mode: 'locate', destination_ids: ids });
+  it('returns each place where the route from home to its name ends, without writing', async () => {
+    const deps = setup({ fetch: vi.fn()
+      .mockResolvedValueOnce(Response.json({ routes: [{ legs: [{ endLocation: { latLng: { latitude: 32.5212345678, longitude: 34.9512345678 } } }] }] }))
+      .mockResolvedValueOnce(Response.json({ routes: [] })) });
+    const result = await handleDestinationRoute(locate([destination, second]), deps);
+    expect(await result.json()).toEqual({ results: [
+      { id: destination, lat: 32.521235, lng: 34.951235 },
+      { id: second, error: 'not_found' },
+    ] });
+    const [, init] = vi.mocked(deps.fetch).mock.calls[0]!;
+    expect(JSON.parse(init!.body as string)).toMatchObject({ destination: { address: 'Destination' }, regionCode: 'IL' });
+    expect(init!.headers).toMatchObject({ 'X-Goog-FieldMask': 'routes.legs.endLocation' });
+  });
+  it('checks permission first and accepts at most one batch of valid ids', async () => {
+    const denied = setup({ canManage: vi.fn().mockResolvedValue(false) });
+    expect((await handleDestinationRoute(locate([destination]), denied)).status).toBe(403);
+    expect(denied.fetch).not.toHaveBeenCalled();
+    const deps = setup();
+    expect((await handleDestinationRoute(locate([]), deps)).status).toBe(400);
+    expect((await handleDestinationRoute(locate(['x']), deps)).status).toBe(400);
+    expect((await handleDestinationRoute(locate(Array.from({ length: 11 }, () => destination)), deps)).status).toBe(400);
+    expect(deps.fetch).not.toHaveBeenCalled();
+  });
+});

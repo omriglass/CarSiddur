@@ -64,7 +64,7 @@ Week parameter `:week` is the target week's Sunday as `YYYY-MM-DD`. `:dept` is t
 | `/admin/roster` | Sadran roster | Admin | Calendar of weeks × departments (§5.3). |
 | `/admin/cars` `/admin/cars/:id` | Cars | Admin | Fields + seat configuration editor (§5.4). |
 | `/admin/maintenance` | Maintenance periods | Admin, Sadran | §5.5 |
-| `/admin/destinations` | Destinations | Admin | Presets, free-text merge queue (§5.6). |
+| `/admin/destinations` | Destinations | Admin | Presets, free-text merge queue (§5.6); "השלמת מיקומים חסרים (N)" fills every missing lat/lng from Google and a "מפה" link per place checks it (REQ §13.175 e). |
 | `/admin/ride-types` | Ride types | Admin | §5.7 |
 | `/admin/policies` `/admin/policies/:id` | Priority policies | Admin | Rules, weights, "test on last week" (§5.8). |
 | `/admin/templates` | Notification templates | Admin | §5.9 |

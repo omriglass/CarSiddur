@@ -1078,6 +1078,7 @@
         "src/features/fleet/**",
         "src/features/diagnostics/**",
         "supabase/functions/destination-route/**",
+        "src/lib/destination-route.test.ts",
         "src/i18n/he.admin.ts",
         "supabase/migrations/**/*admin*",
         "supabase/migrations/**/*catalog*",

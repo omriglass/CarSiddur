@@ -21,8 +21,8 @@ export const authKeys = {
     ["auth", "isSadran", profileId, departmentId, weekStart] as const,
   isSadranAnywhere: (profileId: string | undefined, departmentIds: readonly string[]) =>
     ["auth", "isSadranAnywhere", profileId, ...departmentIds] as const,
-  departmentMembers: (departmentId: string | undefined) =>
-    ["auth", "departmentMembers", departmentId] as const,
+  departmentMembers: (departmentId: string | undefined, includeSelf = false) =>
+    ["auth", "departmentMembers", departmentId, ...(includeSelf ? ["withSelf"] : [])] as const,
   pushSubscriptionCount: (profileId: string | undefined) =>
     ["auth", "pushSubscriptionCount", profileId] as const,
 };

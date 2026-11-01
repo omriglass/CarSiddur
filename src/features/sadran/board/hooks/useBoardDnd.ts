@@ -194,7 +194,8 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
   // queries `RequestForm`'s own companions/children pickers use.
   const { session } = useSession();
   const profileId = session?.user.id;
-  const reservationMembersQuery = useDepartmentMembers(departmentId);
+  // The Sadran may drive a ride or be named on a reservation like any other member.
+  const reservationMembersQuery = useDepartmentMembers(departmentId, { includeSelf: true });
   const reservationReferenceYear = Number((board.days[0] ?? weekStart).slice(0, 4));
   const reservationChildrenQuery = useQuery({
     queryKey: ["children", departmentId, profileId, reservationReferenceYear],

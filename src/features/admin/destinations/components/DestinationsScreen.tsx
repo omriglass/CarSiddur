@@ -1,9 +1,9 @@
 import { useActiveDepartment } from "@/features/auth/useActiveDepartment";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { formatInTimeZone } from "date-fns-tz";
-import { ChevronDown, MapPin, Plus } from "lucide-react";
+import { ChevronDown, ExternalLink, LocateFixed, MapPin, Plus } from "lucide-react";
 import { useRef, useState } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { toast } from "sonner";
 
 import { EmptyState } from "@/components/EmptyState";
@@ -27,6 +27,7 @@ import { showErrorToast } from "@/lib/rpc";
 import {
   useCreateDestinationMutation,
   useCalculateDestinationRouteMutation,
+  useLocateMissingDestinationsMutation,
   useDestinationsAdmin,
   useFreeTextQueue,
   useIgnoredPlaceTexts,
@@ -163,6 +164,7 @@ function DestinationForm({ destination, prefillName, onSaved }: { destination: D
             )} />)}
         </div>
         <p className="text-sm text-muted-foreground">{he.adminDestinations.coordinatesHelp}</p>
+        <FormMapLink control={form.control} />
         <div className="grid gap-2">
           <Button type="button" variant="outline" disabled={!destination || !departmentId || form.formState.isDirty || routeMutation.isPending}
             onClick={async () => {
@@ -261,16 +263,49 @@ function DestinationForm({ destination, prefillName, onSaved }: { destination: D
   );
 }
 
+/** The edit form's map link follows the coordinates as they are typed. */
+function FormMapLink({ control }: { control: ReturnType<typeof useForm<DestinationFormValues>>["control"] }) {
+  const [lat, lng] = useWatch({ control, name: ["lat", "lng"] });
+  return <MapLink lat={lat} lng={lng} label={he.adminDestinations.openMap} />;
+}
+
+/** REQ §13.175 (e): "check on the map" — the place's coordinates on Google Maps, in a new tab. */
+function MapLink({ lat, lng, label }: { lat: number | null | undefined; lng: number | null | undefined; label?: string }) {
+  if (lat == null || lng == null) return label ? null : <span>—</span>;
+  return (
+    <a href={`https://www.google.com/maps?q=${lat},${lng}`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-primary underline-offset-2 hover:underline"
+      onClick={(event) => event.stopPropagation()} data-testid="destination-map-link">
+      <ExternalLink className="size-4" />{label ?? <span dir="ltr" className="tabular-nums">{lat.toFixed(4)}, {lng.toFixed(4)}</span>}
+    </a>
+  );
+}
+
 function ListTab() {
   const destinationsQuery = useDestinationsAdmin();
   const [editing, setEditing] = useState<Destination | null | undefined>(undefined);
   const destinations = destinationsQuery.data ?? [];
+  const locate = useLocateMissingDestinationsMutation();
+  const missing = destinations.filter((d) => d.lat == null || d.lng == null);
 
   return (
     <div className="flex flex-col gap-4">
-      <Button onClick={() => setEditing(null)} className="self-start">
-        <Plus className="me-1 size-4" /> {he.adminDestinations.new}
-      </Button>
+      <div className="flex flex-wrap gap-2">
+        <Button onClick={() => setEditing(null)}>
+          <Plus className="me-1 size-4" /> {he.adminDestinations.new}
+        </Button>
+        <Button variant="outline" disabled={!missing.length || locate.isPending} data-testid="destinations-locate-missing"
+          onClick={() => locate.mutate(missing.map((d) => ({ id: d.id, name: d.name })), {
+            onSuccess: ({ updated, notFound }) => {
+              toast.success(tv("adminDestinations.located", { count: String(updated) }),
+                notFound.length ? { description: tv("adminDestinations.locatedNotFound", { names: notFound.join(", ") }) } : undefined);
+            },
+            onError: showErrorToast,
+          })}>
+          <LocateFixed className="me-1 size-4" />
+          {locate.isPending ? he.adminDestinations.locating
+            : missing.length ? tv("adminDestinations.locateMissing", { count: String(missing.length) }) : he.adminDestinations.noneMissing}
+        </Button>
+      </div>
       {destinations.length === 0 ? (
         <EmptyState icon={MapPin} message={he.adminDestinations.empty} />
       ) : (
@@ -283,6 +318,7 @@ function ListTab() {
               <TableHead>{he.adminDestinations.fieldPtScore}</TableHead>
               <TableHead>{he.adminCommon.active}</TableHead>
               <TableHead>{he.adminDestinations.dropPointBadge}</TableHead>
+              <TableHead>{he.adminDestinations.columnMap}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -304,6 +340,7 @@ function ListTab() {
                 <TableCell>
                   {d.is_drop_point ? <Badge variant="secondary" data-testid="destination-drop-point-badge">{he.adminDestinations.dropPointBadge}</Badge> : "—"}
                 </TableCell>
+                <TableCell><MapLink lat={d.lat} lng={d.lng} /></TableCell>
               </TableRow>
             ))}
           </TableBody>
