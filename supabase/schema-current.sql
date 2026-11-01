@@ -11228,7 +11228,7 @@ end $$;
 ALTER FUNCTION "public"."member_merge_preview"("p_ride_id" "uuid", "p_source_ride_id" "uuid", "p_request_id" "uuid") OWNER TO "postgres";
 
 
-CREATE OR REPLACE FUNCTION "public"."member_merge_ride"("p_ride_id" "uuid", "p_source_ride_id" "uuid", "p_request_id" "uuid", "p_expected_version" integer, "p_wait" boolean DEFAULT false, "p_allow_long_detour" boolean DEFAULT false, "p_agreed" boolean DEFAULT false) RETURNS "jsonb"
+CREATE OR REPLACE FUNCTION "public"."member_merge_ride"("p_ride_id" "uuid", "p_source_ride_id" "uuid", "p_request_id" "uuid", "p_expected_version" integer, "p_wait" boolean DEFAULT false, "p_allow_long_detour" boolean DEFAULT false, "p_agreed" boolean DEFAULT false, "p_allow_small_trunk" boolean DEFAULT false) RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
@@ -11241,9 +11241,10 @@ begin
   if h.id is not null and (p_expected_version is null or h.version <> p_expected_version) then perform public.raise_stale_version(); end if;
   v := public._member_merge_check(p_ride_id, p_source_ride_id, p_request_id);
   v_leg := (v ->> 'leg')::public.ride_leg;
-  -- a member may accept a long detour, never a car without a large trunk
-  if not (v ->> 'ok')::boolean and not (coalesce((v ->> 'detour_waivable')::boolean, false)
-       and not coalesce((v ->> 'luggage_waivable')::boolean, false) and p_allow_long_detour) then
+  -- REQ §13.175 (d, g): the member may accept a long detour and, after "אני מודע/ת", a car without a large trunk
+  if not (v ->> 'ok')::boolean and not (coalesce((v ->> 'waivable')::boolean, false)
+       and (not coalesce((v ->> 'detour_waivable')::boolean, false) or p_allow_long_detour)
+       and (not coalesce((v ->> 'luggage_waivable')::boolean, false) or p_allow_small_trunk)) then
     raise exception '%', coalesce(v ->> 'error', 'merge_not_allowed') using errcode = 'P0001';
   end if;
   v_direct := case when p_wait then (v ->> 'direct_with_wait')::boolean else (v ->> 'direct')::boolean end;
@@ -11270,6 +11271,8 @@ begin
   end if;
 
   perform public._long_detour_mode(p_allow_long_detour);
+  -- the waiver is stamped on the request by assert_ride_seats_fit below (luggage_waived_at/by), as for the Sadran
+  perform public._small_trunk_mode(p_allow_small_trunk);
   c := public._merge_check(h.id, p_request_id, v_leg);
   perform public._long_detour_mode(false);
   if c ->> 'error' is not null then raise exception '%', c ->> 'error' using errcode = 'P0001'; end if;
@@ -11282,6 +11285,7 @@ begin
   perform public.assert_ride_request_day(h.id);
   perform public.assert_ride_seats_fit(h.id);
   perform public.assert_car_chain(h.car_id, h.week_start);
+  perform public._small_trunk_mode(false);
   update public.requests set status = 'merged', status_reason = 'MEMBER_MERGED' where id = p_request_id;
   perform set_config('app.system_status_transition', v_prev, true);
 
@@ -11293,7 +11297,7 @@ begin
 end $$;
 
 
-ALTER FUNCTION "public"."member_merge_ride"("p_ride_id" "uuid", "p_source_ride_id" "uuid", "p_request_id" "uuid", "p_expected_version" integer, "p_wait" boolean, "p_allow_long_detour" boolean, "p_agreed" boolean) OWNER TO "postgres";
+ALTER FUNCTION "public"."member_merge_ride"("p_ride_id" "uuid", "p_source_ride_id" "uuid", "p_request_id" "uuid", "p_expected_version" integer, "p_wait" boolean, "p_allow_long_detour" boolean, "p_agreed" boolean, "p_allow_small_trunk" boolean) OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."member_of"("_dept" "uuid") RETURNS boolean
@@ -30718,9 +30722,9 @@ GRANT ALL ON FUNCTION "public"."member_merge_preview"("p_ride_id" "uuid", "p_sou
 
 
 
-REVOKE ALL ON FUNCTION "public"."member_merge_ride"("p_ride_id" "uuid", "p_source_ride_id" "uuid", "p_request_id" "uuid", "p_expected_version" integer, "p_wait" boolean, "p_allow_long_detour" boolean, "p_agreed" boolean) FROM PUBLIC;
-GRANT ALL ON FUNCTION "public"."member_merge_ride"("p_ride_id" "uuid", "p_source_ride_id" "uuid", "p_request_id" "uuid", "p_expected_version" integer, "p_wait" boolean, "p_allow_long_detour" boolean, "p_agreed" boolean) TO "service_role";
-GRANT ALL ON FUNCTION "public"."member_merge_ride"("p_ride_id" "uuid", "p_source_ride_id" "uuid", "p_request_id" "uuid", "p_expected_version" integer, "p_wait" boolean, "p_allow_long_detour" boolean, "p_agreed" boolean) TO "authenticated";
+REVOKE ALL ON FUNCTION "public"."member_merge_ride"("p_ride_id" "uuid", "p_source_ride_id" "uuid", "p_request_id" "uuid", "p_expected_version" integer, "p_wait" boolean, "p_allow_long_detour" boolean, "p_agreed" boolean, "p_allow_small_trunk" boolean) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."member_merge_ride"("p_ride_id" "uuid", "p_source_ride_id" "uuid", "p_request_id" "uuid", "p_expected_version" integer, "p_wait" boolean, "p_allow_long_detour" boolean, "p_agreed" boolean, "p_allow_small_trunk" boolean) TO "service_role";
+GRANT ALL ON FUNCTION "public"."member_merge_ride"("p_ride_id" "uuid", "p_source_ride_id" "uuid", "p_request_id" "uuid", "p_expected_version" integer, "p_wait" boolean, "p_allow_long_detour" boolean, "p_agreed" boolean, "p_allow_small_trunk" boolean) TO "authenticated";
 
 
 

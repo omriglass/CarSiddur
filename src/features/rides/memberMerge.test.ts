@@ -18,7 +18,7 @@ function ride(overrides: Partial<BoardRide> = {}): BoardRide {
 }
 
 const preview: MemberMergePreview = {
-  ok: false, code: "detour", leg: "return", guestName: "אלי", longDetour: { outMinutes: 0, returnMinutes: 66, unknownHops: [] }, luggageProblem: false,
+  ok: false, code: "detour", waivable: true, leg: "return", guestName: "אלי", longDetour: { outMinutes: 0, returnMinutes: 66, unknownHops: [] }, luggageProblem: false,
   joinerDepartAt: null, joinerReturnAt: "2026-11-03T12:27:00Z", wantedDepartAt: null, wantedReturnAt: "2026-11-03T13:30:00Z",
   waitStartsAt: null, waitEndsAt: "2026-11-03T13:45:00Z", timeKept: false, waitKeepsTime: true, direct: false, directWithWait: true,
   sourceDriverName: null, otherRiders: [],

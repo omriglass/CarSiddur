@@ -1,6 +1,7 @@
 // REQ §13.175 (d): the member's "take them along" — my ride dropped onto someone's pickup / drop-off on the siddur or
 // "my rides". The same questions as the Sadran's merge, in order: take them along? -> the guest's time (stretch my ride,
-// or take them at my ride's time) -> the long detour -> "did you talk with X?" when it is not direct. Then one call.
+// or take them at my ride's time) -> the long detour -> no large trunk for large luggage ("אני מודע/ת", REQ §13.175 g)
+// -> "did you talk with X?" when it is not direct. Then one call.
 import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -17,7 +18,7 @@ import { memberMergeAgreeNames, memberMergeWaitChoice, type MemberMergeTarget } 
 import { longDetourText } from "./mergeQuestions";
 import { servedOf } from "./servedOf";
 
-type Step = "confirm" | "wait" | "detour" | "agree";
+type Step = "confirm" | "wait" | "detour" | "luggage" | "agree";
 
 interface Flow {
   host: BoardRide;
@@ -49,7 +50,7 @@ export function useMemberMerge({ departmentId, weekStart, onDone }: {
     if (!host.id || !target.ride.id) return;
     try {
       const preview = await memberMergePreview(host.id, target.ride.id, target.requestId);
-      if (!preview.ok && !(preview.longDetour && !preview.luggageProblem)) {
+      if (!preview.ok && !preview.waivable) {
         toast.error(refusal(preview.code));
         return;
       }
@@ -60,10 +61,11 @@ export function useMemberMerge({ departmentId, weekStart, onDone }: {
   }
 
   function next(current: Flow, after: Step) {
-    const order: Step[] = ["confirm", "wait", "detour", "agree"];
+    const order: Step[] = ["confirm", "wait", "detour", "luggage", "agree"];
     for (const step of order.slice(order.indexOf(after) + 1)) {
       if (step === "wait" && memberMergeWaitChoice(current.preview)) return setFlow({ ...current, step });
       if (step === "detour" && current.preview.longDetour) return setFlow({ ...current, step });
+      if (step === "luggage" && current.preview.luggageProblem) return setFlow({ ...current, step });
       if (step === "agree" && !(current.wait ? current.preview.directWithWait : current.preview.direct)) return setFlow({ ...current, step });
     }
     void apply(current, false);
@@ -75,7 +77,7 @@ export function useMemberMerge({ departmentId, weekStart, onDone }: {
     setBusy(true);
     try {
       await memberMergeRide({ rideId: host.id, sourceRideId: target.ride.id, requestId: target.requestId, expectedVersion: host.version,
-        wait, allowLongDetour: !!preview.longDetour, agreed });
+        wait, allowLongDetour: !!preview.longDetour, agreed, allowSmallTrunk: preview.luggageProblem });
       await invalidateWeekData(queryClient, departmentId, weekStart);
       toast.success(tv("rideEditing.mergeDone", { name: preview.guestName || target.name }));
       setFlow(null);
@@ -116,6 +118,9 @@ export function useMemberMerge({ departmentId, weekStart, onDone }: {
           host: viewerName, hostPlace: hostDestinationOf(flow.host), guest, guestPlace: destinationOf(flow.target), leg: flow.preview.leg,
         }) : ""}
         confirmLabel={he.mergedRide.longDetourConfirm} loading={busy} onConfirm={() => { if (flow) next(flow, "detour"); }} />
+      <ConfirmDialog open={flow?.step === "luggage"} onOpenChange={(open) => { if (!open) close(); }}
+        title={he.smallTrunk.confirmTitle} description={tv("rideEditing.mergeLuggageBody", { name: guest })}
+        confirmLabel={he.rideEditing.mergeLuggageAware} loading={busy} onConfirm={() => { if (flow) next(flow, "luggage"); }} />
       <ConfirmDialog open={flow?.step === "agree"} onOpenChange={(open) => { if (!open) close(); }}
         title={tv("rideEditing.mergeTalkedTitle", { names })} description={tv("rideEditing.mergeTalkedBody", { names })}
         confirmLabel={he.rideEditing.mergeTalkedYes} loading={busy} onConfirm={() => { if (flow) void apply(flow, true); }} />

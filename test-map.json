@@ -410,6 +410,7 @@
         "src/features/rides/mergeQuestions.ts",
         "src/features/rides/components/MergeWaitDialog.tsx",
         "supabase/migrations/**/*member_merge_into_own_ride*",
+        "supabase/migrations/**/*member_merge_small_trunk*",
         "supabase/tests/member_merge_ride.sql",
         "src/features/rides/components/VolunteerDriverChange.tsx",
         "supabase/migrations/**/*volunteer_driver_step_down_take_over*",

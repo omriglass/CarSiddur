@@ -6396,6 +6396,7 @@ export type Database = {
         Args: {
           p_agreed?: boolean
           p_allow_long_detour?: boolean
+          p_allow_small_trunk?: boolean
           p_expected_version: number
           p_request_id: string
           p_ride_id: string

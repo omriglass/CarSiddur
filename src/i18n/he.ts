@@ -304,6 +304,9 @@ export const he = {
     mergeTalkedTitle: "דיברת עם {{names}} על השינוי?",
     mergeTalkedBody: "השינוי יחול מיד, ו{{names}} יקבלו הודעה.",
     mergeTalkedYes: "כן, כבר סיכמנו",
+    /** REQ §13.175 (g): large luggage on my car without a large trunk. */
+    mergeLuggageBody: "ל{{name}} יש ציוד רב, והנסיעה צריכה תא מטען גדול — ולרכב שלך אין.",
+    mergeLuggageAware: "אני מודע/ת",
     collisionBody: "אפשר לבקש מהנהגים/ות לפנות את הזמן. הנסיעה הקיימת תישאר בתוקף עד שכולם יאשרו את הביטול. השינוי שלך יופיע בהמתנה לאישור.",
     acknowledge: "אני מודע/ת — שליחת בקשה",
     requested: "הבקשה נשלחה לנהגים/ות לאישור",

@@ -1423,5 +1423,6 @@ Found while clearing two stuck "ממתין לאישור פינוי הזמן" blo
 
 - ✅ (a)–(c) board: long detour asks "לאחד בכל זאת?", the wait-or-earlier choice, leg wording (migration `20261101120000`, suite `merge_long_detour.sql`, e2e `merge-long-detour.spec.ts`).
 - ✅ (d) member on the siddur drags/stretches their own ride over someone's pickup -> same questions; direct when the guest keeps their time and the ride is driverless or theirs, else "כן, כבר סיכמנו" (owner: no member proposals). Migration `20261101130000`, suite `member_merge_ride.sql`, e2e `member-merge-ride.spec.ts`.
+- ✅ (g) the member may accept a car without a large trunk after "אני מודע/ת" (`20261101140000`).
 - ✅ (e) destination coordinates: "השלמת מיקומים חסרים" button + map links (`destination-route` mode `locate`). After the release, press it once on production and check the compound names ("חדרה ואז תל אביב", "פרדס חנה ולהבות חביבה", …) on the map.
 - ✅ (f) the Sadran can pick themselves as a ride's driver (the board used the request form's member list, which leaves out the viewer).

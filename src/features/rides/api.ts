@@ -170,7 +170,9 @@ export interface MemberMergePreview {
   leg: "out" | "return" | "both";
   guestName: string;
   longDetour: LongDetour | null;
-  /** A car without a large trunk — only the Sadran may accept it. */
+  /** Only problems the member may accept (a long detour, a car without a large trunk). */
+  waivable: boolean;
+  /** A car without a large trunk for large luggage — accepted after "אני מודע/ת" (REQ §13.175 g). */
   luggageProblem: boolean;
   joinerDepartAt: string | null;
   joinerReturnAt: string | null;
@@ -198,6 +200,7 @@ export async function memberMergePreview(rideId: string, sourceRideId: string, r
     leg: raw.leg === "out" || raw.leg === "return" ? raw.leg : "both",
     guestName: typeof raw.guest_name === "string" ? raw.guest_name : "",
     longDetour: parseLongDetour(raw),
+    waivable: raw.waivable === true,
     luggageProblem: raw.luggage_waivable === true,
     joinerDepartAt: isoOr(raw.joiner_depart_at), joinerReturnAt: isoOr(raw.joiner_return_at),
     wantedDepartAt: isoOr(raw.joiner_old_depart_at), wantedReturnAt: isoOr(raw.joiner_old_return_at),
@@ -209,9 +212,9 @@ export async function memberMergePreview(rideId: string, sourceRideId: string, r
   };
 }
 
-export async function memberMergeRide(input: { rideId: string; sourceRideId: string; requestId: string; expectedVersion: number; wait: boolean; allowLongDetour: boolean; agreed: boolean }): Promise<void> {
+export async function memberMergeRide(input: { rideId: string; sourceRideId: string; requestId: string; expectedVersion: number; wait: boolean; allowLongDetour: boolean; agreed: boolean; allowSmallTrunk: boolean }): Promise<void> {
   await rpc("member_merge_ride", {
     p_ride_id: input.rideId, p_source_ride_id: input.sourceRideId, p_request_id: input.requestId, p_expected_version: input.expectedVersion,
-    p_wait: input.wait, p_allow_long_detour: input.allowLongDetour, p_agreed: input.agreed,
+    p_wait: input.wait, p_allow_long_detour: input.allowLongDetour, p_agreed: input.agreed, p_allow_small_trunk: input.allowSmallTrunk,
   });
 }

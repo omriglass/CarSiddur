@@ -7,8 +7,9 @@ import { publishedFixtureWeek } from "./published-week";
 /**
  * REQ §13.175 (d), the production case of 2026-11-01 on the siddur: member1 (שי) drives home -> פרדס חנה 13:00–14:30;
  * member2 (אלי) waits in בנימינה for a 15:30 pickup on a driverless ride. In edit mode שי drags his ride onto hers:
- * "take her along?" -> stretch my ride to her pickup time -> "the detour is long — merge anyway?" -> she rides with him,
- * her driverless ride is gone, his ride ends after 15:30.
+ * "take her along?" -> stretch my ride to her pickup time -> "the detour is long — merge anyway?" -> her large luggage
+ * and his car without a large trunk: "אני מודע/ת" (REQ §13.175 g) -> she rides with him, her driverless ride is gone,
+ * his ride ends after 15:30, the waiver is recorded.
  */
 test.use({ actionTimeout: 15_000 });
 
@@ -47,7 +48,7 @@ test("a member drags their ride onto someone's pickup and takes them along", { t
   ).select("id").single();
   if (error) throw error;
   const { data: pickup, error: pickupError } = await service.from("requests").insert(
-    { ...base, requester_id: MEMBER2, filed_by: MEMBER2, origin_id: home, destination_id: BINYAMINA, trip_shape: "one_way_from", trip_type: "drop_off", one_way_car_mode: "passenger", return_at: at("15:30"), status: "waitlisted" },
+    { ...base, requester_id: MEMBER2, filed_by: MEMBER2, origin_id: home, destination_id: BINYAMINA, trip_shape: "one_way_from", trip_type: "drop_off", one_way_car_mode: "passenger", return_at: at("15:30"), has_luggage: true, status: "waitlisted" },
   ).select("id").single();
   if (pickupError) throw pickupError;
   const { data: hostRide, error: rideError } = await service.from("rides").insert(
@@ -84,15 +85,23 @@ test("a member drags their ride onto someone's pickup and takes them along", { t
     await page.getByTestId("merge-wait-extend").click();
     const detour = page.getByRole("dialog").filter({ hasText: he.mergedRide.longDetourTitle });
     await detour.getByRole("button", { name: he.mergedRide.longDetourConfirm }).click();
+    const luggage = page.getByRole("dialog").filter({ hasText: he.smallTrunk.confirmTitle });
+    await luggage.getByRole("button", { name: he.rideEditing.mergeLuggageAware }).click();
 
     await expect.poll(async () => (await service.from("ride_requests").select("leg").eq("ride_id", hostRide!.id).eq("request_id", pickup!.id).maybeSingle()).data?.leg)
       .toBe("return");
     const { data: after } = await service.from("rides").select("id,status,ends_at").in("id", [hostRide!.id, pickupRide!.id]);
     expect(after!.find((r) => r.id === pickupRide!.id)!.status).toBe("cancelled");
     expect(Date.parse(after!.find((r) => r.id === hostRide!.id)!.ends_at)).toBeGreaterThanOrEqual(Date.parse(at("15:30")));
+    const { data: waived } = await service.from("requests").select("luggage_waived_by").eq("id", pickup!.id).single();
+    expect(waived!.luggage_waived_by).toBe(MEMBER1);
   } finally {
     await member1.context.close().catch(() => undefined);
     if (settings) await service.from("department_settings").update(settings).eq("department_id", NEVO_DEPARTMENT_ID);
+    // cancelling her driverless ride on another car offered the freed slot
+    const { data: offers } = await service.from("freed_slot_offers").select("id").eq("department_id", NEVO_DEPARTMENT_ID).eq("week_start", WEEK);
+    if (offers?.length) await service.from("freed_slot_claims").delete().in("offer_id", offers.map((o) => o.id));
+    await service.from("freed_slot_offers").delete().eq("department_id", NEVO_DEPARTMENT_ID).eq("week_start", WEEK);
     const { data: weekRides } = await service.from("rides").select("id").eq("department_id", NEVO_DEPARTMENT_ID).eq("week_start", WEEK);
     if (weekRides?.length) await service.from("ride_requests").delete().in("ride_id", weekRides.map((r) => r.id));
     await service.from("rides").delete().eq("department_id", NEVO_DEPARTMENT_ID).eq("week_start", WEEK);
