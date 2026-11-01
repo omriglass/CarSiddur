@@ -2,6 +2,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { ageFromBirthYear, isAdultPassenger } from "@/lib/childAge";
 import { isActiveStop, parseRouteStops, type RouteStop } from "@/lib/routeStops";
 import { rpc, toAppError } from "@/lib/rpc";
+import { withPersonBusyRetry } from "@/lib/personBusy";
 import { withSmallTrunkRetry } from "@/lib/smallTrunk";
 import { siddurCarName } from "@/lib/siddurCarName";
 
@@ -931,10 +932,11 @@ export async function fetchChildRequestOverlaps(args: {
 /** `submit_request(payload jsonb)` — the only write path for requests (CLAUDE.md decision 8). */
 export async function submitRequest(payload: SubmitRequestPayload): Promise<Json> {
   if (payload.waitlist) return rpc("enter_waiting_list", { p_payload: payload as unknown as Json });
-  // REQ §13.111 (a): `needs_large_trunk` (quick / car-now, ask-to-join) asks the shared dialog and retries with the flag.
-  return withSmallTrunkRetry((allowSmallTrunk) => rpc("submit_request", {
-    payload: (allowSmallTrunk ? { ...payload, allow_small_trunk: true } : payload) as unknown as Json,
-  }));
+  // REQ §13.111 (a): `needs_large_trunk` (quick / car-now, ask-to-join) asks the shared dialog and retries with the flag;
+  // REQ §13.176: so does `person_busy` (an overlap with the member's own ride or request), retried as `overlap_confirmed`.
+  return withPersonBusyRetry((allowBusy) => withSmallTrunkRetry((allowSmallTrunk) => rpc("submit_request", {
+    payload: { ...payload, ...(allowSmallTrunk ? { allow_small_trunk: true } : {}), ...(allowBusy ? { overlap_confirmed: true } : {}) } as unknown as Json,
+  })));
 }
 
 /**

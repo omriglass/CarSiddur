@@ -9,7 +9,7 @@ import { peopleOf } from "@/features/rides/ridePeople";
 import type { BoardRide } from "./api";
 
 export function myRideCard(
-  ride: BoardRide & { car_name: string | null; car_type?: "shared" | "temporary" | null },
+  ride: BoardRide & { car_name: string | null; car_type?: "shared" | "temporary" | null; my_part?: { starts_at: string; ends_at: string } },
   requests: readonly MyRequestRow[],
   rideTypes: readonly { code: string; name_he: string }[],
   /** REQ §13.108 f: the signed-in member and this ride's neighbours on its car — enables the "be back on time" note. */
@@ -44,7 +44,8 @@ export function myRideCard(
     handover: handoverNotes,
     tightSchedule: handover?.tight || undefined,
     relatedLabel: handover?.relatedLabel,
-    id: ride.id, startsAt: ride.starts_at, endsAt: ride.ends_at,
+    // REQ §13.176: on someone else's ride the card shows my own part of it (e.g. from my pickup on the way back)
+    id: ride.id, startsAt: ride.my_part?.starts_at ?? ride.starts_at, endsAt: ride.my_part?.ends_at ?? ride.ends_at,
     originName: ride.origin_name ?? "", destinationName: destination,
     label: chauffeur ? chauffeurRideLabel(ride.needs_driver ? null : ride.driver_name, passengers, ride.starts_at, ride.origin_id ?? undefined,
       { from: ride.origin_name ?? "", to: ride.destination_name ?? "" })

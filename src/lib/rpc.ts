@@ -169,6 +169,7 @@ export type ErrorCode =
   | "driver_not_member"
   | "luggage_capacity_violation"
   | "needs_large_trunk"
+  | "person_busy"
   | "car_fields_locked"
   | "ride_week_not_public"
   | "push_unsupported"
@@ -332,6 +333,7 @@ const MESSAGE_TO_CODE: Record<string, ErrorCode> = {
   driver_not_member: "driver_not_member",
   luggage_capacity_violation: "luggage_capacity_violation",
   needs_large_trunk: "needs_large_trunk",
+  person_busy: "person_busy",
   car_fields_locked: "car_fields_locked",
   ride_driver_already_assigned: "driver_assigned",
   ride_in_past: "ride_past",
@@ -491,6 +493,7 @@ const CODE_TO_MESSAGE: Record<ErrorCode, string> = {
   driver_not_member: he.errors.driverNotMember,
   luggage_capacity_violation: he.errors.luggageCapacityViolation,
   needs_large_trunk: he.errors.needsLargeTrunk,
+  person_busy: he.errors.personBusy,
   car_fields_locked: he.errors.carFieldsLocked,
   driver_assigned: he.rideCoordination.noLongerMissing,
   ride_past: he.rideCoordination.past,
@@ -557,7 +560,8 @@ export class AppError extends Error {
   readonly description?: string;
   /**
    * The server's raw `details` text, kept for the few codes whose caller needs its content
-   * (`needs_large_trunk`: JSON naming the requests and the car, `lib/smallTrunk.ts`).
+   * (`needs_large_trunk`: JSON naming the requests and the car, `lib/smallTrunk.ts`; `person_busy`: the person and
+   * their overlapping rides, `lib/personBusy.ts`).
    */
   readonly detail?: string;
   /** The person answered "no" to the confirmation this refusal led to (`withSmallTrunkRetry`): nothing to report, no toast. */
@@ -660,7 +664,7 @@ export function toAppError(error: unknown): AppError {
     const description = pgError?.details || pgError?.hint || bareCode || undefined;
     return new AppError(code, message, description ?? undefined);
   }
-  return new AppError(code, message, undefined, code === "needs_large_trunk" ? (pgError?.details ?? undefined) : undefined);
+  return new AppError(code, message, undefined, code === "needs_large_trunk" || code === "person_busy" ? (pgError?.details ?? undefined) : undefined);
 }
 
 /** Maps the error and shows a Hebrew toast (mutations' `onError`, CLAUDE.md "Data"). */

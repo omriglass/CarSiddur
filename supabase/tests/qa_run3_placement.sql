@@ -159,9 +159,9 @@ begin
   perform set_config('request.jwt.claims',jsonb_build_object('sub',manager,'role','authenticated')::text,true);
   begin
     perform public.set_ride_driver(rB,p103,ver);
-    raise exception 'busy volunteer must be refused';
+    raise exception 'busy volunteer must be asked about';
   exception when others then
-    get stacked diagnostics v_err = message_text; assert v_err='driver_busy','got '||v_err;
+    get stacked diagnostics v_err = message_text; assert v_err='person_busy','got '||v_err;   -- REQ §13.176: a question, not a refusal
   end;
 
   -- R3B12: 103 cancels; the driver is told, and the ride (still 104's own) stays.

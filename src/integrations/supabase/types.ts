@@ -3718,6 +3718,7 @@ export type Database = {
           department_id: string
           display_name: string
           id: string
+          leg: Database["public"]["Enums"]["ride_leg"]
           person_id: string | null
           ride_id: string
           seat_kind: string
@@ -3731,6 +3732,7 @@ export type Database = {
           department_id: string
           display_name: string
           id?: string
+          leg?: Database["public"]["Enums"]["ride_leg"]
           person_id?: string | null
           ride_id: string
           seat_kind: string
@@ -3744,6 +3746,7 @@ export type Database = {
           department_id?: string
           display_name?: string
           id?: string
+          leg?: Database["public"]["Enums"]["ride_leg"]
           person_id?: string | null
           ride_id?: string
           seat_kind?: string
@@ -5336,7 +5339,26 @@ export type Database = {
         Args: { p_car_id: string; p_request_id: string; p_span: Json }
         Returns: string
       }
+      _ask_request_overlap: {
+        Args: {
+          p_depart_at: string
+          p_request_id: string
+          p_requester_id: string
+          p_return_at: string
+        }
+        Returns: undefined
+      }
       _ask_to_join_ride_label: { Args: { p_ride_id: string }; Returns: string }
+      _assert_person_free: {
+        Args: {
+          p_exclude_request?: string
+          p_exclude_ride?: string
+          p_include_draft?: boolean
+          p_profile_id: string
+          p_span: unknown
+        }
+        Returns: undefined
+      }
       _assert_shift_places: {
         Args: { p_department_id: string; p_payload: Json; p_request_id: string }
         Returns: undefined
@@ -5618,6 +5640,20 @@ export type Database = {
         Returns: undefined
       }
       _offer_freed_slot: { Args: { p_ride_id: string }; Returns: string }
+      _person_busy_mode: { Args: { p_allow: boolean }; Returns: undefined }
+      _person_busy_rides: {
+        Args: {
+          p_exclude_request?: string
+          p_exclude_ride?: string
+          p_include_draft?: boolean
+          p_profile_id: string
+          p_span: unknown
+        }
+        Returns: {
+          ride_id: string
+          span: unknown
+        }[]
+      }
       _proposal_apply_trial: {
         Args: { p_proposal_id: string }
         Returns: string
@@ -6060,7 +6096,11 @@ export type Database = {
         Returns: undefined
       }
       claim_ride_driver: {
-        Args: { p_expected_version: number; p_ride_id: string }
+        Args: {
+          p_allow_busy?: boolean
+          p_expected_version: number
+          p_ride_id: string
+        }
         Returns: undefined
       }
       close_offer: { Args: { p_offer_id: string }; Returns: undefined }
@@ -6465,6 +6505,15 @@ export type Database = {
           profile_id: string
         }[]
       }
+      my_ride_parts: {
+        Args: { p_ride_ids: string[] }
+        Returns: {
+          ends_at: string
+          ride_id: string
+          starts_at: string
+          whole: boolean
+        }[]
+      }
       my_upcoming_rides: {
         Args: { p_department_id?: string; p_now?: string }
         Returns: {
@@ -6541,6 +6590,10 @@ export type Database = {
       pair_one_way_legs: {
         Args: { p_dept: string; p_week: string }
         Returns: undefined
+      }
+      person_ride_span: {
+        Args: { p_profile_id: string; p_ride_id: string }
+        Returns: unknown
       }
       phone_of: { Args: { _profile: string }; Returns: string }
       place_freed_slot_request: {
@@ -7124,6 +7177,7 @@ export type Database = {
       }
       set_ride_driver: {
         Args: {
+          p_allow_busy?: boolean
           p_driver_id: string
           p_expected_version: number
           p_ride_id: string
@@ -7216,7 +7270,11 @@ export type Database = {
         Returns: undefined
       }
       take_over_ride_driver: {
-        Args: { p_expected_version: number; p_ride_id: string }
+        Args: {
+          p_allow_busy?: boolean
+          p_expected_version: number
+          p_ride_id: string
+        }
         Returns: undefined
       }
       try_auto_approve: { Args: { p_request_id: string }; Returns: Json }

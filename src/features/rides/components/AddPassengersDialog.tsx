@@ -17,7 +17,11 @@ import { he, t } from "@/i18n/he";
 import { buildAddPassengerInputs } from "../addPassengers";
 import { useAddRidePassengersMutation } from "../hooks";
 
+import type { RidePassengerInput } from "../api";
 import type { RidePerson } from "../ridePeople";
+
+type PassengerLeg = NonNullable<RidePassengerInput["leg"]>;
+const PASSENGER_LEGS: readonly PassengerLeg[] = ["both", "out", "return"];
 
 /**
  * The "+ נוסעים" button (siddur `RideDetailSheet`, board `RideSheet`; REQ §13.85, owner
@@ -43,6 +47,8 @@ export function AddPassengersDialog({ rideId, expectedVersion, departmentId, wee
   const [memberIds, setMemberIds] = useState<string[]>([]);
   const [childIds, setChildIds] = useState<string[]>([]);
   const [guestNames, setGuestNames] = useState("");
+  // REQ §13.176: one direction for everyone added here - there, back, or the whole ride.
+  const [leg, setLeg] = useState<PassengerLeg>("both");
 
   const { session } = useSession();
   const profileId = session?.user.id;
@@ -63,13 +69,14 @@ export function AddPassengersDialog({ rideId, expectedVersion, departmentId, wee
     setMemberIds([]);
     setChildIds([]);
     setGuestNames("");
+    setLeg("both");
   }
 
   function submit() {
     const passengers = [
       ...(includeSelf && profileId ? [{ person_id: profileId, display_name: profileQuery.data?.full_name ?? "", seat_kind: "adult" as const }] : []),
       ...buildAddPassengerInputs(memberIds, childIds, guestNames, membersQuery.data ?? [], childrenQuery.data ?? []),
-    ];
+    ].map((passenger) => ({ ...passenger, leg }));
     if (!passengers.length) return;
     mutation.mutate(
       { rideId, expectedVersion, passengers, departmentId, weekStart },
@@ -124,6 +131,17 @@ export function AddPassengersDialog({ rideId, expectedVersion, departmentId, wee
             onChange={setChildIds}
             label={t("field.children")}
           />
+          <div className="space-y-1" role="group" aria-labelledby="add-passengers-leg-label">
+            <p id="add-passengers-leg-label" className="text-sm font-medium">{he.addPassengers.legLabel}</p>
+            <div className="flex flex-wrap gap-2">
+              {PASSENGER_LEGS.map((option) => (
+                <Button key={option} type="button" size="sm" variant={leg === option ? "default" : "outline"} aria-pressed={leg === option}
+                  data-testid={`add-passengers-leg-${option}`} onClick={() => setLeg(option)}>
+                  {he.addPassengers.leg[option]}
+                </Button>
+              ))}
+            </div>
+          </div>
           <div className="space-y-1">
             <Label htmlFor="add-passengers-guest-names">{t("quickRequest.guestPassengers")}</Label>
             <Textarea id="add-passengers-guest-names" value={guestNames} onChange={(e) => setGuestNames(e.target.value)} rows={2} />

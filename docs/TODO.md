@@ -1426,3 +1426,11 @@ Found while clearing two stuck "ממתין לאישור פינוי הזמן" blo
 - ✅ (g) the member may accept a car without a large trunk after "אני מודע/ת" (`20261101140000`).
 - ✅ (e) destination coordinates: "השלמת מיקומים חסרים" button + map links (`destination-route` mode `locate`). After the release, press it once on production and check the compound names ("חדרה ואז תל אביב", "פרדס חנה ולהבות חביבה", …) on the map.
 - ✅ (f) the Sadran can pick themselves as a ride's driver (the board used the request form's member list, which leaves out the viewer).
+
+## Merged rides: own part, overlaps ask, leaving (owner 2026-11-01; REQ §13.176) — branch `merged-ride-parts`
+
+- ✅ (a) a person on someone else's ride is busy only for their own part (`person_ride_span`); "+ נוסעים" asks which way; "my rides" shows the part (Agata: way back with Galpi, her own morning trip was waitlisted).
+- ✅ (b) overlaps ask "כבר בנסיעה אחרת — להמשיך בכל זאת?" instead of refusing / waitlisting: request submit and edit (any filer), Sadran driver choice, "אני אנהג", take-over.
+- ✅ (c) a guest leaves with "אני לא צריך/ה את הנסיעה הזו" (Yarden on Shachar's ride); the ride keeps its hours (owner).
+- Production note: Yarden's request `5aca0d0e` (2.11 08:15 to בנימינה) went back to "submitted" when it was unmerged by hand on 1.11 — withdraw it if he no longer needs it.
+

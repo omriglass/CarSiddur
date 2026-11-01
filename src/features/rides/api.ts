@@ -1,5 +1,6 @@
 import { supabase } from "@/integrations/supabase/client";
 import { rpc, toAppError } from "@/lib/rpc";
+import { withPersonBusyRetry } from "@/lib/personBusy";
 import { withSmallTrunkRetry } from "@/lib/smallTrunk";
 
 import type { Database, Json } from "@/integrations/supabase/types";
@@ -32,8 +33,9 @@ export async function joinOtherRide(requestId: string, rideId: string, expectedV
   await rpc("join_other_ride", { p_request_id: requestId, p_ride_id: rideId, p_expected_version: expectedVersion });
 }
 
+/** REQ §13.176: driving while on another ride at that time asks first (`withPersonBusyRetry`). */
 export async function claimRideDriver(rideId: string, expectedVersion: number): Promise<void> {
-  await rpc("claim_ride_driver", { p_ride_id: rideId, p_expected_version: expectedVersion });
+  await withPersonBusyRetry((allowBusy) => rpc("claim_ride_driver", { p_ride_id: rideId, p_expected_version: expectedVersion, p_allow_busy: allowBusy }));
 }
 
 /** REQ §13.174: a volunteer driver steps down — the ride needs a driver again. */
@@ -43,7 +45,7 @@ export async function releaseRideDriver(rideId: string, expectedVersion: number)
 
 /** REQ §13.174: the caller takes the wheel from the ride's volunteer driver (or claims it, if it lost its driver). */
 export async function takeOverRideDriver(rideId: string, expectedVersion: number): Promise<void> {
-  await rpc("take_over_ride_driver", { p_ride_id: rideId, p_expected_version: expectedVersion });
+  await withPersonBusyRetry((allowBusy) => rpc("take_over_ride_driver", { p_ride_id: rideId, p_expected_version: expectedVersion, p_allow_busy: allowBusy }));
 }
 
 /** REQ §13.129 (b): the driver hands their own ride to a driving companion/added passenger and leaves it. */
@@ -108,6 +110,8 @@ export interface RidePassengerInput {
   child_id?: string;
   display_name: string;
   seat_kind: "adult" | "child_seat" | "booster";
+  /** REQ §13.176: which way they ride (default the whole ride); their part of the ride follows it. */
+  leg?: "out" | "return" | "both";
 }
 
 /** Appends named passengers to a ride's existing list (never replaces it); duplicates already on the ride or already served are silently skipped by the RPC. */

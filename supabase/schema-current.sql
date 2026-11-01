@@ -817,6 +817,22 @@ end $$;
 ALTER FUNCTION "public"."_apply_series_span"("p_request_id" "uuid", "p_span" "jsonb", "p_car_id" "uuid") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."_ask_request_overlap"("p_requester_id" "uuid", "p_depart_at" timestamp with time zone, "p_return_at" timestamp with time zone, "p_request_id" "uuid") RETURNS "void"
+    LANGUAGE "plpgsql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+begin
+  if coalesce(current_setting('app.person_busy', true), '') = 'allow' then return; end if;
+  perform public._assert_person_free(p_requester_id, public.request_span(p_depart_at, p_return_at), null, p_request_id, false);
+  raise exception 'person_busy' using errcode = 'P0001',
+    detail = jsonb_build_object('person_id', p_requester_id,
+      'name', (select full_name from public.profiles where id = p_requester_id), 'rides', '[]'::jsonb)::text;
+end $$;
+
+
+ALTER FUNCTION "public"."_ask_request_overlap"("p_requester_id" "uuid", "p_depart_at" timestamp with time zone, "p_return_at" timestamp with time zone, "p_request_id" "uuid") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."_ask_to_join_ride_label"("p_ride_id" "uuid") RETURNS "text"
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -830,6 +846,29 @@ $$;
 
 
 ALTER FUNCTION "public"."_ask_to_join_ride_label"("p_ride_id" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."_assert_person_free"("p_profile_id" "uuid", "p_span" "tstzrange", "p_exclude_ride" "uuid" DEFAULT NULL::"uuid", "p_exclude_request" "uuid" DEFAULT NULL::"uuid", "p_include_draft" boolean DEFAULT true) RETURNS "void"
+    LANGUAGE "plpgsql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare v_rides jsonb;
+begin
+  if coalesce(current_setting('app.person_busy', true), '') = 'allow' then return; end if;
+  select jsonb_agg(jsonb_build_object('ride_id', b.ride_id,
+           'driver_name', (select p.full_name from public.rides r join public.profiles p on p.id = r.driver_id where r.id = b.ride_id),
+           'is_driver', exists (select 1 from public.rides r where r.id = b.ride_id and r.driver_id = p_profile_id),
+           'starts_at', lower(b.span), 'ends_at', upper(b.span)) order by lower(b.span))
+    into v_rides
+  from public._person_busy_rides(p_profile_id, p_span, p_exclude_ride, p_exclude_request, p_include_draft) b;
+  if v_rides is null then return; end if;
+  raise exception 'person_busy' using errcode = 'P0001',
+    detail = jsonb_build_object('person_id', p_profile_id,
+      'name', (select full_name from public.profiles where id = p_profile_id), 'rides', v_rides)::text;
+end $$;
+
+
+ALTER FUNCTION "public"."_assert_person_free"("p_profile_id" "uuid", "p_span" "tstzrange", "p_exclude_ride" "uuid", "p_exclude_request" "uuid", "p_include_draft" boolean) OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."_assert_shift_places"("p_request_id" "uuid", "p_department_id" "uuid", "p_payload" "jsonb") RETURNS "void"
@@ -2807,6 +2846,44 @@ $$;
 ALTER FUNCTION "public"."_offer_freed_slot"("p_ride_id" "uuid") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."_person_busy_mode"("p_allow" boolean) RETURNS "void"
+    LANGUAGE "plpgsql"
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+begin
+  perform set_config('app.person_busy', case when coalesce(p_allow, false) then 'allow' else 'ask' end, true);
+end $$;
+
+
+ALTER FUNCTION "public"."_person_busy_mode"("p_allow" boolean) OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."_person_busy_rides"("p_profile_id" "uuid", "p_span" "tstzrange", "p_exclude_ride" "uuid" DEFAULT NULL::"uuid", "p_exclude_request" "uuid" DEFAULT NULL::"uuid", "p_include_draft" boolean DEFAULT true) RETURNS TABLE("ride_id" "uuid", "span" "tstzrange")
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  select r.id, public.person_ride_span(r.id, p_profile_id)
+  from public.rides r
+  where p_profile_id is not null and p_span is not null
+    and r.status <> 'cancelled' and (p_include_draft or r.status <> 'draft')
+    and r.id is distinct from p_exclude_ride
+    and tstzrange(r.starts_at, r.ends_at, '[)') && p_span
+    and (r.driver_id = p_profile_id
+         or exists (select 1 from public.ride_requests rr join public.requests q on q.id = rr.request_id
+                    where rr.ride_id = r.id
+                      and (q.requester_id = p_profile_id
+                           or exists (select 1 from public.request_companions c where c.request_id = q.id and c.profile_id = p_profile_id)))
+         or exists (select 1 from public.ride_passengers rp where rp.ride_id = r.id and rp.person_id = p_profile_id))
+    and (p_exclude_request is null
+         or not exists (select 1 from public.ride_requests rx where rx.ride_id = r.id and rx.request_id = p_exclude_request))
+    and public.person_ride_span(r.id, p_profile_id) && p_span
+  order by r.starts_at, r.id;
+$$;
+
+
+ALTER FUNCTION "public"."_person_busy_rides"("p_profile_id" "uuid", "p_span" "tstzrange", "p_exclude_ride" "uuid", "p_exclude_request" "uuid", "p_include_draft" boolean) OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."_plan_b_pair_cascade"() RETURNS "trigger"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -4517,6 +4594,7 @@ declare
   v_child_id uuid;
   v_display_name text;
   v_seat_kind text;
+  v_part text;
   v_existing_person_ids uuid[];
   v_existing_child_ids uuid[];
   v_served_person_ids uuid[];
@@ -4604,6 +4682,11 @@ begin
     v_child_id := nullif(v_item ->> 'child_id', '')::uuid;
     v_display_name := nullif(trim(coalesce(v_item ->> 'display_name', '')), '');
     v_seat_kind := v_item ->> 'seat_kind';
+    -- REQ §13.176: which way the person rides (there / back / both, default both); their part of the ride follows it.
+    v_part := coalesce(nullif(v_item ->> 'leg', ''), 'both');
+    if v_part not in ('out', 'return', 'both') then
+      raise exception 'invalid_ride_passenger' using errcode = 'P0001';
+    end if;
 
     if v_person_id is not null and v_child_id is not null then
       raise exception 'invalid_ride_passenger' using errcode = 'P0001';
@@ -4681,7 +4764,7 @@ begin
 
     v_accepted := v_accepted || jsonb_build_object(
       'person_id', v_person_id, 'child_id', v_child_id, 'display_name', v_display_name, 'seat_kind', v_seat_kind,
-      'request_id', v_match.id, 'leg', v_leg);
+      'request_id', v_match.id, 'leg', v_leg, 'part', v_part);
   end loop;
 
   if not public.car_fits(v_ride.car_id,
@@ -4715,10 +4798,10 @@ begin
       end;
     end if;
     if not v_linked then
-      insert into public.ride_passengers (ride_id, department_id, week_start, person_id, child_id, display_name, seat_kind, added_by)
+      insert into public.ride_passengers (ride_id, department_id, week_start, person_id, child_id, display_name, seat_kind, added_by, leg)
       values (p_ride_id, v_ride.department_id, v_ride.week_start,
         nullif(v_item ->> 'person_id', '')::uuid, nullif(v_item ->> 'child_id', '')::uuid,
-        v_item ->> 'display_name', v_item ->> 'seat_kind', v_actor);
+        v_item ->> 'display_name', v_item ->> 'seat_kind', v_actor, (v_item ->> 'part')::public.ride_leg);
     end if;
     v_added_names := v_added_names || (v_item ->> 'display_name');
     if nullif(v_item ->> 'person_id', '') is not null then
@@ -7203,7 +7286,7 @@ $$;
 ALTER FUNCTION "public"."claim_freed_slot"("p_offer_id" "uuid", "p_request_id" "uuid") OWNER TO "postgres";
 
 
-CREATE OR REPLACE FUNCTION "public"."claim_ride_driver"("p_ride_id" "uuid", "p_expected_version" integer) RETURNS "void"
+CREATE OR REPLACE FUNCTION "public"."claim_ride_driver"("p_ride_id" "uuid", "p_expected_version" integer, "p_allow_busy" boolean DEFAULT false) RETURNS "void"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
@@ -7224,8 +7307,9 @@ begin
   if r.ends_at<=now() or exists(select 1 from public.weeks where department_id=r.department_id and week_start=r.week_start and phase='archived') then raise exception 'ride_in_past'; end if;
   if not exists(select 1 from public.cars where id=r.car_id and status='active') then raise exception 'car_unavailable'; end if;
   perform pg_advisory_xact_lock(hashtextextended('ride-driver:'||(select auth.uid())::text,0));
-  if exists(select 1 from public.rides where driver_id=(select auth.uid()) and id<>r.id and status<>'cancelled'
-    and tstzrange(starts_at,ends_at,'[)') && tstzrange(r.starts_at,r.ends_at,'[)')) then raise exception 'driver_already_busy'; end if;
+  -- REQ §13.176: another ride of mine at that time (my own part of it) is a question, not a refusal.
+  perform public._person_busy_mode(p_allow_busy);
+  perform public._assert_person_free((select auth.uid()),tstzrange(r.starts_at,r.ends_at,'[)'),r.id);
   perform set_config('app.audit_reason','claim_ride_driver',true);
   update public.rides set driver_id=(select auth.uid()),needs_driver=false,
     status=case when status='flagged' and flag_reason='NEEDS_DRIVER' then 'confirmed'::public.ride_status else status end,
@@ -7252,7 +7336,7 @@ begin
 end $$;
 
 
-ALTER FUNCTION "public"."claim_ride_driver"("p_ride_id" "uuid", "p_expected_version" integer) OWNER TO "postgres";
+ALTER FUNCTION "public"."claim_ride_driver"("p_ride_id" "uuid", "p_expected_version" integer, "p_allow_busy" boolean) OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."clamp_ride_end_to_day"() RETURNS "trigger"
@@ -11657,6 +11741,21 @@ end $$;
 ALTER FUNCTION "public"."my_co_guardians"("p_department_id" "uuid") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."my_ride_parts"("p_ride_ids" "uuid"[]) RETURNS TABLE("ride_id" "uuid", "starts_at" timestamp with time zone, "ends_at" timestamp with time zone, "whole" boolean)
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  select r.id, lower(s.span), upper(s.span), s.span = tstzrange(r.starts_at, r.ends_at, '[)')
+  from public.rides r
+  cross join lateral (select public.person_ride_span(r.id, (select auth.uid())) as span) s
+  where r.id = any(coalesce(p_ride_ids, '{}'::uuid[])) and s.span is not null and public._ride_route_visible(r.id)
+  order by r.id;
+$$;
+
+
+ALTER FUNCTION "public"."my_ride_parts"("p_ride_ids" "uuid"[]) OWNER TO "postgres";
+
+
 CREATE OR REPLACE VIEW "public"."v_board_rides" AS
 SELECT
     NULL::"uuid" AS "id",
@@ -12433,6 +12532,60 @@ end $$;
 
 
 ALTER FUNCTION "public"."pair_one_way_legs"("p_dept" "uuid", "p_week" "date") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."person_ride_span"("p_ride_id" "uuid", "p_profile_id" "uuid") RETURNS "tstzrange"
+    LANGUAGE "plpgsql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  r public.rides%rowtype; v_whole tstzrange; v_req uuid; v_base boolean; v_leg public.ride_leg;
+  v_lo timestamptz; v_hi timestamptz;
+begin
+  select * into r from public.rides where id = p_ride_id;
+  if r.id is null or r.status = 'cancelled' or p_profile_id is null then return null; end if;
+  v_whole := tstzrange(r.starts_at, r.ends_at, '[)');
+  if r.driver_id = p_profile_id then return v_whole; end if;
+
+  select rr.request_id, bool_or(rr.role = 'driver') into v_req, v_base
+  from public.ride_requests rr join public.requests q on q.id = rr.request_id
+  where rr.ride_id = r.id
+    and (q.requester_id = p_profile_id
+         or exists (select 1 from public.request_companions c where c.request_id = q.id and c.profile_id = p_profile_id))
+  group by rr.request_id order by bool_or(rr.role = 'driver') desc, rr.request_id limit 1;
+  if v_req is not null then
+    if v_base then return v_whole; end if;
+    select min(x.eta), max(x.eta) into v_lo, v_hi from public._ride_route(r.id) x
+    where x.request_id = v_req and x.kind in ('board', 'alight');
+    if v_lo is not null and v_hi > v_lo then
+      return tstzrange(greatest(v_lo, r.starts_at), least(v_hi, r.ends_at), '[)');
+    end if;
+    -- boarding and alighting where the ride already stops (no points of their own): by the legs they ride
+    select case when bool_or(rr.covers_out) and bool_or(rr.covers_return) then 'both'::public.ride_leg
+                when bool_or(rr.covers_out) then 'out'::public.ride_leg
+                when bool_or(rr.covers_return) then 'return'::public.ride_leg end
+      into v_leg from public.ride_requests rr where rr.ride_id = r.id and rr.request_id = v_req;
+    -- a one-way guest riding the host's way back (R6B5) rides the return leg
+    if v_leg = 'out' and public._merge_guest_swapped(r.id, v_req) then v_leg := 'return'; end if;
+  else
+    select rp.leg into v_leg from public.ride_passengers rp
+    where rp.ride_id = r.id and rp.person_id = p_profile_id order by (rp.leg = 'both') desc limit 1;
+    if v_leg is null then return null; end if;
+  end if;
+  if v_leg = 'out' then
+    select max(x.eta) into v_hi from public._ride_route(r.id) x where x.leg = 'out';
+    if v_hi is null or v_hi <= r.starts_at then return v_whole; end if;
+    return tstzrange(r.starts_at, least(v_hi, r.ends_at), '[)');
+  elsif v_leg = 'return' then
+    select min(x.eta) into v_lo from public._ride_route(r.id) x where x.leg = 'return';
+    if v_lo is null or v_lo >= r.ends_at then return v_whole; end if;
+    return tstzrange(greatest(v_lo, r.starts_at), r.ends_at, '[)');
+  end if;
+  return v_whole;
+end $$;
+
+
+ALTER FUNCTION "public"."person_ride_span"("p_ride_id" "uuid", "p_profile_id" "uuid") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."phone_of"("_profile" "uuid") RETURNS "text"
@@ -18921,7 +19074,7 @@ $$;
 ALTER FUNCTION "public"."set_request_trip_type"("p_request_id" "uuid", "p_trip_type" "public"."trip_type", "p_expected_version" integer, "p_keep_car" boolean) OWNER TO "postgres";
 
 
-CREATE OR REPLACE FUNCTION "public"."set_ride_driver"("p_ride_id" "uuid", "p_driver_id" "uuid", "p_expected_version" integer) RETURNS "jsonb"
+CREATE OR REPLACE FUNCTION "public"."set_ride_driver"("p_ride_id" "uuid", "p_driver_id" "uuid", "p_expected_version" integer, "p_allow_busy" boolean DEFAULT false) RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
@@ -19007,22 +19160,10 @@ begin
     raise exception 'non_driver_cannot_drive' using errcode = 'P0001';
   end if;
   perform pg_advisory_xact_lock(hashtextextended('ride-driver:' || p_driver_id::text, 0));
-  if exists (select 1 from public.rides x where x.driver_id = p_driver_id and x.id <> r.id and x.status <> 'cancelled'
-             and tstzrange(x.starts_at, x.ends_at, '[)') && tstzrange(r.starts_at, r.ends_at, '[)')) then
-    raise exception 'driver_already_busy' using errcode = 'P0001';
-  end if;
-  -- REQ §13.103 R3B22: a volunteer who rides elsewhere (own request, named passenger, companion) at that time cannot drive.
-  if exists (
-    select 1 from public.rides x
-    where x.id <> r.id and x.status <> 'cancelled' and tstzrange(x.starts_at, x.ends_at, '[)') && tstzrange(r.starts_at, r.ends_at, '[)')
-      and (exists (select 1 from public.ride_requests rr join public.requests q on q.id = rr.request_id
-                   where rr.ride_id = x.id and q.requester_id = p_driver_id)
-        or exists (select 1 from public.ride_passengers rp where rp.ride_id = x.id and rp.person_id = p_driver_id)
-        or exists (select 1 from public.ride_requests rr join public.request_companions rc on rc.request_id = rr.request_id
-                   where rr.ride_id = x.id and rc.profile_id = p_driver_id))
-  ) then
-    raise exception 'driver_busy' using errcode = 'P0001';
-  end if;
+  -- REQ §13.176 (owner 2026-11-01): the new driver driving, or riding, elsewhere at that time - only their own part of
+  -- that ride counts - is a question for the Sadran ("person_busy", retried with p_allow_busy), never a refusal.
+  perform public._person_busy_mode(p_allow_busy);
+  perform public._assert_person_free(p_driver_id, tstzrange(r.starts_at, r.ends_at, '[)'), r.id);
 
   perform set_config('app.audit_reason', case when v_replace then 'replace_ride_driver' else 'set_ride_driver' end, true);
   update public.rides set driver_id = p_driver_id, needs_driver = false,
@@ -19076,7 +19217,7 @@ begin
 end $$;
 
 
-ALTER FUNCTION "public"."set_ride_driver"("p_ride_id" "uuid", "p_driver_id" "uuid", "p_expected_version" integer) OWNER TO "postgres";
+ALTER FUNCTION "public"."set_ride_driver"("p_ride_id" "uuid", "p_driver_id" "uuid", "p_expected_version" integer, "p_allow_busy" boolean) OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."set_ride_passengers"("p_ride_id" "uuid", "p_expected_version" integer, "p_passengers" "jsonb") RETURNS "void"
@@ -19893,6 +20034,7 @@ declare
   v_own_overlap boolean := false;
   -- Owner 2026-10-11: the requester answered "keep both" to the form's overlap warning (`overlap_confirmed`).
   v_overlap_confirmed boolean := coalesce((payload ->> 'overlap_confirmed')::boolean, false);
+  v_overlap_unasked boolean := false;
   -- REQ §13.126 g: "הרכב זמין לשימוש ביעד" — a member-driven round trip whose car waits at the destination.
   v_keep_car boolean := coalesce((payload ->> 'keep_car_at_destination')::boolean, false);
   v_keep_car_id uuid;
@@ -20133,6 +20275,10 @@ begin
           perform set_config('app.edit_probe_inner', 'on', true);
           v_probe := public.submit_request(payload || jsonb_build_object('confirm_release', true));
           perform set_config('app.edit_probe_inner', 'off', true);
+          -- REQ §13.176: the new hours would be placed but overlap the member's own ride or request: ask first
+          if coalesce(v_probe ->> 'status', '') = 'assigned' and coalesce((v_probe ->> 'overlap_unasked')::boolean, false) then
+            perform public._ask_request_overlap(v_requester_id, v_depart_at, v_return_at, v_request_id);
+          end if;
           if coalesce(v_probe ->> 'status', '') = 'assigned' and (v_confirm or not (v_booking ->> 'drives_others')::boolean) then
             return v_probe;
           end if;
@@ -20413,15 +20559,14 @@ begin
   end if;
   -- REQ §13.100 (QB8): an overlapping ride the member already has (driver, or named on a reservation),
   -- not only an overlapping request.
-  if v_series_id is null and not v_own_overlap and exists (
-    select 1 from public.rides r
-    where r.department_id = v_department_id and r.status not in ('cancelled', 'draft')
-      and (r.driver_id = v_requester_id
-           or exists (select 1 from public.ride_passengers rp where rp.ride_id = r.id and rp.person_id = v_requester_id))
-      and not exists (select 1 from public.ride_requests rr where rr.ride_id = r.id and rr.request_id = v_request_id)
-      and (tstzrange(r.starts_at, r.ends_at, '[)') && public.request_span(v_depart_at, v_return_at)
-           or (v_join_ride_id is not null and r.id <> v_join_ride_id
-               and tstzrange(r.starts_at, r.ends_at, '[)') && (select tstzrange(j.starts_at, j.ends_at, '[)') from public.rides j where j.id = v_join_ride_id)))
+  -- REQ §13.176: only the member's own part of that ride counts (a pickup on the way back leaves the morning free).
+  if v_series_id is null and not v_own_overlap and (
+    exists (select 1 from public._person_busy_rides(v_requester_id, public.request_span(v_depart_at, v_return_at), null, v_request_id, false) b
+            join public.rides r on r.id = b.ride_id where r.department_id = v_department_id)
+    or (v_join_ride_id is not null and exists (
+      select 1 from public._person_busy_rides(v_requester_id, (select tstzrange(j.starts_at, j.ends_at, '[)') from public.rides j where j.id = v_join_ride_id),
+                                              v_join_ride_id, v_request_id, false) b
+      join public.rides r on r.id = b.ride_id where r.department_id = v_department_id))
   ) then
     v_warnings := v_warnings || '"DUPLICATE_OVERLAP"'::jsonb;
     v_own_overlap := true;
@@ -20442,13 +20587,10 @@ begin
         select (select rr.request_id from public.ride_requests rr join public.requests rq on rq.id = rr.request_id
                  where rr.ride_id = r.id and rq.requester_id = v_requester_id order by rr.request_id limit 1), r.id
         from public.rides r
-        where r.department_id = v_department_id and r.status not in ('cancelled', 'draft')
-          and (r.driver_id = v_requester_id
-               or exists (select 1 from public.ride_passengers rp where rp.ride_id = r.id and rp.person_id = v_requester_id))
-          and not exists (select 1 from public.ride_requests rr where rr.ride_id = r.id and rr.request_id = v_request_id)
-          and (tstzrange(r.starts_at, r.ends_at, '[)') && public.request_span(v_depart_at, v_return_at)
-           or (v_join_ride_id is not null and r.id <> v_join_ride_id
-               and tstzrange(r.starts_at, r.ends_at, '[)') && (select tstzrange(j.starts_at, j.ends_at, '[)') from public.rides j where j.id = v_join_ride_id)))
+        where r.department_id = v_department_id
+          and (r.id in (select b.ride_id from public._person_busy_rides(v_requester_id, public.request_span(v_depart_at, v_return_at), null, v_request_id, false) b)
+           or (v_join_ride_id is not null and r.id in (select b.ride_id from public._person_busy_rides(v_requester_id,
+                 (select tstzrange(j.starts_at, j.ends_at, '[)') from public.rides j where j.id = v_join_ride_id), v_join_ride_id, v_request_id, false) b)))
       ) y
     ) x;
   end if;
@@ -20520,29 +20662,24 @@ begin
   -- Placement on submit (REQ §13.93/§13.94): only round_trip and an explicit one_way ("I take the
   -- car") go through try_auto_approve() once a week is published/live. Every drop_off, with or
   -- without a pickup, is two separate trips for the Sadran/solver: waitlisted in a live week.
+  -- REQ §13.176 (owner 2026-11-01): an overlap with the member's own ride or request is a question - for whoever files
+  -- it, the member or someone on their behalf - never a quiet trip to the waiting list for the Sadran. Confirmed
+  -- (`overlap_confirmed`), the request is placed like any other. Inside an edit's trial placement nobody is asked yet:
+  -- the trial notes it (`overlap_unasked`) and the edit asks only when the new hours would really be placed.
+  if v_own_overlap and not v_overlap_confirmed
+     and v_week.phase in ('published', 'live') and v_trip_type in ('round_trip', 'one_way') then
+    if coalesce(current_setting('app.edit_probe_inner', true), 'off') = 'on' then
+      v_overlap_unasked := true;
+    else
+      perform public._ask_request_overlap(v_requester_id, v_depart_at, v_return_at, v_request_id);
+    end if;
+  end if;
   if coalesce((payload->>'reserve_missing_driver')::boolean,false) then
     v_auto_result:=public.reserve_live_one_way_slot(v_request_id);
     perform public.enqueue_notification(s.profile_id,'waitlisted_request',v_department_id,v_week_start,
       jsonb_build_object('requestId',v_request_id::text),jsonb_build_object('request_id',v_request_id,'ride_id',v_auto_result->>'ride_id'),
       format('waitlisted_request:%s',v_request_id)) from public.sadranim_of(v_department_id,v_week_start) as s(profile_id)
     where coalesce(current_setting('app.late_request_notice', true), 'off') <> 'on';
-  elsif v_own_overlap and not (v_overlap_confirmed and v_member_flow)
-    and v_week.phase in ('published', 'live') and v_trip_type in ('round_trip', 'one_way') then
-    -- REQ §13.100 (QB8): never auto-approved onto another car while the member already has a ride or
-    -- request in that time; it stays for the Sadran (waitlisted in a live week, submitted otherwise).
-    if v_week.phase = 'live' then
-      perform set_config('app.system_status_transition', 'on', true);
-      update public.requests set status = 'waitlisted', status_reason = 'DUPLICATE_OVERLAP' where id = v_request_id;
-      perform set_config('app.system_status_transition', 'off', true);
-    end if;
-    perform public.enqueue_notification(s.profile_id, 'waitlisted_request', v_department_id, v_week_start,
-      jsonb_build_object('requestId', v_request_id::text),
-      jsonb_build_object('request_id', v_request_id, 'variant', 'duplicate_overlap'),
-      format('waitlisted_request:%s', v_request_id))
-    from public.sadranim_of(v_department_id, v_week_start) as s(profile_id)
-    where coalesce(current_setting('app.late_request_notice', true), 'off') <> 'on';
-    v_auto_result := jsonb_build_object('status', case when v_week.phase = 'live' then 'waitlisted' else 'submitted' end,
-      'reason', 'DUPLICATE_OVERLAP');
   elsif v_own_car is not null then
     -- REQ §13.135 (c): on the chosen private car (pending proposals of the request are settled like place_on_own_car).
     perform set_config('app.audit_reason', 'own_car_from_form', true);
@@ -20773,7 +20910,7 @@ begin
     end if;
   end if;
 
-  -- R14B8: /my reads "submitted" until the day is published (REQ §13.109 a), so a member's form must not announce
+  -- R14B8: /my reads submitted until the day is published (REQ §13.109 a), so a member's form must not announce
   -- "you got car X" for it: the result keeps its fields (tests, the Sadran) and says `outcome_hidden`; the form then
   -- shows the plain "request sent" confirmation.
   if not coalesce(v_can_manage, false) and v_auto_result ? 'status'
@@ -20784,6 +20921,7 @@ begin
   end if;
 
   return jsonb_build_object('request_id', v_request_id, 'is_late', v_is_late, 'warnings', v_warnings, 'overlaps', v_overlaps)
+    || case when v_overlap_unasked then jsonb_build_object('overlap_unasked', true) else '{}'::jsonb end
     || coalesce(v_auto_result, '{}'::jsonb);
 end;
 $$;
@@ -21225,7 +21363,7 @@ end $$;
 ALTER FUNCTION "public"."sync_request_coverage"("p_request_id" "uuid") OWNER TO "postgres";
 
 
-CREATE OR REPLACE FUNCTION "public"."take_over_ride_driver"("p_ride_id" "uuid", "p_expected_version" integer) RETURNS "void"
+CREATE OR REPLACE FUNCTION "public"."take_over_ride_driver"("p_ride_id" "uuid", "p_expected_version" integer, "p_allow_busy" boolean DEFAULT false) RETURNS "void"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
@@ -21238,7 +21376,7 @@ begin
   end if;
   if p_expected_version is null or r.version <> p_expected_version then perform public.raise_stale_version(); end if;
   -- the volunteer stepped down in the meantime: taking over is claiming the empty seat
-  if r.needs_driver then perform public.claim_ride_driver(r.id, r.version); return; end if;
+  if r.needs_driver then perform public.claim_ride_driver(r.id, r.version, p_allow_busy); return; end if;
   if exists (select 1 from public.ride_requests rr join public.requests q on q.id = rr.request_id
              where rr.ride_id = r.id and rr.car_mode = 'chauffeur'
                and (q.requester_id = v_actor
@@ -21258,10 +21396,9 @@ begin
     raise exception 'non_driver_cannot_drive' using errcode = 'P0001';
   end if;
   perform pg_advisory_xact_lock(hashtextextended('ride-driver:' || v_actor::text, 0));
-  if exists (select 1 from public.rides where driver_id = v_actor and id <> r.id and status <> 'cancelled'
-             and tstzrange(starts_at, ends_at, '[)') && tstzrange(r.starts_at, r.ends_at, '[)')) then
-    raise exception 'driver_already_busy' using errcode = 'P0001';
-  end if;
+  -- REQ §13.176: another ride of mine at that time (my own part of it) is a question, not a refusal.
+  perform public._person_busy_mode(p_allow_busy);
+  perform public._assert_person_free(v_actor, tstzrange(r.starts_at, r.ends_at, '[)'), r.id);
   v_old := r.driver_id;
   perform set_config('app.audit_reason', 'take_over_ride_driver', true);
   update public.rides set driver_id = v_actor where id = r.id;
@@ -21291,7 +21428,7 @@ begin
 end $$;
 
 
-ALTER FUNCTION "public"."take_over_ride_driver"("p_ride_id" "uuid", "p_expected_version" integer) OWNER TO "postgres";
+ALTER FUNCTION "public"."take_over_ride_driver"("p_ride_id" "uuid", "p_expected_version" integer, "p_allow_busy" boolean) OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."try_auto_approve"("p_request_id" "uuid") RETURNS "jsonb"
@@ -24213,6 +24350,7 @@ CREATE TABLE IF NOT EXISTS "public"."ride_passengers" (
     "added_by" "uuid" NOT NULL,
     "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
     "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "leg" "public"."ride_leg" DEFAULT 'both'::"public"."ride_leg" NOT NULL,
     CONSTRAINT "ride_passengers_display_name_check" CHECK ((("length"(TRIM(BOTH FROM "display_name")) >= 1) AND ("length"(TRIM(BOTH FROM "display_name")) <= 100))),
     CONSTRAINT "ride_passengers_one_link_ck" CHECK ((("person_id" IS NULL) OR ("child_id" IS NULL))),
     CONSTRAINT "ride_passengers_seat_kind_check" CHECK (("seat_kind" = ANY (ARRAY['adult'::"text", 'child_seat'::"text", 'booster'::"text"])))
@@ -29298,8 +29436,18 @@ GRANT ALL ON FUNCTION "public"."_apply_series_span"("p_request_id" "uuid", "p_sp
 
 
 
+REVOKE ALL ON FUNCTION "public"."_ask_request_overlap"("p_requester_id" "uuid", "p_depart_at" timestamp with time zone, "p_return_at" timestamp with time zone, "p_request_id" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_ask_request_overlap"("p_requester_id" "uuid", "p_depart_at" timestamp with time zone, "p_return_at" timestamp with time zone, "p_request_id" "uuid") TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."_ask_to_join_ride_label"("p_ride_id" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."_ask_to_join_ride_label"("p_ride_id" "uuid") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."_assert_person_free"("p_profile_id" "uuid", "p_span" "tstzrange", "p_exclude_ride" "uuid", "p_exclude_request" "uuid", "p_include_draft" boolean) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_assert_person_free"("p_profile_id" "uuid", "p_span" "tstzrange", "p_exclude_ride" "uuid", "p_exclude_request" "uuid", "p_include_draft" boolean) TO "service_role";
 
 
 
@@ -29580,6 +29728,16 @@ GRANT ALL ON FUNCTION "public"."_notify_rider_left"("p_recipient" "uuid", "p_rid
 
 REVOKE ALL ON FUNCTION "public"."_offer_freed_slot"("p_ride_id" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."_offer_freed_slot"("p_ride_id" "uuid") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."_person_busy_mode"("p_allow" boolean) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_person_busy_mode"("p_allow" boolean) TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."_person_busy_rides"("p_profile_id" "uuid", "p_span" "tstzrange", "p_exclude_ride" "uuid", "p_exclude_request" "uuid", "p_include_draft" boolean) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_person_busy_rides"("p_profile_id" "uuid", "p_span" "tstzrange", "p_exclude_ride" "uuid", "p_exclude_request" "uuid", "p_include_draft" boolean) TO "service_role";
 
 
 
@@ -30183,9 +30341,9 @@ GRANT ALL ON FUNCTION "public"."claim_freed_slot"("p_offer_id" "uuid", "p_reques
 
 
 
-REVOKE ALL ON FUNCTION "public"."claim_ride_driver"("p_ride_id" "uuid", "p_expected_version" integer) FROM PUBLIC;
-GRANT ALL ON FUNCTION "public"."claim_ride_driver"("p_ride_id" "uuid", "p_expected_version" integer) TO "authenticated";
-GRANT ALL ON FUNCTION "public"."claim_ride_driver"("p_ride_id" "uuid", "p_expected_version" integer) TO "service_role";
+REVOKE ALL ON FUNCTION "public"."claim_ride_driver"("p_ride_id" "uuid", "p_expected_version" integer, "p_allow_busy" boolean) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."claim_ride_driver"("p_ride_id" "uuid", "p_expected_version" integer, "p_allow_busy" boolean) TO "service_role";
+GRANT ALL ON FUNCTION "public"."claim_ride_driver"("p_ride_id" "uuid", "p_expected_version" integer, "p_allow_busy" boolean) TO "authenticated";
 
 
 
@@ -30780,6 +30938,12 @@ GRANT ALL ON FUNCTION "public"."my_co_guardians"("p_department_id" "uuid") TO "a
 
 
 
+REVOKE ALL ON FUNCTION "public"."my_ride_parts"("p_ride_ids" "uuid"[]) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."my_ride_parts"("p_ride_ids" "uuid"[]) TO "service_role";
+GRANT ALL ON FUNCTION "public"."my_ride_parts"("p_ride_ids" "uuid"[]) TO "authenticated";
+
+
+
 GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE "public"."v_board_rides" TO "authenticated";
 GRANT ALL ON TABLE "public"."v_board_rides" TO "service_role";
 
@@ -30860,6 +31024,11 @@ GRANT ALL ON FUNCTION "public"."open_week"("p_department_id" "uuid", "p_week_sta
 
 REVOKE ALL ON FUNCTION "public"."pair_one_way_legs"("p_dept" "uuid", "p_week" "date") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."pair_one_way_legs"("p_dept" "uuid", "p_week" "date") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."person_ride_span"("p_ride_id" "uuid", "p_profile_id" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."person_ride_span"("p_ride_id" "uuid", "p_profile_id" "uuid") TO "service_role";
 
 
 
@@ -31777,9 +31946,9 @@ GRANT ALL ON FUNCTION "public"."set_request_trip_type"("p_request_id" "uuid", "p
 
 
 
-REVOKE ALL ON FUNCTION "public"."set_ride_driver"("p_ride_id" "uuid", "p_driver_id" "uuid", "p_expected_version" integer) FROM PUBLIC;
-GRANT ALL ON FUNCTION "public"."set_ride_driver"("p_ride_id" "uuid", "p_driver_id" "uuid", "p_expected_version" integer) TO "service_role";
-GRANT ALL ON FUNCTION "public"."set_ride_driver"("p_ride_id" "uuid", "p_driver_id" "uuid", "p_expected_version" integer) TO "authenticated";
+REVOKE ALL ON FUNCTION "public"."set_ride_driver"("p_ride_id" "uuid", "p_driver_id" "uuid", "p_expected_version" integer, "p_allow_busy" boolean) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."set_ride_driver"("p_ride_id" "uuid", "p_driver_id" "uuid", "p_expected_version" integer, "p_allow_busy" boolean) TO "service_role";
+GRANT ALL ON FUNCTION "public"."set_ride_driver"("p_ride_id" "uuid", "p_driver_id" "uuid", "p_expected_version" integer, "p_allow_busy" boolean) TO "authenticated";
 
 
 
@@ -31903,9 +32072,9 @@ GRANT ALL ON FUNCTION "public"."sync_request_coverage"("p_request_id" "uuid") TO
 
 
 
-REVOKE ALL ON FUNCTION "public"."take_over_ride_driver"("p_ride_id" "uuid", "p_expected_version" integer) FROM PUBLIC;
-GRANT ALL ON FUNCTION "public"."take_over_ride_driver"("p_ride_id" "uuid", "p_expected_version" integer) TO "service_role";
-GRANT ALL ON FUNCTION "public"."take_over_ride_driver"("p_ride_id" "uuid", "p_expected_version" integer) TO "authenticated";
+REVOKE ALL ON FUNCTION "public"."take_over_ride_driver"("p_ride_id" "uuid", "p_expected_version" integer, "p_allow_busy" boolean) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."take_over_ride_driver"("p_ride_id" "uuid", "p_expected_version" integer, "p_allow_busy" boolean) TO "service_role";
+GRANT ALL ON FUNCTION "public"."take_over_ride_driver"("p_ride_id" "uuid", "p_expected_version" integer, "p_allow_busy" boolean) TO "authenticated";
 
 
 

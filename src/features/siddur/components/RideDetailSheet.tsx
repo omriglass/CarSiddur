@@ -133,6 +133,9 @@ export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = 
   const viewerRides = !!ride && !!viewerId && peopleOf(ride).some((person) => person.person_id === viewerId);
   // R17U3: removing the requester withdraws their request — it reads as cancelling the ride, not "remove me".
   const removingMyRequest = !!ride && !!viewerId && peopleOf(ride).some((person) => person.person_id === viewerId && person.source === "requester");
+  // REQ §13.176: on a ride someone else drives, "remove me" is leaving their ride - it goes on without me.
+  const leavingSomeonesRide = !!ride?.driver_id && !!viewerId && ride.driver_id !== viewerId
+    && servedOf(ride).some((entry) => entry.role === "driver");
 
   return (
     <Sheet open={!!ride} onOpenChange={onOpenChange}>
@@ -245,13 +248,16 @@ export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = 
               {onRemoveMe ? (
                 <>
                   <Button className="w-full" size="lg" variant="destructive" disabled={removingMe} onClick={() => setConfirmRemoveMe(true)} data-testid="remove-me">
-                    {removingMyRequest ? t("action.cancelRide") : he.rideDetail.removeMe}
+                    {leavingSomeonesRide ? he.rideDetail.leaveRide : removingMyRequest ? t("action.cancelRide") : he.rideDetail.removeMe}
                   </Button>
                   <ConfirmDialog
                     open={confirmRemoveMe}
                     onOpenChange={setConfirmRemoveMe}
-                    title={removingMyRequest ? he.request.cancelConfirmTitle : he.rideDetail.removeMeConfirmTitle}
-                    confirmLabel={removingMyRequest ? t("action.cancelRide") : he.rideDetail.removeMe}
+                    title={leavingSomeonesRide ? he.rideDetail.leaveRideConfirmTitle : removingMyRequest ? he.request.cancelConfirmTitle : he.rideDetail.removeMeConfirmTitle}
+                    description={leavingSomeonesRide
+                      ? tv(removingMyRequest ? "rideDetail.leaveRideConfirmBody" : "rideDetail.leaveRideConfirmBodyAdded", { driver: ride.driver_name ?? "" })
+                      : undefined}
+                    confirmLabel={leavingSomeonesRide ? he.rideDetail.leaveRideConfirm : removingMyRequest ? t("action.cancelRide") : he.rideDetail.removeMe}
                     destructive
                     loading={removingMe}
                     onConfirm={() => { setConfirmRemoveMe(false); onRemoveMe(); }}

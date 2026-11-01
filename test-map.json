@@ -417,9 +417,19 @@
         "supabase/tests/member_merge_ride.sql",
         "src/features/rides/components/VolunteerDriverChange.tsx",
         "supabase/migrations/**/*volunteer_driver_step_down_take_over*",
-        "supabase/tests/volunteer_driver_change.sql"
+        "supabase/tests/volunteer_driver_change.sql",
+        "e2e/merged-ride-parts.spec.ts",
+        "supabase/tests/merged_ride_parts.sql",
+        "supabase/migrations/**/*ride_passengers_leg*",
+        "supabase/migrations/**/*person_ride_span*",
+        "supabase/migrations/**/*driver_busy_asks*",
+        "supabase/migrations/**/*submit_request_overlap_asks*",
+        "src/lib/personBusy.ts",
+        "src/lib/personBusy.test.ts",
+        "src/components/PersonBusyHost.tsx"
       ],
       "vitest": [
+        "src/lib/personBusy.test.ts",
         "src/features/rides/driverWanted.test.ts",
         "src/features/rides/carHandover.test.ts",
         "src/features/requests/rowHandover.test.ts",
@@ -436,7 +446,8 @@
         "ride_change_settles.sql",
         "production_fixes_2026_11_01.sql",
         "volunteer_driver_change.sql",
-        "member_merge_ride.sql"
+        "member_merge_ride.sql",
+        "merged_ride_parts.sql"
       ],
       "playwrightTags": [
         "@siddur"
@@ -613,7 +624,8 @@
         "e2e/live-changes.spec.ts",
         "supabase/tests/p4_live_changes.sql",
         "supabase/tests/qa_run12_package_a.sql",
-        "e2e/publish-driverless-conflicts.spec.ts"
+        "e2e/publish-driverless-conflicts.spec.ts",
+        "supabase/tests/one_way_lifecycle.sql"
       ],
       "vitest": [
         "src/lib/smallTrunk.test.ts",
@@ -1264,6 +1276,7 @@
         "src/app/landing.test.ts",
         "src/app/LandingRedirect.tsx",
         "src/app/router.tsx",
+        "src/main.tsx",
         "src/app/AppShell.tsx",
         "src/pages/LoginPage.tsx",
         "src/pages/LegalPage.tsx",

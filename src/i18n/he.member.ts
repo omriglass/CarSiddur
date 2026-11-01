@@ -440,6 +440,12 @@ export const heMember = {
     edit: "עריכה",
     removeMe: "הסר אותי",
     removeMeConfirmTitle: "להסיר אותך מהנסיעה?",
+    // REQ §13.176 (owner 2026-11-01): a guest on a ride someone else drives leaves it; the ride goes on as it is.
+    leaveRide: "אני לא צריך/ה את הנסיעה הזו",
+    leaveRideConfirmTitle: "לצאת מהנסיעה?",
+    leaveRideConfirmBody: "הנסיעה של {{driver}} תמשיך בלעדיך, והבקשה שלך תבוטל.",
+    leaveRideConfirmBodyAdded: "הנסיעה של {{driver}} תמשיך בלעדיך.",
+    leaveRideConfirm: "לצאת מהנסיעה",
     /** REQ §13.129 (a): the private car's owner moves the ride onto their own car. */
     moveToMyCar: "העבר לרכב שלי",
     moveToCar: "העבר ל{{car}}",
@@ -488,6 +494,9 @@ export const heMember = {
     title: "הוספת נוסעים לנסיעה",
     submit: "הוספה",
     added: "הנוסעים נוספו לנסיעה",
+    // REQ §13.176: which way the people added here ride
+    legLabel: "לאיזה כיוון?",
+    leg: { both: "הלוך וחזור", out: "רק הלוך", return: "רק חזור" },
     removed: "הנוסע/ת הוסר/ה מהנסיעה",
     removeAriaLabel: "הסרת {{name}}",
     weekNotPublicHint: "אפשר להוסיף נוסעים רק לנסיעה מפורסמת",

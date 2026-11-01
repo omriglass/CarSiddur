@@ -49,7 +49,7 @@ begin
   exception when raise_exception then if sqlerrm<>'not_authorized' then raise;end if;end;
   perform set_config('request.jwt.claims',jsonb_build_object('sub',driver,'role','authenticated')::text,true);
   begin perform public.claim_ride_driver(r.id,r.version);raise exception 'busy member claimed driver';
-  exception when raise_exception then if sqlerrm<>'driver_already_busy' then raise;end if;end;
+  exception when raise_exception then if sqlerrm<>'person_busy' then raise;end if;end;   -- REQ §13.176: asked first
   perform set_config('request.jwt.claims',jsonb_build_object('sub',manager,'role','authenticated')::text,true);
   -- A changed host invalidates the collected consent instead of applying stale times.
   begin

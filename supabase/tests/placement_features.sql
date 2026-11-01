@@ -112,8 +112,8 @@ begin
   insert into public.ride_requests(ride_id,request_id,role,leg,car_mode) values(rid2,q2,'passenger','both','chauffeur');
   procedure_ok:=false;
   begin perform public.set_ride_driver(rid2,m1,(select version from public.rides where id=rid2));
-  exception when others then procedure_ok:=sqlerrm='driver_already_busy'; end;
-  assert procedure_ok, 'set_ride_driver: overlapping own ride refused (driver_already_busy)';
+  exception when others then procedure_ok:=sqlerrm='person_busy'; end;
+  assert procedure_ok, 'set_ride_driver: overlapping own ride asks first (person_busy, REQ §13.176)';
   -- back to needs-driver
   res:=public.set_ride_driver(rid,null,(select version from public.rides where id=rid));
   assert (select needs_driver and driver_id is null from public.rides where id=rid), 'set_ride_driver(null): back to needs-driver';
@@ -214,15 +214,19 @@ begin
     'depart_at',dt,'return_at',dt+interval '3 hours','trip_type','round_trip','adults',1));
   assert res->>'status'='assigned', format('setup edit: %s',res);
   q1:=(res->>'request_id')::uuid; rid:=(res->>'ride_id')::uuid;
-  -- (g) the same member files an overlapping request: the response names the other request and ride
+  -- (g) the same member files an overlapping request: asked first (REQ §13.176); kept, the response names the other
+  -- request and ride
+  perform pg_temp.expect_err(format('select public.submit_request(%L::jsonb)', jsonb_build_object('department_id',dept,'week_start',w,'destination_id',dest,'ride_type_id',typ,
+    'depart_at',dt+interval '1 hour','return_at',dt+interval '2 hours','trip_type','round_trip','adults',1)),'person_busy');
   res:=public.submit_request(jsonb_build_object('department_id',dept,'week_start',w,'destination_id',dest,'ride_type_id',typ,
-    'depart_at',dt+interval '1 hour','return_at',dt+interval '2 hours','trip_type','round_trip','adults',1));
+    'depart_at',dt+interval '1 hour','return_at',dt+interval '2 hours','trip_type','round_trip','adults',1,'overlap_confirmed',true));
   assert res->'warnings' ? 'DUPLICATE_OVERLAP', 'overlaps: DUPLICATE_OVERLAP warning';
   assert exists(select 1 from jsonb_array_elements(res->'overlaps') o where (o->>'request_id')::uuid=q1 and (o->>'ride_id')::uuid=rid),
     format('overlaps: names the other request and ride, got %s',res->'overlaps');
   q3:=(res->>'request_id')::uuid;
-  -- withdrawing the overlapping one so the edit below is on a clean slate
-  perform public.withdraw_request(q3,(select version from public.requests where id=q3));
+  -- cancelling the overlapping one (kept, it was placed) so the edit below is on a clean slate
+  perform public.cancel_ride(r.id, 'CANCELLED_BY_MEMBER', r.version)
+  from public.rides r join public.ride_requests rr on rr.ride_id = r.id where rr.request_id = q3 and r.status <> 'cancelled';
   -- (f) edit to a later time: a plain car is free -> moved
   res:=public.submit_request(jsonb_build_object('request_id',q1,'expected_version',(select version from public.requests where id=q1),
     'department_id',dept,'week_start',w,'destination_id',dest,'ride_type_id',typ,
@@ -514,9 +518,8 @@ begin
   -- my own earlier request at that time is still waiting (no car yet); I cannot drive two cars, so it holds no ride
   insert into public.requests(department_id,week_start,requester_id,filed_by,destination_id,ride_type_id,depart_at,return_at,trip_shape,trip_type,status,status_reason,origin_id)
     values(dept,w,m1,m1,dest,typ,dt,dt+interval '3 hours','round_trip','round_trip','waitlisted','WAITLISTED_NO_CAR','00000000-0000-0000-0000-000000000010');
-  -- without the confirmation the overlapping request waits for the Sadran (unchanged, REQ §13.100 QB8)
-  res:=public.submit_request(base||jsonb_build_object('depart_at',dt+interval '1 hour','return_at',dt+interval '2 hours'));
-  assert res->>'status'<>'assigned' and res->>'reason'='DUPLICATE_OVERLAP', format('unconfirmed overlap: left for the Sadran, got %s',res);
+  -- without the confirmation the overlapping request is a question, not a trip to the Sadran (REQ §13.176)
+  perform pg_temp.expect_err(format('select public.submit_request(%L::jsonb)', base||jsonb_build_object('depart_at',dt+interval '1 hour','return_at',dt+interval '2 hours')),'person_busy');
   -- "keep both": placed straight away, the warning still reported
   res:=public.submit_request(base||jsonb_build_object('depart_at',dt+interval '1 hour','return_at',dt+interval '2 hours','overlap_confirmed',true));
   assert res->>'status'='assigned', format('confirmed overlap: placed, got %s',res);

@@ -2,6 +2,7 @@ import { ensureDepartmentWeeks } from "@/features/siddur/api";
 import { supabase } from "@/integrations/supabase/client";
 import { REQUEST_COLUMNS, type ReadableRequestRow } from "@/lib/requestColumns";
 import { rpc, toAppError } from "@/lib/rpc";
+import { withPersonBusyRetry } from "@/lib/personBusy";
 import { withSmallTrunkRetry } from "@/lib/smallTrunk";
 
 import { parseServerMergePreview, type ServerMergePreview } from "./board/mergeProposal";
@@ -672,7 +673,10 @@ export async function fetchSeriesLegs(seriesId: string): Promise<SeriesLeg[]> {
 /** REQ §13.101 (c): assign a volunteer driver to a needs-driver ride, or (`driverId` null) take a volunteer off again. */
 export async function setRideDriver(rideId: string, driverId: string | null, expectedVersion: number): Promise<void> {
   // The RPC accepts a null driver (back to needs-driver); the generated Args type marks it required.
-  await rpc("set_ride_driver", { p_ride_id: rideId, p_driver_id: driverId as unknown as string, p_expected_version: expectedVersion });
+  // REQ §13.176: a driver busy elsewhere at that time (their own part of that ride) is a question, then the same call.
+  await withPersonBusyRetry((allowBusy) => rpc("set_ride_driver", {
+    p_ride_id: rideId, p_driver_id: driverId as unknown as string, p_expected_version: expectedVersion, p_allow_busy: allowBusy,
+  }));
 }
 
 /** REQ §13.101 (e): the Sadran withdraws a request as a duplicate; the member is notified and may answer "not a duplicate". */

@@ -19,6 +19,8 @@ export type BoardRide = Database["public"]["Views"]["v_board_rides"]["Row"];
 export type MyUpcomingRide = BoardRide & {
   car_name: string | null;
   car_type: CarType | null;
+  /** REQ §13.176: my own part of someone else's ride (picked up on the way back, e.g.); absent = the whole ride. */
+  my_part?: { starts_at: string; ends_at: string };
 };
 
 /**
@@ -40,7 +42,23 @@ export async function fetchMyUpcomingRides(profileId: string, departmentId?: str
     // The one selection rule (`features/rides/myRides.ts`): a draft ride only when I drive or am named on it.
     if (ride.id && (ride.status !== "draft" || isMyDraftRide(ride, profileId))) rides.push(ride);
   }
-  return withCarNames(rides, departmentId);
+  const [withCars, parts] = await Promise.all([withCarNames(rides, departmentId), fetchMyRideParts(rides.flatMap((ride) => ride.id ? [ride.id] : []))]);
+  return withCars.map((ride) => {
+    const part = ride.id ? parts.get(ride.id) : undefined;
+    return part ? { ...ride, my_part: part } : ride;
+  });
+}
+
+/** REQ §13.176: my own part of each ride, for the rides where it is not the whole ride (`my_ride_parts`). */
+async function fetchMyRideParts(rideIds: string[]): Promise<Map<string, { starts_at: string; ends_at: string }>> {
+  const parts = new Map<string, { starts_at: string; ends_at: string }>();
+  if (!rideIds.length) return parts;
+  const { data, error } = await supabase.rpc("my_ride_parts", { p_ride_ids: rideIds });
+  if (error) throw toAppError(error);
+  for (const part of data ?? []) {
+    if (part.ride_id && !part.whole && part.starts_at && part.ends_at) parts.set(part.ride_id, { starts_at: part.starts_at, ends_at: part.ends_at });
+  }
+  return parts;
 }
 
 /** Upcoming rides whose `people` list holds `person` (`{person_id}` or `{child_id}`) — jsonb containment on the view. */

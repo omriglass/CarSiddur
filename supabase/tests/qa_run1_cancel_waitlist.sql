@@ -21,7 +21,7 @@ declare
   carB uuid:='00000000-0000-0000-0000-000000000041';
   w date:=public.current_week_start()+1099;
   dt timestamptz;
-  q1 uuid; q2 uuid; q3 uuid; rA uuid; rB uuid; g uuid; res jsonb; pub uuid; rC uuid; rP uuid; n int; st text; rs text; v text;
+  q1 uuid; q2 uuid; q3 uuid; rA uuid; rB uuid; g uuid; res jsonb; pub uuid; rC uuid; rP uuid; n int; st text; rs text; v text; d text;
 begin
   dt:=((w+2)+time '08:00') at time zone 'Asia/Jerusalem';
   insert into public.weeks(department_id,week_start,phase,open_at,close_at,publish_at)
@@ -109,11 +109,16 @@ begin
   insert into public.rides(department_id,week_start,car_id,starts_at,ends_at,origin_id,destination_id,driver_id,status,is_pinned,pin_reason,created_by)
     values(dept,w,carA,dt,dt+interval '3 hours',home,home,m2,'confirmed',true,'SADRAN_MANUAL',sadran) returning id into rC;
   perform set_config('request.jwt.claims',jsonb_build_object('sub',m2,'role','authenticated')::text,true);
-  res:=public.submit_request(jsonb_build_object('department_id',dept,'week_start',w,'destination_id',dest,'ride_type_id',typ,
-    'depart_at',dt+interval '1 hour','return_at',dt+interval '4 hours','trip_type','round_trip','adults',1));
-  assert res->'warnings' ? 'DUPLICATE_OVERLAP', 'QB8: DUPLICATE_OVERLAP warning for an overlapping own ride';
-  assert coalesce(res->>'status','')<>'assigned', format('QB8: must not be auto-approved, got %s',res);
-  assert not exists(select 1 from public.ride_requests where request_id=(res->>'request_id')::uuid), 'QB8: no ride was created for it';
+  -- REQ §13.176: unconfirmed, it is a question naming the member's own ride; nothing is written
+  begin
+    perform public.submit_request(jsonb_build_object('department_id',dept,'week_start',w,'destination_id',dest,'ride_type_id',typ,
+      'depart_at',dt+interval '1 hour','return_at',dt+interval '4 hours','trip_type','round_trip','adults',1));
+    raise exception 'QB8: an overlapping own ride must be asked about';
+  exception when others then
+    get stacked diagnostics v = message_text, d = pg_exception_detail;
+    assert v='person_busy', format('QB8: wanted person_busy, got %s',v);
+    assert (d::jsonb->'rides'->0->>'ride_id')::uuid=rC, format('QB8: the question names the own ride, got %s',d);
+  end;
 
   -- ---- QB14: "+ נוסעים" self-add serves the member's own open request --------------------------------
   perform set_config('request.jwt.claims',jsonb_build_object('sub',sadran,'role','authenticated')::text,true);
