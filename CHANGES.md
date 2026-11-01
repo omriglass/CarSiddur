@@ -1,6 +1,6 @@
 # Changes for the next release (since v2026.10.30-1)
 
-Branches: `o28-o29-followups` + `debug-and-stats` (27 commits, not yet merged into `main`). Status: **QA cycle running — do not release yet.**
+Branches: `o28-o29-followups` + `debug-and-stats` (not yet merged into `main`). Status: **QA run 17 fixed (REQ §13.172); a short QA rerun is due before release.**
 
 ## What members see
 
@@ -13,6 +13,12 @@ Branches: `o28-o29-followups` + `debug-and-stats` (27 commits, not yet merged in
 - **Edit mode on the siddur and "הנסיעות שלי" (REQ §13.165).** A ride drags only after a long press, or straight away after tapping the pencil. In list view the pencil is hidden.
 - **A member's edit tells the named companions** when their hours changed (R16B12).
 
+- **Driverless rides (QA run 17):** the person being dropped off can no longer "take the wheel" of their own הקפצה; non-drivers see only the WhatsApp ask; a pickup's WhatsApp text gives the pickup time; riders are told who the new driver is.
+- **Freed car (QA run 17):** one notice per request even when two cars free up together (the push replaces the earlier one); a plan-B member's notice names the main trip; the card on "הנסיעות שלי" shows the day and their own hours.
+- **Inbox (production 2026-11-01):** a failed load now shows an error with "רענון" instead of an empty list while the bell still counts; network failures are retried three times.
+- The ride sheet's car-location chip reads "הרכב נמצא ב…" and shows where the car is when the ride starts.
+- An edit refused because you drive others on the ride says so ("יש עוד נוסעים בנסיעה שלך").
+
 ## What the Sadran sees
 
 - **Freed-car decisions (REQ §13.168).** The board shows "N רכבים שהתפנו מחכים להחלטה שלך", which leads to a decision page with the options ranked by the policy score. The top option is marked "המלצת המערכת". Each person in an option is shown with their hours and destination, e.g. "טליה 08:00–12:00 לבנימינה". Choosing one option gives that request (or requests) the car; choosing several creates a "בדיון" group.
@@ -21,9 +27,15 @@ Branches: `o28-o29-followups` + `debug-and-stats` (27 commits, not yet merged in
 - **Open merges onto one ride share its seats (R16B8).**
 - **A ride move settles a pending member ride-change request (O31-1).**
 
+- **Freed-car card (QA run 17):** names the car, the day and the cancelled ride's hours; "רענן אפשרויות" ranks the car again with whoever waits now; after a decision the other cards update at once; someone who stepped out stays out.
+- **When the host leaves a ride** and others continue on it, the ride shrinks to what the remaining legs need (no more 3.5-hour holds for a 15-minute drop-off).
+- **Board drafts:** a pending origin change no longer shows false chain-break warnings; a plan-B draft is drawn from where the car stands.
+- **Route warning:** the ride sheet warns when the route's estimated times don't fit the ride (a warning only).
+
 ## Admin and statistics
 
 - **Statistics (REQ §13.167).** Every rider counts, including children and unnamed passengers. A new weekday × hour heatmap has three modes (percent of the fleet busy, start times, end times) and a weekly-average column; it replaces the old busy-hours chart.
+- Statistics: a future or inverted date range is corrected instead of failing.
 - **Admin › מחלקות** has the new switch "כל אחד/ת יכול/ה לערוך כל נסיעה".
 
 ## Developer tooling (no user impact)
@@ -34,16 +46,17 @@ Branches: `o28-o29-followups` + `debug-and-stats` (27 commits, not yet merged in
 
 ## Deployment notes
 
-- **Migrations:** 14, from `20261030090000` to `20261031090800`. Two of them have tested rollback scripts: `supabase/rollback/20261030090200_down.sql` and `20261031090200_down.sql`. `20261031090500` only adds the enum value `ride_edited`, alone in its file.
+- **Migrations:** 18, from `20261030090000` to `20261101090300`. Two of them have tested rollback scripts: `supabase/rollback/20261030090200_down.sql` and `20261031090200_down.sql`. `20261031090500` only adds the enum value `ride_edited`, alone in its file.
 - **Edge function:** `on-ride-cancelled` changed and must be deployed; `npm run release` deploys changed functions. The solver bundle (`_shared/solver.js`) is regenerated.
 - **New setting:** `department_settings.anyone_edits_rides`, off. The owner decides per department whether to turn it on.
 - **New profile column:** `profiles.push_on_ride_edits`, default on.
 - **New route:** `/ride/:rideId`, which requires sign-in.
+- **New RPC:** `refresh_freed_offer` (Sadran; calls the edge function again).
 - **"מה חדש":** none written yet. Use `/write-changelog` before an announced release, or release as a minor one.
 
 ## Tests
 
-- `npm run check`: lint, typecheck and 2636 unit tests pass.
-- SQL suites pass on the disposable stack, including the new `ride_edited_notices.sql`.
+- `npm run check`: lint, typecheck and 2644 unit tests pass.
+- All SQL suites pass on a freshly replayed disposable stack, including `ride_edited_notices.sql` (now in the runner) and the new `qa_run17_fixes.sql`.
 - New e2e specs pass: `freed-car-options`, `anyone-edits-rides`, `driver-wanted`. `ride-editing` was updated, since resizing now happens on the grid.
-- QA cycle (seed 4492, week 8.11): *results pending*.
+- QA run 17 (seed 4492, week 8.11): 9 bugs, 4 UI items in the new features + older ones; the ones the owner picked are fixed (REQ §13.172, docs/TODO.md "QA run 17"). Rerun: *pending*.
