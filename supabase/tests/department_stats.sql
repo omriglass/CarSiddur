@@ -278,12 +278,10 @@ begin
   result := public.department_stats(dept, p_from, p_to);
   assert (result ->> 'rides')::int = 3, '(b) sadran must see the same figures as admin';
 
-  -- (c) A plain member of the department is refused.
+  -- (c) A plain member of the department reads them too (owner 2026-11-01).
   perform set_config('request.jwt.claims', jsonb_build_object('sub', member1, 'role', 'authenticated')::text, true);
-  begin
-    perform public.department_stats(dept, p_from, p_to);
-    raise exception '(c) FAILED: plain member must not read department_stats';
-  exception when raise_exception then if sqlerrm <> 'not_authorized' then raise; end if; end;
+  result := public.department_stats(dept, p_from, p_to);
+  assert (result ->> 'rides')::int = 3, '(c) a plain member must see the same figures';
 
   -- (d) Two departments: a Sadran of a different department is refused for this one
   -- (isolation), even though they are a legitimate Sadran elsewhere.
@@ -294,6 +292,8 @@ begin
   insert into public.sadran_assignments (department_id, profile_id, week_start)
   values (other_dept, member1, null)
   on conflict do nothing;
+  -- ... and is no longer a member of this one
+  update public.department_members set removed_at = now() where department_id = dept and profile_id = member1;
   perform set_config('request.jwt.claims', jsonb_build_object('sub', member1, 'role', 'authenticated')::text, true);
   assert public.is_sadran_any(other_dept), '(d) fixture setup: member1 must be a sadran of the other department';
   begin

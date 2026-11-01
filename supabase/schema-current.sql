@@ -8241,7 +8241,7 @@ declare
   -- REQ §13.167 (b): weekday × hour heatmap
   v_hourly jsonb;
 begin
-  if not (public.is_admin() or public.is_sadran_any(p_department_id)) then
+  if not (public.is_admin() or public.is_sadran_any(p_department_id) or public.member_of(p_department_id)) then
     raise exception 'not_authorized' using errcode = 'P0001';
   end if;
 

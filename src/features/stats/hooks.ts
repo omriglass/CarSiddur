@@ -23,11 +23,9 @@ export interface StatsDepartmentOption {
 }
 
 /**
- * Departments the signed-in user may view statistics for (UX_FLOWS.md §5.12
- * "admins and Sadranim"): a global admin sees every active department; a
- * non-admin sees the departments where their permanent `department_members`
- * role is `sadran`/`admin` (a weekly-only Sadran assignment doesn't grant
- * this — there is no single week to check it against here). This is UI
+ * Departments the signed-in user may view statistics for (UX_FLOWS.md §5.12;
+ * owner 2026-11-01: every approved member): a global admin sees every active
+ * department; anyone else the departments they belong to. This is UI
  * convenience only, same as every other role gate; the RPC itself is the
  * real guarantee (CLAUDE.md Conventions "Roles").
  */
@@ -40,7 +38,6 @@ export function useStatsDepartments() {
   const options: StatsDepartmentOption[] = isAdmin
     ? activeDepartment.departments.map((department) => ({ id: department.id, name: department.name }))
     : (membershipsQuery.data ?? [])
-        .filter((membership) => membership.role === "sadran" || membership.role === "admin")
         .map((membership) => ({ id: membership.department_id, name: membership.department.name }));
 
   return {
