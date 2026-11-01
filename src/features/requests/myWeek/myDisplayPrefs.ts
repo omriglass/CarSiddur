@@ -1,4 +1,5 @@
-// Per-device display choices of `/my` (owner 2026-10-16): list or table view, and whether the children's rides show.
+// Per-device display choices of `/my` (owner 2026-10-16): list or table view, and whether the children's rides show;
+// REQ §13.177 (c, d): the rides I filed for others and my children's other parent's rides, each off by default.
 // Browser storage only (never account data); every access is wrapped — private mode / garbage must not break the screen.
 import { useState } from "react";
 
@@ -7,9 +8,11 @@ const STORAGE_KEY = "my.display.v1";
 export interface MyDisplayPrefs {
   view: "list" | "week";
   showKidsRides: boolean;
+  showCoParentRides: boolean;
+  showFiledForOthers: boolean;
 }
 
-export const DEFAULT_MY_DISPLAY_PREFS: MyDisplayPrefs = { view: "list", showKidsRides: false };
+export const DEFAULT_MY_DISPLAY_PREFS: MyDisplayPrefs = { view: "list", showKidsRides: false, showCoParentRides: false, showFiledForOthers: false };
 
 export function parseMyDisplayPrefs(raw: string | null): MyDisplayPrefs {
   if (!raw) return DEFAULT_MY_DISPLAY_PREFS;
@@ -18,6 +21,8 @@ export function parseMyDisplayPrefs(raw: string | null): MyDisplayPrefs {
     return {
       view: parsed?.view === "week" || parsed?.view === "list" ? parsed.view : DEFAULT_MY_DISPLAY_PREFS.view,
       showKidsRides: typeof parsed?.showKidsRides === "boolean" ? parsed.showKidsRides : DEFAULT_MY_DISPLAY_PREFS.showKidsRides,
+      showCoParentRides: typeof parsed?.showCoParentRides === "boolean" ? parsed.showCoParentRides : DEFAULT_MY_DISPLAY_PREFS.showCoParentRides,
+      showFiledForOthers: typeof parsed?.showFiledForOthers === "boolean" ? parsed.showFiledForOthers : DEFAULT_MY_DISPLAY_PREFS.showFiledForOthers,
     };
   } catch {
     return DEFAULT_MY_DISPLAY_PREFS;
@@ -54,5 +59,9 @@ export function useMyDisplayPrefs() {
     setView: (view: MyDisplayPrefs["view"]) => update({ view }),
     showKidsRides: prefs.showKidsRides,
     setShowKidsRides: (showKidsRides: boolean) => update({ showKidsRides }),
+    showCoParentRides: prefs.showCoParentRides,
+    setShowCoParentRides: (showCoParentRides: boolean) => update({ showCoParentRides }),
+    showFiledForOthers: prefs.showFiledForOthers,
+    setShowFiledForOthers: (showFiledForOthers: boolean) => update({ showFiledForOthers }),
   };
 }

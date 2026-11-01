@@ -98,6 +98,8 @@ export function rideBlocks(
     tightIds?: ReadonlySet<string>;
     /** Read-only rides of my children / their other guardians (not mine): muted, named, never `isMine`. */
     related?: ReadonlyMap<string, readonly RelatedRideLabel[]>;
+    /** REQ §13.177 (c): rides I only filed for someone else (ride id → their names): muted, "הוגשה עבור X", never `isMine`. */
+    filedFor?: ReadonlyMap<string, string>;
     /** Owner 2026-10-16: the "!" be-back-on-time lines per ride id (already worded). */
     handoverLines?: ReadonlyMap<string, readonly string[]>;
   } = {},
@@ -106,9 +108,14 @@ export function rideBlocks(
   for (const ride of rides) {
     // A draft ride (unpublished day) reaches here only when it is mine as driver / named person (`isRideOfMine`).
     if (!ride.id || !ride.starts_at || !ride.ends_at || ride.status === "cancelled") continue;
-    const relatedNames = extras.related?.get(ride.id)?.map((entry) => entry.name).join(", ");
+    // "הוגשה עבור X" (I filed it) says more than "נסיעה של X" (family) when both hold.
+    const filedForNames = extras.filedFor?.get(ride.id);
+    const relatedNames = filedForNames !== undefined ? undefined : extras.related?.get(ride.id)?.map((entry) => entry.name).join(", ");
+    const notMine = !!relatedNames || filedForNames !== undefined;
     const segments = daySegments(ride.starts_at, ride.ends_at, dayKeys);
-    const label = relatedNames ? `${tv("myWeek.kidRideOf", { name: relatedNames })} · ${labelOf(ride)}` : labelOf(ride);
+    const label = filedForNames !== undefined
+      ? `${tv("request.filedFor", { name: filedForNames })} · ${labelOf(ride)}`
+      : relatedNames ? `${tv("myWeek.kidRideOf", { name: relatedNames })} · ${labelOf(ride)}` : labelOf(ride);
     // Owner 2026-10-11: the ride's public notes ("notes for everyone") and passengers, exactly as the siddur block shows
     // them — they explain what the app's fields cannot. A reservation's notes are already its label.
     const served = servedOf(ride);
@@ -132,11 +139,11 @@ export function rideBlocks(
           endMinutes: segment.endMinutes,
           label,
           description,
-          isMine: !relatedNames,
-          muted: !!relatedNames,
-          tightSchedule: !relatedNames && !!extras.tightIds?.has(ride.id!),
+          isMine: !notMine,
+          muted: notMine,
+          tightSchedule: !notMine && !!extras.tightIds?.has(ride.id!),
           needsDriver: !!ride.needs_driver,
-          handoverLines: !relatedNames ? extras.handoverLines?.get(ride.id!) : undefined,
+          handoverLines: !notMine ? extras.handoverLines?.get(ride.id!) : undefined,
           rideTypeCode: representativeRideTypeCode(servedOf(ride)),
           seriesIndex: ride.series_index,
           seriesCount: ride.series_count,
@@ -178,6 +185,8 @@ export function requestBlocks(
   now: number = Date.now(),
   /** Requests served by a ride drawn in this view (`servedOf`): one item per trip — their own block is skipped (owner 2026-10-16). */
   servedRequestIds: ReadonlySet<string> = new Set(),
+  /** REQ §13.177 (c): the requester's name when I only filed the request for them ("הוגשה עבור X" before the label). */
+  filedForNameOf: (row: MyRequestRow) => string | undefined = () => undefined,
 ): MyWeekBlock[] {
   const out: MyWeekBlock[] = [];
   // Owner 2026-10-13: a request on a day already gone is no useful information — only today onward (rides stay).
@@ -187,7 +196,10 @@ export function requestBlocks(
     const kind = requestBlockKind(row, now);
     const span = requestSpan(row);
     if (!kind || !span) continue;
-    const label = originDestinationLabel(row, homeDestinationId);
+    const filedForName = filedForNameOf(row);
+    const label = filedForName !== undefined
+      ? `${tv("request.filedFor", { name: filedForName })} · ${originDestinationLabel(row, homeDestinationId)}`
+      : originDestinationLabel(row, homeDestinationId);
     const description = [...requestDetailLines(row), kind === "proposal" ? null : waitingFallbackLine(row)].filter(Boolean).join("\n") || undefined;
     daySegments(span.start, span.end, dayKeys).forEach((segment, index) => {
       if (segment.dayKey < today) return;

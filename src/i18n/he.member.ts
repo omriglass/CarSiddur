@@ -296,6 +296,8 @@ export const heMember = {
     viewWeek: "שבוע",
     /** Owner 2026-10-16: display-only option in the eye menu (per device). */
     showKidsRides: "הצגת נסיעות הילדים",
+    showCoParentRides: "הצגת נסיעות ההורה השני של הילדים",
+    showFiledForOthers: "הצגת נסיעות שהגשתי עבור אחרים",
     /** Muted tag on a read-only ride that is a child's / another guardian's, not mine. */
     kidRideOf: "נסיעה של {{name}}",
     /** One line under the week switcher: what the grid shows and how to ask for a ride. */

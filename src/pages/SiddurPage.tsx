@@ -33,6 +33,7 @@ import { useWaitlistGroupsQuery } from "@/features/waitlist/hooks";
 import { useMyDepartments } from "@/features/auth/useMyDepartments";
 import { useSession } from "@/features/auth/useSession";
 import { useIsSadran } from "@/features/auth/useIsSadran";
+import { ownRequestIds } from "@/features/requests/filedForOther";
 import { useMyRequests, useCancelRideMutation } from "@/features/requests/hooks";
 import { canEditRequest } from "@/features/requests/window";
 import { useCars, useDestinations, useRideTypes, useMaintenanceBlocks } from "@/features/fleet/hooks";
@@ -209,6 +210,12 @@ export function SiddurPage() {
   function isMyRide(ride: BoardRide): boolean {
     const car = (carsQuery.data ?? []).find((c) => c.id === ride.car_id);
     return isRideRelated({ ride, profileId, myRequestIds, carOwnerId: car?.type === "temporary" ? car.owner_id : null });
+  }
+  // REQ §13.177 (c): painted as mine (purple) only through my own trips — not a ride I only filed for someone else.
+  const myOwnRequestIds = ownRequestIds(myRequestsQuery.data ?? [], profileId);
+  function isMyRideToPaint(ride: BoardRide): boolean {
+    const car = (carsQuery.data ?? []).find((c) => c.id === ride.car_id);
+    return isRideRelated({ ride, profileId, myRequestIds: myOwnRequestIds, carOwnerId: car?.type === "temporary" ? car.owner_id : null });
   }
   // No request of my own on the ride but I am related to it: edit the ride's driver request (the edit page asks the server).
   const relatedEditRequestId = !editableOwnRequest && selectedRideId
@@ -436,7 +443,7 @@ export function SiddurPage() {
       coordinatorNotes: rideCoordinatorNotes(servedOf(r), coordinatorRequests),
       shadowed: shadowedRideIds.has(r.id as string),
       needsDriver: !!r.needs_driver,
-      isMine: isMyRide(r),
+      isMine: isMyRideToPaint(r),
       tightSchedule: tightRideIds.has(r.id as string),
       seriesIndex: r.series_index,
       seriesCount: r.series_count,
@@ -633,7 +640,7 @@ export function SiddurPage() {
                     driverName: r.driver_name,
                     isChauffeur: !!r.is_chauffeur,
                     needsDriver: !!r.needs_driver,
-                    isMine: isMyRide(r),
+                    isMine: isMyRideToPaint(r),
                     tightSchedule: tightRideIds.has(r.id as string),
                     carName: siddurCarName(carsQuery.data?.find((c) => c.id === r.car_id)) || null,
                     carId: r.car_id,

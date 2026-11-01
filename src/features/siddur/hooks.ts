@@ -80,12 +80,12 @@ export function useMyChildrenRidesQuery(childIds: readonly string[], enabled: bo
   return useQuery({
     queryKey: siddurKeys.myChildrenRides(departmentId, childIds, guardianIds),
     queryFn: () => fetchMyChildrenRides(childIds, departmentId, guardianIds),
-    enabled: enabled && childIds.length > 0,
+    enabled: enabled && childIds.length + guardianIds.length > 0,
     staleTime: 30_000,
   });
 }
 
-/** The other guardians of my children (REQ §13.134); fetched only with the "children's rides" option on. */
+/** The other guardians of my children (REQ §13.134); fetched only with the "other parent's rides" option on (REQ §13.177 d). */
 export function useMyCoGuardiansQuery(enabled: boolean) {
   const { departmentId } = useActiveDepartment();
   return useQuery({

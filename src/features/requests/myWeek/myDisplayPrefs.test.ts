@@ -9,7 +9,8 @@ describe("parseMyDisplayPrefs", () => {
     expect(parseMyDisplayPrefs("null")).toEqual(DEFAULT_MY_DISPLAY_PREFS);
   });
   it("reads a saved choice and ignores wrong-typed fields", () => {
-    expect(parseMyDisplayPrefs('{"view":"week","showKidsRides":true}')).toEqual({ view: "week", showKidsRides: true });
+    expect(parseMyDisplayPrefs('{"view":"week","showKidsRides":true}')).toEqual({ view: "week", showKidsRides: true, showCoParentRides: false, showFiledForOthers: false });
+    expect(parseMyDisplayPrefs('{"showCoParentRides":true,"showFiledForOthers":true}')).toMatchObject({ showCoParentRides: true, showFiledForOthers: true });
     expect(parseMyDisplayPrefs('{"view":"grid","showKidsRides":"yes"}')).toEqual(DEFAULT_MY_DISPLAY_PREFS);
   });
 });

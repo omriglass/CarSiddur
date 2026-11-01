@@ -122,7 +122,7 @@ export async function fetchMyChildren(profileId: string): Promise<MyChild[]> {
  * guardians (`guardianIds` from `my_co_guardians`: `child_guardians` hides their rows from members under RLS).
  */
 export async function fetchMyChildrenRides(childIds: readonly string[], departmentId?: string, guardianIds: readonly string[] = []): Promise<MyUpcomingRide[]> {
-  if (!childIds.length) return [];
+  if (!childIds.length && !guardianIds.length) return [];
   const now = new Date().toISOString();
   const lists = await Promise.all([
     ...childIds.map((id) => fetchRidesWithPerson({ child_id: id }, now, ["confirmed", "flagged"])),

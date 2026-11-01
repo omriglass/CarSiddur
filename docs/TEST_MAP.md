@@ -236,7 +236,7 @@ migration `*my_rides_week_view*`; `supabase/tests/request_anchors.sql` (TEST 8).
 **Automated**:
 - Vitest: `npx vitest run src/features/requests/myWeek src/features/calendar`
 - SQL: `request_anchors.sql` (own-row `profiles.my_rides_week_view`, anon cannot read), `rls_smoke.sql` (TEST 18 column classification)
-- Playwright: `npx playwright test --grep "@my-week"` (no spec yet — see below)
+- Playwright: `npx playwright test --grep "@my-week"` — `my-rides-options.spec.ts` (REQ §13.177 c/d: filed-for-others and co-parent options, not painted as mine on /my and the siddur), `unpublished-day.spec.ts`
 
 **QA script**:
 1. As `member1`, open `/my`, tap "שבוע". Expected: seven day columns headed like "א׳ 11.10", sideways

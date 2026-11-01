@@ -51,6 +51,7 @@ import {
   withLanes,
   type MyWeekTarget,
 } from "./myWeekItems";
+import { isFiledForOther, ownRequestIds } from "../filedForOther";
 import { MyWeekDisplayMenu } from "./MyWeekDisplayMenu";
 import { EditModeButton } from "@/features/rides/components/EditModeButton";
 import { useDragHint, useEditMode } from "@/features/rides/editMode";
@@ -81,8 +82,13 @@ interface MyWeekViewProps {
   showKidsRides?: boolean;
   onShowKidsRidesChange?: (show: boolean) => void;
   childIds?: ReadonlySet<string>;
-  /** The other guardians of my children (`my_co_guardians`), for the same option. */
+  /** The other guardians of my children (`my_co_guardians`), for the "other parent's rides" option (REQ §13.177 d). */
   guardianIds?: ReadonlySet<string>;
+  showCoParentRides?: boolean;
+  onShowCoParentRidesChange?: (show: boolean) => void;
+  /** REQ §13.177 (c): `requests` then also holds what I filed for others; their rides are drawn muted, "הוגשה עבור X". */
+  showFiledForOthers?: boolean;
+  onShowFiledForOthersChange?: (show: boolean) => void;
 }
 
 /**
@@ -91,7 +97,7 @@ interface MyWeekViewProps {
  * suggestions and proposals waiting for my answer, each on its exact day and times; overlapping items sit side by side.
  * Past weeks (the archive) show rides only, read-only. Layout comes from `WeekGrid`; this component only maps data to it.
  */
-export function MyWeekView({ departmentId, homeDestinationId, profileId, requests, weeks, homeWeekStart, canSubmit, onTarget, archive = false, onViewChange, showKidsRides = false, onShowKidsRidesChange, childIds, guardianIds }: MyWeekViewProps) {
+export function MyWeekView({ departmentId, homeDestinationId, profileId, requests, weeks, homeWeekStart, canSubmit, onTarget, archive = false, onViewChange, showKidsRides = false, onShowKidsRidesChange, childIds, guardianIds, showCoParentRides = false, onShowCoParentRidesChange, showFiledForOthers = false, onShowFiledForOthersChange }: MyWeekViewProps) {
   const navigate = useNavigate();
   const requestLinkProps = useRequestLinkProps();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -125,39 +131,47 @@ export function MyWeekView({ departmentId, homeDestinationId, profileId, request
 
   // "!" be-back-on-time lines (owner 2026-10-16): the server view on published days, the client mirror elsewhere.
   const myHandoverRideIds = useMemo(() => {
-    const ids = new Set(requests.map((row) => row.id));
+    const ids = ownRequestIds(requests, profileId);
     return (ridesQuery.data ?? []).flatMap((ride) => (ride.id && isMyBoardRide(ride, profileId, ids) ? [ride.id] : []));
   }, [profileId, requests, ridesQuery.data]);
   const serverNeighbours = useCarNeighboursQuery(myHandoverRideIds).data;
 
   const entries = useMemo(() => {
-    const myRequestIds = new Set(requests.map((row) => row.id));
+    // REQ §13.177 (c): a ride is mine through my own trips only; what I filed for others is drawn muted and named.
+    const myRequestIds = ownRequestIds(requests, profileId);
+    const filedForNameById = new Map(requests.flatMap((row) => (isFiledForOther(row, profileId) ? [[row.id, row.requesterName ?? ""] as const] : [])));
     // Owner 2026-10-16: the siddur's tight-schedule marker on my rides (also on an unpublished day I manage).
     const tightIds = tightRideIdsOf(ridesQuery.data ?? [], effectiveWeekSettings(settingsQuery.data, week).turnaroundMinutes, homeDestinationId, carsQuery.data ?? []);
-    const related = showKidsRides && childIds?.size
-      ? selectRelatedRides(ridesQuery.data ?? [], { profileId, childIds, guardianIds: guardianIds ?? new Set() }, myRequestIds)
+    const related = (showKidsRides || showCoParentRides) && (childIds?.size || guardianIds?.size)
+      ? selectRelatedRides(ridesQuery.data ?? [], { profileId, childIds: childIds ?? new Set(), guardianIds: guardianIds ?? new Set() }, myRequestIds)
       : new Map<string, RelatedRideLabel[]>();
     const carNameById = new Map((carsQuery.data ?? []).map((car) => [car.id, car.name]));
-    const mine = (ridesQuery.data ?? []).filter((ride: BoardRide) => isMyBoardRide(ride, profileId, myRequestIds) || (!!ride.id && related.has(ride.id)));
+    const filedFor = new Map<string, string>();
+    for (const ride of ridesQuery.data ?? []) {
+      if (!ride.id || isMyBoardRide(ride, profileId, myRequestIds)) continue;
+      const names = [...new Set(servedOf(ride).flatMap((entry) => (entry.request_id && filedForNameById.has(entry.request_id) ? [filedForNameById.get(entry.request_id)!] : [])))];
+      if (names.length) filedFor.set(ride.id, names.join(", "));
+    }
+    const mine = (ridesQuery.data ?? []).filter((ride: BoardRide) => isMyBoardRide(ride, profileId, myRequestIds) || (!!ride.id && (related.has(ride.id) || filedFor.has(ride.id))));
     const myRequestsById = new Map(requests.map((row) => [row.id, row]));
     const turnaround = effectiveWeekSettings(settingsQuery.data, week).turnaroundMinutes;
     const handoverLines = new Map<string, string[]>();
     for (const ride of mine) {
-      if (!ride.id || !ride.starts_at || !ride.ends_at || related.has(ride.id)) continue;
+      if (!ride.id || !ride.starts_at || !ride.ends_at || related.has(ride.id) || filedFor.has(ride.id)) continue;
       const neighbours = serverNeighbours?.get(ride.id) ?? neighboursFromRides(ridesQuery.data ?? [], ride.id, turnaround);
       const lines = carHandoverLines(carHandoverNotes(neighbours, profileId, profileId ? [profileId] : []), { startsAt: ride.starts_at, endsAt: ride.ends_at });
       if (lines.length) handoverLines.set(ride.id, lines.map((line) => `${line.before}${line.day ? `${line.day} ` : ""}${line.time}${line.after}`));
     }
-    const blocks = rideBlocks(mine, dayKeys, (ride) => rideWithCarLabel(ride.car_id ? carNameById.get(ride.car_id) ?? "" : "", rideRouteLabel(ride, homeDestinationId)), myRequestsById, { tightIds, related, handoverLines });
+    const blocks = rideBlocks(mine, dayKeys, (ride) => rideWithCarLabel(ride.car_id ? carNameById.get(ride.car_id) ?? "" : "", rideRouteLabel(ride, homeDestinationId)), myRequestsById, { tightIds, related, filedFor, handoverLines });
     if (!isPast) {
       const sameDepartment = requests.filter((row) => row.departmentId === departmentId && row.weekStart === weekStart);
       const servedRequestIds = new Set(mine.flatMap((ride) => servedOf(ride).flatMap((entry) => (entry.request_id ? [entry.request_id] : []))));
-      blocks.push(...requestBlocks(sameDepartment, dayKeys, homeDestinationId, undefined, servedRequestIds));
+      blocks.push(...requestBlocks(sameDepartment, dayKeys, homeDestinationId, undefined, servedRequestIds, (row) => filedForNameById.get(row.id)));
       const suggestions = (suggestionsQuery.data ?? []).filter((s: TemplateSuggestion) => s.departmentId === departmentId && s.weekStart === weekStart);
       blocks.push(...suggestionBlocks(suggestions, dayKeys, homeDestinationId));
     }
     return withLanes(blocks);
-  }, [carsQuery.data, childIds, dayKeys, guardianIds, departmentId, homeDestinationId, isPast, profileId, requests, ridesQuery.data, showKidsRides, serverNeighbours, settingsQuery.data, suggestionsQuery.data, week, weekStart]);
+  }, [carsQuery.data, childIds, dayKeys, guardianIds, departmentId, homeDestinationId, isPast, profileId, requests, ridesQuery.data, showKidsRides, showCoParentRides, serverNeighbours, settingsQuery.data, suggestionsQuery.data, week, weekStart]);
 
   const targetById = useMemo(() => new Map(entries.map((entry) => [entry.block.id, entry.target])), [entries]);
   // Owner 2026-10-26: in a partly published week, a day not published yet carries a stamp over its column (a week
@@ -256,7 +270,7 @@ export function MyWeekView({ departmentId, homeDestinationId, profileId, request
             ) : null}
             {canDragSomething ? <EditModeButton on={editMode} onChange={setEditMode} /> : null}
             {departmentId ? <LongRangeMenu departmentId={departmentId} /> : null}
-            <MyWeekDisplayMenu view="week" onViewChange={onViewChange} zoom={tableZoom} onZoomChange={setTableZoom} showKidsRides={showKidsRides} onShowKidsRidesChange={onShowKidsRidesChange} />
+            <MyWeekDisplayMenu view="week" onViewChange={onViewChange} zoom={tableZoom} onZoomChange={setTableZoom} showKidsRides={showKidsRides} onShowKidsRidesChange={onShowKidsRidesChange} showCoParentRides={showCoParentRides} onShowCoParentRidesChange={onShowCoParentRidesChange} showFiledForOthers={showFiledForOthers} onShowFiledForOthersChange={onShowFiledForOthersChange} />
           </div>
         ) : null}
       </div>

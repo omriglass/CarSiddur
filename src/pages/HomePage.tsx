@@ -25,6 +25,7 @@ import { useCars, useMyTemporaryCars, useRideTypes } from "@/features/fleet/hook
 import { AddRideFab } from "@/features/requests/components/AddRideFab";
 import { RequestDeadlineNote } from "@/features/requests/components/RequestDeadlineNote";
 import { CarNowButton } from "@/features/requests/components/CarNowButton";
+import { isFiledForOther } from "@/features/requests/filedForOther";
 import { NewRequestButton } from "@/features/requests/components/NewRequestButton";
 import { RequestRow } from "@/features/requests/components/RequestRow";
 import { ShortenSeriesDialog } from "@/features/requests/components/ShortenSeriesDialog";
@@ -149,12 +150,14 @@ export function HomePage() {
   const [searchParams, setSearchParams] = useSearchParams();
   // `?view=week|list` wins for this visit; otherwise the last choice made on this device (list by default).
   const weekView = (searchParams.get("view") ?? displayPrefs.view) === "week";
+  // REQ §13.177 (d): my children's rides and their other parent's rides are two separate options.
   const myChildrenQuery = useMyChildrenQuery(displayPrefs.showKidsRides);
-  const myChildIds = new Set((myChildrenQuery.data ?? []).map((child) => child.id));
-  const coGuardiansQuery = useMyCoGuardiansQuery(displayPrefs.showKidsRides);
-  const guardianIds = new Set(coGuardiansQuery.data ?? []);
+  const myChildIds = new Set(displayPrefs.showKidsRides ? (myChildrenQuery.data ?? []).map((child) => child.id) : []);
+  const coGuardiansQuery = useMyCoGuardiansQuery(displayPrefs.showCoParentRides);
+  const guardianIds = new Set(displayPrefs.showCoParentRides ? coGuardiansQuery.data ?? [] : []);
+  const showFamilyRides = displayPrefs.showKidsRides || displayPrefs.showCoParentRides;
   // The rides query waits for the co-guardian lookup so it runs once with both id lists.
-  const kidsRidesQuery = useMyChildrenRidesQuery([...myChildIds].sort(), displayPrefs.showKidsRides && !weekView && !coGuardiansQuery.isFetching, [...guardianIds].sort());
+  const kidsRidesQuery = useMyChildrenRidesQuery([...myChildIds].sort(), showFamilyRides && !weekView && !coGuardiansQuery.isFetching, [...guardianIds].sort());
   const { tight: tightRideIds, mirrorNeighbours } = useTightRideIds(defaultDepartmentId, upcomingRidesQuery.data ?? [], weeksQuery.data ?? [], settingsQuery.data, homeDestinationIds[defaultDepartmentId ?? ""], carsQuery.data ?? []);
 
   // Show the immediate-car entry point for the current week even before its
@@ -244,6 +247,8 @@ export function HomePage() {
       const day = rowDay(row);
       return !day || isTodayOrLater(day, now);
     })
+    // REQ §13.177 (c): what I filed for someone else shows only with its display option on.
+    .filter((row) => displayPrefs.showFiledForOthers || !isFiledForOther(row, viewerId))
     .sort((a, b) => requestStart(a) - requestStart(b) || a.id.localeCompare(b.id));
 
   const upcomingRides = upcomingRidesQuery.data ?? [];
@@ -291,7 +296,7 @@ export function HomePage() {
   // reaches (I drive someone else's request, a reservation names me) is its own item in its week.
   // Owner 2026-10-16: read-only rides of my children (display option), muted and named, listed with mine.
   const myRequestIds = new Set((requestsQuery.data ?? []).map((request) => request.id));
-  const relatedByRide = displayPrefs.showKidsRides && !weekView
+  const relatedByRide = showFamilyRides && !weekView
     ? selectRelatedRides(kidsRidesQuery.data ?? [], { profileId: viewerId, childIds: myChildIds, guardianIds }, myRequestIds)
     : new Map<string, { kind: "child" | "guardian"; name: string }[]>();
   const relatedRides = (kidsRidesQuery.data ?? []).filter((ride) => !!ride.id && relatedByRide.has(ride.id) && !upcomingRides.some((mine) => mine.id === ride.id));
@@ -438,7 +443,16 @@ export function HomePage() {
         actions={weekView ? undefined : (
           <div className="flex items-center gap-2">
             {active.canSubmit && active.departmentId ? <LongRangeMenu departmentId={active.departmentId} /> : null}
-            <MyWeekDisplayMenu view="list" onViewChange={setView} showKidsRides={displayPrefs.showKidsRides} onShowKidsRidesChange={displayPrefs.setShowKidsRides} />
+            <MyWeekDisplayMenu
+              view="list"
+              onViewChange={setView}
+              showKidsRides={displayPrefs.showKidsRides}
+              onShowKidsRidesChange={displayPrefs.setShowKidsRides}
+              showCoParentRides={displayPrefs.showCoParentRides}
+              onShowCoParentRidesChange={displayPrefs.setShowCoParentRides}
+              showFiledForOthers={displayPrefs.showFiledForOthers}
+              onShowFiledForOthersChange={displayPrefs.setShowFiledForOthers}
+            />
           </div>
         )}
       />
@@ -507,6 +521,10 @@ export function HomePage() {
           onViewChange={setView}
           showKidsRides={displayPrefs.showKidsRides}
           onShowKidsRidesChange={displayPrefs.setShowKidsRides}
+          showCoParentRides={displayPrefs.showCoParentRides}
+          onShowCoParentRidesChange={displayPrefs.setShowCoParentRides}
+          showFiledForOthers={displayPrefs.showFiledForOthers}
+          onShowFiledForOthersChange={displayPrefs.setShowFiledForOthers}
           childIds={myChildIds}
           guardianIds={guardianIds}
         />

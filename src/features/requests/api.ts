@@ -88,6 +88,8 @@ export interface MyRequestRow {
   filerName?: string | null;
   /** Owner 2026-10-16 (REQ §13.135): set when I am only named as a companion on someone else's request — who added me (filer, else requester). */
   companionOf?: string | null;
+  /** Profile ids of the request's companions (REQ §13.177 c: a filer riding along is not "filed for someone else"). */
+  companionIds?: string[];
   preferredCarId?: string | null;
   preferredCarName?: string | null;
   hasPublishedRide?: boolean;
@@ -190,7 +192,7 @@ const SELECT = `
   ),
   proposals(id, type, reason:payload->>reason, expires_at, status, parties:proposal_parties(profile_id, response)),
   adults, child_seats, boosters, guest_passenger_names, ride_description,
-  companions:request_companions(profile:profiles(full_name)),
+  companions:request_companions(profile_id, profile:profiles(full_name)),
   request_children(child:children(full_name, birth_year))
 `;
 
@@ -312,7 +314,7 @@ interface RawRequestRow {
   boosters?: number;
   guest_passenger_names?: string[] | null;
   ride_description?: string | null;
-  companions?: { profile: { full_name: string } | null }[] | null;
+  companions?: { profile_id?: string; profile: { full_name: string } | null }[] | null;
 }
 
 /**
@@ -373,6 +375,7 @@ function mapRow(row: RawRequestRow, profileId?: string): MyRequestRow {
     companionOf: profileId && row.requester_id !== profileId && row.filed_by !== profileId
       ? (row.filer?.full_name ?? row.requester?.full_name ?? "")
       : null,
+    companionIds: (row.companions ?? []).flatMap((entry) => (entry.profile_id ? [entry.profile_id] : [])),
     preferredCarId: row.preferred_car_id,
     preferredCarName: row.preferred_car?.name ?? null,
     window: row.window,

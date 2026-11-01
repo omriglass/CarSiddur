@@ -24,13 +24,19 @@ interface MyWeekDisplayMenuProps {
   /** Owner 2026-10-16: also show my children's rides (read-only), saved per device. Omitted = no such option. */
   showKidsRides?: boolean;
   onShowKidsRidesChange?: (show: boolean) => void;
+  /** REQ §13.177 (d): my children's other parent's rides. */
+  showCoParentRides?: boolean;
+  onShowCoParentRidesChange?: (show: boolean) => void;
+  /** REQ §13.177 (c): rides I filed for someone else. */
+  showFiledForOthers?: boolean;
+  onShowFiledForOthersChange?: (show: boolean) => void;
 }
 
 /**
  * The "eye" menu of `/my` (owner 2026-10-11), same pattern and styling as the siddur's `SiddurDisplayMenu`: the
  * list / week choice (remembered on this device; `?view=` wins for one visit) and, in the week view, the zoom out / reset / in items.
  */
-export function MyWeekDisplayMenu({ view, onViewChange, zoom, onZoomChange, showKidsRides, onShowKidsRidesChange }: MyWeekDisplayMenuProps) {
+export function MyWeekDisplayMenu({ view, onViewChange, zoom, onZoomChange, showKidsRides, onShowKidsRidesChange, showCoParentRides, onShowCoParentRidesChange, showFiledForOthers, onShowFiledForOthersChange }: MyWeekDisplayMenuProps) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -50,6 +56,16 @@ export function MyWeekDisplayMenu({ view, onViewChange, zoom, onZoomChange, show
             <DropdownMenuCheckboxItem checked={!!showKidsRides} onCheckedChange={(checked) => onShowKidsRidesChange(checked === true)} onSelect={(e) => e.preventDefault()} data-testid="my-show-kids-rides">
               {he.myWeek.showKidsRides}
             </DropdownMenuCheckboxItem>
+            {onShowCoParentRidesChange ? (
+              <DropdownMenuCheckboxItem checked={!!showCoParentRides} onCheckedChange={(checked) => onShowCoParentRidesChange(checked === true)} onSelect={(e) => e.preventDefault()} data-testid="my-show-co-parent-rides">
+                {he.myWeek.showCoParentRides}
+              </DropdownMenuCheckboxItem>
+            ) : null}
+            {onShowFiledForOthersChange ? (
+              <DropdownMenuCheckboxItem checked={!!showFiledForOthers} onCheckedChange={(checked) => onShowFiledForOthersChange(checked === true)} onSelect={(e) => e.preventDefault()} data-testid="my-show-filed-for-others">
+                {he.myWeek.showFiledForOthers}
+              </DropdownMenuCheckboxItem>
+            ) : null}
           </>
         ) : null}
         {view === "week" && zoom !== undefined && onZoomChange ? (
