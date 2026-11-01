@@ -1357,6 +1357,8 @@ export function WeekGrid({
         ) : null}
         {ridesFor(car.id).map((ride) => {
           const isDragged = drag?.rideId === ride.id && drag.confirmed;
+          // Long-pressed and now movable (owner 2026-11-01): the ride (or only the edge being moved) shakes once and is tinted.
+          const armedKind = drag?.rideId === ride.id && drag.armed ? drag.kind : null;
           const rect = clampRideVertical(ride.startMinutes, ride.endMinutes, dayStartMinutes, dayEndMinutes);
           const typeColors = rideTypeColorClasses(ride.rideTypeCode);
           const laneCount = Math.max(1, ride.laneCount ?? 1);
@@ -1387,6 +1389,7 @@ export function WeekGrid({
             <button
               type="button"
               data-ride-id={ride.id}
+              data-armed={armedKind === "move" || undefined}
               data-needs-driver={ride.needsDriver || undefined}
               data-draft={ride.draft || undefined}
               data-merged={ride.merged || undefined}
@@ -1423,6 +1426,7 @@ export function WeekGrid({
                 visibility && (ride.kind === "suggestion" || ride.kind === "request" || ride.kind === "waiting") && "bg-transparent",
                 ride.highlighted && "z-10 scroll-mt-24 ring-4 ring-destructive ring-offset-2",
                 isDragged && "opacity-50 ring-2 ring-primary",
+                armedKind === "move" && "z-20 shadow-lg motion-safe:animate-ride-armed-shake after:pointer-events-none after:absolute after:inset-0 after:bg-primary/15 after:content-['']",
               )}
               style={{ top: rect.top, height: rect.height, minHeight: RIDE_MIN_HEIGHT_PX, ...laneStyle, ...fade }}
               title={rect.clampedStart ? `${formatMinutes(ride.startMinutes)}–${formatMinutes(ride.endMinutes)}` : undefined}
@@ -1483,7 +1487,8 @@ export function WeekGrid({
               ) : null}
               {resizeEnabled && (canDragRide?.(ride) ?? true) && (canResizeRide?.(ride) ?? true) ? (
                 <span
-                  className={cn("absolute inset-x-0 top-0 z-20 cursor-ns-resize border-y border-foreground/20 bg-foreground/10", !holdToDrag && "touch-none", ride.endMinutes - ride.startMinutes <= SHORT_RIDE_MINUTES ? "h-1" : "h-2.5")}
+                  className={cn("absolute inset-x-0 top-0 z-20 cursor-ns-resize border-y border-foreground/20 bg-foreground/10", !holdToDrag && "touch-none", ride.endMinutes - ride.startMinutes <= SHORT_RIDE_MINUTES ? "h-1" : "h-2.5", armedKind === "resize-start" && "h-3.5 border-primary bg-primary motion-safe:animate-ride-edge-shake-top")}
+                  data-armed={armedKind === "resize-start" || undefined}
                   aria-hidden="true"
                   onClick={(e) => e.stopPropagation()}
                   onPointerDown={(e) => {
@@ -1499,7 +1504,8 @@ export function WeekGrid({
               </div>
               {resizeEnabled && (canDragRide?.(ride) ?? true) && (canResizeRide?.(ride) ?? true) ? (
                 <span
-                  className={cn("absolute inset-x-0 bottom-0 z-20 cursor-ns-resize border-y border-foreground/20 bg-foreground/10", !holdToDrag && "touch-none", ride.endMinutes - ride.startMinutes <= SHORT_RIDE_MINUTES ? "h-1" : "h-2.5")}
+                  className={cn("absolute inset-x-0 bottom-0 z-20 cursor-ns-resize border-y border-foreground/20 bg-foreground/10", !holdToDrag && "touch-none", ride.endMinutes - ride.startMinutes <= SHORT_RIDE_MINUTES ? "h-1" : "h-2.5", armedKind === "resize-end" && "h-3.5 border-primary bg-primary motion-safe:animate-ride-edge-shake-bottom")}
+                  data-armed={armedKind === "resize-end" || undefined}
                   aria-hidden="true"
                   onClick={(e) => e.stopPropagation()}
                   onPointerDown={(e) => {

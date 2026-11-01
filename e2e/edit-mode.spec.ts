@@ -9,7 +9,7 @@ test.use({ actionTimeout: 15_000 });
 const WEEK = "2041-03-17";
 const MEMBER1 = "00000000-0000-0000-0000-000000000103";
 
-async function dragDown(page: Page, block: ReturnType<Page["locator"]>, px: number, holdMs = 0) {
+async function dragDown(page: Page, block: ReturnType<Page["locator"]>, px: number, holdMs = 0, whileHeld?: () => Promise<void>) {
   await block.scrollIntoViewIfNeeded();
   const box = (await block.boundingBox())!;
   const x = box.x + box.width / 2;
@@ -17,6 +17,7 @@ async function dragDown(page: Page, block: ReturnType<Page["locator"]>, px: numb
   await page.mouse.move(x, y);
   await page.mouse.down();
   if (holdMs) await page.waitForTimeout(holdMs);
+  await whileHeld?.();
   await page.mouse.move(x, y + px, { steps: 8 });
   await page.mouse.up();
 }
@@ -63,8 +64,9 @@ test("a siddur ride drags only after a long press or in edit mode", { tag: ["@si
     await expect(page.getByText(he.editMode.hintLocked)).toBeVisible();
     expect(await startsAt()).toBe("2041-03-17T08:00:00.000Z");
 
-    // Off: a long press drags.
-    await dragDown(page, block, 80, 800);
+    // Off: a long press drags; once movable the ride shakes once and is tinted (`data-armed`) until let go.
+    await dragDown(page, block, 80, 800, () => expect(block).toHaveAttribute("data-armed", "true"));
+    await expect(block).not.toHaveAttribute("data-armed");
     await expect.poll(startsAt).toBe("2041-03-17T09:00:00.000Z");
 
     // On: a drag moves the ride at once.
