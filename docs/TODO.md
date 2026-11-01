@@ -1371,3 +1371,39 @@ Shots: QA Sadran `…/scratchpad/qa-run/shots/`, QA user `…/scratchpad/qa-run/
 
 ### Worked as specified [NEW]
 §13.168 award to a plan-B member + a waiting-list member (plan B released, main ride created, notices right), a בדיון group from two ticks, members' "הסדרן/ית מחליט/ה" + "לוותר הפעם"; §13.169 switch off = no edit on others' rides; who chip moves the request to the driver with a correct `ride_edited` notice; profile push switch on by default; §13.170 WhatsApp text (אותי / names, day + date, place, link) and "אני אקח" by another member; §13.171 summary with blue edit / red cancel. Not tested: car-now (week not current), stats on real data (future week), anyone-edits switch on (Sadran has no admin access).
+
+## QA run 18 findings (2026-11-01, seed 4910, department `qa-s4910`, week 8–14.11; branch `debug-and-stats` @ 1eeba58; QA Sadran = Opus, **Tuesday via UI**; QA user = Sonnet; rerun after the QA run 17 fixes; both agents paused once at the usage limit and resumed) — **awaiting owner triage**
+
+Shots: `…/scratchpad/qa-run18/shots/` (Sadran), `…/qa-run18/shots-user/` (user).
+
+### Verification of the QA run 17 fixes
+Fixed and seen working: R17B1, R17B2, R17U1, R17U2, R17U3, R17U4, R17B5 (card text, "רענן אפשרויות", other cards refresh at once), R17B6 (Tue Peugeot 87f03b00 shrank 07:30–16:15 → 07:45–08:15, notices quote the new window), R17B7, R17B9, R17B11, R17B12, R17B13 (UI dialog "יש עוד נוסעים בנסיעה שלך"). Not reproduced (the case did not come up): R17B3 (no plan-B candidate), R17B4 (no candidate of two cars at once), R17B5 "stepped out never returns", R17B8 (no plan-B suggestion left).
+
+### Bugs
+- R18B1 — No freed-car offer for the hours a shrunk ride gives up (follows from R17B6): Tue Peugeot, free 08:15–end of day after the host left, no `freed_slot_offers` row.
+- R18B2 [§13.168] — A freed car ignores unmet pickup legs: Wed Corolla 12:15–16:15 cancelled, offer b661e324 closed with 0 options though Sigal Sharon's unmet 13:45 pickup (252cfa7e:return) fits (placing it by hand worked).
+- R18B3 — Placing that pickup by hand connected both legs (fine) but put the return at 13:30–13:45 for a 13:45 flex-0 pickup, and Sigal got no notice (send-held: 0).
+- R18B4 — One-way merge verdicts inconsistent: Wed Adi TLV→GH onto Aviv's Skoda (with stops) refused `boards_at_end` on every leg; Thu the same shape onto a no-stop GH↔TLV ride accepted as an *out*-leg passenger, 2–4 h outside flexibility.
+- R18B5 — A Sadran `move` onto the owner's own private car is refused (`private_car_owner_only`, Mon a49a7863 Guy Aloni) while `place` / "שבץ ברכב…" onto it works.
+- R18B6 — "The driver cancelled — X drives now" notice quotes the driver's whole hours to a rider on one leg only (m18, ride 2985c1c9, "08:30–17:15").
+- R18B7 — Multi-day series legs show 00:00 starts on the siddur and in the publish notice ("ש׳ 14.11 00:00–18:30") while /my shows the real hours (check: by design for middle days, wrong for the first/last leg's label).
+- Still open from run 17: R17B10 (driverless-ride requests listed "ברשימת המתנה" on publish), R17M3 (unmet pickup leg without a reason), R17U9 (publish notice of a driverless drop-off does not say there is no driver).
+- CLI only: `qa:member request` / `ask-to-join` files an overlapping late request as `DUPLICATE_OVERLAP` without asking (the UI form asks).
+
+### UI changes
+- R18U1 — A complementary one-way pair (Sun Shay Sofer GH→Zichron 09:30 + Aviv Rimon Zichron→GH 16:30) cannot be placed together on the board; the first leg alone is refused ("would strand the car"). Needs "place with its return".
+- R18U2 — Origin proposal from the unmet card = three steps ("הצע" → "דיברת עם…?" → full composer); the composer header shows the destination where the new origin would help.
+- R18U3 — changeOrigin suggestions still shown on published days, where they cannot be sent (R17M1).
+- R18U4 — Unmet panel says "אין הצעות זמינות" on Tuesday while two origin proposals were pending there.
+- R18U5 — The WhatsApp "who can drive" text still omits unnamed extra adults.
+- R18U6 — Editing only a time in the sentence form takes "המשך" + a second page.
+- R18U7 — The freed-car push/inbox text is the same for every candidate (no own-trip hours); the /my card has them.
+
+### Missing obvious features
+- R17M2 (again) — private-car owners are never suggested their own car (Noam Biton Haifa, Rinat Tzur Netanya: six requests unmet; "שבץ ברכב…" onto their own car solved all six).
+- R18M1 — A merge onto a private car needs the owner; no one-click "ask the owner" from the board.
+- R18M2 — "נשארה בלי נהג/ת" notice has no "ask on WhatsApp" link of its own (only the ride sheet does).
+
+### Additional features
+- R18A1 — Publishing expired 14 unanswered proposals; "publish the answered days, keep the rest open".
+- R17A1 (again) — offer every idle car, not only the freed one.
