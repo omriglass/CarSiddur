@@ -172,6 +172,8 @@ stateDiagram-v2
   published --> live: same transaction
   live --> live: re-publish (version n+1)
   live --> archived: end of target week (Sat 23:59; tick after Sun 00:00)
+  open --> archived: target week ended unpublished (REQ §13.173 c)
+  solving --> archived: target week ended unpublished (REQ §13.173 c)
   archived --> [*]
 ```
 
@@ -471,7 +473,7 @@ Realtime (optional, v1.x): the Sadran board may subscribe to `postgres_changes` 
 |---|---|---|
 | `advance_week_phases()` | dept config open time (default Sun 00:00, week before target) | create `weeks` row in `open`, `window_open` to members; also promotes any `upcoming` week (materialized early for a multi-day series leg, REQ §13.77) whose `open_at` has arrived to `open`, same notification |
 | | dept config close time (default Wed 12:00) | week → `solving`; later requests are `is_late`; `window_closed_solve_now` to `sadranim_of(dept, week)` |
-| | after the target week ends (first tick after Sun 00:00) | week → `archived` (read-only; fairness lookback reads it); `compute_week_stats(department_id, week_start)` runs for each just-archived week, caching its final requests/rides/hours/distinct-people figures into `week_stats` (DATA_MODEL §7.6) — waiting-list placements have settled by the time a week leaves `live`, so this is the one moment those numbers become final rather than provisional; the week's leftover `draft` proposals become `withdrawn` (O28-4, REQ §13.160; rows kept) |
+| | after the target week ends (first tick after Sun 00:00) | week → `archived` whatever its phase (an `open`/`solving` week that was never published too, archived before the open → solving step so it sends no "solve now" — REQ §13.173 c) (read-only; fairness lookback reads it); `compute_week_stats(department_id, week_start)` runs for each just-archived week, caching its final requests/rides/hours/distinct-people figures into `week_stats` (DATA_MODEL §7.6) — waiting-list placements have settled by the time a week leaves `live`, so this is the one moment those numbers become final rather than provisional; the week's leftover `draft` proposals become `withdrawn` (O28-4, REQ §13.160; rows kept) |
 | `send_due_reminders()` | `closing_reminder_hours` before close (default 24 h and 2 h) | `window_closing` to members without a request |
 | | planned publish time (`publish_dow`/`publish_time`) passes while `weeks.phase = 'solving'` | `publish_reminder` to the Sadranim, once (`weeks.publish_reminder_sent_at`) |
 | | proposal unanswered | WhatsApp reminder text offered to the Sadran (`wa.reminder`), no automatic push |

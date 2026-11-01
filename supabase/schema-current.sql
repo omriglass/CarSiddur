@@ -4750,17 +4750,9 @@ begin
   get diagnostics v_n = row_count;
   v_count := v_count + v_n;
 
-  for v_week in select * from public.weeks where phase = 'open' and close_at <= p_now loop
-    update public.weeks set phase = 'solving' where department_id = v_week.department_id and week_start = v_week.week_start;
-    perform public.enqueue_notification(s.profile_id, 'window_closed_solve_now', v_week.department_id, v_week.week_start,
-      '{}'::jsonb, '{}'::jsonb, format('window_closed_solve_now:%s:%s', v_week.department_id, v_week.week_start))
-    from public.sadranim_of(v_week.department_id, v_week.week_start) as s(profile_id);
-    v_count := v_count + 1;
-  end loop;
-
   for v_archived in
     update public.weeks set phase = 'archived'
-    where phase in ('published', 'live') and (week_start + 7) <= (p_now at time zone 'Asia/Jerusalem')::date
+    where phase in ('open', 'solving', 'published', 'live') and (week_start + 7) <= (p_now at time zone 'Asia/Jerusalem')::date
     returning department_id, week_start
   loop
     perform public.compute_week_stats(v_archived.department_id, v_archived.week_start);
@@ -4770,6 +4762,14 @@ begin
     update public.proposals set status = 'withdrawn'
     where department_id = v_archived.department_id and week_start = v_archived.week_start and status = 'draft';
     perform set_config('app.audit_reason', coalesce(v_prev_reason, ''), true);
+  end loop;
+
+  for v_week in select * from public.weeks where phase = 'open' and close_at <= p_now loop
+    update public.weeks set phase = 'solving' where department_id = v_week.department_id and week_start = v_week.week_start;
+    perform public.enqueue_notification(s.profile_id, 'window_closed_solve_now', v_week.department_id, v_week.week_start,
+      '{}'::jsonb, '{}'::jsonb, format('window_closed_solve_now:%s:%s', v_week.department_id, v_week.week_start))
+    from public.sadranim_of(v_week.department_id, v_week.week_start) as s(profile_id);
+    v_count := v_count + 1;
   end loop;
 
   update public.weeks set phase = 'live'
@@ -14793,17 +14793,32 @@ CREATE OR REPLACE FUNCTION "public"."release_request_draft_rides"("p_request_id"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
-declare r record; ids uuid[];
+declare
+  r record; ids uuid[]; v_req public.requests%rowtype; v_base uuid;
+  v_prev text := coalesce(nullif(current_setting('app.system_status_transition', true), ''), 'off');
 begin
-  perform set_config('app.system_status_transition','on',true);
-  for r in select rd.* from public.rides rd join public.ride_requests rr on rr.ride_id=rd.id where rr.request_id=p_request_id and rd.status='draft' order by rd.id for update of rd loop
-    select array_agg(request_id) into ids from public.ride_requests where ride_id=r.id;
-    update public.rides set status='cancelled',cancelled_at=now(),cancelled_by=(select auth.uid()),cancel_reason='REQUEST_EDITED' where id=r.id;
-    delete from public.ride_requests where ride_id=r.id;
-    update public.requests q set status='submitted',status_reason=null where id=any(ids) and not exists(
-      select 1 from public.ride_requests rr join public.rides rd on rd.id=rr.ride_id where rr.request_id=q.id and rd.status<>'cancelled');
+  select * into v_req from public.requests where id = p_request_id;
+  perform set_config('app.system_status_transition', 'on', true);
+  for r in select rd.* from public.rides rd join public.ride_requests rr on rr.ride_id = rd.id
+    where rr.request_id = p_request_id and rd.status = 'draft' order by rd.id for update of rd loop
+    select rr.request_id into v_base from public.ride_requests rr where rr.ride_id = r.id
+    order by (rr.role = 'driver') desc, rr.created_at, rr.request_id limit 1;
+    if v_base is distinct from p_request_id
+       and not exists (select 1 from public.ride_requests rr where rr.ride_id = r.id and rr.request_id = p_request_id and rr.role = 'driver')
+       and r.driver_id is distinct from v_req.requester_id then
+      -- a guest leaves; the host's ride and its other riders stay
+      delete from public.ride_requests where ride_id = r.id and request_id = p_request_id;
+      ids := array[p_request_id];
+    else
+      select array_agg(request_id) into ids from public.ride_requests where ride_id = r.id;
+      update public.rides set status = 'cancelled', cancelled_at = now(), cancelled_by = (select auth.uid()),
+        cancel_reason = 'REQUEST_EDITED' where id = r.id;
+      delete from public.ride_requests where ride_id = r.id;
+    end if;
+    update public.requests q set status = 'submitted', status_reason = null where id = any(ids) and not exists(
+      select 1 from public.ride_requests rr join public.rides rd on rd.id = rr.ride_id where rr.request_id = q.id and rd.status <> 'cancelled');
   end loop;
-  perform set_config('app.system_status_transition','off',true);
+  perform set_config('app.system_status_transition', v_prev, true);
 end $$;
 
 
@@ -17195,6 +17210,10 @@ CREATE OR REPLACE FUNCTION "public"."rides_settle_ride_changes"() RETURNS "trigg
     AS $$
 declare ch public.ride_change_requests%rowtype; r public.rides%rowtype;
 begin
+  if new.status = 'cancelled' then
+    update public.ride_change_requests set status = 'cancelled', closed_reason = 'ride_moved'
+    where ride_id = new.id and status = 'pending' and is_planning;
+  end if;
   -- respond_ride_change_before_planning moves and cancels these rides itself and settles the change.
   if current_setting('app.audit_reason', true) = 'accepted_ride_change' then return new; end if;
   for ch in select c.* from public.ride_change_requests c

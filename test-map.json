@@ -393,6 +393,10 @@
         "supabase/tests/unpublished_day_requests.sql",
         "supabase/migrations/**/*ride_move_settles_ride_change*",
         "supabase/tests/ride_change_settles.sql",
+        "supabase/migrations/**/*draft_release_keeps_host_ride*",
+        "supabase/migrations/**/*cancelled_ride_closes_planning_shadows*",
+        "supabase/migrations/**/*archive_ended_unpublished_weeks*",
+        "supabase/tests/production_fixes_2026_11_01.sql",
         "src/features/rides/driverWanted.ts",
         "src/features/rides/driverWanted.test.ts",
         "src/features/rides/components/DriverWantedButton.tsx",
@@ -414,7 +418,8 @@
         "day_car_swap.sql",
         "car_handover_notes.sql",
         "unpublished_day_requests.sql",
-        "ride_change_settles.sql"
+        "ride_change_settles.sql",
+        "production_fixes_2026_11_01.sql"
       ],
       "playwrightTags": [
         "@siddur"
