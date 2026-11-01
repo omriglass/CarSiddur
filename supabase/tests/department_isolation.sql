@@ -461,7 +461,9 @@ declare
     'report_car_issue_unsafe_to_maintenance:inspected', 'approve_claim:inspected',
     'close_offer:inspected', 'claim_ride_driver:inspected',
     -- REQ §13.168: both refuse unless can_manage_week() of the offer's own department/week (as approve_claim).
-    'award_freed_option:inspected', 'discuss_freed_candidates:inspected'
+    'award_freed_option:inspected', 'discuss_freed_candidates:inspected',
+    -- QA run 17 R17B5: refuses unless can_manage_week() of the offer's own department/week.
+    'refresh_freed_offer:inspected'
   ];
   v_exempt_names text[];
   v_uncovered text;

@@ -111,6 +111,9 @@ export const heMember = {
     editRefusedBody: "השינוי לא נשמר והנסיעה שלך נשארת כמו שהייתה. אפשר לבחור שעות אחרות, או לפנות לסדרן/ית.",
     editRefusedDiscussionTitle: "הרכב בדיון בשעות האלה",
     editRefusedDiscussionBody: "על הרכב בשעות האלה מתקיים דיון של רשימת ההמתנה, ולכן השינוי לא נשמר — הנסיעה שלך נשארת כמו שהייתה. אפשר לבחור שעות אחרות, או לפנות לסדרן/ית.",
+    /** QA run 17 R17B13: the member drives others on the ride — the car stays with them. */
+    editRefusedRidersTitle: "יש עוד נוסעים בנסיעה שלך",
+    editRefusedRidersBody: "את/ה נוהג/ת גם עבור אחרים, והרכב נשאר איתם בשעות שלהם — לכן השינוי לא נשמר והנסיעה נשארת כמו שהייתה. אפשר לתאם עם הנוסעים או לפנות לסדרן/ית.",
     editRefusedBack: "חזרה לטופס",
     releaseAffected: "מושפעים גם: {{names}}",
     releaseKeepPassengersTitle: "הנוסעים שלך יישארו בלי נהג/ת",
@@ -410,6 +413,7 @@ export const heMember = {
     button: "מי יכול/ה להקפיץ? — וואטסאפ",
     textOut: "היי, צריך שמישהו יקפיץ {{who}} {{day}} {{place}}, לצאת בשעה {{time}}. מי יוכל? {{link}}",
     textPickup: "היי, צריך שמישהו יאסוף {{who}} {{day}} {{place}}, לצאת בשעה {{time}}. מי יוכל? {{link}}",
+    textPickupAt: "היי, צריך שמישהו יאסוף {{who}} {{day}} {{place}} בשעה {{pickupTime}} (יציאה מהקיבוץ {{time}}). מי יוכל? {{link}}",
     me: "אותי",
     other: "את {{name}}",
     and: "ו",
@@ -432,6 +436,8 @@ export const heMember = {
   rideDetail: {
     /** REQ §13.169 (a): one edit entry per request on a ride serving several. */
     editRequestOf: "עריכת הבקשה של {{name}}",
+    /** REQ §13.171: the summary sheet's main action. */
+    edit: "עריכה",
     removeMe: "הסר אותי",
     removeMeConfirmTitle: "להסיר אותך מהנסיעה?",
     /** REQ §13.129 (a): the private car's owner moves the ride onto their own car. */
@@ -452,7 +458,8 @@ export const heMember = {
     askToJoin: "בקש/י להצטרף",
     askToJoinConfirmShared: "בקשת ההצטרפות תישלח לסדרן/ית, שיהפכו אותה להצעת איחוד לנהג/ת.",
     askToJoinConfirmTemp: "בקשת ההצטרפות תישלח ישירות לבעל/ת הרכב הפרטי.",
-    locationBadge: "ב{{location}}",
+    /** R17B11: the car's place when the ride starts — labelled, so it never reads as the destination. */
+    locationBadge: "הרכב נמצא ב{{location}}",
     /** Multi-day request leg (REQ §13.77, UX_FLOWS.md §3.5). */
     seriesLine: "חלק מבקשה רב-יומית, יום {{index}} מתוך {{count}}",
     /** REQUIREMENTS §13.93 "Multi-stop rides" Display: the ride sheet/ride-detail route-with-stops section. */

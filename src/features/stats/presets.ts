@@ -41,3 +41,14 @@ export function computePresetRange(
   })();
   return { from: earliest && earliest > from ? earliest : from, to: today };
 }
+
+/**
+ * QA run 17 R17B12: a range the RPC accepts — neither bound after `today`, and `from` never after `to` (a future
+ * "from" used to leave from > to, two HTTP 400s and the error state). The bound being edited wins (`keep`).
+ */
+export function normalizeStatsRange(range: StatsDateRange, today: string, keep: "from" | "to"): StatsDateRange {
+  const from = range.from > today ? today : range.from;
+  const to = range.to > today ? today : range.to;
+  if (from <= to) return { from, to };
+  return keep === "from" ? { from, to: from } : { from: to, to };
+}

@@ -132,6 +132,7 @@ export type ErrorCode =
   | "proposal_not_answerable"
   | "invalid_token"
   | "offer_not_found"
+  | "offer_not_pending"
   | "ride_unavailable"
   | "ride_wrong_day"
   | "ride_same_day"
@@ -151,6 +152,7 @@ export type ErrorCode =
   | "pending_ride_changes"
   | "request_window_closed"
   | "driver_unavailable"
+  | "own_dropoff_driver"
   | "driver_assigned"
   | "ride_past"
   | "preferred_car_invalid"
@@ -292,6 +294,7 @@ const MESSAGE_TO_CODE: Record<string, ErrorCode> = {
   proposal_not_answerable: "proposal_not_answerable",
   invalid_token: "invalid_token",
   offer_not_found: "offer_not_found",
+  offer_not_pending: "offer_not_pending",
   car_unavailable: "ride_unavailable",
   ride_conflicts_with_maintenance: "ride_unavailable",
   // REQ §13.114 scheduled maintenance (create/update/delete_car_maintenance).
@@ -324,6 +327,7 @@ const MESSAGE_TO_CODE: Record<string, ErrorCode> = {
   seat_config_violation: "ride_unavailable",
   temporary_car_owner_only: "ride_unavailable",
   driver_already_busy: "driver_unavailable",
+  own_dropoff_driver: "own_dropoff_driver",
   ride_driver_not_assignable: "ride_driver_not_assignable",
   driver_not_member: "driver_not_member",
   luggage_capacity_violation: "luggage_capacity_violation",
@@ -454,6 +458,7 @@ const CODE_TO_MESSAGE: Record<ErrorCode, string> = {
   proposal_not_answerable: he.memberErrors.proposalNotAnswerable,
   invalid_token: he.memberErrors.invalidToken,
   offer_not_found: he.memberErrors.offerNotFound,
+  offer_not_pending: he.sadranClaims.offerNotPending,
   ride_unavailable: he.rideEditing.unavailable,
   ride_wrong_day: he.rideEditing.wrongDay,
   ride_same_day: he.boardCoordination.sameDayOnly,
@@ -481,6 +486,7 @@ const CODE_TO_MESSAGE: Record<ErrorCode, string> = {
   pending_ride_changes: he.rideEditing.pendingPublish,
   request_window_closed: he.request.editWindowClosed,
   driver_unavailable: he.rideCoordination.driverBusy,
+  own_dropoff_driver: he.rideCoordination.ownDropoffDriver,
   ride_driver_not_assignable: he.errors.rideDriverNotAssignable,
   driver_not_member: he.errors.driverNotMember,
   luggage_capacity_violation: he.errors.luggageCapacityViolation,

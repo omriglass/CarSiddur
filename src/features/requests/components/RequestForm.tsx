@@ -853,7 +853,7 @@ export function RequestForm({
   const [pendingLose, setPendingLose] = useState<{ values: RequestFormValues; names: string[] } | null>(null);
   const [pendingRelease, setPendingRelease] = useState<{ values: RequestFormValues; names: string[] } | null>(null);
   // REQ §13.158: the edit was refused (no car at the new hours) — nothing changed, the member stays on the form.
-  const [editRefused, setEditRefused] = useState<{ reason: "discussion" | "no_car"; groupId: string | null } | null>(null);
+  const [editRefused, setEditRefused] = useState<{ reason: "discussion" | "no_car" | "riders"; groupId: string | null } | null>(null);
   // F4 (docs/TODO.md, owner A8-A10): a `waitlisted` outcome with nearby joinable rides holds off
   // the normal onDone/navigate — `afterJoinableDialog` runs it once the member picks "ask to
   // join" or "stay on the waiting list". State (not a ref): it's only ever set from an event
@@ -1728,8 +1728,10 @@ export function RequestForm({
     <ConfirmDialog
       open={!!editRefused}
       onOpenChange={(open) => { if (!open) setEditRefused(null); }}
-      title={t(editRefused?.reason === "discussion" ? "request.editRefusedDiscussionTitle" : "request.editRefusedTitle")}
-      description={t(editRefused?.reason === "discussion" ? "request.editRefusedDiscussionBody" : "request.editRefusedBody")}
+      title={t(editRefused?.reason === "discussion" ? "request.editRefusedDiscussionTitle"
+        : editRefused?.reason === "riders" ? "request.editRefusedRidersTitle" : "request.editRefusedTitle")}
+      description={t(editRefused?.reason === "discussion" ? "request.editRefusedDiscussionBody"
+        : editRefused?.reason === "riders" ? "request.editRefusedRidersBody" : "request.editRefusedBody")}
       cancelLabel={t("request.editRefusedBack")}
       hideConfirm
       onConfirm={() => setEditRefused(null)}

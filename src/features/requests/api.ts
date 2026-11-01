@@ -875,7 +875,7 @@ export interface SubmitRequestResult {
    * changes nothing — `discussion` when an open waiting-list discussion holds the car then (`group_offer` = that
    * group), else `no_car`.
    */
-  edit_refused?: "discussion" | "no_car";
+  edit_refused?: "discussion" | "no_car" | "riders";
   /**
    * REQ §13.101 f: a car takes the new hours, but the member drives others who would be left without a driver —
    * nothing was changed; resubmit with `confirm_release: true` to go ahead.
@@ -1089,6 +1089,9 @@ export interface MyFreedSlotOfferRow {
   startsAt: string;
   endsAt: string;
   expiresAt: string;
+  /** R17U4: my own trip's hours — a plan-B request's main trip (`request_alternatives.original_main`). */
+  tripDepartAt: string | null;
+  tripReturnAt: string | null;
 }
 
 /** Freed-slot offers where I am a candidate (`freed_slot_claims.profile_id = me`), open ones first. */
@@ -1097,6 +1100,8 @@ export async function fetchMyFreedSlotOffers(profileId: string): Promise<MyFreed
     .from("freed_slot_claims")
     .select(
       `status, request_id,
+       request:requests!freed_slot_claims_request_id_fkey(depart_at, return_at, served_by_alternative,
+         alternative:request_alternatives(original_main)),
        offer:freed_slot_offers(id, status, starts_at, ends_at, expires_at,
          car:cars(name),
          cancelled_ride:rides!freed_slot_offers_cancelled_ride_id_fkey(destination:destinations!rides_destination_id_fkey(name)))`,
@@ -1108,6 +1113,12 @@ export async function fetchMyFreedSlotOffers(profileId: string): Promise<MyFreed
   interface Raw {
     status: FreedClaimStatus;
     request_id: string;
+    request: {
+      depart_at: string | null;
+      return_at: string | null;
+      served_by_alternative: boolean;
+      alternative: { original_main: { depart_at?: string | null; return_at?: string | null } | null }[] | { original_main: { depart_at?: string | null; return_at?: string | null } | null } | null;
+    } | null;
     offer: {
       id: string;
       status: FreedOfferStatus;
@@ -1131,7 +1142,14 @@ export async function fetchMyFreedSlotOffers(profileId: string): Promise<MyFreed
       startsAt: row.offer!.starts_at,
       endsAt: row.offer!.ends_at,
       expiresAt: row.offer!.expires_at,
+      ...tripHours(row.request),
     }));
+
+  function tripHours(request: Raw["request"]): { tripDepartAt: string | null; tripReturnAt: string | null } {
+    const alt = Array.isArray(request?.alternative) ? request?.alternative[0] : request?.alternative;
+    const main = request?.served_by_alternative ? alt?.original_main : null;
+    return { tripDepartAt: main?.depart_at ?? request?.depart_at ?? null, tripReturnAt: main?.return_at ?? request?.return_at ?? null };
+  }
 }
 
 /** Companions of a request (`request_companions`, REQ §13.26) — replaces the full set on save. */

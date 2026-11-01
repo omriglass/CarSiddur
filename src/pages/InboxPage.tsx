@@ -4,6 +4,8 @@ import { useNavigate } from "react-router-dom";
 
 import { paths } from "@/app/routes";
 import { EmptyState } from "@/components/EmptyState";
+import { ErrorState } from "@/components/ErrorState";
+import { CardListSkeleton } from "@/components/skeletons/CardListSkeleton";
 import { PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
@@ -135,7 +137,12 @@ export function InboxPage() {
         </ToggleGroupItem>
       </ToggleGroup>
 
-      {groups.length === 0 ? (
+      {/* Production 2026-11-01: a failed load showed "no notifications" while the bell still counted them. */}
+      {notificationsQuery.isLoading ? (
+        <CardListSkeleton count={4} />
+      ) : notificationsQuery.isError && !notificationsQuery.data ? (
+        <ErrorState onRetry={() => void notificationsQuery.refetch()} />
+      ) : groups.length === 0 ? (
         <EmptyState icon={Bell} message={he.inboxExtra.empty} />
       ) : (
         groups.map(([day, items]) => (

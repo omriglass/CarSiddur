@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { computePresetRange } from "./presets";
+import { computePresetRange, normalizeStatsRange } from "./presets";
 
 const TODAY = "2026-09-10";
 
@@ -35,5 +35,14 @@ describe("computePresetRange", () => {
   it("ignores a null/undefined earliest (unknown yet)", () => {
     expect(computePresetRange("last4Weeks", TODAY, null)).toEqual({ from: "2026-08-13", to: TODAY });
     expect(computePresetRange("last4Weeks", TODAY, undefined)).toEqual({ from: "2026-08-13", to: TODAY });
+  });
+});
+
+describe("normalizeStatsRange (R17B12)", () => {
+  it("clamps a future bound to today and never leaves from after to", () => {
+    expect(normalizeStatsRange({ from: "2026-11-08", to: "2026-11-14" }, "2026-11-01", "from")).toEqual({ from: "2026-11-01", to: "2026-11-01" });
+    expect(normalizeStatsRange({ from: "2026-10-20", to: "2026-10-10" }, "2026-11-01", "to")).toEqual({ from: "2026-10-10", to: "2026-10-10" });
+    expect(normalizeStatsRange({ from: "2026-10-20", to: "2026-10-10" }, "2026-11-01", "from")).toEqual({ from: "2026-10-20", to: "2026-10-20" });
+    expect(normalizeStatsRange({ from: "2026-10-01", to: "2026-10-10" }, "2026-11-01", "to")).toEqual({ from: "2026-10-01", to: "2026-10-10" });
   });
 });

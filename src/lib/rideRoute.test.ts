@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { DEFAULT_DETOUR_LIMIT_KM, DEFAULT_DETOUR_LIMIT_MINUTES, fallbackRoute, homeTravelEdges, makeHop, makeHopKm, mergePassengerIntoRoute, parseRideRoute, roundUpRideEnd } from "./rideRoute";
+import { DEFAULT_DETOUR_LIMIT_KM, DEFAULT_DETOUR_LIMIT_MINUTES, fallbackRoute, homeTravelEdges, makeHop, makeHopKm, mergePassengerIntoRoute, parseRideRoute, roundUpRideEnd, routeOverrunsWindow } from "./rideRoute";
 
 const hop = makeHop([
   { fromId: "H", toId: "D", travelMinutes: 60 },
@@ -247,5 +247,17 @@ describe("R6B5: a reversed one-way guest rides the host's return leg", () => {
       passenger: { requestId: "r2", originId: "D", destinationId: "H", leg: "out" },
     });
     expect(merged.invalid).toBe("boards_at_end");
+  });
+});
+
+describe("routeOverrunsWindow (R17B9)", () => {
+  const pt = (leg: "out" | "return", kind: string, eta: string) => ({ leg, kind, position: 0, name: "x", place_id: null, place_text: "x", request_id: null, eta });
+  it("flags a return that leaves before the car gets there", () => {
+    const route = [pt("out", "origin", "2026-11-13T08:15:00Z"), pt("out", "destination", "2026-11-13T09:41:00Z"), pt("return", "origin", "2026-11-13T09:00:00Z")];
+    expect(routeOverrunsWindow(route, "2026-11-13T09:30:00Z")).toBe(true);
+  });
+  it("flags arriving back well after the ride ends, tolerates rounding", () => {
+    expect(routeOverrunsWindow([pt("out", "destination", "2026-11-13T09:50:00Z")], "2026-11-13T09:30:00Z")).toBe(true);
+    expect(routeOverrunsWindow([pt("out", "destination", "2026-11-13T09:35:00Z")], "2026-11-13T09:30:00Z")).toBe(false);
   });
 });

@@ -82,6 +82,8 @@ export const heSadran = {
     driverClaimed: "נרשמת כנהג/ת לנסיעה",
     needsDriverHelp: "הנסיעה משובצת וממתינה לנהג/ת. חבר/ה יכול/ה לקבל את הנהיגה דרך הסידור.",
     tight: "סידור צפוף",
+    /** QA run 17 R17B9: the route's estimated times do not fit the ride (a warning only). */
+    routeOverrun: "לפי הערכת המסלול הזמן לא מספיק — כדאי לבדוק את השעות",
     tightHelp: "זמן המעבר בין הנסיעות קצר מהמרווח הרגיל. השיבוץ נשמר באישור הסדרן/ית.",
     mergeTitle: "לאחד את הנסיעות?",
     mergeHelp: "מקום העלייה של הנוסע/ת נוסף למסלול הנסיעה. הנסיעה עשויה לצאת מוקדם יותר או להסתיים מאוחר יותר בהתאם לנסיעה הנוספת. השילוב יוחל רק לאחר אישור הצדדים.",
@@ -381,6 +383,11 @@ export const heSadran = {
     empty: "אין בקשות שנויות במחלוקת השבוע",
     // REQ §13.168: the freed car's options, the system's pick, give / discuss.
     optionsTitle: "אין בחירה אחת ברורה — מה עושים עם הרכב?",
+    /** QA run 17 R17U4/R17B5: the decision card names the car, the day and the cancelled ride's hours; "רענן" ranks again. */
+    offerHeading: "{{car}} התפנה · {{day}}",
+    freeGap: "הרכב פנוי {{range}}",
+    refresh: "רענן אפשרויות",
+    offerNotPending: "ההחלטה על הרכב הזה כבר התקבלה",
     recommended: "המלצת המערכת",
     planB: "כרגע בתוכנית ב׳",
     steppedOut: "ויתר/ה הפעם",

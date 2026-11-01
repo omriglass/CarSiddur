@@ -39,6 +39,11 @@ describe("driverWantedText (REQ §13.170)", () => {
     const text = driverWantedText(ride({ people: [person("p1", "שלמה מלכיאלי"), person("me", "טליה")] } as Partial<BoardRide>), "me", now, "L");
     expect(text).toContain("יקפיץ אותי ואת שלמה מלכיאלי ");
   });
+  it("gives a pickup's own time from the route, the driver's start in brackets (R17U1)", () => {
+    const route = [{ leg: "return", kind: "origin", position: 0, name: "בנימינה", place_id: "b", place_text: null, request_id: "q1", eta: "2026-11-05T06:40:00Z" }];
+    expect(driverWantedText(ride({ route } as Partial<BoardRide>, "return"), "me", now, "L"))
+      .toContain("יאסוף את שלמה מלכיאלי ביום חמישי מבנימינה בשעה 08:40 (יציאה מהקיבוץ 08:00)");
+  });
   it("words a pickup leg as a pickup from the place", () => {
     expect(driverWantedText(ride({}, "return"), "me", now, "L")).toContain("יאסוף את שלמה מלכיאלי ביום חמישי מבנימינה, לצאת בשעה 08:00");
   });

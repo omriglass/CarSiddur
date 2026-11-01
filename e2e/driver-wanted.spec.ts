@@ -32,6 +32,14 @@ test("a driverless הקפצה asks on WhatsApp and the link's page takes the whe
       if (linkError) throw linkError;
     }
 
+    // R17B1: the person being dropped off sees the ride but cannot take its wheel
+    const member2 = await newSignedInPage(browser, SEEDED_USERS.member2);
+    await member2.page.goto(paths.ride(ride.id));
+    await expect(member2.page.getByTestId("ride-offer")).toBeVisible();
+    await expect(member2.page.getByText(he.rideCoordination.ownDropoffDriver)).toBeVisible();
+    await expect(member2.page.getByTestId("ride-offer-take")).toHaveCount(0);
+    await member2.context.close();
+
     const member1 = await newSignedInPage(browser, SEEDED_USERS.member1);
     const page = member1.page;
     await page.goto(paths.siddur({ dept: NEVO_DEPARTMENT_ID, week, rideId: ride.id }));

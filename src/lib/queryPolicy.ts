@@ -107,8 +107,11 @@ export function createQueryClient(): QueryClient {
     defaultOptions: {
       queries: {
         // One retry for a passing failure — but never after a statement timeout: the database is overloaded and a
-        // second 8 s attempt only adds to it (production 2026-10-29).
-        retry: (failureCount: number, error: unknown) => failureCount < 1 && !(error instanceof AppError && error.code === "server_busy"),
+        // second 8 s attempt only adds to it (production 2026-10-29). A network failure ("Failed to fetch", e.g. a PWA
+        // resumed before the phone's network is back — production 2026-11-01) gets three, 1/2/4 s apart.
+        retry: (failureCount: number, error: unknown) => error instanceof AppError && error.code === "network"
+          ? failureCount < 3
+          : failureCount < 1 && !(error instanceof AppError && error.code === "server_busy"),
         staleTime: queryStaleTime,
         // true = refetch when stale; a counter-covered week query waits for the watcher's counter check instead.
         refetchOnWindowFocus: (query: Query) => !gatesFocusRefetch(query),

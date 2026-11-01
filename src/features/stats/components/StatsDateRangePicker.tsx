@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { formatDateDMY } from "@/features/stats/format";
 import { he, tv } from "@/i18n/he";
 
-import { STATS_PRESET_KEYS, computePresetRange, type StatsDateRange, type StatsPresetKey } from "../presets";
+import { STATS_PRESET_KEYS, computePresetRange, normalizeStatsRange, type StatsDateRange, type StatsPresetKey } from "../presets";
 
 interface StatsDateRangePickerProps {
   value: StatsDateRange;
@@ -43,8 +43,8 @@ export function StatsDateRangePicker({ value, onChange, earliest }: StatsDateRan
       onChange({ ...value, from: earliest });
       return;
     }
-    setHint(null);
-    onChange({ ...value, from: nextFrom });
+    setHint(nextFrom > today ? "to" : null);
+    onChange(normalizeStatsRange({ ...value, from: nextFrom }, today, "from"));
   }
 
   function handleToChange(nextTo: string) {
@@ -54,7 +54,7 @@ export function StatsDateRangePicker({ value, onChange, earliest }: StatsDateRan
       return;
     }
     setHint(null);
-    onChange({ ...value, to: nextTo });
+    onChange(normalizeStatsRange({ ...value, to: nextTo }, today, "to"));
   }
 
   return (
@@ -68,7 +68,7 @@ export function StatsDateRangePicker({ value, onChange, earliest }: StatsDateRan
             dir="ltr"
             value={value.from}
             min={earliest ?? undefined}
-            max={value.to}
+            max={today}
             onChange={(event) => handleFromChange(event.target.value)}
             className="min-h-11 w-40"
             data-testid="stats-date-from"

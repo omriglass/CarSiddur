@@ -72,6 +72,15 @@ function payloadOf(proposal: Pick<ProposalRow, "payload">): Record<string, unkno
 
 const str = (value: unknown): string | null => (typeof value === "string" && value ? value : null);
 
+/** Where `carId` stands at `atMs`: the end place of its last ride before then, else the start place of its next one. */
+function carPlaceAt(rides: readonly BoardRide[], carId: string, atMs: number): string | null {
+  const own = rides.filter((ride) => ride.car_id === carId && ride.status !== "cancelled" && ride.starts_at && ride.ends_at)
+    .sort((a, b) => Date.parse(a.starts_at!) - Date.parse(b.starts_at!));
+  const before = own.filter((ride) => Date.parse(ride.ends_at!) <= atMs).pop();
+  if (before) return before.destination_id ?? null;
+  return own.find((ride) => Date.parse(ride.starts_at!) >= atMs)?.origin_id ?? null;
+}
+
 /** The ride (if any) that currently serves `requestId`. */
 function rideServing(rides: readonly BoardRide[], requestId: string, preferredId: string | null): BoardRide | undefined {
   return rides.find((ride) => ride.id === preferredId)
@@ -113,16 +122,23 @@ export function resolveDraftPlacement(
     // The board draws the drop-off block (the pickup block exists only for the solver, `alternativeLegs`).
     const first = alternativeLegs(payload)[0];
     if (!first) return null;
+    // R17B8: a plan B is a הקפצה driven from wherever the car stands and back there (a chauffeur ride, as applied) —
+    // never a ride starting at the member's origin or leaving the car at the drop place.
+    const carPlace = carPlaceAt(rides, first.carId, Date.parse(first.startsAt)) ?? homeId ?? null;
     return { ...common, type: "alternative", carId: first.carId, startsAt: first.startsAt, endsAt: first.endsAt,
-      originId: request.origin_id ?? homeId ?? null, destinationId: str(payload.drop_place_id), hostRideId: null, replacesRideId: null, leg: "out" };
+      originId: carPlace, destinationId: carPlace, hostRideId: null, replacesRideId: null, leg: "out" };
   }
 
   if (proposal.type === "origin") {
     const carId = str(payload.car_id);
     const window = requestWindow(request);
     if (!carId || !window) return null;
+    // R17B7: a round trip from the new place brings the car back there (as the applied ride does) — the car never
+    // "stays" at the trip's destination, so the car's next rides are not chain breaks.
+    const newOrigin = str(payload.origin_id);
     return { ...common, type: "origin", carId, startsAt: window.startsAt, endsAt: window.endsAt,
-      originId: str(payload.origin_id), destinationId: request.destination_id, hostRideId: null, replacesRideId: null };
+      originId: newOrigin, destinationId: request.trip_shape === "round_trip" ? newOrigin : request.destination_id,
+      hostRideId: null, replacesRideId: null };
   }
 
   if (proposal.type === "shift") {

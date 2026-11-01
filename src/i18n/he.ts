@@ -254,6 +254,8 @@ export const he = {
     noOtherRide: "אין כרגע נסיעה קרובה עם מקום פנוי. נשארת ברשימת ההמתנה.",
     noLongerMissing: "הנסיעה כבר שובצה לנהג/ת או השתנתה. יש לרענן את הסידור.",
     driverBusy: "כבר שובצת לנהיגה בנסיעה אחרת בשעות האלה.",
+    /** REQ §13.170 (R17B1): the person being driven cannot drive their own הקפצה. */
+    ownDropoffDriver: "זו הקפצה שלך — מישהו אחר צריך לנהוג בה.",
     past: "לא ניתן לשנות נסיעה שכבר הסתיימה.",
     invalidPreferredCar: "יש לבחור רכב שיתופי פעיל מהמחלקה שלך, או להסיר את העדפת הרכב.",
     awaitingConsent: "נדרש אישור מכל המשתתפים לפני החלת השינוי.",

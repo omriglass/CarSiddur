@@ -131,6 +131,8 @@ export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = 
   // REQ §13.171: a ride I can edit is a read-only summary; "עריכה" opens the form, where everything is edited at once.
   const summary = editRequestLinks.length > 0;
   const viewerRides = !!ride && !!viewerId && peopleOf(ride).some((person) => person.person_id === viewerId);
+  // R17U3: removing the requester withdraws their request — it reads as cancelling the ride, not "remove me".
+  const removingMyRequest = !!ride && !!viewerId && peopleOf(ride).some((person) => person.person_id === viewerId && person.source === "requester");
 
   return (
     <Sheet open={!!ride} onOpenChange={onOpenChange}>
@@ -180,7 +182,8 @@ export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = 
               {editor}
 
               {/* Owner 2026-10-12: the driver is marked in the passenger list; only a missing driver / a chauffeur is said here. */}
-              {ride.needs_driver ? <p className="font-semibold text-destructive">{he.rideCoordination.missingDriver}</p> : null}
+              {/* R17U3: the volunteer panel (passed as `editor`) already says it. */}
+              {ride.needs_driver && !editor ? <p className="font-semibold text-destructive">{he.rideCoordination.missingDriver}</p> : null}
               {ride.is_chauffeur && !ride.needs_driver && ride.driver_name ? <p>{he.rideDetail.chauffeur}: {ride.driver_name}</p> : null}
 
               {car ? (
@@ -242,13 +245,13 @@ export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = 
               {onRemoveMe ? (
                 <>
                   <Button className="w-full" size="lg" variant="destructive" disabled={removingMe} onClick={() => setConfirmRemoveMe(true)} data-testid="remove-me">
-                    {he.rideDetail.removeMe}
+                    {removingMyRequest ? t("action.cancelRide") : he.rideDetail.removeMe}
                   </Button>
                   <ConfirmDialog
                     open={confirmRemoveMe}
                     onOpenChange={setConfirmRemoveMe}
-                    title={he.rideDetail.removeMeConfirmTitle}
-                    confirmLabel={he.rideDetail.removeMe}
+                    title={removingMyRequest ? he.request.cancelConfirmTitle : he.rideDetail.removeMeConfirmTitle}
+                    confirmLabel={removingMyRequest ? t("action.cancelRide") : he.rideDetail.removeMe}
                     destructive
                     loading={removingMe}
                     onConfirm={() => { setConfirmRemoveMe(false); onRemoveMe(); }}

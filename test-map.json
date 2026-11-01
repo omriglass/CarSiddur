@@ -244,6 +244,7 @@
         "supabase/migrations/**/*freed_candidates*",
         "supabase/migrations/**/*waitlist_groups_plan_b*",
         "supabase/tests/freed_car_options.sql",
+        "supabase/tests/qa_run17_fixes.sql",
         "scripts/qa/freed-car-scenario.sql",
         "src/features/sadran/claims/**",
         "supabase/migrations/**/*joinable_rides*",
@@ -262,6 +263,7 @@
       ],
       "sql": [
         "freed_car_options.sql",
+        "qa_run17_fixes.sql",
         "waitlist_groups.sql",
         "waitlist_group_hold.sql",
         "joinable_rides.sql",

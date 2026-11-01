@@ -1,6 +1,7 @@
 // REQ §13.170: the WhatsApp text that asks "who can drive?" for a ride with no driver. Pure, unit tested.
 import { formatDayMonth, weekdayLabel } from "@/lib/dayLabels";
 import { tv, t } from "@/i18n/he";
+import { parseRideRoute } from "@/lib/rideRoute";
 import { dateKey, formatTime } from "@/lib/time";
 
 import type { BoardRide } from "./api";
@@ -46,12 +47,28 @@ export function driverWantedText(ride: BoardRide, viewerId: string | undefined, 
   const pickup = !!first && (first.leg === "return" || pickupFromOrigin);
   const placeName = (pickupFromOrigin ? first?.origin_name : first?.destination) ?? ride.destination_name ?? "";
   const startsAt = new Date(ride.starts_at ?? "");
+  // R17U1: a pickup says when the rider is picked up (the route's estimate), with the driver's start in brackets.
+  const pickupEta = pickup && first
+    ? parseRideRoute(ride.route).find((point) => point.requestId === first.request_id && point.kind === "origin"
+        && point.leg === (first.leg === "return" ? "return" : "out"))?.eta ?? null
+    : null;
   const who = whoLine(riders.length ? riders : served.map((entry) => ({ id: null, name: entry.requester ?? "" })).filter((r) => r.name), viewerId);
-  return tv(pickup ? "driverWanted.textPickup" : "driverWanted.textOut", {
+  const vars = {
     who,
     day: driverWantedDay(startsAt, now),
     place: tv(pickup ? "driverWanted.from" : "route.to", { destination: placeName }),
     time: formatTime(startsAt),
     link,
-  });
+  };
+  if (!pickup) return tv("driverWanted.textOut", vars);
+  return pickupEta
+    ? tv("driverWanted.textPickupAt", { ...vars, pickupTime: formatTime(new Date(pickupEta)) })
+    : tv("driverWanted.textPickup", vars);
+}
+
+/** REQ §13.170 (R17B1): the viewer is being driven on this ride (a rider of its chauffeur leg) — they cannot drive it. */
+export function isDrivenOnRide(ride: BoardRide, viewerId: string | undefined): boolean {
+  if (!viewerId) return false;
+  const chauffeured = new Set(servedOf(ride).filter((entry) => entry.car_mode === "chauffeur").map((entry) => entry.request_id));
+  return peopleOf(ride).some((person) => person.person_id === viewerId && !!person.request_id && chauffeured.has(person.request_id));
 }

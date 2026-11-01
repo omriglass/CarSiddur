@@ -62,6 +62,7 @@ import { useRideSheetCarActions } from "@/features/rides/useRideSheetCarActions"
 import { myRidePersonKey } from "@/features/rides/ridePeople";
 import { isRideOfMine, selectRelatedRides } from "@/features/rides/myRides";
 import { VolunteerDriverPanel } from "@/features/rides/components/VolunteerDriverPanel";
+import { isDrivenOnRide } from "@/features/rides/driverWanted";
 import { MyCarTasksCard } from "@/features/carTasks/components/MyCarTasksCard";
 import { RideDetailSheet } from "@/features/siddur/components/RideDetailSheet";
 import { MemberRideEditor } from "@/features/siddur/components/MemberRideEditor";
@@ -87,6 +88,7 @@ import { LongRangeMenu } from "@/features/planning/components/LongRangeMenu";
 import { he, t, tv } from "@/i18n/he";
 import { describeStatusReason } from "@/lib/statusReason";
 import { effectiveWeekSettings } from "@/lib/weekSettings";
+import { formatDayDate } from "@/lib/dayLabels";
 import { formatTime } from "@/lib/time";
 import { cn } from "@/lib/utils";
 import { paths } from "@/app/routes";
@@ -544,12 +546,13 @@ export function HomePage() {
           {openOffers.map((offer) => (
             <div key={offer.offerId} className="space-y-2 rounded-md border border-maintenance/40 bg-maintenance/10 p-3 text-sm">
               <p>
+                {/* R17U4: the day and my own trip's hours, not the car's whole free gap. */}
                 {tv("requestsList.freedSlotOffer", {
                   car: offer.carName,
-                  day: "",
+                  day: formatDayDate(offer.tripDepartAt ?? offer.startsAt),
                   // the range reads left to right inside the Hebrew sentence (isolate marks around both times)
-                  depart: `\u2066${formatTime(new Date(offer.startsAt))}`,
-                  return: `${formatTime(new Date(offer.endsAt))}\u2069`,
+                  depart: `\u2066${formatTime(new Date(offer.tripDepartAt ?? offer.startsAt))}`,
+                  return: `${formatTime(new Date(offer.tripReturnAt ?? offer.endsAt))}\u2069`,
                 })}
               </p>
               <p className="text-xs text-muted-foreground">{he.freedSlot.sadranDeciding}</p>
@@ -690,11 +693,13 @@ export function HomePage() {
         })()}
         removingMe={removeMeMutation.isPending}
         // Owner 2026-10-11: the same "edit" button as on the siddur — opens my own request on this ride (day, stops, …).
-        editRequestLinks={selectedRideEditHref ? [{ href: selectedRideEditHref, label: he.requestsList.edit }] : []}
+        editRequestLinks={selectedRideEditHref ? [{ href: selectedRideEditHref, label: he.rideDetail.edit }] : []}
         canEditPublicNotes={canEditSelectedRideNotes}
-        editor={selectedMyRide?.needs_driver && selectedMyRide.status !== "cancelled" && !profileQuery.data?.does_not_drive ? (
-          // R13M5: a passenger whose driver cancelled can take the wheel from "my rides" too.
-          <VolunteerDriverPanel ride={selectedMyRide} onDone={() => setSelectedMyRide(null)} />
+        editor={selectedMyRide?.needs_driver && selectedMyRide.status !== "cancelled" ? (
+          // R13M5: a passenger whose driver cancelled can take the wheel from "my rides" too (not someone being driven
+          // on it, nor someone who does not drive — they get the WhatsApp ask only, R17B2).
+          <VolunteerDriverPanel ride={selectedMyRide} onDone={() => setSelectedMyRide(null)}
+            canDrive={!profileQuery.data?.does_not_drive && !isDrivenOnRide(selectedMyRide, profileQuery.data?.id)} />
         ) : editableRide && ownsEditableRide && !selectedRideEditHref ? (
           <MemberRideEditor
             key={`${editableRide.id}:${editableRide.version}:editor`}

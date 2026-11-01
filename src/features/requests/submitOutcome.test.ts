@@ -148,6 +148,7 @@ describe("editRefusal", () => {
   it("maps a refused edit with its reason and the holding discussion (REQ §13.158)", () => {
     expect(editRefusal({ ...base, edit_refused: "discussion", group_offer: "g" })).toEqual({ reason: "discussion", groupId: "g" });
     expect(editRefusal({ ...base, edit_refused: "no_car" })).toEqual({ reason: "no_car", groupId: null });
+    expect(editRefusal({ ...base, edit_refused: "riders" })).toEqual({ reason: "riders", groupId: null });
   });
   it("is null for an ordinary result", () => {
     expect(editRefusal({ ...base, status: "assigned" })).toBeNull();

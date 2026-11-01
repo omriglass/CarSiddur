@@ -592,6 +592,8 @@ export function useAwardFreedOptionMutation() {
     onSuccess: (_data, { departmentId, weekStart }) => {
       invalidateBoard(queryClient, departmentId, weekStart);
       void queryClient.invalidateQueries({ queryKey: sadranKeys.freedOffers(departmentId, weekStart) });
+      // R17B5: every offer's candidates — someone who just got a car is "כבר קיבל/ה רכב אחר" on the other offers.
+      void queryClient.invalidateQueries({ queryKey: [...sadranKeys.all, "freedCandidates"] });
     },
     onError: showErrorToast,
   });
@@ -605,6 +607,26 @@ export function useDiscussFreedCandidatesMutation() {
     onSuccess: (_data, { departmentId, weekStart }) => {
       invalidateBoard(queryClient, departmentId, weekStart);
       void queryClient.invalidateQueries({ queryKey: sadranKeys.freedOffers(departmentId, weekStart) });
+      // R17B5: every offer's candidates — someone who just got a car is "כבר קיבל/ה רכב אחר" on the other offers.
+      void queryClient.invalidateQueries({ queryKey: [...sadranKeys.all, "freedCandidates"] });
+    },
+    onError: showErrorToast,
+  });
+}
+
+/** QA run 17 R17B5: rank a waiting freed car again — the edge function re-reads who is waiting now. */
+export function useRefreshFreedOfferMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ offerId }: { offerId: string; departmentId: string; weekStart: string }) => api.refreshFreedOffer(offerId),
+    onSuccess: (_data, { departmentId, weekStart }) => {
+      // the edge function ranks asynchronously; refresh now and once more when it has had time to answer
+      const refresh = () => {
+        void queryClient.invalidateQueries({ queryKey: sadranKeys.freedOffers(departmentId, weekStart) });
+        void queryClient.invalidateQueries({ queryKey: [...sadranKeys.all, "freedCandidates"] });
+      };
+      refresh();
+      window.setTimeout(refresh, 4000);
     },
     onError: showErrorToast,
   });

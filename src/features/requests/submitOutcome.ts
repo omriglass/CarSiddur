@@ -123,7 +123,7 @@ export function releaseConfirmation(result: SubmitRequestResult | null | undefin
 /** REQ §13.158: a refused edit (nothing changed, the booking kept) — the reason and the discussion holding the car. */
 export function editRefusal(
   result: SubmitRequestResult | null | undefined,
-): { reason: "discussion" | "no_car"; groupId: string | null } | null {
+): { reason: "discussion" | "no_car" | "riders"; groupId: string | null } | null {
   if (!result?.edit_refused) return null;
   return { reason: result.edit_refused, groupId: result.group_offer ?? null };
 }

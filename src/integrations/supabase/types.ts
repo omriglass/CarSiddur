@@ -5511,6 +5511,7 @@ export type Database = {
         Returns: boolean
       }
       _edit_series_request: { Args: { payload: Json }; Returns: Json }
+      _fit_ride_to_its_legs: { Args: { p_ride_id: string }; Returns: boolean }
       _flex_floor: { Args: { i: string }; Returns: string }
       _frag: { Args: { _key: string; _vars?: Json }; Returns: string }
       _held_request_view: { Args: { p_request: string }; Returns: Json }
@@ -6710,6 +6711,7 @@ export type Database = {
         Args: { p_car_id: string; p_week_start: string }
         Returns: undefined
       }
+      refresh_freed_offer: { Args: { p_offer_id: string }; Returns: undefined }
       refresh_ride_flags: { Args: { p_car: string }; Returns: number }
       register_push_subscription: {
         Args: {

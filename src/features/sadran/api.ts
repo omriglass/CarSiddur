@@ -908,15 +908,26 @@ export async function fetchWhatsappTemplates(): Promise<NotificationTemplateRow[
 // Contested freed slots
 // ---------------------------------------------------------------------------
 
-export async function fetchFreedOffersForWeek(departmentId: string, weekStart: string): Promise<FreedSlotOfferRow[]> {
+/** A freed-car offer with the car's name and the cancelled ride's hours (R17U4: the decision card names them). */
+export type FreedOfferWithCar = FreedSlotOfferRow & {
+  car: { name: string } | null;
+  cancelled_ride: { starts_at: string; ends_at: string } | null;
+};
+
+export async function fetchFreedOffersForWeek(departmentId: string, weekStart: string): Promise<FreedOfferWithCar[]> {
   const { data, error } = await supabase
     .from("freed_slot_offers")
-    .select("*")
+    .select("*, car:cars!freed_slot_offers_car_id_fkey(name), cancelled_ride:rides!freed_slot_offers_cancelled_ride_id_fkey(starts_at, ends_at)")
     .eq("department_id", departmentId)
     .eq("week_start", weekStart)
     .order("created_at", { ascending: false });
   if (error) throw toAppError(error);
-  return data ?? [];
+  return (data ?? []) as unknown as FreedOfferWithCar[];
+}
+
+/** QA run 17 R17B5: rank a waiting freed car again (new waiting-list requests since it was freed). */
+export async function refreshFreedOffer(offerId: string): Promise<void> {
+  await rpc("refresh_freed_offer", { p_offer_id: offerId });
 }
 
 /** REQ §13.168: one candidate of a freed-car offer — who, their times (a plan-B request: its main trip), and whether they stepped out. */

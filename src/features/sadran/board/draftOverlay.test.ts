@@ -25,6 +25,15 @@ describe("resolveDraftPlacement", () => {
     const placement = resolveDraftPlacement(proposal({ ride_id: "ride1", payload: { depart_at: "2026-10-11T07:00:00.000Z" } }), [request()], [ride()], "home");
     expect(placement).toMatchObject({ carId: "carA", startsAt: "2026-10-11T07:00:00.000Z", endsAt: "2026-10-11T10:00:00.000Z", replacesRideId: "ride1" });
   });
+  it("origin (R17B7): a round trip from the new place brings the car back there, not to the destination", () => {
+    const placement = resolveDraftPlacement(proposal({ type: "origin", status: "sent", payload: { car_id: "carS", origin_id: "hadera" } }), [request()], [], "home");
+    expect(placement).toMatchObject({ type: "origin", carId: "carS", originId: "hadera", destinationId: "hadera" });
+  });
+  it("origin: a one-way trip leaves the car at its destination", () => {
+    const placement = resolveDraftPlacement(proposal({ type: "origin", payload: { car_id: "carS", origin_id: "hadera" } }),
+      [request({ trip_shape: "one_way_to", return_at: null })], [], "home");
+    expect(placement).toMatchObject({ originId: "hadera", destinationId: "dest" });
+  });
   it("shift with no car anywhere is not placed", () => {
     expect(resolveDraftPlacement(proposal({ payload: {} }), [request()], [], "home")).toBeNull();
   });
@@ -129,8 +138,14 @@ describe("plan B drafts (REQ §13.112 a)", () => {
   });
   it("resolveDraftPlacement draws the drop-off block on the first car, keeps the request unplaced", () => {
     const placement = resolveDraftPlacement(proposal({ type: "alternative", payload }), [request()], [ride()], "home");
-    expect(placement).toMatchObject({ type: "alternative", carId: "carA", leg: "out", startsAt: "2026-10-11T04:30:00.000Z", destinationId: "stn", originId: "home", replacesRideId: null });
+    // R17B8: from and back to where the car stands (here: carA's next ride starts at home)
+    expect(placement).toMatchObject({ type: "alternative", carId: "carA", leg: "out", startsAt: "2026-10-11T04:30:00.000Z", destinationId: "home", originId: "home", replacesRideId: null });
     expect(resolveDraftPlacement(proposal({ type: "alternative", payload: {} }), [request()], [], "home")).toBeNull();
+  });
+  it("R17B8: drawn from where the car stands, not the member's origin", () => {
+    const earlier = ride({ id: "r0", car_id: "carA", starts_at: "2026-10-11T02:00:00.000Z", ends_at: "2026-10-11T03:00:00.000Z", origin_id: "hadera", destination_id: "hadera" });
+    const placement = resolveDraftPlacement(proposal({ type: "alternative", payload }), [request({ origin_id: "netanya" })], [earlier], "home");
+    expect(placement).toMatchObject({ originId: "hadera", destinationId: "hadera" });
   });
 });
 

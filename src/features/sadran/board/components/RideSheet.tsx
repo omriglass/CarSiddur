@@ -8,7 +8,7 @@ import { RidePassengersList } from "@/features/rides/components/RidePassengersLi
 import { RidePublicNotesEditor } from "@/features/rides/components/RidePublicNotesEditor";
 import { RideRoute } from "@/features/rides/components/RideRoute";
 import { RideRouteStops } from "@/features/rides/components/RideRouteStops";
-import { parseRideRoute, routeHasIntermediates } from "@/lib/rideRoute";
+import { parseRideRoute, routeHasIntermediates, routeOverrunsWindow } from "@/lib/rideRoute";
 import type { DestinationPreset } from "@/components/DestinationCombobox";
 
 import { Button } from "@/components/ui/button";
@@ -203,6 +203,8 @@ export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenCha
                 />
               ) : null}
               {tightSchedule ? <p className="text-xs text-amber-700">{he.boardCoordination.tight} · {he.boardCoordination.tightHelp}</p> : null}
+              {/* R17B9: a warning only — the route's times are estimates. */}
+              {routeOverrunsWindow(ride.route, ride.ends_at) ? <p className="text-xs text-amber-700" data-testid="route-overrun">{he.boardCoordination.routeOverrun}</p> : null}
               {ride.series_count && ride.series_count > 1 ? (
                 <p className="text-muted-foreground">{tv("sadranRideSheet.seriesLine", { index: String(ride.series_index ?? 1), count: String(ride.series_count) })}</p>
               ) : null}

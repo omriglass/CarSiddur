@@ -394,3 +394,20 @@ export function fallbackRoute(ride: {
     { leg: "out", position: 1, placeId: ride.destinationId, placeText: null, name: ride.destinationName ?? "", requestId: null, kind: "destination", eta: ride.endsAt },
   ];
 }
+
+/**
+ * QA run 17 R17B9 (owner: a warning at most — route times are estimates): the route's estimated times do not fit the
+ * ride — the return leaves a place before the car is estimated to get there, or the car is estimated back after the
+ * ride ends. A slack of `slackMinutes` absorbs rounding.
+ */
+export function routeOverrunsWindow(raw: unknown, endsAt: string | null | undefined, slackMinutes = 10): boolean {
+  const points = parseRideRoute(raw).filter((point) => point.eta);
+  const slack = slackMinutes * 60_000;
+  const out = points.filter((point) => point.leg === "out");
+  const back = points.filter((point) => point.leg === "return");
+  const lastOut = out.length ? Math.max(...out.map((point) => Date.parse(point.eta!))) : null;
+  const firstBack = back.length ? Math.min(...back.map((point) => Date.parse(point.eta!))) : null;
+  if (lastOut !== null && firstBack !== null && firstBack + slack < lastOut) return true;
+  const lastEta = points.length ? Math.max(...points.map((point) => Date.parse(point.eta!))) : null;
+  return !!endsAt && lastEta !== null && lastEta > Date.parse(endsAt) + slack;
+}

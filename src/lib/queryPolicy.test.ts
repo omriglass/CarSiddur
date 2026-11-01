@@ -7,7 +7,7 @@ import { fleetKeys } from "@/features/fleet/queryKeys";
 import { ridesKeys } from "@/features/rides/keys";
 import { sadranKeys } from "@/features/sadran/keys";
 import { siddurKeys } from "@/features/siddur/queryKeys";
-import { toAppError } from "./rpc";
+import { AppError, toAppError } from "./rpc";
 
 import {
   CATALOG_STALE_MS,
@@ -126,6 +126,12 @@ describe("retry (production timeouts 2026-10-29)", () => {
   it("retries a passing failure once", () => {
     expect(retry(0, toAppError({ code: "XX000", message: "boom" }))).toBe(true);
     expect(retry(1, toAppError({ code: "XX000", message: "boom" }))).toBe(false);
+  });
+
+  it("retries a network failure three times (a PWA resumed before the network is back, production 2026-11-01)", () => {
+    const offline = new AppError("network", "offline");
+    expect(retry(2, offline)).toBe(true);
+    expect(retry(3, offline)).toBe(false);
   });
 
   it("never retries a statement timeout", () => {

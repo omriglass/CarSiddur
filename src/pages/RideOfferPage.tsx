@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { useProfile } from "@/features/auth/useProfile";
 import { useCars } from "@/features/fleet/hooks";
 import { useClaimRideDriverMutation } from "@/features/rides/hooks";
-import { driverWantedRiders } from "@/features/rides/driverWanted";
+import { driverWantedRiders, isDrivenOnRide } from "@/features/rides/driverWanted";
 import { relayPartnerOf, servedOf } from "@/features/rides/servedOf";
 import { useBoardRideById, useDepartments } from "@/features/siddur/hooks";
 import { he, tv } from "@/i18n/he";
@@ -65,11 +65,12 @@ export function RideOfferPage() {
   const past = !!ride.ends_at && Date.parse(ride.ends_at) <= openedAt;
   const cancelled = ride.status === "cancelled";
   const doesNotDrive = !!profileQuery.data?.does_not_drive;
+  const drivenOnIt = isDrivenOnRide(ride, profileQuery.data?.id);
   const open = !!ride.needs_driver && !cancelled && !past;
 
   return (
     <div className="mx-auto max-w-2xl space-y-4 p-4 text-sm">
-      <PageHeader title={he.driverWanted.pageTitle} />
+      <PageHeader title={open ? he.driverWanted.pageTitle : he.rideDetail.title} />
       <div className="space-y-3 rounded-lg border p-4" data-testid="ride-offer">
         <p className="font-medium">
           {formatDayDate(ride.starts_at)}{" · "}
@@ -87,9 +88,10 @@ export function RideOfferPage() {
             <p className="font-medium" data-testid="ride-offer-has-driver">
               {ride.driver_id && ride.driver_id === profileQuery.data?.id ? he.driverWanted.taken : tv("driverWanted.hasDriver", { name: ride.driver_name ?? "" })}
             </p>
-          ) : doesNotDrive ? <p className="text-muted-foreground">{he.driverWanted.doesNotDrive}</p> : null}
+          ) : drivenOnIt ? <p className="text-muted-foreground">{he.rideCoordination.ownDropoffDriver}</p>
+            : doesNotDrive ? <p className="text-muted-foreground">{he.driverWanted.doesNotDrive}</p> : null}
 
-      {open && !doesNotDrive ? (
+      {open && !doesNotDrive && !drivenOnIt ? (
         <Button className="w-full" size="lg" disabled={claim.isPending} data-testid="ride-offer-take"
           onClick={() => {
             if (ride.version != null) claim.mutate({ rideId: ride.id!, expectedVersion: ride.version }, {

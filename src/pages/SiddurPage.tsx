@@ -45,6 +45,7 @@ import { ridePassengerSummary } from "@/lib/ridePassengerSummary";
 import { rideCoordinatorNotes } from "@/lib/rideCoordinatorNotes";
 import { siddurCarName } from "@/lib/siddurCarName";
 import { VolunteerDriverPanel } from "@/features/rides/components/VolunteerDriverPanel";
+import { isDrivenOnRide } from "@/features/rides/driverWanted";
 import { RideDetailSheet } from "@/features/siddur/components/RideDetailSheet";
 import { MemberRideEditor } from "@/features/siddur/components/MemberRideEditor";
 import { isRideRelated, relatedRequestIdToEdit, rideEditTargets } from "@/features/rides/relatedRide";
@@ -290,12 +291,12 @@ export function SiddurPage() {
     const selected = selectedRideId ? rides.find((r) => r.id === selectedRideId) : undefined;
     if (!settingsQuery.data?.anyone_edits_rides || !isMyDepartment || !selected || selected.status === "cancelled"
         || (selected.ends_at && Date.parse(selected.ends_at) <= now.getTime())) {
-      return editHrefForRide ? [{ href: editHrefForRide, label: he.requestsList.edit }] : [];
+      return editHrefForRide ? [{ href: editHrefForRide, label: he.rideDetail.edit }] : [];
     }
     const targets = rideEditTargets(selected);
     return targets.map((target) => ({
       href: paths.requests.edit(target.requestId),
-      label: targets.length === 1 ? he.requestsList.edit : tv("rideDetail.editRequestOf", { name: target.requester }),
+      label: targets.length === 1 ? he.rideDetail.edit : tv("rideDetail.editRequestOf", { name: target.requester }),
     }));
   })();
   const dayFreeWindows = useDayFreeWindows(departmentId, isLiveDay ? weekStart : undefined, isLiveDay ? (activeDay ?? undefined) : undefined, now);
@@ -357,8 +358,13 @@ export function SiddurPage() {
   const sheetCarActions = useRideSheetCarActions({ departmentId, profileId, myRequestIds, week: resolvedWeek, isMember: isMyDepartment, now });
 
   const selectedCar = selectedRide ? (carsQuery.data ?? []).find((c) => c.id === selectedRide.car_id) ?? null : null;
-  const selectedLocation = selectedRide
-    ? carLocationsQuery.data?.find((l) => l.car_id === selectedRide.car_id)?.location_name ?? null
+  // R17B11: where the car is when this ride starts — the away row covering that moment, not the car's first one.
+  const selectedLocation = selectedRide?.starts_at
+    ? carLocationsQuery.data?.find((l) => {
+      const at = Date.parse(selectedRide.starts_at!);
+      return l.car_id === selectedRide.car_id && !!l.away_from && Date.parse(l.away_from) <= at
+        && (!l.away_until || Date.parse(l.away_until) >= at);
+    })?.location_name ?? null
     : null;
 
   const destinationsQuery = useDestinations(departmentId);
@@ -752,7 +758,8 @@ export function SiddurPage() {
         removingMe={removeMeMutation.isPending}
         editRequestLinks={editLinksForRide}
         editor={selectedRide?.needs_driver && canEditWeek && selectedRide.ends_at && Date.parse(selectedRide.ends_at) > now.getTime() ? (
-          <VolunteerDriverPanel ride={selectedRide} onDone={() => setSelectedRideId(null)} />
+          <VolunteerDriverPanel ride={selectedRide} onDone={() => setSelectedRideId(null)}
+            canDrive={!profileQuery.data?.does_not_drive && !isDrivenOnRide(selectedRide, profileId)} />
         ) : selectedRide?.id && ownsEditableRide(selectedRide.id) && !editLinksForRide.length ? <MemberRideEditor key={`${selectedRide.id}:${selectedRide.version}:editor`} ride={selectedRide} cars={carsQuery.data ?? []} viewerId={profileId} saving={rideMoves.saving} onSave={(move) => void saveMove(move)} /> : undefined}
       />
 

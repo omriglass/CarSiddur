@@ -11,17 +11,18 @@ import { useClaimRideDriverMutation } from "../hooks";
  * "חסר/ה נהג/ת" + "אני אנהג בנסיעה הזו" on a ride sheet (`claim_ride_driver`) — the siddur's and, since R13M5, `/my`'s
  * (a passenger whose driver cancelled opens the held ride from "my rides"), with "מי יכול/ה להקפיץ?" on WhatsApp (REQ §13.170).
  */
-export function VolunteerDriverPanel({ ride, onDone }: { ride: BoardRide; onDone: () => void }) {
+export function VolunteerDriverPanel({ ride, onDone, canDrive = true }: { ride: BoardRide; onDone: () => void; canDrive?: boolean }) {
   const claim = useClaimRideDriverMutation();
   return (
     <div className="space-y-2 rounded-md border border-destructive/50 p-3">
       <p className="font-semibold text-destructive">{he.rideCoordination.missingDriver}</p>
-      <p>{he.rideCoordination.volunteerHelp}</p>
-      <Button className="w-full" disabled={claim.isPending} onClick={() => {
+      {/* R17B2: someone who does not drive, or is being driven on this ride, gets only the WhatsApp ask. */}
+      {canDrive ? <p>{he.rideCoordination.volunteerHelp}</p> : null}
+      {canDrive ? <Button className="w-full" disabled={claim.isPending} onClick={() => {
         if (ride.id && ride.version != null) claim.mutate({ rideId: ride.id, expectedVersion: ride.version }, {
           onSuccess: () => { onDone(); toast.success(he.rideCoordination.volunteered); },
         });
-      }}>{he.rideCoordination.volunteer}</Button>
+      }}>{he.rideCoordination.volunteer}</Button> : null}
       {/* REQ §13.170: or ask on WhatsApp who can drive; the link opens the ride's "אני אקח" page. */}
       <DriverWantedButton ride={ride} />
     </div>

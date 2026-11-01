@@ -102,6 +102,10 @@ begin
   assert (select needs_driver and driver_id is null and status='flagged' and is_pinned and pin_reason='MISSING_DRIVER' from public.rides where id=host),'driver cancellation discarded passenger booking';
   assert (select status='cancelled' from public.requests where id=qdriver),'driver request retained';
   assert exists(select 1 from public.ride_requests where ride_id=host and request_id=qpass),'passenger link discarded';
+  -- QA run 17 R17B6: the ride left with the passenger's one-way leg takes that leg's length, not the driver's window;
+  -- the checks below are about the merged window (dt .. dt+3h), so it is put back as the Sadran would.
+  assert (select ends_at<dt+interval '3 hours' from public.rides where id=host),'leftover one-way leg kept the driver''s window';
+  update public.rides set starts_at=dt, ends_at=dt+interval '3 hours' where id=host;
   result:=jsonb_build_array(jsonb_build_object('profile_id',passenger,'request_count',1,'served_count',0,'priority_total',1,'served_priority_total',0,
     'requests',jsonb_build_array(jsonb_build_object('request_id',qpass,'score',1,'served',false))));
   perform public.assert_publication_scores(dept,w,result);
