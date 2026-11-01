@@ -1,6 +1,6 @@
 # Changes for the next release (since v2026.10.30-1)
 
-Branches: `o28-o29-followups` + `debug-and-stats` (not yet merged into `main`). Status: **QA run 17 fixed (REQ §13.172); a short QA rerun is due before release.**
+Branches: `o28-o29-followups` + `debug-and-stats` (not yet merged into `main`). Status: **QA run 17 fixed (REQ §13.172) and verified by QA run 18; awaiting the owner's go.**
 
 ## What members see
 
@@ -59,4 +59,4 @@ Branches: `o28-o29-followups` + `debug-and-stats` (not yet merged into `main`). 
 - `npm run check`: lint, typecheck and 2644 unit tests pass.
 - All SQL suites pass on a freshly replayed disposable stack, including `ride_edited_notices.sql` (now in the runner) and the new `qa_run17_fixes.sql`.
 - New e2e specs pass: `freed-car-options`, `anyone-edits-rides`, `driver-wanted`. `ride-editing` was updated, since resizing now happens on the grid.
-- QA run 17 (seed 4492, week 8.11): 9 bugs, 4 UI items in the new features + older ones; the ones the owner picked are fixed (REQ §13.172, docs/TODO.md "QA run 17"). Rerun: *pending*.
+- QA run 17 (seed 4492, week 8.11): 9 bugs, 4 UI items in the new features + older ones; the ones the owner picked are fixed (REQ §13.172, docs/TODO.md "QA run 17"). Rerun, QA run 18 (seed 4910): every run-17 fix that came up works; no new bug in this release's features beyond R18B1 (no freed-car offer for the hours a shrunk ride gives up) — see docs/TODO.md "QA run 18".
