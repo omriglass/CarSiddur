@@ -57,7 +57,7 @@ the sentence layout (REQ §13.110: `requestForm/sentence/**`, `timeAnchors.ts`, 
 `queryKeys.ts` (all under `src/features/requests/`); `src/components/RideTypeChips.tsx`(+test); `src/components/TimeField15.tsx`(+test, `timeField15Format.ts`); `src/i18n/he.member.ts`; migrations matching
 `*request_template*`, `*anchors*`, `*route_minutes_preview*`, `*classic_request_form*`, `*series*`, `*requests.sql`, `*request_edit*`, `*bulk_request_withdrawal*`,
 `*child*`, `*origin*` (origins/trip_type, REQ §13.93, steps O2/O3), `*stop*` (multi-stop rides, REQ §13.93, step O6); `e2e/multi-day.spec.ts`, `repeating-requests.spec.ts`, `member.spec.ts`,
-`auto-approve.spec.ts`, `upcoming-week.spec.ts`, `multi-stop.spec.ts`, `request-sentence.spec.ts`, `request-rush-hours.spec.ts` (REQ §13.113), `request-sentence-overlay.spec.ts`, `request-window.spec.ts`, `request-edit.spec.ts`, `plan-b-form.spec.ts`, `plan-b-cycle.spec.ts` (shared plumbing: `e2e/request-form.ts`);
+`auto-approve.spec.ts`, `upcoming-week.spec.ts`, `multi-stop.spec.ts`, `request-sentence.spec.ts`, `request-rush-hours.spec.ts` (REQ §13.113), `request-sentence-overlay.spec.ts`, `request-window.spec.ts`, `request-edit.spec.ts`, `anyone-edits-rides.spec.ts` (REQ §13.169), `plan-b-form.spec.ts`, `plan-b-cycle.spec.ts` (shared plumbing: `e2e/request-form.ts`);
 `src/features/requests/stops.ts`(+test via `requestForm/StopsField.test.tsx`), `src/lib/routeStops.ts`, `src/lib/routeLabel.ts`(+test).
 
 **Automated**:

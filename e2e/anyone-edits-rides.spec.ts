@@ -82,6 +82,19 @@ test.describe("anyone edits rides", { tag: ["@request-form", "@notifications"] }
           .eq("recipient_id", PROFILE_IDS.member2).eq("event", "ride_edited").is("read_at", null)).data?.map((n) => n.body_he))
           .toEqual([expect.stringMatching(/יציאה 11:00 במקום 10:00.*נהג\/ת: סדרן נבו במקום חברה שנייה/)]);
       });
+
+      await test.step("the editor can put themselves on the ride from the who chip", async () => {
+        await page.goto(paths.requests.edit(requestId as string));
+        await expect(page.getByTestId("request-sentence")).toBeVisible();
+        await page.getByTestId("chip-who").click();
+        await page.getByTestId("who-add-member").click();
+        await page.getByTestId("who-sheet").getByText(SEEDED_USERS.member1.fullName, { exact: true }).click();
+        await expect(page.getByTestId(`who-member-${PROFILE_IDS.member1}`)).toHaveAttribute("aria-pressed", "true");
+        await page.getByTestId("who-dialog").getByRole("button", { name: he.requestSentence.sheetDone, exact: true }).click();
+        await saveEditedRequest(page);
+        await expect.poll(async () => (await service.from("request_companions").select("profile_id").eq("request_id", requestId as string)).data?.map((c) => c.profile_id).sort())
+          .toEqual([PROFILE_IDS.member1, PROFILE_IDS.member2].sort());
+      });
     } finally {
       await service.from("department_settings").update({ anyone_edits_rides: false }).eq("department_id", NEVO_DEPARTMENT_ID);
       if (requestId) await service.from("notifications").delete().eq("event", "ride_edited").eq("data->>request_id", requestId);

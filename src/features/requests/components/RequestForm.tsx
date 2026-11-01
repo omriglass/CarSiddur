@@ -339,8 +339,10 @@ export function RequestForm({
   const carsQuery = useCars(departmentId);
   const seatConfigsQuery = useCarSeatConfigs(departmentId);
   const myRequestsQuery = useMyRequests();
-  const membersQuery = useDepartmentMembers(departmentId);
   const { session } = useSession();
+  // Editing someone else's ride, I am one of its possible companions: I can take myself off, so I can put myself back.
+  const editingOthersRequest = mode === "edit" && !!initial && !!session?.user.id && initial.requesterId !== session.user.id;
+  const membersQuery = useDepartmentMembers(departmentId, { includeSelf: editingOthersRequest });
   const profileQuery = useProfile();
   const myPrivateCarsQuery = useMyTemporaryCars(profileQuery.data?.id);
   // REQ §13.93: origin defaults (the member's own `default_origin_id` for this department, the
@@ -579,9 +581,10 @@ export function RequestForm({
   // REQ §13.88/§13.93: a non-driver with no driving companion selected may only file a drop-off.
   const companionDoesNotDriveById = new Map((membersQuery.data ?? []).map((m) => [m.id, m.doesNotDrive]));
   // REQ §13.127 (b): editing a request that is someone else's (I filed it, ride on it, own its car, ...).
-  const editingForOther = mode === "edit" && !!initial && !!session?.user.id && initial.requesterId !== session.user.id;
+  const editingForOther = editingOthersRequest;
   // REQ §13.169 (b): in an edit the requester chip toggles and "מי נוהג/ת?" picks the driver; the request moves to them.
   const editRequesterId = mode === "edit" && initial && variant === "weekly" && !isReservation ? initial.requesterId : null;
+  const companionMembers = editRequesterId ? (membersQuery.data ?? []).filter((m) => m.id !== editRequesterId) : membersQuery.data ?? [];
   function editRidersOf(formValues: Pick<RequestFormValues, "includeMe" | "companions">): string[] {
     return editRequesterId ? [...(formValues.includeMe !== false ? [editRequesterId] : []), ...formValues.companions] : [];
   }
@@ -1417,7 +1420,7 @@ export function RequestForm({
           rideTypes={rideTypesQuery.data ?? []}
           preferredCars={preferredCars}
           initialPreferredCarName={initial?.preferredCarName}
-          members={editRequesterId ? (membersQuery.data ?? []).filter((m) => m.id !== editRequesterId) : membersQuery.data ?? []}
+          members={companionMembers}
           allowOnBehalf={(mode === "new" && variant === "weekly" && !joinRide && !isReservation) || !!editRequesterId}
           driverOptions={editDriverOptions}
           driverId={editRequesterId ? editDriverOf({ includeMe: values.includeMe, companions: values.companions ?? [], driverId: values.driverId }) : null}
@@ -1542,7 +1545,7 @@ export function RequestForm({
 
         <PassengersFields
           control={form.control}
-          members={membersQuery.data ?? []}
+          members={companionMembers}
           children={childrenQuery.data ?? []}
           onChildAdded={onChildAdded}
           namedAdultCount={namedAdultCount}
