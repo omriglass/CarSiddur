@@ -1324,3 +1324,50 @@ First run of `/qa-concurrent`: **two QA Sadranim at once** (both Sonnet; Sadran 
 - One click to give a declined draft its old time back by moving the newcomer elsewhere; a "what changed and why" line on a released/waitlisted request in "my rides".
 
 Not tested: car-now (QA week is not the current week); a restore of a closed request whose notice the member had read; a decline after publishing (the member-notice path of R16B3).
+
+## QA run 17 findings (2026-11-01, seed 4492, department `qa-s4492`, week 8–14.11; branch `debug-and-stats` @ 0297253; QA Sadran = Opus, **Tuesday via UI**; QA user = Sonnet; focus: REQ §13.165–§13.171; emphasis: live-phase cancellations, 9 + the freed-car scenario) — **awaiting owner triage**
+
+Shots: QA Sadran `…/scratchpad/qa-run/shots/`, QA user `…/scratchpad/qa-run/shots-user/`. [NEW] = a feature of this release.
+
+### Bugs
+- R17B1 [NEW §13.170] — The rider can take their own driverless ride: Mon ride a2646a10 (Ron Malka → Binyamina), Ron opened `/ride/<id>` → "אני אקח" → "רון מסיע/ה את רון…", Ron left the passenger list. The ride sheet also offers "אני אנהג בנסיעה הזו" to Ron on his own pickup leg (`claim_ride_driver` does not exclude the ride's own riders; the panel/page do not either).
+- R17B2 [NEW §13.170] — "אני אנהג בנסיעה הזו" shown to a does-not-drive member (m30, Tue ride 3feb7a18); the server refuses with a toast. Hide it (the WhatsApp ask must stay for them — it lives in the same panel now).
+- R17B3 [NEW §13.168] — The freed-car notice to a plan-B candidate names the plan-B place and hours ("התפנה רכב לאור עקיבא … 07:15–17:30") instead of the main trip (Tel Aviv 07:00–17:00); `claim_approved` is right.
+- R17B4 [NEW §13.168] — Candidates notified once per freed car (m09/m27/m28: van 05:46, Vitara 05:48, Sat 05:52) — a burst when two cars free up together (owner priority: one notice).
+- R17B5 [NEW §13.168] — The decision page does not refresh after a decision: after giving the Vitara to two people, the van's options on the same page still offered them (fine after reload — "כבר קיבל/ה רכב אחר"). Options are never re-ranked when new waiting-list requests arrive (van stayed free all day, only "אף אחד — השאר פנוי"). After "לוותר הפעם" the offer's `options` still list the member (UI filters); m09 later ended `assigned` that day — unexplained, check.
+- R17B6 — A leftover ride after the host cancels (O29-2 "continue" and driver-cancel) keeps the host's whole window: Tue 3feb7a18 (Maya to Harish, still 11:30–15:00), Mon 394affc5 (Nir's 16:00 pickup, still 07:15–16:00), Wed 1e1de3f8; notices quote the long window. (Same family as R16B6.)
+- R17B7 — A pending origin proposal is read as moving the car: `CHAIN_BROKEN`/`CAR_AWAY_AT_WEEK_END` warnings on every day and wrong changeOrigin suggestions (Mon: "אור עקיבא, Suzuki" while the Suzuki is in Hadera). Applied rides are right. Warning text labels a ride id "req".
+- R17B8 — Plan-B suggestion (useAlternative) ignores where the car is (Wed f41b6054 Asaf Abutbul from Netanya → Suzuki, which stands in Hadera; draft drawn starting in Netanya).
+- R17B9 — A ride whose route cannot fit its window is accepted (Fri 9e535036: GH → Tel Aviv stop → Netanya 10:15–11:15 merged into 23f3e394; ETA Netanya 11:41, return leaves 11:00). `submit_request`/merge never check route minutes against the window.
+- R17B10 — Requests placed on driverless chauffeur rides stay `waitlisted` (Tue d214140b, Thu 76615da2/42f11f52/1238a181); the publish page lists them as waiting; "שובצו 113 מתוך 118" vs the policy table's 102/127.
+- R17B11 — Siddur ride-sheet location chip shows another day's place (Tue van ride e345aafa reads "בבנימינה" — Monday's away window; `SiddurPage` takes the car's first `v_car_locations` row regardless of time). The chip also has no label ("הרכב נמצא ב…").
+- R17B12 [§13.167] — Stats page: a future range → "לא ניתן לבחור תאריך עתידי", two HTTP 400s, then the error screen; default range today–today instead of the last weeks.
+- R17B13 — A member's edit refused with "no_car" when the real block is the other riders on the ride (m20, Tue minivan 82eda0dd, f91489cb 08:15–17:00 after becoming driver) — misleading reason.
+- Not a bug (by design, REQ §13.169 f): m24's CLI edits of m10's request sent the old "העריכה נשמרה" notices, not `ride_edited` — the merged notice is only for saves from the request form (header `x-request-form`); `qa:member edit` is not the form. The form path produced a correct `ride_edited`. Merged-notice-through-the-form was not exercised by QA (covered by `ride_edited_notices.sql` TEST 3 and the e2e).
+
+### UI changes
+- R17U1 [NEW §13.170] — Pickup WhatsApp text: "יאסוף … מבנימינה, לצאת בשעה 13:45" — 13:45 is when the driver leaves home, the pickup is ~14:15. Suggest "לאסוף ב-14:15 (יציאה 13:45)". Unnamed extra adults are left out; children named like adults (fine?).
+- R17U2 [NEW §13.170] — `/ride/<id>` keeps the title "נסיעה שמחפשת נהג/ת" after someone takes it; the riders' notice ("שינוי בסידור שלך…") does not say a driver was found or who.
+- R17U3 [NEW §13.171] — Button reads "ערוך" (REQ says "עריכה"); a requester's own pickup leg shows "הסר אותי" instead of a cancel; "חסר/ה נהג/ת" appears twice on a driverless sheet.
+- R17U4 [NEW §13.168] — Decision page and the /my card don't name the car / day clearly ("רכב שהתפנה · ו׳ 13.11 00:00–23:59"; /my card "ואן…, 00:00–23:59" with no date) — show the car, the day and the cancelled ride's hours.
+- R17U5 [NEW §13.168] — Opening a בדיון group says "the others will be told the car isn't theirs" even for a candidate who does not clash with the ticked ones (Sat: Asaf Ashkenazi 19–22 vs Boaz 07–17 + Asaf Abutbul 10–12).
+- R17U6 [§13.165] — Edit mode: the first plain drag gives no feedback (the hint shows only on the second try — as specified; reconsider).
+- R17U7 — "הצעה חיצונית" in the UI has no hint/reason picker (CLI has `--hint private`; "your own car is free" for Tamar Gabai).
+- R17U8 — "שבץ ברכב…" offers a car as "פנוי" and places it back-to-back (tight) without saying so.
+- R17U9 — Publish notice for a driverless pickup does not say there is no driver yet; a drop-off guest's notice shows the host's whole window.
+- R17U10 — Board vs CLI suggestions differ for Tamar Gabai Tue (board: changeOrigin Hadera + plan B; CLI: deny only).
+- R17U11 — Stepping out of a freed car sends no confirmation.
+
+### Missing obvious features
+- R17M1 — No origin proposal on a published day (`proposal_day_public`) and no direct Sadran action to change the origin and place (Fri Lilach Azoulay, Honda free).
+- R17M2 — Private-car owners are never suggested their own car (Tamar Gabai in Haifa, Boaz in Yokneam — their cars idle all week).
+- R17M3 — An unmet pickup leg shows no reason or suggestion (Tue d214140b:return).
+- R17M4 — Late requests overlapping one's own (`DUPLICATE_OVERLAP`, 4 in the live phase) need a manual chase — a one-click "which one stays?" to the member.
+
+### Additional features
+- R17A1 [NEW §13.168] — Offer every free car, not only the freed one (Fri: 8 idle shared cars, yet "אין בחירה אחת ברורה"; autofill later placed the leftovers in one click).
+- R17A2 — Edit the trip while deciding (re-time / shrink a leftover ride when choosing who continues).
+- R17A3 — When a driver cancels, ask the riders who drive with one tap ("אני אנהג") instead of silently promoting the first one.
+
+### Worked as specified [NEW]
+§13.168 award to a plan-B member + a waiting-list member (plan B released, main ride created, notices right), a בדיון group from two ticks, members' "הסדרן/ית מחליט/ה" + "לוותר הפעם"; §13.169 switch off = no edit on others' rides; who chip moves the request to the driver with a correct `ride_edited` notice; profile push switch on by default; §13.170 WhatsApp text (אותי / names, day + date, place, link) and "אני אקח" by another member; §13.171 summary with blue edit / red cancel. Not tested: car-now (week not current), stats on real data (future week), anyone-edits switch on (Sadran has no admin access).
