@@ -74,6 +74,10 @@ describe("anchorLabelKey", () => {
     expect(anchorLabelKey("return", "leave", true)).toBe("pickupLeave");
     expect(anchorLabelKey("return", "arrive", true)).toBe("pickupArrive");
   });
+  it("reads a 'רק איסוף' way out as the pickup time, or home by (REQ §13.181 c)", () => {
+    expect(anchorLabelKey("out", "leave", true)).toBe("pickupAt");
+    expect(anchorLabelKey("out", "arrive", true)).toBe("returnArrive");
+  });
 });
 
 describe("anchor switching keeps the typed time", () => {

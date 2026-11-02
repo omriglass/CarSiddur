@@ -48,12 +48,13 @@ export function rideEditTargets(ride: BoardRide): { requestId: string; requester
 /**
  * Whether the ride's requests let a member move it (the server's `edit_ride` member branch is the same rule): the
  * driver's own trip keeping the car, or their own one-way (הלוך בלבד — never a הקפצה relay leg), and — REQ §13.179 (a) —
- * anyone riding along on it (a merge), who never stops the people on the ride from moving it.
+ * anyone riding along on it (a merge), who never stops the people on the ride from moving it; REQ §13.181 (a): a הקפצה
+ * leg (chauffeur ride) too, so its rider moves it.
  */
 export function rideMovableByMember(ride: BoardRide): boolean {
   return servedOf(ride).every((entry) => (entry.role === "driver"
       && (entry.car_mode === "keep" || (entry.car_mode === "relay" && entry.trip_type === "one_way")))
-    || (entry.role === "passenger" && entry.car_mode === "passenger"));
+    || (entry.role === "passenger" && (entry.car_mode === "passenger" || entry.car_mode === "chauffeur")));
 }
 
 /** REQ §13.179 (a): a ride serving more than one request is one shared ride (a merge) — its edit opens the main trip. */

@@ -23,6 +23,8 @@ function nextDay(day: string): string {
 export interface DayAndTripShapeFieldsProps {
   control: Control<RequestFormValues>;
   form: UseFormReturn<RequestFormValues>;
+  /** REQ §13.181 (c): the member's base place, for "רק איסוף". */
+  basePlaceId?: string | null;
   weekStart: string;
   variant: "weekly" | "quick" | "carNow";
   showReturnDayPicker: boolean;
@@ -46,6 +48,7 @@ export interface DayAndTripShapeFieldsProps {
 export function DayAndTripShapeFields({
   control,
   form,
+  basePlaceId,
   weekStart,
   variant,
   showReturnDayPicker,
@@ -143,7 +146,7 @@ export function DayAndTripShapeFields({
 
       {showTripType && variant !== "carNow" && !isMultiDay ? (
         <>
-          <TripTypeFields control={control} form={form} variant={variant} tripType={tripType} dropOffPickup={dropOffPickup} canDrive={canDrive} departmentId={departmentId} destinations={destinations} />
+          <TripTypeFields control={control} form={form} variant={variant} tripType={tripType} dropOffPickup={dropOffPickup} canDrive={canDrive} departmentId={departmentId} destinations={destinations} basePlaceId={basePlaceId} />
           {isQuickContext && seeksDriver ? <p className="text-sm text-destructive">{t("quickRequest.oneWayHelp")}</p> : null}
         </>
       ) : null}

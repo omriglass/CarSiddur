@@ -162,7 +162,7 @@ export function planBDetails(values: OfferScope & Pick<RequestFormValues, "fallb
 
 /** The form fields that make up "the main trip" and are kept while the request is a plan-B הקפצה. */
 const SNAPSHOT_KEYS = [
-  "tripType", "dropOffPickup", "tripShape", "needsCarAtDestination", "oneWayCarMode", "destination", "outStops", "returnStops",
+  "tripType", "dropOffPickup", "pickupOnly", "tripShape", "needsCarAtDestination", "oneWayCarMode", "origin", "destination", "outStops", "returnStops",
   "departTime", "returnTime", "departAnchor", "arriveByTime", "returnAnchor", "leaveDestTime",
   "fallback", "altPlace", "altArriveBy", "altPickup", "altPickupAt", "altPickupPlace",
 ] as const;

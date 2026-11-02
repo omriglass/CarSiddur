@@ -122,6 +122,12 @@ export const requestFormSchema = z
     tripType: z.enum(REQUEST_TRIP_TYPES),
     /** "הקפצה" optional pickup leg ("צריך/ה גם איסוף") — only meaningful when `tripType === "drop_off"`. */
     dropOffPickup: z.boolean(),
+    /**
+     * REQ §13.181 (c): "רק איסוף" — a הקפצה from the pickup place (`origin`) back to the member's base place
+     * (`destination`); form-only (the request is the ordinary הקפצה it describes). Unset = derived from the places
+     * (`dropOffMode()`, `dropOffMode.ts`), so a stored pickup reopens as one.
+     */
+    pickupOnly: z.boolean().optional(),
     departTime: timeStringSchema.optional(),
     returnTime: z.union([timeStringSchema, z.literal("23:59")]).optional(),
     /**
@@ -237,6 +243,10 @@ export const requestFormSchema = z
   .superRefine((value, ctx) => {
     if (value.includeMe === false && value.companions.length === 0) {
       ctx.addIssue({ code: "custom", path: ["companions"], message: he.requestSentence.whoNeedMember });
+    }
+    // REQ §13.181 (c): a pickup needs the place to be picked up from.
+    if (value.tripType === "drop_off" && value.pickupOnly && "freeText" in value.origin && !value.origin.freeText.trim()) {
+      ctx.addIssue({ code: "custom", path: ["origin"], message: he.request.pickupPlaceRequired });
     }
     const needsDepart = value.tripShape !== "one_way_from";
     const needsReturn = value.tripShape !== "one_way_to";

@@ -9253,7 +9253,9 @@ begin
         -- Owner 2026-10-11: my own one-way (הלוך בלבד, a relay leg) moves like a ride that keeps the car — never a הקפצה relay leg.
         or not (rr.car_mode = 'keep' or (rr.car_mode = 'relay' and q.trip_type = 'one_way')
           -- REQ §13.179 (a): someone riding along (a merge) never stops the people on the ride from moving it
-          or (rr.role = 'passenger' and rr.car_mode = 'passenger'))))
+          or (rr.role = 'passenger' and rr.car_mode = 'passenger')
+          -- REQ §13.181 (a): a הקפצה leg (chauffeur ride) moves too - its rider, or anyone on it, may move it
+          or (rr.role = 'passenger' and rr.car_mode = 'chauffeur'))))
       -- A one-way leaves THIS car at its destination: it never moves to another car.
       or ((p_ride->>'car_id')::uuid is distinct from v_existing.car_id and exists (select 1 from public.ride_requests rr
         where rr.ride_id=v_id and rr.car_mode = 'relay'))
@@ -9299,7 +9301,8 @@ begin
       end if;
     end if;
   end if;
-  v_needs_driver:=case when v_manage then coalesce((p_ride->>'needs_driver')::boolean,v_existing.needs_driver,false) else false end;
+  -- REQ §13.181 (a): a member's move keeps a driverless הקפצה driverless (it never turns into a reservation)
+  v_needs_driver:=case when v_manage then coalesce((p_ride->>'needs_driver')::boolean,v_existing.needs_driver,false) else coalesce(v_existing.needs_driver,false) end;
   if not v_manage and v_id is not null then
     for v_person in select x.pid from public._ride_person_ids(v_id) x where x.pid is distinct from (select auth.uid()) order by x.pid loop
       v_span := public.person_ride_span(v_id, v_person.pid);

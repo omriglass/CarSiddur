@@ -34,9 +34,9 @@ describe("relatedRequestIdToEdit", () => {
 describe("merged rides (REQ §13.179)", () => {
   const host = { request_id: "qh", role: "driver", leg: "both", car_mode: "keep" };
   const guest = { request_id: "qg", role: "passenger", leg: "out", car_mode: "passenger" };
-  it("a guest riding along never stops a member moving the ride; a chauffeur leg or a הקפצה relay does", () => {
+  it("a guest riding along or a הקפצה leg never stops a member moving the ride; a הקפצה relay does", () => {
     expect(rideMovableByMember(ride({ served: [host, guest] }))).toBe(true);
-    expect(rideMovableByMember(ride({ served: [{ ...guest, car_mode: "chauffeur" }] }))).toBe(false);
+    expect(rideMovableByMember(ride({ served: [{ ...guest, car_mode: "chauffeur" }] }))).toBe(true);
     expect(rideMovableByMember(ride({ served: [{ ...host, car_mode: "relay", trip_type: "drop_off" }] }))).toBe(false);
     expect(rideMovableByMember(ride({ served: [{ ...host, car_mode: "relay", trip_type: "one_way" }] }))).toBe(true);
   });

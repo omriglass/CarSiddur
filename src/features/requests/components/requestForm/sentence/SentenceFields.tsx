@@ -3,7 +3,7 @@
 // field. Weekly requests have two stages: stage 1 = the sentence, stage 2 (`StageTwo`) = the
 // modifiers that are not in it. Everything shares the classic layout's form state, schema and
 // submit pipeline; only the field arrangement differs.
-import { ChevronDown } from "lucide-react";
+import { ArrowLeftRight, ChevronDown } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { Controller, useWatch, type FieldErrors, type UseFormReturn } from "react-hook-form";
 
@@ -26,6 +26,7 @@ import { toInstant } from "../../../mapper";
 import { whoText } from "../../../whoLabel";
 import type { RequestFormValues } from "../../../schema";
 import type { RushWindows } from "../../../rushHours";
+import { canSwapPlaces, dropOffMode, swapRequestPlaces } from "../../../dropOffMode";
 import { anchorLabelKey, endEstimate, enteredOutTime, enteredReturnTime, minutesAtDestination, tooLittleTimeAtDestination } from "../../../timeAnchors";
 import {
   WINDOW_EARLIEST_START,
@@ -83,6 +84,8 @@ type SheetKey = SentenceSheet | "stop" | "returnStop" | "duration";
 
 export interface SentenceFieldsProps {
   form: UseFormReturn<RequestFormValues>;
+  /** REQ §13.181 (c): the member's base place (default origin, else the department home) — a הקפצה ending there is a pickup. */
+  basePlaceId?: string | null;
   variant: "weekly" | "quick" | "carNow";
   weekStart: string;
   /** For the route preview of a plan-B הקפצה switch (`TripTypeFields`). */
@@ -180,7 +183,7 @@ function Seg({ prefix, suffix, loose, spaced, children }: { prefix?: string; suf
 
 export function SentenceFields(props: SentenceFieldsProps) {
   const {
-    form, variant, weekStart, departmentId, day, errors, destinations, rideTypes, preferredCars, initialPreferredCarName, members, allowOnBehalf, driverOptions, driverId, reservation, requesterName, childOptions,
+    form, basePlaceId, variant, weekStart, departmentId, day, errors, destinations, rideTypes, preferredCars, initialPreferredCarName, members, allowOnBehalf, driverOptions, driverId, reservation, requesterName, childOptions,
     tripShape, tripType, dropOffPickup, canDrive, seeksDriver, isQuickContext, showReturnDayPicker,
     returnAnotherDay, setReturnAnotherDay, isMultiDay, multiDaySpan, routeMinutes, rush, recentDestinations, recentCompanionIds, stage, onStageChange,
     invalidSignal, quickContext, quickWindow, notices, onChildAdded, mode, guide,
@@ -263,7 +266,9 @@ export function SentenceFields(props: SentenceFieldsProps) {
     day: isMultiDay ? tv("requestSentence.dayRange", { from: formatDayDate(dayInstant), to: formatDayDate(toInstant(returnDay, "12:00", false)) }) : formatDayDate(dayInstant),
   });
   const dropOffPickupOn = isPickup && hasReturn;
-  const tripLabel = { round_trip: he.request.tripTypeRoundTrip, one_way: he.request.tripTypeOneWay, drop_off: dropOffPickupOn ? he.requestSentence.tripDropOffPickup : he.request.tripTypeDropOff }[tripType];
+  // REQ §13.181 (c): "רק איסוף" — from the pickup place back to the base place
+  const pickupOnlyOn = isPickup && dropOffMode({ dropOffPickup, pickupOnly: form.watch("pickupOnly"), origin: form.watch("origin"), destination: form.watch("destination") }, basePlaceId) === "pickup";
+  const tripLabel = { round_trip: he.request.tripTypeRoundTrip, one_way: he.request.tripTypeOneWay, drop_off: dropOffPickupOn ? he.requestSentence.tripDropOffPickup : pickupOnlyOn ? he.requestSentence.tripPickupOnly : he.request.tripTypeDropOff }[tripType];
 
   // Who travels: the requester, named companions and children, guests — the sentence's first chip.
   const memberName = new Map(members.map((member) => [member.id, member.name]));
@@ -300,7 +305,7 @@ export function SentenceFields(props: SentenceFieldsProps) {
         onClick={() => setSheet(end)}
         data-testid={`chip-${end}`}
       >
-        <span className="me-1">{he.requestSentence.anchor[anchorLabelKey(end, anchor, isPickup)]}</span>
+        <span className="me-1">{he.requestSentence.anchor[anchorLabelKey(end, anchor, end === "out" ? pickupOnlyOn : isPickup)]}</span>
         <span dir="ltr">{entered}</span>
         {briefText ? <span className="ms-1">· {briefText}</span> : null}
       </SentenceChip>
@@ -488,6 +493,13 @@ export function SentenceFields(props: SentenceFieldsProps) {
             <Seg prefix={he.requestSentence.from} loose>
               <SentenceChip field="origin" invalid={invalid("origin")} onClick={() => setSheet("origin")} data-testid="chip-origin">{originName}</SentenceChip>
             </Seg>
+            {/* REQ §13.181 (b): one tap swaps where from and where to */}
+            {canSwapPlaces({ origin: form.watch("origin"), destination: form.watch("destination") }) ? (
+              <button type="button" className="rounded-full px-1 text-primary" aria-label={he.request.swapPlaces} title={he.request.swapPlaces}
+                data-testid="swap-places" onClick={() => swapRequestPlaces(form)}>
+                <ArrowLeftRight className="size-4" aria-hidden="true" />
+              </button>
+            ) : null}
             <Seg prefix={he.requestSentence.to} loose>
               <SentenceChip field="destination" invalid={invalid("destination")} onClick={() => setSheet("destination")} data-testid="chip-destination">
                 {destinationName}
@@ -719,7 +731,7 @@ export function SentenceFields(props: SentenceFieldsProps) {
       </FieldSheet>
 
       <FieldSheet open={sheet === "trip"} onOpenChange={(open) => !open && setSheet(null)} title={he.requestSentence.sheet.trip}>
-        <TripTypeFields control={control} form={form} variant={variant} tripType={tripType} dropOffPickup={dropOffPickup} canDrive={canDrive} pill departmentId={departmentId} destinations={destinations} />
+        <TripTypeFields control={control} form={form} variant={variant} tripType={tripType} dropOffPickup={dropOffPickup} canDrive={canDrive} pill departmentId={departmentId} destinations={destinations} basePlaceId={basePlaceId} />
       </FieldSheet>
 
       <FieldSheet open={sheet === "origin"} onOpenChange={(open) => !open && setSheet(null)} title={he.requestSentence.sheet.origin} hideFooter>
@@ -774,12 +786,12 @@ export function SentenceFields(props: SentenceFieldsProps) {
         open={sheet === "out"}
         onOpenChange={(open) => !open && closeSheet()}
         onDone={() => advanceGuide("out")}
-        title={he.requestSentence.sheet.outTime}
+        title={pickupOnlyOn ? he.requestSentence.sheet.pickupTime : he.requestSentence.sheet.outTime}
       >
         <TimeAnchorSheet
           form={form}
           end="out"
-          isPickup={false}
+          isPickup={pickupOnlyOn}
           routeMinutes={routeMinutes.out}
           rush={rush}
           anchorsEnabled={anchorsEnabled}

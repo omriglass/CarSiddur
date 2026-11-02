@@ -74,3 +74,53 @@ begin
     'the notice lost what 103 saw first';
 end $$;
 rollback;
+
+-- REQ §13.181 (a): 104 moves their own הקפצה (a driverless chauffeur ride): it stays driverless; once 103 volunteers to
+-- drive it, a move asks about 103 first.
+begin;
+do $$
+declare
+  dept uuid:='00000000-0000-0000-0000-000000000001';
+  sadran uuid:='00000000-0000-0000-0000-000000000102';
+  driver uuid:='00000000-0000-0000-0000-000000000103';
+  me uuid:='00000000-0000-0000-0000-000000000104';
+  home uuid:='00000000-0000-0000-0000-000000000010';
+  binyamina uuid:='00000000-0000-0000-0000-000000000012';
+  typ uuid:='00000000-0000-0000-0000-000000000021';
+  car uuid:='00000000-0000-0000-0000-000000000040';
+  w date:=public.current_week_start()+1379;
+  dt timestamptz; v uuid; q uuid; rid uuid; r public.rides%rowtype; err text; det text;
+begin
+  dt:=((w+3)+time '09:00') at time zone 'Asia/Jerusalem';
+  insert into public.weeks(department_id,week_start,phase,open_at,close_at,publish_at)
+  values(dept,w,'solving',now()-interval '2 days',now()-interval '1 day',now()+interval '2 days');
+  insert into public.siddur_versions(department_id,week_start,snapshot,published_by) values(dept,w,'{}',sadran) returning id into v;
+  perform set_config('app.in_publish','on',true);
+  update public.weeks set published_days=array(select week_start+i from generate_series(0,6) i),phase='published',published_version_id=v where department_id=dept and week_start=w;
+  perform set_config('app.in_publish','off',true);
+  insert into public.requests(department_id,week_start,requester_id,filed_by,origin_id,destination_id,ride_type_id,depart_at,trip_shape,trip_type,one_way_car_mode,status)
+    values(dept,w,me,me,home,binyamina,typ,dt,'one_way_to','drop_off','passenger','waitlisted') returning id into q;
+  insert into public.rides(department_id,week_start,car_id,starts_at,ends_at,origin_id,destination_id,driver_id,needs_driver,status,flag_reason,created_by)
+    values(dept,w,car,dt,dt+interval '1 hour',home,home,null,true,'flagged','NEEDS_DRIVER',sadran) returning id into rid;
+  insert into public.ride_requests(ride_id,request_id,role,leg,car_mode) values(rid,q,'passenger','out','chauffeur');
+
+  perform set_config('request.jwt.claims',jsonb_build_object('sub',me,'role','authenticated')::text,true);
+  select * into r from public.rides where id=rid;
+  perform public.edit_ride(jsonb_build_object('id',rid,'department_id',dept,'week_start',w,'car_id',car,'starts_at',r.starts_at+interval '30 minutes',
+    'ends_at',r.ends_at+interval '30 minutes','origin_id',home,'destination_id',home,'driver_id',null),r.version);
+  select * into r from public.rides where id=rid;
+  assert r.starts_at=dt+interval '30 minutes' and r.needs_driver and r.driver_id is null and r.status='flagged', format('own הקפצה move: %s',to_jsonb(r));
+
+  update public.rides set driver_id=driver, needs_driver=false where id=rid;
+  select * into r from public.rides where id=rid;
+  begin
+    perform public.edit_ride(jsonb_build_object('id',rid,'department_id',dept,'week_start',w,'car_id',car,'starts_at',r.starts_at+interval '15 minutes',
+      'ends_at',r.ends_at+interval '15 minutes','origin_id',home,'destination_id',home,'driver_id',driver),r.version);
+    raise exception 'moved past the volunteer without asking';
+  exception when others then
+    get stacked diagnostics err = message_text, det = pg_exception_detail;
+    if err<>'ride_move_needs_agreement' then raise; end if;
+    assert det=(select full_name from public.profiles where id=driver), format('names: %s',det);
+  end;
+end $$;
+rollback;

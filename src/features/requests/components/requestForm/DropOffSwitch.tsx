@@ -15,6 +15,7 @@ import type { TripType } from "@/lib/enums";
 import { useDepartmentSettings } from "@/features/sadran/hooks";
 
 import { useRouteMinutesFetcher } from "../../hooks";
+import { tripTypeToLegacyFields } from "../../tripType";
 import {
   dropOffCarTimes,
   dropOffFromPlanBPatch,
@@ -84,6 +85,20 @@ export function useDropOffSwitch({ form, variant, departmentId, destinations, an
     if (times.returnTime) form.setValue("returnTime", times.returnTime, { shouldDirty: true, shouldValidate: true });
   }
 
+  /** REQ §13.181 (c): "רק איסוף" — a הקפצה from the pickup place back to where the trip started, at the pickup time. */
+  function switchToPickup(pickup: { place: DestinationValue; at: string }) {
+    const current = form.getValues();
+    patch({
+      ...tripTypeToLegacyFields("drop_off", false),
+      tripType: "drop_off", dropOffPickup: false, pickupOnly: true,
+      origin: pickup.place, destination: current.origin, outStops: [], returnStops: [],
+      departAnchor: "leave", departTime: pickup.at, arriveByTime: undefined, returnAnchor: "arrive", leaveDestTime: undefined,
+      fallback: "none",
+    });
+    form.setValue("mainTripBackup", current.mainTripBackup ?? snapshotMainTrip(current), { shouldDirty: true });
+    form.clearErrors([...ALT_FIELDS]);
+  }
+
   function restore(next: TripType, applyPlain: (next: TripType) => void) {
     const backup = form.getValues("mainTripBackup");
     if (!backup) return;
@@ -116,6 +131,10 @@ export function useDropOffSwitch({ form, variant, departmentId, destinations, an
       onConfirm={(plan) => {
         setDialogOpen(false);
         void switchToPlan(plan);
+      }}
+      onConfirmPickup={(pickup) => {
+        setDialogOpen(false);
+        switchToPickup(pickup);
       }}
     />
   ) : null;

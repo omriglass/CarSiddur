@@ -5,6 +5,7 @@ import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { FieldErrors } from "react-hook-form";
 
+import { ArrowLeftRight } from "lucide-react";
 import { toast } from "sonner";
 
 import { CharCount } from "@/components/CharCount";
@@ -89,6 +90,7 @@ import { childOverlapMessage } from "../childOverlap";
 import { affectedNames, editRefusal, releaseConfirmation, shouldOfferJoinableRides, toastSeriesSubmitOutcome, toastSubmitOutcome } from "../submitOutcome";
 import { shouldSuggestChildcare } from "../childcareType";
 import { suggestionToFormValues } from "../templatePrefill";
+import { canSwapPlaces, swapRequestPlaces } from "../dropOffMode";
 import { canUseDrivingTripTypes, tripTypeToLegacyFields } from "../tripType";
 import { JoinableRidesDialog } from "./JoinableRidesDialog";
 import { CarPreferenceFields } from "./requestForm/CarPreferenceFields";
@@ -1411,6 +1413,7 @@ export function RequestForm({
       {isSentence ? (
         <SentenceFields
           form={form}
+          basePlaceId={myDefaultOriginId}
           variant={variant}
           weekStart={weekStart}
           departmentId={departmentId}
@@ -1454,11 +1457,20 @@ export function RequestForm({
         />
       ) : (
         <>
-        <OriginField
-          control={form.control}
-          destinations={destinationsQuery.data ?? []}
-          editable={variant !== "carNow"}
-        />
+        <div className="flex items-center gap-2">
+          <OriginField
+            control={form.control}
+            destinations={destinationsQuery.data ?? []}
+            editable={variant !== "carNow"}
+          />
+          {/* REQ §13.181 (b): one tap swaps where from and where to */}
+          {variant !== "carNow" && canSwapPlaces({ origin: values.origin as DestinationValue, destination: values.destination as DestinationValue }) ? (
+            <button type="button" className="rounded-full p-1 text-primary" aria-label={he.request.swapPlaces} title={he.request.swapPlaces}
+              data-testid="swap-places" onClick={() => swapRequestPlaces(form)}>
+              <ArrowLeftRight className="size-4" aria-hidden="true" />
+            </button>
+          ) : null}
+        </div>
 
         {/* REQ §13.93 "Multi-stop rides": compact chips between the origin line and the
             destination field, behind one "+ עצירה" link — not shown for carNow (fixed home
@@ -1495,6 +1507,7 @@ export function RequestForm({
         <DayAndTripShapeFields
           control={form.control}
           form={form}
+          basePlaceId={myDefaultOriginId}
           weekStart={weekStart}
           variant={variant}
           showReturnDayPicker={showReturnDayPicker}

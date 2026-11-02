@@ -132,11 +132,12 @@ export function endEstimate(end: "out" | "return", anchor: TimeAnchor, entered: 
   return { kind: "leaveEstimate", time: clampedTime(floorToQuarter(minutes - routeMinutes)), minutes: routeMinutes, approx: false };
 }
 
-export type AnchorLabelKey = "outLeave" | "outArrive" | "returnArrive" | "returnLeave" | "pickupLeave" | "pickupArrive";
+export type AnchorLabelKey = "outLeave" | "outArrive" | "returnArrive" | "returnLeave" | "pickupLeave" | "pickupArrive" | "pickupAt";
 
 /** Which label an end's anchor toggle/chip shows. A הקפצה's return is the pickup. */
 export function anchorLabelKey(end: "out" | "return", anchor: TimeAnchor, isPickup: boolean): AnchorLabelKey {
-  if (end === "out") return anchor === "arrive" ? "outArrive" : "outLeave";
+  // REQ §13.181 (c): on the way out `isPickup` is "רק איסוף" - picked up at a time, or home by a time.
+  if (end === "out") return anchor === "arrive" ? (isPickup ? "returnArrive" : "outArrive") : (isPickup ? "pickupAt" : "outLeave");
   if (anchor === "arrive") return isPickup ? "pickupArrive" : "returnArrive";
   return isPickup ? "pickupLeave" : "returnLeave";
 }

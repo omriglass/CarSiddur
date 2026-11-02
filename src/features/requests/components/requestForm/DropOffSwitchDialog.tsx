@@ -10,10 +10,11 @@ import { FormDialog } from "@/components/FormDialog";
 import { TimeField15 } from "@/components/TimeField15";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { he, tv } from "@/i18n/he";
 import type { TripType } from "@/lib/enums";
 
+import { DROP_OFF_MODES, type DropOffMode } from "../../dropOffMode";
 import { defaultPlanB, dropPointsFirst, earliestPickup, hasAltPlace, pickupAfterArrivalMoved, type PlanBDetails } from "../../planB";
 import { isSamePlace, type RequestFormValues } from "../../schema";
 import { FieldError } from "./FieldError";
@@ -35,6 +36,8 @@ interface DropOffSwitchDialogProps {
   destinations: readonly { id: string; name: string; aliases: string[]; zone?: string; is_drop_point?: boolean }[];
   onCancel: () => void;
   onConfirm: (plan: PlanBDetails) => void;
+  /** REQ §13.181 (c): "רק איסוף" — picked up at `place` at `at`, back to where the trip starts. */
+  onConfirmPickup: (pickup: { place: DestinationValue; at: string }) => void;
 }
 
 function PlaceButton({ value, placeholder, onClick, testId }: { value: DestinationValue | null; placeholder: string; onClick: () => void; testId: string }) {
@@ -49,11 +52,19 @@ function PlaceButton({ value, placeholder, onClick, testId }: { value: Destinati
   );
 }
 
-export function DropOffSwitchDialog({ values, destinations, onCancel, onConfirm }: DropOffSwitchDialogProps) {
+export function DropOffSwitchDialog({ values, destinations, onCancel, onConfirm, onConfirmPickup }: DropOffSwitchDialogProps) {
   const defaults = defaultPlanB({ tripType: values.tripType, departTime: values.departTime, returnTime: values.returnTime, arriveByTime: values.arriveByTime, departAnchor: values.departAnchor ?? "leave" });
   const [place, setPlace] = useState<DestinationValue | null>(hasAltPlace(values.altPlace) ? (values.altPlace as DestinationValue) : null);
   const [arriveBy, setArriveBy] = useState(values.altArriveBy ?? defaults.altArriveBy ?? "09:00");
   const [pickup, setPickup] = useState(values.altPickup ?? values.tripType === "round_trip");
+  // REQ §13.181 (c): רק הקפצה / רק איסוף / הקפצה ואיסוף (was a "ואיסוף" switch)
+  const [pickupOnly, setPickupOnly] = useState(false);
+  const mode: DropOffMode = pickupOnly ? "pickup" : pickup ? "both" : "drop";
+  function chooseMode(next: DropOffMode) {
+    setPickupOnly(next === "pickup");
+    setPickup(next === "both");
+    setError(null);
+  }
   const [pickupAt, setPickupAt] = useState(values.altPickupAt ?? defaults.altPickupAt ?? earliestPickup(arriveBy));
   const [pickupPlace, setPickupPlace] = useState<DestinationValue | null>(hasAltPlace(values.altPickupPlace) ? (values.altPickupPlace as DestinationValue) : null);
   const [picking, setPicking] = useState<"place" | "pickupPlace" | null>(null);
@@ -65,6 +76,10 @@ export function DropOffSwitchDialog({ values, destinations, onCancel, onConfirm 
 
   function submit() {
     if (!place || !hasAltPlace(place)) return setError(he.planB.error.placeRequired);
+    if (pickupOnly) {
+      if (isSamePlace(place, values.origin)) return setError(he.planB.error.sameAsOrigin);
+      return onConfirmPickup({ place, at: pickupAt });
+    }
     if (isSamePlace(place, values.origin)) return setError(he.planB.error.sameAsOrigin);
     if (pickup && pickupAt <= arriveBy) return setError(he.planB.error.pickupBeforeArrive);
     onConfirm({
@@ -103,6 +118,28 @@ export function DropOffSwitchDialog({ values, destinations, onCancel, onConfirm 
         </div>
       ) : (
       <div className="space-y-3" data-testid="drop-off-switch-dialog">
+        <ToggleGroup type="single" value={mode} onValueChange={(next) => { if (next) chooseMode(next as DropOffMode); }}
+          className="flex-wrap justify-start gap-1.5" aria-label={he.request.dropOffModeLabel} data-testid="drop-off-switch-mode">
+          {DROP_OFF_MODES.map((option) => (
+            <ToggleGroupItem key={option} value={option} data-testid={`drop-off-switch-mode-${option}`}
+              className="h-8 rounded-full border px-3 text-sm data-[state=on]:border-primary data-[state=on]:bg-primary/10 data-[state=on]:font-medium data-[state=on]:text-primary">
+              {he.request.dropOffMode[option]}
+            </ToggleGroupItem>
+          ))}
+        </ToggleGroup>
+        {pickupOnly ? (
+          <>
+            <div className="space-y-1" data-field="altPlace">
+              <Label className="text-sm">{he.planB.switch.pickupFromPlace}</Label>
+              <PlaceButton value={place} placeholder={he.planB.placeEmpty} onClick={() => setPicking("place")} testId="drop-off-switch-place" />
+            </div>
+            <div className="flex items-center gap-3">
+              <Label className="text-sm">{he.planB.switch.atTime}</Label>
+              <TimeField15 value={pickupAt} onChange={(next) => { setPickupAt(next); setError(null); }} aria-label={he.planB.switch.atTime} />
+            </div>
+          </>
+        ) : (
+        <>
         <div className="space-y-1" data-field="altPlace">
           <Label className="text-sm">{he.planB.switch.toPlace}</Label>
           <PlaceButton value={place} placeholder={he.planB.placeEmpty} onClick={() => setPicking("place")} testId="drop-off-switch-place" />
@@ -119,10 +156,6 @@ export function DropOffSwitchDialog({ values, destinations, onCancel, onConfirm 
             }}
             aria-label={he.planB.switch.untilTime}
           />
-        </div>
-        <div className="flex items-center justify-between gap-2">
-          <Label htmlFor="drop-off-switch-pickup">{he.planB.switch.pickupSwitch}</Label>
-          <Switch id="drop-off-switch-pickup" checked={pickup} onCheckedChange={setPickup} />
         </div>
         {pickup ? (
           <>
@@ -141,6 +174,8 @@ export function DropOffSwitchDialog({ values, destinations, onCancel, onConfirm 
             </div>
           </>
         ) : null}
+        </>
+        )}
         <FieldError message={error ?? undefined} />
       </div>
       )}

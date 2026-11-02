@@ -154,6 +154,12 @@ export const heMember = {
     removeStop: "הסרת עצירה",
     /** "הקפצה" optional pickup leg toggle. */
     dropOffPickupToggle: "צריך/ה גם איסוף",
+    /** REQ §13.181 (c): the הקפצה kind — the three options replace the "צריך/ה גם איסוף" switch. */
+    dropOffMode: { drop: "רק הקפצה", pickup: "רק איסוף", both: "הקפצה ואיסוף" },
+    dropOffModeLabel: "הקפצה או איסוף",
+    pickupPlaceRequired: "מאיפה לאסוף?",
+    /** REQ §13.181 (b): swaps the origin and the destination. */
+    swapPlaces: "החלפת מוצא ויעד",
     /** Shown when a non-driver member has not named a driving companion (REQ §13.88/§13.93). */
     nonDriverTripTypeHint: "בלי מלווה/ת שנוהג/ת, אפשר להגיש רק בקשת הקפצה",
     departArrival: "הגעה הביתה",
@@ -871,6 +877,8 @@ export const heMember = {
       returnLeave: "לצאת משם ב־",
       pickupLeave: "איסוף משם ב־",
       pickupArrive: "איסוף, בבית עד",
+      /** REQ §13.181 (c): "רק איסוף" — the pickup time on the way out. */
+      pickupAt: "איסוף ב־",
     },
     estimate: {
       departEstimate: "יציאה משוערת {{time}} · {{minutes}} דק׳ נסיעה",
@@ -946,6 +954,8 @@ export const heMember = {
     carPick: "בחר/י רכב",
     carRequired: "יש לבחור רכב",
     tripDropOffPickup: "הקפצה + איסוף",
+    /** REQ §13.181 (c): the trip chip of a "רק איסוף". */
+    tripPickupOnly: "איסוף",
     /** Outbound time sheet: the return moved with the departure. */
     returnMoved: "גם החזרה זזה ל־{{time}}",
     /** Stage-2 recap: anchored times carry their meaning. */
