@@ -434,6 +434,7 @@
         "src/features/requests/filedForOther.ts",
         "supabase/migrations/**/*ride_members_move_merged*",
         "supabase/tests/ride_members_move.sql",
+        "e2e/ride-members-edit.spec.ts",
         "supabase/tests/on_behalf_requests.sql",
         "src/lib/rideMoveAgreement.ts",
         "src/lib/rideMoveAgreement.test.ts",
