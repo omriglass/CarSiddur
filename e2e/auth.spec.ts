@@ -80,6 +80,15 @@ test.describe("auth", { tag: ["@auth"] }, () => {
     await expect(page.locator('input[value="sadran@nevo.local"]')).toBeVisible();
   });
 
+  test("the dev sign-in switches to the showcase department's cast", async ({ page }) => {
+    await page.goto("/login");
+    await page.getByTestId("dev-sign-in-department").click();
+    await page.getByRole("option", { name: "מחלקת הדגמה" }).click();
+    await expect(page.getByTestId("dev-sign-in-m03")).toBeVisible();
+    await expect(page.getByTestId("dev-sign-in-member1")).toHaveCount(0);
+    // the showcase accounts exist only after `npm run qa:showcase` on this stack — the buttons are there regardless
+  });
+
   test("an unapproved account is sent to the pending page", async ({ page }) => {
     await ensurePendingUserExists();
 

@@ -538,6 +538,8 @@ export const he = {
     /** One-click sign-in as each seeded demo user (dev builds only). */
     devSignInAs: "כניסה בתור {{name}}",
     devUsers: { admin: "אדמין", sadran: "סדרן", member1: "חבר ראשון", member2: "חברה שנייה" },
+    devDepartment: "מחלקה לכניסה",
+    devNevo: "נבו",
     devHint:
       "משתמשי דמו: admin@nevo.local · sadran@nevo.local · member1@nevo.local · member2@nevo.local — סיסמה לכולם: nevo-demo-1234",
   },

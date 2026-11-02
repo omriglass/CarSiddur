@@ -30,7 +30,7 @@ Week parameter `:week` is the target week's Sunday as `YYYY-MM-DD`. `:dept` is t
 
 | Path | Screen | Who | Purpose |
 |---|---|---|---|
-| `/signin` | Sign in | anyone | Google sign-in. A local dev build (`import.meta.env.DEV`) adds one button per seeded demo user ("כניסה בתור אדמין / סדרן / חבר ראשון / חברה שנייה", `dev-sign-in-<user>`) above the email/password form. |
+| `/signin` | Sign in | anyone | Google sign-in. A local dev build (`import.meta.env.DEV`) adds a department selector (נבו, or the showcase department "מחלקת הדגמה" of `npm run qa:showcase`) and one button per demo user of it ("כניסה בתור …", `dev-sign-in-<email prefix>`, `DevSignIn.tsx`, a dev-only chunk) above the email/password form. |
 | `/pending` | Pending approval | unknown Google account | Wait-for-approval page (§3.1). |
 | `/onboarding` | Onboarding | first-time approved member | Phone number, default department, push permission (§3.2). |
 | `/` | → redirect to the **last opened main page** (`/siddur` or `/my`, remembered per device in `localStorage`, siddur on a first visit) — the same for member, Sadran and admin; a fresh sign-in with no `from` lands the same way (REQ §13.87, `src/app/landing.ts`, 2026-09-15) | everyone | — |
