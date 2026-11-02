@@ -268,6 +268,15 @@ export function SiddurPage() {
     }
   }
 
+  // `?day=<yyyy-MM-dd>` (a just-saved request's day, `overlayTargetPath`): open that day once; the member's own
+  // day picks after it win.
+  const focusDay = searchParams.get("day");
+  const [handledDayFocus, setHandledDayFocus] = useState<string | null>(null);
+  if (focusDay && !focusGroupId && handledDayFocus !== focusDay) {
+    setHandledDayFocus(focusDay);
+    setSelectedDay(focusDay);
+  }
+
   const dayGroups = weekStart ? groupByDay(rides, weekStart, (r) => r.starts_at ?? "") : [];
   const today = todayInJerusalem();
   const defaultDay = dayGroups.find((g) => g.date === today)?.date ?? dayGroups[0]?.date ?? null;

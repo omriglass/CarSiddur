@@ -193,8 +193,11 @@ interface RequestFormProps {
   templateSuggestion?: TemplateSuggestion;
   /** Quick-variant-only context — free-window aware car targeting (UX_FLOWS.md §18). */
   quickContext?: QuickRequestContext;
-  /** Called after a successful submit instead of the default `navigate(paths.my())`. */
-  onDone?: (result: SubmitRequestResult | null) => void;
+  /**
+   * Called after a successful submit instead of the default `navigate(paths.my())`; `day` is the request's day
+   * (`yyyy-MM-dd`), so the page underneath can open on it.
+   */
+  onDone?: (result: SubmitRequestResult | null, day: string) => void;
   /**
    * REQ §13.154 (a): the form fills a reservation instead of a request — same fields, saved by `save_reservation` (with
    * `id`: editing that reservation). Plan B, "repeat weekly" and "on someone else's behalf" are not offered.
@@ -887,7 +890,7 @@ export function RequestForm({
   /** R11B1: an edit that changes nothing is a no-op — no server call, no dialog. */
   function finishUnchanged() {
     toast(t("request.noChanges"));
-    if (onDone) onDone(null);
+    if (onDone) onDone(null, form.getValues("day"));
     else navigate(paths.my());
   }
 
@@ -1047,7 +1050,7 @@ export function RequestForm({
           reservationId: reservation?.id,
         });
         toast.success(he.planning.saved);
-        if (onDone) onDone(null);
+        if (onDone) onDone(null, form.getValues("day"));
         else navigate(paths.plan(departmentId));
       } catch {
         setSubmitError(t("request.submitError"));
@@ -1119,7 +1122,7 @@ export function RequestForm({
           suggestDestinationMutation.mutate({ name: formValues.destination.freeText.trim() });
         }
         if (!toastSeriesSubmitOutcome(seriesResult)) toast.success(t(seriesEdit ? "request.submitSaved" : "request.submitSent"));
-        if (onDone) onDone(null);
+        if (onDone) onDone(null, form.getValues("day"));
         else navigate(paths.my());
         return;
       }
@@ -1208,7 +1211,7 @@ export function RequestForm({
       if (!outcomeToasted && variant === "weekly") toast.success(t(mode === "edit" ? "request.submitSaved" : "request.submitSent"));
 
       const proceed = () => {
-        if (onDone) onDone(result);
+        if (onDone) onDone(result, form.getValues("day"));
         else navigate(paths.my());
       };
 

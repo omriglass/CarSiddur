@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 
 import { paths } from "../src/app/routes";
 import { he, tv } from "../src/i18n/he";
+import { todayInJerusalem } from "../src/components/dateFieldDates";
 import { getWeekStart, NEVO_DEPARTMENT_ID, SEEDED_USERS, serviceRoleClient, signIn, submitRequestForm } from "./helpers";
 import {
   chooseDestination, dayMonthLabel, dismissGuide, dayOfWeek, deleteRequests, fillTimeField, jerusalemTime, keepOnlyWeeks, memberOpenWeek,
@@ -124,6 +125,17 @@ test.describe("request sentence overlay", { tag: ["@request-form"] }, () => {
       }
     });
   }
+
+  test("the siddur opens on ?day= (where a saved request returns to)", async ({ page }) => {
+    const liveWeek = await getWeekStart("live");
+    // Any day of the week but today (the siddur's default day).
+    const index = [4, 5].find((offset) => dayOfWeek(liveWeek, offset) !== todayInJerusalem()) as number;
+    const day = dayOfWeek(liveWeek, index);
+    await signIn(page, SEEDED_USERS.member2);
+    await page.goto(paths.siddur({ dept: NEVO_DEPARTMENT_ID, week: liveWeek, day }));
+    const strip = page.getByRole("radiogroup", { name: he.field.day }).first();
+    await expect(strip.getByRole("radio").nth(index)).toHaveAttribute("aria-checked", "true");
+  });
 
   test("?day= preselects the day of the sentence", async ({ page }) => {
     const week = await memberOpenWeek();

@@ -2,7 +2,7 @@ import { useActiveDepartment } from "@/features/auth/useActiveDepartment";
 import { useSearchParams } from "react-router-dom";
 
 import { RequestOverlay } from "@/app/RequestOverlay";
-import { useCloseRequestOverlay } from "@/app/overlayState";
+import { useCloseRequestOverlay, weekShownOnSiddur } from "@/app/overlayState";
 import { formatWeekRangeLabel } from "@/components/dateFieldDates";
 import { PageHeader } from "@/components/PageHeader";
 import { parseHHMM } from "@/components/timeField15Format";
@@ -78,6 +78,7 @@ export function NewRequestPage() {
       : undefined;
 
   const close = useCloseRequestOverlay();
+  const weekOnSiddur = weekShownOnSiddur((weeksQuery.data ?? []).find((week) => week.week_start === weekStart)?.phase);
   const overlay = !!profileQuery.data && !profileQuery.data.classic_request_form;
 
   const body =
@@ -103,7 +104,7 @@ export function NewRequestPage() {
           waitlist={waitlist}
           joinGroupId={joinGroupId}
           templateSuggestion={templateSuggestion}
-          onDone={overlay ? close : undefined}
+          onDone={overlay ? (_result, day) => close({ departmentId, weekStart, day, weekOnSiddur }) : undefined}
         />
       </>
     );

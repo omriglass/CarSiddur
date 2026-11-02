@@ -1,7 +1,7 @@
 import { Link, useLocation, useParams } from "react-router-dom";
 
 import { RequestOverlay } from "@/app/RequestOverlay";
-import { readOverlayFrom, useCloseRequestOverlay } from "@/app/overlayState";
+import { readOverlayFrom, useCloseRequestOverlay, weekShownOnSiddur } from "@/app/overlayState";
 import { paths } from "@/app/routes";
 import { formatWeekRangeLabel } from "@/components/dateFieldDates";
 import { useIsSadran } from "@/features/auth/useIsSadran";
@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/PageHeader";
 import { RequestForm } from "@/features/requests/components/RequestForm";
 import { useCanEditRequestQuery, useRequestQuery } from "@/features/requests/hooks";
+import { useWeeks } from "@/features/siddur/hooks";
 import { he } from "@/i18n/he";
 
 /** `/requests/:id/edit` (UX_FLOWS.md §3.4 "Edit mode"). */
@@ -28,6 +29,9 @@ export function EditRequestPage() {
   const sadran = useIsSadran(requestQuery.data?.departmentId, requestQuery.data?.weekStart).isSadran;
   const overlay = !!profileQuery.data && !profileQuery.data.classic_request_form;
 
+  const request = requestQuery.data;
+  const weeksQuery = useWeeks(request?.departmentId);
+  const weekOnSiddur = weekShownOnSiddur((weeksQuery.data ?? []).find((week) => week.week_start === request?.weekStart)?.phase);
   const body = requestQuery.isLoading || canEditQuery.isLoading ? (
     <div className="space-y-3 p-4">
       <div className="h-11 animate-pulse rounded-md bg-muted" />
@@ -48,7 +52,7 @@ export function EditRequestPage() {
       departmentId={requestQuery.data.departmentId}
       weekStart={requestQuery.data.weekStart}
       initial={requestQuery.data}
-      onDone={overlay || cameFromPage ? close : undefined}
+      onDone={(overlay || cameFromPage) && request ? (_result, day) => close({ departmentId: request.departmentId, weekStart: request.weekStart, day, weekOnSiddur }) : undefined}
     />
   );
 
