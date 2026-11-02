@@ -170,6 +170,7 @@ export type ErrorCode =
   | "luggage_capacity_violation"
   | "needs_large_trunk"
   | "person_busy"
+  | "ride_move_needs_agreement"
   | "car_fields_locked"
   | "ride_week_not_public"
   | "push_unsupported"
@@ -334,6 +335,7 @@ const MESSAGE_TO_CODE: Record<string, ErrorCode> = {
   luggage_capacity_violation: "luggage_capacity_violation",
   needs_large_trunk: "needs_large_trunk",
   person_busy: "person_busy",
+  ride_move_needs_agreement: "ride_move_needs_agreement",
   car_fields_locked: "car_fields_locked",
   ride_driver_already_assigned: "driver_assigned",
   ride_in_past: "ride_past",
@@ -494,6 +496,7 @@ const CODE_TO_MESSAGE: Record<ErrorCode, string> = {
   luggage_capacity_violation: he.errors.luggageCapacityViolation,
   needs_large_trunk: he.errors.needsLargeTrunk,
   person_busy: he.errors.personBusy,
+  ride_move_needs_agreement: he.errors.rideMoveNeedsAgreement,
   car_fields_locked: he.errors.carFieldsLocked,
   driver_assigned: he.rideCoordination.noLongerMissing,
   ride_past: he.rideCoordination.past,
@@ -664,7 +667,7 @@ export function toAppError(error: unknown): AppError {
     const description = pgError?.details || pgError?.hint || bareCode || undefined;
     return new AppError(code, message, description ?? undefined);
   }
-  return new AppError(code, message, undefined, code === "needs_large_trunk" || code === "person_busy" ? (pgError?.details ?? undefined) : undefined);
+  return new AppError(code, message, undefined, code === "needs_large_trunk" || code === "person_busy" || code === "ride_move_needs_agreement" ? (pgError?.details ?? undefined) : undefined);
 }
 
 /** Maps the error and shows a Hebrew toast (mutations' `onError`, CLAUDE.md "Data"). */

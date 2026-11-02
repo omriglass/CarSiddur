@@ -15,6 +15,12 @@ export interface ServedEntry {
   request_id: string | null;
   role: "driver" | "passenger";
   leg: "out" | "return" | "both";
+  /**
+   * REQ §13.179 (d): the part of THIS ride the request rides (`v_board_rides.people[].leg`): `leg` itself, except a
+   * reversed one-way guest (a pickup from the ride's destination back to its start) rides the way back. Read for
+   * display ("(חזור)"); `leg` stays the request's own leg everywhere else.
+   */
+  ride_leg?: "out" | "return" | "both";
   car_mode: "keep" | "relay" | "passenger" | "chauffeur";
   adults: number;
   child_seats: number;
@@ -58,9 +64,19 @@ export interface ServedEntry {
 /** Reads `v_board_rides.served` (a jsonb aggregate, RideDetailSheet.tsx uses the same shape) into typed rows. */
 export function servedOf(ride: BoardRide): ServedEntry[] {
   const raw = (ride.served as unknown as (ServedEntry & { child_names?: string[] })[] | null) ?? [];
+  const rideLegs = new Map<string, ServedEntry["leg"]>();
+  for (const person of (Array.isArray(ride.people) ? ride.people : []) as { request_id?: unknown; leg?: unknown }[]) {
+    if (typeof person?.request_id === "string" && (person.leg === "out" || person.leg === "return" || person.leg === "both")) {
+      rideLegs.set(person.request_id, person.leg);
+    }
+  }
   return raw
     .filter((s) => !!s.request_id)
-    .map((s) => (s.child_names?.length ? { ...s, childNames: s.child_names } : s));
+    .map((s) => {
+      const rideLeg = rideLegs.get(s.request_id as string);
+      const entry = rideLeg ? { ...s, ride_leg: rideLeg } : s;
+      return s.child_names?.length ? { ...entry, childNames: s.child_names } : entry;
+    });
 }
 
 /**

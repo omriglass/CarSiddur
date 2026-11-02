@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { isRideRelated, relatedRequestIdToEdit } from "./relatedRide";
+import { isMergedRide, isRideRelated, relatedRequestIdToEdit, rideMovableByMember } from "./relatedRide";
+import { servedOf } from "./servedOf";
 
 import type { BoardRide } from "./api";
 
@@ -27,5 +28,24 @@ describe("relatedRequestIdToEdit", () => {
     expect(relatedRequestIdToEdit(r)).toBe("d");
     expect(relatedRequestIdToEdit(ride({ served: served([{ request_id: "p", role: "passenger" }]) }))).toBe("p");
     expect(relatedRequestIdToEdit(ride())).toBeUndefined();
+  });
+});
+
+describe("merged rides (REQ §13.179)", () => {
+  const host = { request_id: "qh", role: "driver", leg: "both", car_mode: "keep" };
+  const guest = { request_id: "qg", role: "passenger", leg: "out", car_mode: "passenger" };
+  it("a guest riding along never stops a member moving the ride; a chauffeur leg or a הקפצה relay does", () => {
+    expect(rideMovableByMember(ride({ served: [host, guest] }))).toBe(true);
+    expect(rideMovableByMember(ride({ served: [{ ...guest, car_mode: "chauffeur" }] }))).toBe(false);
+    expect(rideMovableByMember(ride({ served: [{ ...host, car_mode: "relay", trip_type: "drop_off" }] }))).toBe(false);
+    expect(rideMovableByMember(ride({ served: [{ ...host, car_mode: "relay", trip_type: "one_way" }] }))).toBe(true);
+  });
+  it("is merged when it serves more than one request", () => {
+    expect(isMergedRide(ride({ served: [host, guest] }))).toBe(true);
+    expect(isMergedRide(ride({ served: [host] }))).toBe(false);
+  });
+  it("reads each request's leg on this ride from people (a reversed pickup rides the way back)", () => {
+    const entries = servedOf(ride({ served: [host, guest], people: [{ request_id: "qg", leg: "return" }, { request_id: "qh", leg: "both" }] }));
+    expect(entries.map((entry) => [entry.request_id, entry.leg, entry.ride_leg])).toEqual([["qh", "both", "both"], ["qg", "out", "return"]]);
   });
 });

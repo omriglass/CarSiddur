@@ -33,6 +33,10 @@ export function memberMergeWaitChoice(preview: MemberMergePreview): MergeWaitCho
   if (preview.waitEndsAt && preview.joinerReturnAt && preview.wantedReturnAt) {
     return { side: "return", eta: preview.joinerReturnAt, wanted: preview.wantedReturnAt, startsAt: null, endsAt: preview.waitEndsAt };
   }
+  // REQ §13.179 (c): a pickup from the ride's destination back to its start rides the way back — the ride waits by ending later.
+  if (preview.waitEndsAt && preview.joinerDepartAt && preview.wantedDepartAt) {
+    return { side: "return", eta: preview.joinerDepartAt, wanted: preview.wantedDepartAt, startsAt: null, endsAt: preview.waitEndsAt };
+  }
   if (preview.waitStartsAt && preview.joinerDepartAt && preview.wantedDepartAt) {
     return { side: "out", eta: preview.joinerDepartAt, wanted: preview.wantedDepartAt, startsAt: preview.waitStartsAt, endsAt: null };
   }

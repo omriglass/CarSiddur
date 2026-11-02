@@ -50,7 +50,7 @@ import { VolunteerDriverPanel } from "@/features/rides/components/VolunteerDrive
 import { isDrivenOnRide, volunteerDriverOf } from "@/features/rides/driverWanted";
 import { RideDetailSheet } from "@/features/siddur/components/RideDetailSheet";
 import { MemberRideEditor } from "@/features/siddur/components/MemberRideEditor";
-import { isRideRelated, relatedRequestIdToEdit, rideEditTargets } from "@/features/rides/relatedRide";
+import { isMergedRide, isRideRelated, relatedRequestIdToEdit, rideEditTargets } from "@/features/rides/relatedRide";
 import { useMemberRideMoves } from "@/features/rides/useMemberRideMoves";
 import { useRideSheetCarActions } from "@/features/rides/useRideSheetCarActions";
 import { awayBandBlocks } from "@/features/siddur/awayBands";
@@ -221,7 +221,12 @@ export function SiddurPage() {
   const relatedEditRequestId = !editableOwnRequest && selectedRideId
     ? (() => { const selected = rides.find((r) => r.id === selectedRideId); return selected && isMyRide(selected) ? relatedRequestIdToEdit(selected) : undefined; })()
     : undefined;
-  const editHrefForRide = editableOwnRequest ? paths.requests.edit(editableOwnRequest.id) : relatedEditRequestId ? paths.requests.edit(relatedEditRequestId) : undefined;
+  // REQ §13.179 (a): anyone on a merged ride edits the shared ride — its main trip — not their own part of it.
+  const mergedEditRequestId = selectedRideId
+    ? (() => { const selected = rides.find((r) => r.id === selectedRideId); return selected && isMergedRide(selected) && isMyRide(selected) ? relatedRequestIdToEdit(selected) : undefined; })()
+    : undefined;
+  const editHrefForRide = mergedEditRequestId ? paths.requests.edit(mergedEditRequestId)
+    : editableOwnRequest ? paths.requests.edit(editableOwnRequest.id) : relatedEditRequestId ? paths.requests.edit(relatedEditRequestId) : undefined;
 
   // `?ride=<id>` (notification deep link, `notification_default_url`'s
   // `/siddur/<dept>/<week>?ride=<id>` case): open the ride detail sheet for it once, on the

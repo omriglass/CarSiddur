@@ -3,6 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { REQUEST_COLUMNS, type ReadableRequestRow } from "@/lib/requestColumns";
 import { rpc, toAppError } from "@/lib/rpc";
 import { withPersonBusyRetry } from "@/lib/personBusy";
+import { withRideAgreementRetry } from "@/lib/rideMoveAgreement";
 import { withSmallTrunkRetry } from "@/lib/smallTrunk";
 
 import { parseServerMergePreview, type ServerMergePreview } from "./board/mergeProposal";
@@ -562,10 +563,11 @@ export interface EditRideInput {
 
 export async function editRide(input: EditRideInput, expectedVersion?: number): Promise<string> {
   // REQ §13.111 (a): a car without a large trunk for a large-luggage request asks "לשבץ בכל זאת?" and retries with the flag.
-  return withSmallTrunkRetry((allowSmallTrunk) => rpc("edit_ride", {
-    p_ride: { ...input, ...(allowSmallTrunk ? { allow_small_trunk: true } : {}) } as unknown as Json,
+  // REQ §13.179 (b): a member moving a ride others ride on asks "דיברת עם X על השינוי?" and retries with `agreed`.
+  return withRideAgreementRetry((agreed) => withSmallTrunkRetry((allowSmallTrunk) => rpc("edit_ride", {
+    p_ride: { ...input, ...(allowSmallTrunk ? { allow_small_trunk: true } : {}), ...(agreed ? { agreed: true } : {}) } as unknown as Json,
     p_expected_version: expectedVersion,
-  }));
+  })));
 }
 
 /** REQ §13.103 b: "the car was moved from A to B" - a ride that decides where the car is from then on. */

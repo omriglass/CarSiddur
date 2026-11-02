@@ -149,8 +149,12 @@ begin
   select * into v_ride from public.rides where id = v_ride.id;
   perform public.edit_ride(jsonb_build_object('id',v_ride.id,'department_id',dept,'week_start',w2,'car_id',tc,
     'starts_at',v_ride.starts_at+interval '1 hour','ends_at',v_ride.ends_at+interval '1 hour',
-    'origin_id',v_ride.origin_id,'destination_id',v_ride.destination_id,'driver_id',v_ride.driver_id), v_ride.version);
+    'origin_id',v_ride.origin_id,'destination_id',v_ride.destination_id,'driver_id',v_ride.driver_id,
+    -- REQ §13.179 (b): m2's own hours change - the owner has talked to them
+    'agreed',true), v_ride.version);
   assert (select starts_at = v_ride.starts_at+interval '1 hour' and car_id = tc from public.rides where id = v_ride.id), 'TEST 8 FAILED: owner moved the ride';
+  assert exists (select 1 from public.notifications where recipient_id = m2 and event = 'ride_edited' and data ->> 'ride_id' = v_ride.id::text),
+    'TEST 8 FAILED: the driver was not told about the move';
   raise notice 'TEST 8 PASSED: the borrower adds passengers, the owner moves the ride, an unrelated member is refused';
 
   -- TEST 9: a published-day edit of the booked private-car round trip goes back on the private car

@@ -194,6 +194,13 @@ export const he = {
     unknownName: "האדם שנבחר",
     confirm: "להמשיך בכל זאת",
   },
+  /** REQ §13.179 (b): moving a ride that others ride on. */
+  rideMoveAgreement: {
+    title: "דיברת עם {{names}} על השינוי?",
+    body: "השינוי מזיז גם את השעות של {{names}} בנסיעה. הם יקבלו הודעה עם השעות החדשות.",
+    confirm: "כן, סיכמנו",
+    othersFallback: "שאר הנוסעים",
+  },
   ...heMember,
   ...heCarTasks,
   ...hePlanning,
@@ -823,6 +830,7 @@ export const he = {
     carFieldsLocked: "אין לך הרשאה לשנות את פרטי הרכב האלה — רק מנהל/ת, סדרן/ית המחלקה או אחראי/ת הרכב",
     needsLargeTrunk: "הבקשה צריכה תא מטען גדול, ולרכב אין. אפשר לשבץ בכל זאת באישור מפורש",
     personBusy: "כבר יש נסיעה אחרת בשעות האלה. אפשר להמשיך בכל זאת באישור מפורש",
+    rideMoveNeedsAgreement: "השינוי מזיז גם נוסעים אחרים בנסיעה — צריך לאשר שדיברת איתם",
     rideSeatsExceeded: "אין מספיק מקום ברכב לכל האנשים שנבחרו",
     invalidRidePassenger: "פרטי הנוסע/ת אינם תקינים",
     rideDriverNotRemovable: "לא ניתן להסיר את הנהג/ת מהנסיעה — יש לבטל את הנסיעה במקום זאת",

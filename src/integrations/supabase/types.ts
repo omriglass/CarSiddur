@@ -5740,6 +5740,16 @@ export type Database = {
         Args: { p_ride_id: string; p_stored: string }
         Returns: boolean
       }
+      _ride_moved_by_member: {
+        Args: { p_agreed: boolean; p_before: Json; p_ride_id: string }
+        Returns: undefined
+      }
+      _ride_person_ids: {
+        Args: { p_ride_id: string }
+        Returns: {
+          pid: string
+        }[]
+      }
       _ride_route: {
         Args: { p_ride_id: string }
         Returns: {
@@ -7042,6 +7052,10 @@ export type Database = {
       ride_related: {
         Args: { p_actor: string; p_ride: string }
         Returns: boolean
+      }
+      ride_request_ride_leg: {
+        Args: { p_request_id: string; p_ride_id: string }
+        Returns: Database["public"]["Enums"]["ride_leg"]
       }
       ride_route: {
         Args: { p_ride_id: string }

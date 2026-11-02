@@ -20,7 +20,7 @@ import { useIsSadranAnywhere } from "@/features/auth/useIsSadran";
 import { DeviceSetupPrompts } from "@/features/member/components/DeviceSetupPrompts";
 import { useMyChecklistPromptsQuery } from "@/features/cars/checklist/hooks";
 import { useMyResponsibleCarsQuery } from "@/features/cars/hooks";
-import { isRideRelated, relatedRequestIdToEdit } from "@/features/rides/relatedRide";
+import { isMergedRide, isRideRelated, relatedRequestIdToEdit, rideMovableByMember } from "@/features/rides/relatedRide";
 import { useCars, useMyTemporaryCars, useRideTypes } from "@/features/fleet/hooks";
 import { AddRideFab } from "@/features/requests/components/AddRideFab";
 import { RequestDeadlineNote } from "@/features/requests/components/RequestDeadlineNote";
@@ -341,8 +341,8 @@ export function HomePage() {
     carOwnerId: editableRideCar?.type === "temporary" ? editableRideCar.owner_id : null,
   });
   const ownsEditableRide = !!editableRide &&
-    // Same rule as `useMemberRideMoves`: a ride I drive keeping the car, or my own one-way (owner 2026-10-11).
-    servedOf(editableRide).every((entry) => entry.role === "driver" && (entry.car_mode === "keep" || (entry.car_mode === "relay" && entry.trip_type === "one_way"))) &&
+    // Same rule as `useMemberRideMoves` (REQ §13.179 a: anyone riding along does not stop it).
+    rideMovableByMember(editableRide) &&
     active.canSubmit && editableRideRelated &&
     isRideDayEditable(editableRide.starts_at, now) &&
     (editableWeek?.phase === "published" || editableWeek?.phase === "live") &&
@@ -362,8 +362,11 @@ export function HomePage() {
       carOwnerId: selectedRideCar?.type === "temporary" ? selectedRideCar.owner_id : null,
     })
     ? relatedRequestIdToEdit(selectedMyRide) : undefined;
-  const selectedRideEditHref = selectedRideOwnRequest
-    ? paths.requests.edit(selectedRideOwnRequest.id)
+  // REQ §13.179 (a): on a merged ride everyone on it edits the shared ride — its main trip.
+  const selectedRideMergedRequestId = selectedMyRide && isMergedRide(selectedMyRide) && (selectedRideOwnRequest || selectedRideRelatedRequestId)
+    ? relatedRequestIdToEdit(selectedMyRide) : undefined;
+  const selectedRideEditHref = selectedRideMergedRequestId ? paths.requests.edit(selectedRideMergedRequestId)
+    : selectedRideOwnRequest ? paths.requests.edit(selectedRideOwnRequest.id)
     : selectedRideRelatedRequestId ? paths.requests.edit(selectedRideRelatedRequestId) : undefined;
   // Same gate as the siddur's public-notes editor: my own (or an admin's) future ride on a published/live week.
   const selectedRidePhase = selectedMyRide?.week_start ? phaseOf(selectedMyRide.week_start) : undefined;

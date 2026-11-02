@@ -5,8 +5,9 @@ import type { RidePublicEntry } from "./ridePublicDetails";
 interface PassengerEntry extends RidePublicEntry {
   request_id?: string | null;
   role?: "driver" | "passenger";
-  /** `served[].leg`: a one-way rider's names are marked (REQ §13.178). */
+  /** `served[].leg`: a one-way rider's names are marked (REQ §13.178) — by `ride_leg` when known (REQ §13.179 d). */
   leg?: RideLeg;
+  ride_leg?: RideLeg;
   adults: number;
   child_seats: number;
   boosters: number;
@@ -45,7 +46,7 @@ export function ridePassengerParts(
   let adults = 0;
   let children = 0;
   const seenRequests = new Set<string>();
-  const bothLegs = rideCarriesBothLegs(entries.map((entry) => entry.leg));
+  const bothLegs = rideCarriesBothLegs(entries.map((entry) => entry.ride_leg ?? entry.leg));
   if (driverName?.trim() && !entries.some((entry) => entry.role === "driver")) names.push(driverName.trim());
   for (const entry of entries) {
     if (entry.request_id && seenRequests.has(entry.request_id)) continue;
@@ -54,7 +55,7 @@ export function ridePassengerParts(
       .map((name) => name?.trim()).filter((name): name is string => !!name);
     /** Explicitly named children (`request_children` → `children.full_name`) are known-for-sure children, unlike `named` above (adults/guests, whose overflow past `adults` is only *guessed* to fill a child seat). */
     const namedChildren = (entry.childNames ?? []).map((name) => name?.trim()).filter((name): name is string => !!name);
-    names.push(...[...named, ...namedChildren].map((name) => withLegMark(name, entry.leg, bothLegs)));
+    names.push(...[...named, ...namedChildren].map((name) => withLegMark(name, entry.ride_leg ?? entry.leg, bothLegs)));
     adults += Math.max(0, entry.adults - named.length);
     children += Math.max(0, entry.child_seats + entry.boosters - Math.max(0, named.length - entry.adults) - namedChildren.length);
   }

@@ -18,7 +18,7 @@ import { effectiveWeekSettings } from "@/lib/weekSettings";
 import type { RideMove } from "./api";
 import { useRequestRideChangeMutation, useRideChanges } from "./hooks";
 import { canMoveOntoMyCar, rideDayPublished } from "./ownCarMove";
-import { isRideRelated } from "./relatedRide";
+import { isRideRelated, rideMovableByMember } from "./relatedRide";
 import { isRideDayEditable } from "./rideDayEditable";
 import { servedOf } from "./servedOf";
 import { memberMergeTarget } from "./memberMerge";
@@ -65,16 +65,15 @@ export function useMemberRideMoves({ departmentId, weekStart, week, profileId, m
 
   /**
    * A ride of today or a later day that is mine (REQ §13.127 b: I drive it, it serves a request I made or filed, I am a named passenger, or
-   * it is on my private car) — keeping the car, or my own one-way (הלוך בלבד, owner 2026-10-11: a relay leg that leaves
-   * the car at the destination; never a הקפצה relay leg) — on a published day, with no change request pending.
+   * it is on my private car) whose requests let a member move it (`rideMovableByMember`: keeping the car, my own one-way,
+   * anyone riding along — REQ §13.179 a) — on a published day, with no change request pending.
    * The server's `edit_ride` member branch is the same rule.
    */
   function ownsEditableRide(rideId: string): boolean {
     const ride = rides.find((r) => r.id === rideId);
     if (!ride?.starts_at || !weekEditable) return false;
     if (!(week?.published_days?.includes(dateKey(ride.starts_at)) ?? true)) return false;
-    if (servedOf(ride).some((entry) => entry.role !== "driver"
-      || !(entry.car_mode === "keep" || (entry.car_mode === "relay" && entry.trip_type === "one_way")))) return false;
+    if (!rideMovableByMember(ride)) return false;
     const car = carsQuery.data?.find((c) => c.id === ride.car_id);
     const related = isRideRelated({ ride, profileId, myRequestIds: myRequestIds ?? new Set(), carOwnerId: car?.type === "temporary" ? car.owner_id : null });
     return related && isRideDayEditable(ride.starts_at, now)

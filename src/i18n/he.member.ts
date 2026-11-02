@@ -458,6 +458,8 @@ export const heMember = {
     driver: "נהג/ת",
     chauffeur: "הסעה · מסיע/ה",
     passengers: "נוסעים",
+    /** REQ §13.179 (a): a ride serving several requests is one shared ride. */
+    mergedOf: "נסיעה משותפת: {{names}}",
     car: "רכב",
     carModeKeep: "הרכב נשאר איתי ביעד",
     carModeRelayOut: "הרכב נשאר ב{{destination}}",

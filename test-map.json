@@ -431,7 +431,15 @@
         "src/components/RideTypeLegend.tsx",
         "src/components/rideTypeColorsContext.ts",
         "src/lib/rideTypeColors.ts",
-        "src/features/requests/filedForOther.ts"
+        "src/features/requests/filedForOther.ts",
+        "supabase/migrations/**/*ride_members_move_merged*",
+        "supabase/tests/ride_members_move.sql",
+        "supabase/tests/on_behalf_requests.sql",
+        "src/lib/rideMoveAgreement.ts",
+        "src/lib/rideMoveAgreement.test.ts",
+        "src/components/RideMoveAgreementHost.tsx",
+        "src/features/rides/relatedRide.ts",
+        "src/features/rides/relatedRide.test.ts"
       ],
       "vitest": [
         "src/lib/personBusy.test.ts",
@@ -452,7 +460,8 @@
         "production_fixes_2026_11_01.sql",
         "volunteer_driver_change.sql",
         "member_merge_ride.sql",
-        "merged_ride_parts.sql"
+        "merged_ride_parts.sql",
+        "ride_members_move.sql"
       ],
       "playwrightTags": [
         "@siddur"

@@ -2100,7 +2100,7 @@ declare
   h public.rides%rowtype; src public.rides%rowtype; q public.requests%rowtype;
   v_out boolean; v_ret boolean; v_leg public.ride_leg; v jsonb;
   v_jd timestamptz; v_jr timestamptz; v_out_ok boolean := true; v_ret_ok boolean := true; v_wait_fix boolean := true;
-  v_early int; v_late int; v_src_ok boolean; v_others text[]; v_guest text; v_src_driver text;
+  v_early int; v_late int; v_src_ok boolean; v_swap boolean; v_others text[]; v_guest text; v_src_driver text;
 begin
   select * into h from public.rides where id = p_ride_id;
   select * into src from public.rides where id = p_source_ride_id;
@@ -2123,14 +2123,17 @@ begin
   v_leg := case when v_out and v_ret then 'both' when v_out then 'out' else 'return' end::public.ride_leg;
 
   v := public._merge_preview_core(p_ride_id, p_request_id, v_leg);
+  -- REQ §13.179 (c): a reversed one-way (a pickup from the ride's destination back to its start, R6B5) rides the way
+  -- back - reached earlier than asked, the ride waits by ending later; reached later than asked, no stretch helps.
+  v_swap := v_leg = 'out' and public._merge_guest_swapped(p_ride_id, p_request_id);
 
   -- the guest keeps their own time (within their flexibility), with the ride as it is / stretched to the guest's time
   v_jd := (v ->> 'joiner_depart_at')::timestamptz; v_jr := (v ->> 'joiner_return_at')::timestamptz;
   if v_leg in ('out', 'both') and v_jd is not null and q.depart_at is not null then
     v_early := extract(epoch from coalesce(q.flex_depart_early, interval '0')) / 60; v_late := extract(epoch from coalesce(q.flex_depart_late, interval '0')) / 60;
     v_out_ok := extract(epoch from (v_jd - q.depart_at)) / 60 between -v_early and v_late;
-    if not v_out_ok and v_jd < q.depart_at then v_wait_fix := false; end if;   -- earlier than asked: no stretch helps
-    if not v_out_ok and v ->> 'wait_starts_at' is null then v_wait_fix := false; end if;
+    if not v_out_ok and (v_jd < q.depart_at) <> v_swap then v_wait_fix := false; end if;   -- earlier than asked (later, reversed): no stretch helps
+    if not v_out_ok and v ->> (case when v_swap then 'wait_ends_at' else 'wait_starts_at' end) is null then v_wait_fix := false; end if;
   end if;
   if v_leg in ('return', 'both') and v_jr is not null and q.return_at is not null then
     v_early := extract(epoch from coalesce(q.flex_return_early, interval '0')) / 60; v_late := extract(epoch from coalesce(q.flex_return_late, interval '0')) / 60;
@@ -2455,7 +2458,7 @@ CREATE OR REPLACE FUNCTION "public"."_merge_preview_core"("p_ride_id" "uuid", "p
     AS $$
 declare v_ride public.rides%rowtype; v_req public.requests%rowtype; v jsonb; v_err text; v_jd timestamptz; v_jr timestamptz;
   v_prev text; v_prev_det text; v_lug boolean := false; v_det boolean := false;
-  v_day date; v_wait_end timestamptz; v_wait_start timestamptz;
+  v_day date; v_wait_end timestamptz; v_wait_start timestamptz; v_swap boolean;
 begin
   select * into v_ride from public.rides where id = p_ride_id;
   if v_ride.id is null then raise exception 'ride_not_found' using errcode = 'P0001'; end if;
@@ -2497,7 +2500,13 @@ begin
     v_wait_end := to_timestamp(round(extract(epoch from ((v ->> 'new_ends_at')::timestamptz + (v_req.return_at - v_jr))) / 900) * 900);
     if ((v_wait_end - interval '1 minute') at time zone 'Asia/Jerusalem')::date <> v_day then v_wait_end := null; end if;
   end if;
-  if p_leg in ('out', 'both') and v_jd is not null and v_req.depart_at is not null and v_req.depart_at < v_jd - interval '5 minutes' then
+  -- REQ §13.179 (c): a reversed one-way (R6B5) is picked up on the way back - the ride waits for its time by ending later.
+  v_swap := p_leg = 'out' and public._merge_guest_swapped(p_ride_id, p_request_id);
+  if v_swap and v_jd is not null and v_req.depart_at is not null and v_req.depart_at > v_jd + interval '5 minutes' then
+    v_wait_end := to_timestamp(round(extract(epoch from ((v ->> 'new_ends_at')::timestamptz + (v_req.depart_at - v_jd))) / 900) * 900);
+    if ((v_wait_end - interval '1 minute') at time zone 'Asia/Jerusalem')::date <> v_day then v_wait_end := null; end if;
+  end if;
+  if p_leg in ('out', 'both') and not v_swap and v_jd is not null and v_req.depart_at is not null and v_req.depart_at < v_jd - interval '5 minutes' then
     v_wait_start := to_timestamp(round(extract(epoch from ((v ->> 'new_starts_at')::timestamptz - (v_jd - v_req.depart_at))) / 900) * 900);
     if (v_wait_start at time zone 'Asia/Jerusalem')::date <> v_day then v_wait_start := null; end if;
   end if;
@@ -3659,6 +3668,100 @@ $$;
 
 
 ALTER FUNCTION "public"."_ride_fp_matches"("p_ride_id" "uuid", "p_stored" "text") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."_ride_moved_by_member"("p_ride_id" "uuid", "p_before" "jsonb", "p_agreed" boolean) RETURNS "void"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  v_actor uuid := (select auth.uid());
+  v_ride public.rides%rowtype;
+  v_changed jsonb := '{}'::jsonb;
+  v_key text; v_span tstzrange; v_names text;
+  v_old record; v_old_ids uuid[]; v_base jsonb; v_editors jsonb; v_line text; v_notif uuid;
+  v_actor_name text; v_route text; v_own_route text;
+begin
+  select * into v_ride from public.rides where id = p_ride_id;
+  for v_key in select k from jsonb_object_keys(p_before) k order by k loop
+    v_span := public.person_ride_span(p_ride_id, v_key::uuid);
+    if v_span is null or lower(v_span) is distinct from (p_before -> v_key ->> 0)::timestamptz
+       or upper(v_span) is distinct from (p_before -> v_key ->> 1)::timestamptz then
+      v_changed := v_changed || jsonb_build_object(v_key, jsonb_build_array(lower(v_span), upper(v_span)));
+    end if;
+  end loop;
+  if v_changed = '{}'::jsonb then return; end if;
+
+  if not p_agreed then
+    select string_agg(p.full_name, ', ' order by p.full_name) into v_names
+    from public.profiles p where p.id::text in (select jsonb_object_keys(v_changed));
+    raise exception 'ride_move_needs_agreement' using errcode = 'P0001', detail = coalesce(v_names, '');
+  end if;
+
+  select full_name into v_actor_name from public.profiles where id = v_actor;
+  -- the ride's main trip names the route when the person has no request of their own on it
+  select public.request_route_label(rr.request_id) into v_route from public.ride_requests rr
+  where rr.ride_id = p_ride_id order by (rr.role = 'driver') desc, rr.created_at, rr.request_id limit 1;
+  for v_key in select k from jsonb_object_keys(v_changed) k order by k loop
+    perform pg_advisory_xact_lock(hashtextextended(format('ride_moved:%s:%s', p_ride_id, v_key), 0));
+    v_base := p_before -> v_key; v_editors := '[]'::jsonb; v_old_ids := null;
+    -- one unread notice per person and ride: a later move replaces it, keeping what they saw first
+    for v_old in
+      select n.id, n.data from public.notifications n
+      where n.recipient_id = v_key::uuid and n.event = 'ride_edited' and n.read_at is null
+        and n.data ->> 'ride_id' = p_ride_id::text and n.data ? 'moved_before'
+      order by n.created_at, n.id
+    loop
+      if v_old_ids is null then v_base := v_old.data -> 'moved_before'; end if;
+      v_old_ids := array_append(v_old_ids, v_old.id);
+      v_editors := v_editors || coalesce(v_old.data -> 'editors', '[]'::jsonb);
+    end loop;
+    v_editors := v_editors || to_jsonb(array[coalesce(v_actor_name, '')]);
+    select coalesce(jsonb_agg(nm order by o), '[]'::jsonb) into v_editors
+    from (select nm, min(o) as o from jsonb_array_elements_text(v_editors) with ordinality u(nm, o) group by nm) x;
+    if v_old_ids is not null then delete from public.notifications where id = any(v_old_ids); end if;
+    v_line := public._time_change_line((v_base ->> 0)::timestamptz, (v_base ->> 1)::timestamptz,
+      (v_changed -> v_key ->> 0)::timestamptz, (v_changed -> v_key ->> 1)::timestamptz);
+    continue when nullif(v_line, '') is null;   -- moved back to what they last saw
+    select public.request_route_label(q.id) into v_own_route from public.ride_requests rr join public.requests q on q.id = rr.request_id
+    where rr.ride_id = p_ride_id and (q.requester_id = v_key::uuid
+      or exists (select 1 from public.request_companions rc where rc.request_id = q.id and rc.profile_id = v_key::uuid))
+    order by rr.created_at, q.id limit 1;
+    v_notif := public.enqueue_notification(v_key::uuid, 'ride_edited', v_ride.department_id, v_ride.week_start,
+      jsonb_build_object(
+        'byName', public._and_list(array(select jsonb_array_elements_text(v_editors))),
+        'route', coalesce(v_own_route, v_route, ''),
+        'day', public.day_date_label(v_ride.starts_at),
+        'changes', v_line),
+      jsonb_build_object('ride_id', p_ride_id, 'moved_before', v_base, 'editors', v_editors),
+      format('ride_moved:%s:%s:%s', p_ride_id, v_key, clock_timestamp()));
+    if v_notif is not null then
+      if coalesce((select p.push_on_ride_edits from public.profiles p where p.id = v_key::uuid), true) then
+        update public.push_outbox set payload = payload || jsonb_build_object('tag', format('replace:ride_moved:%s', p_ride_id))
+        where notification_id = v_notif;
+      else
+        delete from public.push_outbox where notification_id = v_notif;
+      end if;
+    end if;
+  end loop;
+end $$;
+
+
+ALTER FUNCTION "public"."_ride_moved_by_member"("p_ride_id" "uuid", "p_before" "jsonb", "p_agreed" boolean) OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."_ride_person_ids"("p_ride_id" "uuid") RETURNS TABLE("pid" "uuid")
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  select r.driver_id from public.rides r where r.id = p_ride_id and r.driver_id is not null
+  union select q.requester_id from public.ride_requests rr join public.requests q on q.id = rr.request_id where rr.ride_id = p_ride_id
+  union select rc.profile_id from public.ride_requests rr join public.request_companions rc on rc.request_id = rr.request_id where rr.ride_id = p_ride_id
+  union select rp.person_id from public.ride_passengers rp where rp.ride_id = p_ride_id and rp.person_id is not null;
+$$;
+
+
+ALTER FUNCTION "public"."_ride_person_ids"("p_ride_id" "uuid") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."_ride_route"("p_ride_id" "uuid") RETURNS TABLE("leg" "public"."ride_leg", "position" integer, "place_id" "uuid", "place_text" "text", "request_id" "uuid", "kind" "text", "eta" timestamp with time zone)
@@ -9071,6 +9174,8 @@ declare
   v_s timestamptz; v_e timestamptz; v_day date;
   -- REQ §13.129 (a): a private car's owner moving someone's ride onto that car.
   v_owner_move boolean := false;
+  -- REQ §13.179 (b): the other people's own parts before a member's move
+  v_spans jsonb := '{}'::jsonb; v_person record; v_span tstzrange;
 begin
   if not public.is_approved() then raise exception 'not_authorized'; end if;
   if v_id is not null then
@@ -9100,7 +9205,9 @@ begin
       -- REQ §13.127: every request on the ride must be one the mover is related to (the requester's own, one they filed, …).
       or exists (select 1 from public.ride_requests rr join public.requests q on q.id=rr.request_id where rr.ride_id=v_id and ((q.requester_id <> (select auth.uid()) and not public.request_related(q.id, (select auth.uid())) and not v_owner_move)
         -- Owner 2026-10-11: my own one-way (הלוך בלבד, a relay leg) moves like a ride that keeps the car — never a הקפצה relay leg.
-        or not (rr.car_mode = 'keep' or (rr.car_mode = 'relay' and q.trip_type = 'one_way'))))
+        or not (rr.car_mode = 'keep' or (rr.car_mode = 'relay' and q.trip_type = 'one_way')
+          -- REQ §13.179 (a): someone riding along (a merge) never stops the people on the ride from moving it
+          or (rr.role = 'passenger' and rr.car_mode = 'passenger'))))
       -- A one-way leaves THIS car at its destination: it never moves to another car.
       or ((p_ride->>'car_id')::uuid is distinct from v_existing.car_id and exists (select 1 from public.ride_requests rr
         where rr.ride_id=v_id and rr.car_mode = 'relay'))
@@ -9147,6 +9254,14 @@ begin
     end if;
   end if;
   v_needs_driver:=case when v_manage then coalesce((p_ride->>'needs_driver')::boolean,v_existing.needs_driver,false) else false end;
+  if not v_manage and v_id is not null then
+    for v_person in select x.pid from public._ride_person_ids(v_id) x where x.pid is distinct from (select auth.uid()) order by x.pid loop
+      v_span := public.person_ride_span(v_id, v_person.pid);
+      if v_span is not null then
+        v_spans := v_spans || jsonb_build_object(v_person.pid::text, jsonb_build_array(lower(v_span), upper(v_span)));
+      end if;
+    end loop;
+  end if;
   perform set_config('app.audit_reason','edit_ride',true);
   if v_manage then
     v_override:=public.prepare_manual_ride_window((p_ride->>'car_id')::uuid,v_week,(p_ride->>'starts_at')::timestamptz,(p_ride->>'ends_at')::timestamptz,v_id);
@@ -9233,6 +9348,9 @@ begin
       format('owner_move:%s:%s:%s', v_id, x.pid, clock_timestamp()))
     from (select distinct q.requester_id as pid, q.id as rid from public.ride_requests rr join public.requests q on q.id = rr.request_id
           where rr.ride_id = v_id and q.requester_id is distinct from (select auth.uid())) x;
+  end if;
+  if v_spans <> '{}'::jsonb then
+    perform public._ride_moved_by_member(v_id, v_spans, coalesce((p_ride->>'agreed')::boolean, false));
   end if;
   return v_id;
 end $$;
@@ -17179,6 +17297,24 @@ $$;
 ALTER FUNCTION "public"."ride_related"("p_ride" "uuid", "p_actor" "uuid") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."ride_request_ride_leg"("p_ride_id" "uuid", "p_request_id" "uuid") RETURNS "public"."ride_leg"
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  -- the part of THIS ride the request rides: its stored leg, except a reversed one-way guest rides the way back.
+  -- Read helper of v_board_rides.people (security invoker): a leg only, null for a ride the caller cannot see.
+  select case when rr.role = 'passenger' and rr.leg = 'out' and public._merge_guest_swapped(p_ride_id, p_request_id)
+              then 'return'::public.ride_leg else rr.leg end
+  from public.ride_requests rr join public.rides r on r.id = rr.ride_id
+  where rr.ride_id = p_ride_id and rr.request_id = p_request_id
+    and (public.member_of(r.department_id) or public.is_admin() or (select auth.uid()) is null)
+  order by rr.created_at limit 1;
+$$;
+
+
+ALTER FUNCTION "public"."ride_request_ride_leg"("p_ride_id" "uuid", "p_request_id" "uuid") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."ride_requests_dept_week_match"() RETURNS "trigger"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -22753,7 +22889,8 @@ CREATE OR REPLACE FUNCTION "public"."week_board_rides_rows"("p_department_id" "u
                                         'child_id', pe.child_id, 'display_name', pe.display_name,
                                         'seat_kind', pe.seat_kind, 'added_by', pe.added_by,
                                         'removable', pe.removable,
-                                        'leg', (select x.leg from vrp x where x.id = pe.ride_passenger_id))
+                                        'leg', coalesce((select x.leg from vrp x where x.id = pe.ride_passenger_id),
+                                          public.ride_request_ride_leg(pe.ride_id, pe.request_id)))
                      order by pe.is_driver desc, pe.display_name, pe.key) as people
       from vpeo pe
      where p_ride_ids is null or pe.ride_id = any(p_ride_ids)
@@ -26339,9 +26476,9 @@ CREATE OR REPLACE VIEW "public"."v_board_rides" WITH ("security_invoker"='true')
                                     "existing_1_1_1"."series_index",
                                     "existing_1_1_1"."series_count",
                                     "existing_1_1_1"."passengers",
-                                    COALESCE(( SELECT "jsonb_agg"("jsonb_build_object"('key', "pe"."key", 'source', "pe"."source", 'request_id', "pe"."request_id", 'ride_passenger_id', "pe"."ride_passenger_id", 'person_id', "pe"."person_id", 'child_id', "pe"."child_id", 'display_name', "pe"."display_name", 'seat_kind', "pe"."seat_kind", 'added_by', "pe"."added_by", 'removable', "pe"."removable", 'leg', ( SELECT "rp_leg"."leg"
+                                    COALESCE(( SELECT "jsonb_agg"("jsonb_build_object"('key', "pe"."key", 'source', "pe"."source", 'request_id', "pe"."request_id", 'ride_passenger_id', "pe"."ride_passenger_id", 'person_id', "pe"."person_id", 'child_id', "pe"."child_id", 'display_name', "pe"."display_name", 'seat_kind', "pe"."seat_kind", 'added_by', "pe"."added_by", 'removable', "pe"."removable", 'leg', COALESCE(( SELECT "rp_leg"."leg"
      FROM "public"."ride_passengers" "rp_leg"
-    WHERE ("rp_leg"."id" = "pe"."ride_passenger_id"))) ORDER BY "pe"."is_driver" DESC, "pe"."display_name", "pe"."key") AS "jsonb_agg"
+    WHERE ("rp_leg"."id" = "pe"."ride_passenger_id")), "public"."ride_request_ride_leg"("existing_1_1_1"."id", "pe"."request_id"))) ORDER BY "pe"."is_driver" DESC, "pe"."display_name", "pe"."key") AS "jsonb_agg"
    FROM ( SELECT ('driver:'::"text" || "existing_1_1_1"."driver_id") AS "key",
       'driver'::"text" AS "source",
       ( SELECT "q0"."id"
@@ -29892,6 +30029,16 @@ GRANT ALL ON FUNCTION "public"."_ride_fp_matches"("p_ride_id" "uuid", "p_stored"
 
 
 
+REVOKE ALL ON FUNCTION "public"."_ride_moved_by_member"("p_ride_id" "uuid", "p_before" "jsonb", "p_agreed" boolean) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_ride_moved_by_member"("p_ride_id" "uuid", "p_before" "jsonb", "p_agreed" boolean) TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."_ride_person_ids"("p_ride_id" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_ride_person_ids"("p_ride_id" "uuid") TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."_ride_route"("p_ride_id" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."_ride_route"("p_ride_id" "uuid") TO "service_role";
 
@@ -31689,6 +31836,12 @@ GRANT ALL ON FUNCTION "public"."ride_notice_route"("p_ride_id" "uuid") TO "servi
 
 REVOKE ALL ON FUNCTION "public"."ride_related"("p_ride" "uuid", "p_actor" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."ride_related"("p_ride" "uuid", "p_actor" "uuid") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."ride_request_ride_leg"("p_ride_id" "uuid", "p_request_id" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."ride_request_ride_leg"("p_ride_id" "uuid", "p_request_id" "uuid") TO "service_role";
+GRANT ALL ON FUNCTION "public"."ride_request_ride_leg"("p_ride_id" "uuid", "p_request_id" "uuid") TO "authenticated";
 
 
 

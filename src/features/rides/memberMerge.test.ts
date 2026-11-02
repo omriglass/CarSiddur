@@ -41,6 +41,11 @@ describe("member merge questions (REQ §13.175 d)", () => {
     expect(memberMergeWaitChoice(preview)).toEqual({ side: "return", eta: preview.joinerReturnAt, wanted: preview.wantedReturnAt, startsAt: null, endsAt: preview.waitEndsAt });
     expect(memberMergeWaitChoice({ ...preview, waitKeepsTime: false })).toBeNull();
   });
+  it("waits on the way back for a pickup from the ride's destination (REQ §13.179 c)", () => {
+    const reversed = { ...preview, leg: "out" as const, joinerReturnAt: null, wantedReturnAt: null,
+      joinerDepartAt: "2026-11-10T11:10:00Z", wantedDepartAt: "2026-11-10T12:45:00Z", waitEndsAt: "2026-11-10T13:00:00Z" };
+    expect(memberMergeWaitChoice(reversed)).toEqual({ side: "return", eta: reversed.joinerDepartAt, wanted: reversed.wantedDepartAt, startsAt: null, endsAt: reversed.waitEndsAt });
+  });
   it("names whoever the change touches when it is not direct", () => {
     expect(memberMergeAgreeNames(preview, true)).toEqual([]);
     expect(memberMergeAgreeNames(preview, false)).toEqual(["אלי"]);

@@ -430,6 +430,7 @@ declare
     -- request_served_by_public_ride/is_request_companion above.
     'request_stop_etas:read-helper',
     'request_stops_with_eta:read-helper',
+    'ride_request_ride_leg:read-helper',
     -- REQ §13.94: per-ride route JSON read inside `v_board_rides` (security_invoker view; rows already
     -- filtered by rides_select, the function re-checks visibility and returns [] otherwise).
     'ride_route_json:read-helper',

@@ -116,6 +116,9 @@ export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = 
   // `servedOf()` already maps `v_board_rides.served[].child_names` onto each entry's
   // `childNames` (`applySolve.ts`) — no more hand-rolled mapping needed here.
   const served: ServedEntry[] = ride ? servedOf(ride) : [];
+  // REQ §13.179 (a): whose trips this shared ride carries, the driver's first.
+  const mergedNames = [...new Set([...served].sort((a, b) => Number(b.role === "driver") - Number(a.role === "driver"))
+    .flatMap((entry) => entry.request_id && entry.requester ? [entry.requester] : []))];
   // Directly `add_ride_passengers()`-added names (`people`, `source: 'added'`) — not tied to
   // any served request, so `ridePublicDetails` takes them as a trailing line of their own.
   const addedNames: string[] = ride ? peopleOf(ride).filter((person) => person.source === "added").map((person) => person.display_name) : [];
@@ -196,6 +199,8 @@ export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = 
                   {car.type === "temporary" ? ` · ${he.car.type.temporary}` : ""}
                 </p>
               ) : null}
+
+              {mergedNames.length > 1 ? <p className="text-muted-foreground" data-testid="ride-merged-of">{tv("rideDetail.mergedOf", { names: mergedNames.join(", ") })}</p> : null}
 
               <RidePassengersList
                 rideId={ride.id}
