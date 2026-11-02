@@ -134,7 +134,7 @@ function minutesSinceMidnight(instant: string): number {
  */
 export function SiddurPage() {
   const params = useParams<{ dept?: string; week?: string }>();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const requestLinkProps = useRequestLinkProps();
 
@@ -268,13 +268,23 @@ export function SiddurPage() {
     }
   }
 
-  // `?day=<yyyy-MM-dd>` (a just-saved request's day, `overlayTargetPath`): open that day once; the member's own
-  // day picks after it win.
+  // `?day=<yyyy-MM-dd>` (a just-saved request's day, `overlayTargetPath`, or the day picked here): open that day once;
+  // the member's own day picks after it win.
   const focusDay = searchParams.get("day");
   const [handledDayFocus, setHandledDayFocus] = useState<string | null>(null);
   if (focusDay && !focusGroupId && handledDayFocus !== focusDay) {
     setHandledDayFocus(focusDay);
     setSelectedDay(focusDay);
+  }
+
+  // A picked day goes into the URL (replace), so the request form opened from here remembers it as the page
+  // underneath and closing it returns to this day (owner 2026-11-02).
+  function selectDay(day: string) {
+    setSelectedDay(day);
+    setHandledDayFocus(day);
+    const params = new URLSearchParams(searchParams);
+    params.set("day", day);
+    setSearchParams(params, { replace: true });
   }
 
   const dayGroups = weekStart ? groupByDay(rides, weekStart, (r) => r.starts_at ?? "") : [];
@@ -604,7 +614,7 @@ export function SiddurPage() {
             />
           </div>
           <div className={tableView ? "hidden" : "lg:hidden"}>
-            <WeekStrip weekStart={weekStart as string} counts={dayCounts} selected={activeDay ?? ""} onSelect={setSelectedDay} />
+            <WeekStrip weekStart={weekStart as string} counts={dayCounts} selected={activeDay ?? ""} onSelect={selectDay} />
             {/* Owner 2026-10-26: an unpublished day is stamped all over, not a banner one can scroll past. */}
             <div className={cn("relative mt-3 space-y-2", stampUnpublished && "min-h-[60vh]")}>
               {stampUnpublished ? <DraftWatermark /> : null}
@@ -705,7 +715,7 @@ export function SiddurPage() {
           </div>
 
           <div className={tableView ? "min-w-0" : "hidden lg:block"}>
-            <WeekStrip weekStart={weekStart as string} counts={dayCounts} selected={activeDay ?? ""} onSelect={setSelectedDay} />
+            <WeekStrip weekStart={weekStart as string} counts={dayCounts} selected={activeDay ?? ""} onSelect={selectDay} />
             <RideTypeLegend
               types={(rideTypesQuery.data ?? []).map((rt) => ({ code: rt.code, nameHe: rt.name_he }))}
             />

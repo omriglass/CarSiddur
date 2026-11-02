@@ -126,15 +126,26 @@ test.describe("request sentence overlay", { tag: ["@request-form"] }, () => {
     });
   }
 
-  test("the siddur opens on ?day= (where a saved request returns to)", async ({ page }) => {
+  test("the siddur keeps its day: ?day= opens it, the form closes back to it", async ({ page }) => {
     const liveWeek = await getWeekStart("live");
-    // Any day of the week but today (the siddur's default day).
-    const index = [4, 5].find((offset) => dayOfWeek(liveWeek, offset) !== todayInJerusalem()) as number;
+    // Days of the week other than today (the siddur's default day).
+    const [index, other] = [4, 5, 6].filter((offset) => dayOfWeek(liveWeek, offset) !== todayInJerusalem()) as [number, number];
     const day = dayOfWeek(liveWeek, index);
+    await page.setViewportSize(VIEWPORTS[0].size);
     await signIn(page, SEEDED_USERS.member2);
     await page.goto(paths.siddur({ dept: NEVO_DEPARTMENT_ID, week: liveWeek, day }));
     const strip = page.getByRole("radiogroup", { name: he.field.day }).first();
     await expect(strip.getByRole("radio").nth(index)).toHaveAttribute("aria-checked", "true");
+
+    // Owner 2026-11-02: a picked day survives opening and closing the request form.
+    await strip.getByRole("radio").nth(other).click();
+    await expect(page).toHaveURL(new RegExp(`day=${dayOfWeek(liveWeek, other)}`));
+    await page.getByRole("button", { name: tv("siddur.waitlistForDay", { day: he.days.short[other] ?? "" }), exact: true }).click();
+    await expect(page.getByTestId("request-overlay")).toBeVisible();
+    await dismissGuide(page);
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("request-overlay")).toHaveCount(0);
+    await expect(strip.getByRole("radio").nth(other)).toHaveAttribute("aria-checked", "true");
   });
 
   test("?day= preselects the day of the sentence", async ({ page }) => {
