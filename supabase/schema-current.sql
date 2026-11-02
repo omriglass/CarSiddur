@@ -22752,7 +22752,8 @@ CREATE OR REPLACE FUNCTION "public"."week_board_rides_rows"("p_department_id" "u
                                         'ride_passenger_id', pe.ride_passenger_id, 'person_id', pe.person_id,
                                         'child_id', pe.child_id, 'display_name', pe.display_name,
                                         'seat_kind', pe.seat_kind, 'added_by', pe.added_by,
-                                        'removable', pe.removable)
+                                        'removable', pe.removable,
+                                        'leg', (select x.leg from vrp x where x.id = pe.ride_passenger_id))
                      order by pe.is_driver desc, pe.display_name, pe.key) as people
       from vpeo pe
      where p_ride_ids is null or pe.ride_id = any(p_ride_ids)
@@ -26338,7 +26339,9 @@ CREATE OR REPLACE VIEW "public"."v_board_rides" WITH ("security_invoker"='true')
                                     "existing_1_1_1"."series_index",
                                     "existing_1_1_1"."series_count",
                                     "existing_1_1_1"."passengers",
-                                    COALESCE(( SELECT "jsonb_agg"("jsonb_build_object"('key', "pe"."key", 'source', "pe"."source", 'request_id', "pe"."request_id", 'ride_passenger_id', "pe"."ride_passenger_id", 'person_id', "pe"."person_id", 'child_id', "pe"."child_id", 'display_name', "pe"."display_name", 'seat_kind', "pe"."seat_kind", 'added_by', "pe"."added_by", 'removable', "pe"."removable") ORDER BY "pe"."is_driver" DESC, "pe"."display_name", "pe"."key") AS "jsonb_agg"
+                                    COALESCE(( SELECT "jsonb_agg"("jsonb_build_object"('key', "pe"."key", 'source', "pe"."source", 'request_id', "pe"."request_id", 'ride_passenger_id', "pe"."ride_passenger_id", 'person_id', "pe"."person_id", 'child_id', "pe"."child_id", 'display_name', "pe"."display_name", 'seat_kind', "pe"."seat_kind", 'added_by', "pe"."added_by", 'removable', "pe"."removable", 'leg', ( SELECT "rp_leg"."leg"
+     FROM "public"."ride_passengers" "rp_leg"
+    WHERE ("rp_leg"."id" = "pe"."ride_passenger_id"))) ORDER BY "pe"."is_driver" DESC, "pe"."display_name", "pe"."key") AS "jsonb_agg"
    FROM ( SELECT ('driver:'::"text" || "existing_1_1_1"."driver_id") AS "key",
       'driver'::"text" AS "source",
       ( SELECT "q0"."id"

@@ -209,6 +209,8 @@ export const he = {
     unnamedChild: "ילד/ה 1",
     unnamedChildren: "{{count}} ילדים/ות",
     joinPassengers: "{{names}} ו{{last}}",
+    /** REQ §13.178: a one-way rider on a ride that carries both directions ("נגה (הלוך)"). */
+    legMark: "{{name}} ({{leg}})",
     label: "מידע נוסף לכולם",
     help: "המידע יוצג לכל מי שצופה בנסיעה. אפשר לעדכן אותו כבעלי הנסיעה או כסדרן/ית.",
     saved: "המידע לנסיעה עודכן",
@@ -533,6 +535,9 @@ export const he = {
   },
   auth: {
     devSectionTitle: "כניסת פיתוח (dev בלבד)",
+    /** One-click sign-in as each seeded demo user (dev builds only). */
+    devSignInAs: "כניסה בתור {{name}}",
+    devUsers: { admin: "אדמין", sadran: "סדרן", member1: "חבר ראשון", member2: "חברה שנייה" },
     devHint:
       "משתמשי דמו: admin@nevo.local · sadran@nevo.local · member1@nevo.local · member2@nevo.local — סיסמה לכולם: nevo-demo-1234",
   },

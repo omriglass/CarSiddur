@@ -201,6 +201,7 @@ export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = 
                 rideId={ride.id}
                 expectedVersion={ride.version}
                 people={peopleOf(ride)}
+                served={served}
                 canManagePeople={showAddPassengers && !summary}
                 rideCancelled={ride.status === "cancelled"}
                 departmentId={ride.department_id}

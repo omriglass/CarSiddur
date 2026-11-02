@@ -72,6 +72,14 @@ test.describe("auth", { tag: ["@auth"] }, () => {
     await expect(bottomNav.getByText("פרופיל")).toBeVisible();
   });
 
+  test("a dev build signs in a seeded user with one click", async ({ page }) => {
+    await page.goto("/login");
+    await page.getByTestId("dev-sign-in-sadran").click();
+    await expect(page).toHaveURL(/\/siddur(\/|$)/);
+    await page.goto("/profile");
+    await expect(page.locator('input[value="sadran@nevo.local"]')).toBeVisible();
+  });
+
   test("an unapproved account is sent to the pending page", async ({ page }) => {
     await ensurePendingUserExists();
 

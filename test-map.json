@@ -765,6 +765,7 @@
       "title": "Ride passengers (one list per ride)",
       "paths": [
         "src/lib/ridePassengerSummary.ts",
+        "src/lib/rideLegMark.ts",
         "src/lib/ridePassengerSummary.test.ts",
         "src/lib/ridePublicDetails.ts",
         "src/lib/ridePublicDetails.test.ts",

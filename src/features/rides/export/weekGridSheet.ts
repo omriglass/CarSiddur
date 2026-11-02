@@ -9,7 +9,7 @@ import { TZ, dateKey, formatTime } from "@/lib/time";
 import type { ExcelCell, ExcelSheet } from "@/lib/xlsx";
 
 import type { BoardRide } from "../api";
-import { peopleOf } from "../ridePeople";
+import { addedPeopleNames } from "../ridePeople";
 import { ridePassengerParts } from "@/lib/ridePassengerSummary";
 import { whoText } from "@/features/requests/whoLabel";
 import { relayPartnerOf, representativeRideTypeCode, rideViaNames, servedOf } from "../servedOf";
@@ -73,7 +73,7 @@ export function rideBlockLines(ride: BoardRide, homeDestinationId: string | null
   const baseRequestId = (served.find((e) => e.role === "driver") ?? served[0])?.request_id ?? null;
   const merged = parseRideRoute(ride.route).some((p) => (p.kind === "board" || p.kind === "alight") && p.requestId !== baseRequestId);
   const first = [base, via, merged ? he.mergedRide.marker : ""].filter(Boolean).join(" · ");
-  const addedNames = peopleOf(ride).filter((p) => p.source === "added").map((p) => p.display_name);
+  const addedNames = addedPeopleNames(ride, served);
   const lines = [
     first,
     `\u202A${tv("excelExport.timeRange", { start: formatTime(new Date(ride.starts_at as string)), end: formatTime(new Date(ride.ends_at as string)) })}\u202C`,

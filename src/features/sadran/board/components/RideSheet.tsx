@@ -30,7 +30,7 @@ import { rideBlockLabel } from "../rideLabel";
 import { requestRouteLine } from "../requestRoute";
 import { isReservation } from "@/features/rides/servedOf";
 import { namedPassengersOf, relayPartnerOf, servedOf, withChildNames } from "../../solverRun";
-import { peopleOf } from "@/features/rides/ridePeople";
+import { addedPeopleNames, peopleOf } from "@/features/rides/ridePeople";
 import { RidePassengersEditor } from "./RidePassengersEditor";
 import { RideRouteEditor } from "./RideRouteEditor";
 import { PlanSwitchButton } from "./PlanSwitchButton";
@@ -154,7 +154,7 @@ export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenCha
   const baseRequest = baseEntry?.request_id ? requests.find((request) => request.id === baseEntry.request_id) : undefined;
   // Directly `add_ride_passengers()`-added names (`people`, `source: 'added'`) — not tied to
   // any served request, so the summary/details lines take them as an extra list of their own.
-  const addedNames = ride ? peopleOf(ride).filter((person) => person.source === "added").map((person) => person.display_name) : [];
+  const addedNames = ride ? addedPeopleNames(ride, servedEntries) : [];
 
   return (
     <Sheet open={!!ride} onOpenChange={onOpenChange}>
@@ -347,6 +347,7 @@ export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenCha
                 rideId={ride.id}
                 expectedVersion={ride.version}
                 people={peopleOf(ride)}
+                served={servedEntries}
                 canManagePeople={!isPlanning}
                 rideCancelled={ride.status === "cancelled"}
                 departmentId={departmentId}

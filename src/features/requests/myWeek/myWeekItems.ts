@@ -6,7 +6,7 @@ import type { BoardRide } from "@/features/siddur/api";
 import { isRideOfMine, type RelatedRideLabel } from "@/features/rides/myRides";
 import { representativeRideTypeCode, rideViaNames, servedOf } from "@/features/rides/servedOf";
 import { tv } from "@/i18n/he";
-import { peopleOf } from "@/features/rides/ridePeople";
+import { addedPeopleNames } from "@/features/rides/ridePeople";
 import { ridePublicDetails } from "@/lib/ridePublicDetails";
 import { rideBlockLabel } from "@/lib/rideLabel";
 import { viaLabel } from "@/lib/routeLabel";
@@ -127,7 +127,7 @@ export function rideBlocks(
       : [];
     const description = [...new Set(myDetails), served.length ? ride.notes : null, ridePublicDetails(served, {
       includeCompanions: true,
-      addedNames: peopleOf(ride).filter((person) => person.source === "added").map((person) => person.display_name),
+      addedNames: addedPeopleNames(ride, served),
     })].filter(Boolean).join("\n") || undefined;
     segments.forEach((segment, index) => {
       out.push({

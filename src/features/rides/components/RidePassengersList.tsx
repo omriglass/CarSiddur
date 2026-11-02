@@ -4,13 +4,16 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { he, tv } from "@/i18n/he";
 
-import { canRemoveRidePerson, type RidePerson } from "../ridePeople";
+import { canRemoveRidePerson, legMarkedName, type RidePerson } from "../ridePeople";
+import type { ServedEntry } from "../servedOf";
 import { useRemoveRidePassengerMutation } from "../hooks";
 
 interface RidePassengersListProps {
   rideId: string | null;
   expectedVersion: number | null;
   people: readonly RidePerson[];
+  /** The ride's served requests (`servedOf(ride)`) — a one-way rider reads "נגה (הלוך)" (REQ §13.178). */
+  served: readonly ServedEntry[];
   /** Same authorization gate `add_ride_passengers()`/`remove_ride_person()` use — any department
    * member once the ride's week is public, or a Sadran/admin who manages it. Callers already
    * compute this to decide whether to show the "+ נוסעים" button (`showAddPassengers`), so it is
@@ -30,7 +33,7 @@ interface RidePassengersListProps {
  * `v_board_rides.people` (`../ridePeople.ts`). Replaces the previous `source: 'added'`-only
  * list this component used to render.
  */
-export function RidePassengersList({ rideId, expectedVersion, people, canManagePeople = false, rideCancelled = false, departmentId, weekStart }: RidePassengersListProps) {
+export function RidePassengersList({ rideId, expectedVersion, people, served, canManagePeople = false, rideCancelled = false, departmentId, weekStart }: RidePassengersListProps) {
   const mutation = useRemoveRidePassengerMutation();
   if (!people.length) return null;
 
@@ -44,7 +47,7 @@ export function RidePassengersList({ rideId, expectedVersion, people, canManageP
           return (
             <li key={person.key} className="flex items-center justify-between gap-2">
               <span>
-                {person.display_name}
+                {legMarkedName(person, served)}
                 {person.source === "driver" ? ` · ${he.ride.driver}` : ""}
               </span>
               {removable ? (

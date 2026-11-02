@@ -83,7 +83,7 @@ import type { Week, BoardRide } from "@/features/siddur/api";
 import { representativeRideTypeCode, rideViaNames, servedOf } from "@/features/rides/servedOf";
 import { viaLabel } from "@/lib/routeLabel";
 import { isRideDayEditable } from "@/features/rides/rideDayEditable";
-import { myRidePersonKey, peopleOf } from "@/features/rides/ridePeople";
+import { addedPeopleNames, myRidePersonKey } from "@/features/rides/ridePeople";
 import { rideBlockLabel, resolveRideRealDestination } from "@/lib/rideLabel";
 import { he, t, tv } from "@/i18n/he";
 import { fromZonedTime } from "date-fns-tz";
@@ -117,7 +117,7 @@ function resolveSiddurWeek(weeks: readonly Week[]): Week | null {
  * any one served request, so `ridePassengerSummary`/`ridePublicDetails` take them as a
  * separate list rather than folding them into a particular requester's companions. */
 function addedNamesOf(ride: BoardRide): string[] {
-  return peopleOf(ride).filter((person) => person.source === "added").map((person) => person.display_name);
+  return addedPeopleNames(ride, servedOf(ride));
 }
 
 function minutesSinceMidnight(instant: string): number {

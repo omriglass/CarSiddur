@@ -15,6 +15,8 @@
 
 import { z } from "zod";
 
+import { rideCarriesBothLegs, withLegMark, type RideLeg } from "@/lib/rideLegMark";
+
 import type { BoardRide } from "./api";
 
 export const ridePersonSourceSchema = z.enum(["driver", "requester", "companion", "child", "guest", "added"]);
@@ -36,6 +38,8 @@ export const ridePersonSchema = z.object({
   added_by: z.string().nullable(),
   /** `false` only for the `driver` entry — the RPCs still re-check authorization/role regardless. */
   removable: z.boolean(),
+  /** A "+ נוסעים" row's own `ride_passengers.leg`; null on every other row (its leg is its request's `served[].leg`). */
+  leg: z.enum(["out", "return", "both"]).nullish(),
 });
 
 export type RidePerson = z.infer<typeof ridePersonSchema>;
@@ -68,6 +72,20 @@ export function peopleNames(people: readonly RidePerson[], options: { excludeDri
     .filter((person) => !(options.excludeDriver && person.source === "driver"))
     .map((person) => person.display_name.trim())
     .filter((name) => name.length > 0);
+}
+
+/**
+ * REQ §13.178: the person's name, with "(הלוך)"/"(חזור)" when they ride one way only on a ride that carries
+ * both directions. Request rows take their request's leg from `served`; "+ נוסעים" rows carry their own.
+ */
+export function legMarkedName(person: RidePerson, served: readonly { request_id: string | null; leg: RideLeg }[]): string {
+  const leg = person.request_id ? served.find((entry) => entry.request_id === person.request_id)?.leg : person.leg;
+  return withLegMark(person.display_name.trim(), leg, rideCarriesBothLegs(served.map((entry) => entry.leg)));
+}
+
+/** "+ נוסעים" names (`source: 'added'`), leg-marked — the `addedNames` option of the passenger summaries. */
+export function addedPeopleNames(ride: Pick<BoardRide, "people" | "served">, served: readonly { request_id: string | null; leg: RideLeg }[]): string[] {
+  return peopleOf(ride).filter((person) => person.source === "added").map((person) => legMarkedName(person, served));
 }
 
 export interface SeatLoad {

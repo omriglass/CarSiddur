@@ -5,7 +5,7 @@ import { ridePublicDetails } from "@/lib/ridePublicDetails";
 import { tv } from "@/i18n/he";
 import { carHandoverNotes, type CarNeighbours } from "@/features/rides/carHandover";
 import { servedOf } from "@/features/rides/servedOf";
-import { peopleOf } from "@/features/rides/ridePeople";
+import { addedPeopleNames } from "@/features/rides/ridePeople";
 import type { BoardRide } from "./api";
 
 export function myRideCard(
@@ -54,7 +54,7 @@ export function myRideCard(
     purpose: ownRequest?.rideTypeName || purposes.join(" / ") || rideTypes.find((type) => type.code === "other")?.name_he,
     joining,
     description: [ride.notes, ridePublicDetails(served, {
-      addedNames: peopleOf(ride).filter((person) => person.source === "added").map((person) => person.display_name),
+      addedNames: addedPeopleNames(ride, served),
     })].filter(Boolean).join("\n"),
     driverName: ride.driver_name, carName: ride.car_name, carId: ride.car_id, carType: ride.car_type ?? undefined,
     isChauffeur: chauffeur, needsDriver: !!ride.needs_driver, isMine: !handover?.relatedLabel,

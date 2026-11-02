@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { canRemoveRidePerson, freeSeats, peopleNames, peopleOf, peopleSeatLoad, type RidePerson } from "./ridePeople";
+import { canRemoveRidePerson, freeSeats, legMarkedName, peopleNames, peopleOf, peopleSeatLoad, type RidePerson } from "./ridePeople";
 
 function person(overrides: Partial<RidePerson> & Pick<RidePerson, "key" | "source" | "display_name">): RidePerson {
   return {
@@ -96,5 +96,20 @@ describe("peopleOf dedupe (R2B15)", () => {
   it("keeps one row per key", () => {
     const row = { key: "driver:1", source: "driver", request_id: null, ride_passenger_id: null, person_id: "p", child_id: null, display_name: "A", seat_kind: "adult", added_by: null, removable: false };
     expect(peopleOf({ people: [row, { ...row }] } as never)).toHaveLength(1);
+  });
+});
+
+describe("legMarkedName (REQ §13.178)", () => {
+  const twoWay = [{ request_id: "r0", leg: "both" as const }, { request_id: "r1", leg: "out" as const }];
+
+  it("marks a request row by its request's leg and an added row by its own", () => {
+    expect(legMarkedName(requester, twoWay)).toBe("דנה (הלוך)");
+    expect(legMarkedName(child, twoWay)).toBe("ילד קטן (הלוך)");
+    expect(legMarkedName({ ...added, leg: "return" }, twoWay)).toBe("אורח (חזור)");
+    expect(legMarkedName({ ...added, leg: "both" }, twoWay)).toBe("אורח");
+  });
+
+  it("marks nobody on a ride of one leg", () => {
+    expect(legMarkedName(requester, [{ request_id: "r1", leg: "out" }])).toBe("דנה");
   });
 });

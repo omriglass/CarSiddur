@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { useSession } from "@/features/auth/useSession";
-import { he, t } from "@/i18n/he";
+import { he, t, tv } from "@/i18n/he";
 import { env } from "@/lib/env";
 import { showErrorToast } from "@/lib/rpc";
 import { supabase } from "@/integrations/supabase/client";
@@ -22,13 +22,17 @@ const devLoginSchema = z.object({
 
 type DevLoginInput = z.infer<typeof devLoginSchema>;
 
+/** The seeded demo users (`supabase/seed.sql`), one sign-in button each. */
+const DEV_USERS = ["admin", "sadran", "member1", "member2"] as const;
+const DEV_PASSWORD = "nevo-demo-1234";
+
 /**
  * `/login` (UX_FLOWS.md §3.1 names it `/signin`; the scaffolded router uses
  * `/login` — kept as-is, both are the same screen). Google sign-in is the
  * only production path; the email/password form below only renders under
  * `import.meta.env.DEV` so the seeded demo users
  * (supabase/seed.sql: admin@nevo.local, sadran@nevo.local, member1@nevo.local,
- * member2@nevo.local — password nevo-demo-1234) can sign in locally and in
+ * member2@nevo.local — password nevo-demo-1234; one button each, or the form) can sign in locally and in
  * Playwright without a real Google OAuth round trip.
  */
 export function LoginPage() {
@@ -91,6 +95,20 @@ export function LoginPage() {
       {import.meta.env.DEV ? (
         <div className="w-full max-w-sm space-y-4 rounded-xl border border-dashed bg-muted/60 p-4">
           <p className="text-sm font-medium text-muted-foreground">{t("auth.devSectionTitle")}</p>
+          <div className="grid grid-cols-2 gap-2">
+            {DEV_USERS.map((user) => (
+              <Button
+                key={user}
+                type="button"
+                variant="outline"
+                className="bg-background"
+                data-testid={`dev-sign-in-${user}`}
+                onClick={() => handleDevLogin({ email: `${user}@nevo.local`, password: DEV_PASSWORD })}
+              >
+                {tv("auth.devSignInAs", { name: he.auth.devUsers[user] })}
+              </Button>
+            ))}
+          </div>
           <Form {...form}>
             <form className="space-y-3" onSubmit={form.handleSubmit(handleDevLogin)}>
               <FormField

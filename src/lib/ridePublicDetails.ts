@@ -1,5 +1,7 @@
 import { tv } from "@/i18n/he";
 
+import { rideCarriesBothLegs, withLegMark, type RideLeg } from "./rideLegMark";
+
 export interface RidePublicEntry {
   requester?: string | null;
   ride_description?: string | null;
@@ -7,6 +9,8 @@ export interface RidePublicEntry {
   companions?: { profile_id: string; name: string }[];
   /** Named children traveling on the request (`request_children` → `children.full_name`), distinct from guessed "unnamed child" counts. */
   childNames?: string[];
+  /** `served[].leg`: a one-way rider's companions are marked (REQ §13.178). */
+  leg?: RideLeg;
 }
 
 /** Only explicitly public request fields belong on the shared siddur. */
@@ -20,12 +24,13 @@ export function ridePublicDetails(
     addedNames?: readonly string[];
   } = {},
 ): string {
+  const bothLegs = rideCarriesBothLegs(entries.map((entry) => entry.leg));
   const lines = entries.flatMap((entry) => {
     const names = [
       ...(entry.companions ?? []).map((person) => person.name),
       ...(entry.guest_passenger_names ?? []),
       ...(entry.childNames ?? []),
-    ].map((name) => name.trim()).filter(Boolean);
+    ].map((name) => name.trim()).filter(Boolean).map((name) => withLegMark(name, entry.leg, bothLegs));
     const lines = [entry.ride_description?.trim(), names.length && options.includeCompanions !== false ? tv("ridePublicDetails.companions", { names: names.join(", ") }) : ""].filter(Boolean);
     if (lines.length && entries.length > 1 && entry.requester) lines.unshift(`${entry.requester}:`);
     return lines;
