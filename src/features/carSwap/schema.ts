@@ -34,7 +34,7 @@ export const carSwapSeriesSchema = z.object({
 export type CarSwapSeries = z.infer<typeof carSwapSeriesSchema>;
 
 /** A4: refused on `seats`/`maintenance`/`private_car`/`not_allowed`; `past` covers a day already archived-by-time. */
-export const CAR_SWAP_BLOCKER_CODES = ["seats", "maintenance", "private_car", "not_allowed", "past", "luggage", "series_other_day_busy"] as const;
+export const CAR_SWAP_BLOCKER_CODES = ["seats", "maintenance", "private_car", "not_allowed", "past", "luggage", "series_other_day_busy", "overlap"] as const;
 export type CarSwapBlockerCode = (typeof CAR_SWAP_BLOCKER_CODES)[number];
 export const carSwapBlockerSchema = z.object({
   code: z.enum(CAR_SWAP_BLOCKER_CODES),
@@ -47,7 +47,7 @@ export const carSwapBlockerSchema = z.object({
   request_ids: z.array(z.string()).optional(),
   /** `series_other_day_busy` (REQ §13.92, 2026-10-16): refuses only the "whole" series mode; the "day" mode stays available. */
   whole_only: z.boolean().optional(),
-  /** `series_other_day_busy`: the conflicting ride of the target car (`day` = yyyy-MM-dd). */
+  /** `series_other_day_busy`: the conflicting ride of the target car (`day` = yyyy-MM-dd); `overlap` (REQ §13.180): the ride staying there. */
   day: z.string().optional(),
   starts_at: z.string().optional(),
   ends_at: z.string().optional(),
@@ -66,6 +66,8 @@ export type CarSwapNotice = z.infer<typeof carSwapNoticeSchema>;
 export const carSwapPreviewSchema = z.object({
   fingerprint: z.string(),
   rides: z.array(carSwapRideSchema),
+  /** REQ §13.180: rides after the cutoff that stay on their car — the other car has too few seats (asked before the swap). */
+  staying: z.array(carSwapRideSchema).optional(),
   series: z.array(carSwapSeriesSchema),
   blockers: z.array(carSwapBlockerSchema),
   notices: z.array(carSwapNoticeSchema),

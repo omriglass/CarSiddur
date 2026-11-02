@@ -1,4 +1,5 @@
 import { formatDayDate } from "@/lib/dayLabels";
+import { formatTime } from "@/lib/time";
 
 import type { CarSwapPreview, CarSwapRide, CarSwapSeries } from "./schema";
 
@@ -39,4 +40,13 @@ export function carSwapSeriesRangeLabel(series: readonly CarSwapSeries[]): strin
 /** The confirm button is disabled whenever there is no preview yet, or the preview itself says the swap can't go through. */
 export function carSwapConfirmDisabled(preview: CarSwapPreview | undefined, seriesMode: "whole" | "day" = "day"): boolean {
   return !preview || !preview.can_swap || (seriesMode === "whole" && preview.whole_blocked === true);
+}
+
+/**
+ * REQ §13.180: the hours a swap may start from — each later ride's own start time on the two cars that day (`HH:mm`,
+ * sorted, once each). Swapping from the first ride's start is the whole day, so it is not offered.
+ */
+export function carSwapFromOptions(rides: readonly CarSwapRide[]): string[] {
+  const times = [...new Set(rides.map((ride) => formatTime(new Date(ride.starts_at))))].sort();
+  return times.slice(1);
 }

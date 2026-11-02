@@ -3,8 +3,9 @@ import { toast } from "sonner";
 
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { carSwapBlockerMessage } from "@/features/carSwap/blockerMessages";
-import { carSwapConfirmDisabled, carSwapSeriesRangeLabel, groupCarSwapRidesByCar } from "@/features/carSwap/dialogView";
+import { carSwapConfirmDisabled, carSwapFromOptions, carSwapSeriesRangeLabel, groupCarSwapRidesByCar } from "@/features/carSwap/dialogView";
 import { useCarSwapMutation, useCarSwapPreviewQuery } from "@/features/carSwap/hooks";
 import { he, tv } from "@/i18n/he";
 import { formatDayDate } from "@/lib/dayLabels";
@@ -37,6 +38,8 @@ interface CarSwapDialogProps {
  */
 export function CarSwapDialog({ open, onOpenChange, departmentId, weekStart, day, carA, carB }: CarSwapDialogProps) {
   const [seriesMode, setSeriesMode] = useState<CarSwapSeriesMode>("whole");
+  // REQ §13.180: swap only the rides starting at or after this hour (`HH:mm`); null = the whole day.
+  const [from, setFrom] = useState<string | null>(null);
   // Resets the one-off UI choice for a fresh open/pair — the React-sanctioned "adjust state
   // during render" pattern (react.dev "You Might Not Need an Effect"), not a `useEffect`, so
   // there is no extra render between the pair changing and the radio resetting.
@@ -45,13 +48,19 @@ export function CarSwapDialog({ open, onOpenChange, departmentId, weekStart, day
   if (open && openKey !== resetKey) {
     setResetKey(openKey);
     setSeriesMode("whole");
+    setFrom(null);
   }
 
   const previewArgs: CarSwapArgs | null = open ? { departmentId, weekStart, day, carA: carA.id, carB: carB.id } : null;
-  const previewQuery = useCarSwapPreviewQuery(previewArgs);
+  // The whole day's preview always runs: its rides give the hours to swap from.
+  const dayPreviewQuery = useCarSwapPreviewQuery(previewArgs);
+  const fromPreviewQuery = useCarSwapPreviewQuery(previewArgs && from ? { ...previewArgs, from } : null);
+  const previewQuery = from ? fromPreviewQuery : dayPreviewQuery;
   const mutation = useCarSwapMutation();
+  const fromOptions = carSwapFromOptions(dayPreviewQuery.data?.rides ?? []);
 
   const preview = previewQuery.data;
+  const staying = preview?.staying ?? [];
   // A series leg colliding with the target car on another day (REQ §13.92, 2026-10-16) leaves only "day".
   const effectiveMode: CarSwapSeriesMode = preview?.whole_blocked ? "day" : seriesMode;
   const carNameById: Record<string, string> = { [carA.id]: carA.name, [carB.id]: carB.name };
@@ -64,6 +73,8 @@ export function CarSwapDialog({ open, onOpenChange, departmentId, weekStart, day
         departmentId, weekStart, day, carA: carA.id, carB: carB.id,
         expectedFingerprint: preview.fingerprint,
         seriesMode: effectiveMode,
+        from,
+        skipSeats: staying.length > 0,
       });
       toast.success(he.carSwap.successToast);
       if (result.notified > 0) toast(tv("carSwap.notifiedToast", { count: String(result.notified) }));
@@ -91,6 +102,20 @@ export function CarSwapDialog({ open, onOpenChange, departmentId, weekStart, day
       onConfirm={() => void handleConfirm()}
     >
       <div className="max-h-[50dvh] space-y-3 overflow-y-auto text-sm">
+        {fromOptions.length > 0 ? (
+          <label className="flex items-center justify-between gap-2">
+            <span className="font-medium">{he.carSwap.fromLabel}</span>
+            <Select value={from ?? "day"} onValueChange={(value) => setFrom(value === "day" ? null : value)}>
+              <SelectTrigger className="w-32" data-testid="car-swap-from" aria-label={he.carSwap.fromLabel}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="day">{he.carSwap.fromWholeDay}</SelectItem>
+                {fromOptions.map((time) => <SelectItem key={time} value={time}>{tv("carSwap.fromTime", { time })}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </label>
+        ) : null}
         {previewQuery.isLoading ? <p className="text-muted-foreground">{he.common.loading}</p> : null}
         {previewQuery.isError ? <p className="text-destructive">{toAppError(previewQuery.error).message}</p> : null}
         {preview ? (
@@ -116,6 +141,21 @@ export function CarSwapDialog({ open, onOpenChange, departmentId, weekStart, day
                 </div>
               ) : null,
             )}
+
+            {staying.length > 0 ? (
+              <div className="space-y-1 rounded-md border border-amber-500/50 bg-amber-500/5 p-2" data-testid="car-swap-staying">
+                <p className="font-medium">{he.carSwap.stayingTitle}</p>
+                <ul className="space-y-1 text-xs">
+                  {staying.map((ride) => (
+                    <li key={ride.ride_id} className="flex items-center justify-between gap-2">
+                      <span dir="ltr">{formatTime(new Date(ride.starts_at))}–{formatTime(new Date(ride.ends_at))}</span>
+                      <span className="truncate">{ride.label ?? ride.driver_name ?? "—"}</span>
+                    </li>
+                  ))}
+                </ul>
+                <p className="text-xs text-muted-foreground">{he.carSwap.stayingConfirm}</p>
+              </div>
+            ) : null}
 
             {preview.series.length > 0 ? (
               <div className="space-y-2 rounded-md border p-2" data-testid="car-swap-series-choice">

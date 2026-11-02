@@ -40,6 +40,11 @@ export function carSwapBlockerMessage(
         day: blocker.day ? formatDayDate(blocker.day) : "",
         time: blocker.starts_at && blocker.ends_at ? `${formatTime(new Date(blocker.starts_at))}–${formatTime(new Date(blocker.ends_at))}` : "",
       });
+    case "overlap":
+      return tv("carSwap.blockerOverlap", {
+        ride: rideLabel, car: carName,
+        time: blocker.starts_at && blocker.ends_at ? `${formatTime(new Date(blocker.starts_at))}–${formatTime(new Date(blocker.ends_at))}` : "",
+      });
     case "private_car":
       return he.carSwap.blockerPrivateCar;
     case "past":

@@ -13,6 +13,8 @@ export interface CarSwapArgs {
   day: string;
   carA: string;
   carB: string;
+  /** REQ §13.180: `HH:mm` — only the rides starting at or after it change car; absent = the whole day. */
+  from?: string | null;
 }
 
 export async function previewDayCarSwap(args: CarSwapArgs): Promise<CarSwapPreview> {
@@ -22,6 +24,7 @@ export async function previewDayCarSwap(args: CarSwapArgs): Promise<CarSwapPrevi
     p_day: args.day,
     p_car_a: args.carA,
     p_car_b: args.carB,
+    ...(args.from ? { p_from: args.from } : {}),
   });
   return carSwapPreviewSchema.parse(data);
 }
@@ -29,6 +32,8 @@ export async function previewDayCarSwap(args: CarSwapArgs): Promise<CarSwapPrevi
 export interface SwapDayCarsArgs extends CarSwapArgs {
   expectedFingerprint: string;
   seriesMode: CarSwapSeriesMode;
+  /** REQ §13.180: the rides the other car has too few seats for stay on their car (the dialog asked). */
+  skipSeats?: boolean;
 }
 
 export async function swapDayCars(args: SwapDayCarsArgs): Promise<CarSwapResult> {
@@ -42,6 +47,7 @@ export async function swapDayCars(args: SwapDayCarsArgs): Promise<CarSwapResult>
     p_expected_fingerprint: args.expectedFingerprint,
     p_series_mode: args.seriesMode,
     p_allow_small_trunk: allowSmallTrunk,
+    ...(args.from ? { p_from: args.from, p_skip_seats: !!args.skipSeats } : {}),
   }));
   return carSwapResultSchema.parse(data);
 }

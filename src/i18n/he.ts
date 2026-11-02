@@ -161,6 +161,13 @@ export const he = {
     blockerMaintenance: "לרכב {{car}} מתוכנן טיפול בזמן הנסיעה {{ride}}",
     blockerSeriesOtherDayBusy: "{{car}} תפוס ביום {{day}} {{time}} — אפשר להחליף רק את היום הזה",
     blockerPrivateCar: "רכב פרטי — רק הבעלים יכול/ה להחליף",
+    blockerOverlap: "הנסיעה {{ride}} תתנגש בנסיעה שנשארת ב{{car}} ({{time}})",
+    /** REQ §13.180: swap only from an hour on. */
+    fromLabel: "מאיזו שעה להחליף?",
+    fromWholeDay: "כל היום",
+    fromTime: "מ־{{time}}",
+    stayingTitle: "יישארו ברכב שלהן (אין מספיק מקומות ברכב השני):",
+    stayingConfirm: "שאר הנסיעות יוחלפו",
     blockerPast: "הנסיעה {{ride}} כבר עברה",
     blockerNotAllowedRide: "לא ניתן להחליף את הנסיעה {{ride}}",
     blockerNotAllowedGeneric: "לא ניתן להחליף את הרכבים האלה ביום זה",

@@ -374,6 +374,8 @@
         "src/features/carSwap/**",
         "supabase/migrations/**/*car_swap*",
         "supabase/tests/day_car_swap.sql",
+        "supabase/tests/car_swap_from_hour.sql",
+        "supabase/migrations/**/*car_swap_from_hour*",
         "e2e/car-swap.spec.ts",
         "src/features/rides/invalidateWeek.ts",
         "src/features/rides/invalidateWeek.test.ts",
@@ -455,6 +457,7 @@
       "sql": [
         "selected_day_publication.sql",
         "day_car_swap.sql",
+        "car_swap_from_hour.sql",
         "car_handover_notes.sql",
         "unpublished_day_requests.sql",
         "ride_change_settles.sql",

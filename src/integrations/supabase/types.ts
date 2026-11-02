@@ -5479,6 +5479,10 @@ export type Database = {
         }
         Returns: Json
       }
+      _day_car_swap_overlap_blockers: {
+        Args: { p_car_a: string; p_car_b: string; p_ride_ids: string[] }
+        Returns: Json
+      }
       _day_car_swap_physical_blockers: {
         Args: { p_car_a: string; p_car_b: string; p_ride_ids: string[] }
         Returns: Json
@@ -5487,9 +5491,17 @@ export type Database = {
         Args: { p_actor: string; p_car_a: string; p_car_b: string }
         Returns: Json
       }
+      _day_car_swap_ride_ids_from: {
+        Args: { p_from: string; p_ride_ids: string[] }
+        Returns: string[]
+      }
       _day_car_swap_rides_json: {
         Args: { p_ride_ids: string[] }
         Returns: Json
+      }
+      _day_car_swap_seat_skips: {
+        Args: { p_car_a: string; p_car_b: string; p_ride_ids: string[] }
+        Returns: string[]
       }
       _day_car_swap_series_day_blockers: {
         Args: {
@@ -6715,6 +6727,7 @@ export type Database = {
           p_car_b: string
           p_day: string
           p_department_id: string
+          p_from?: string
           p_week_start: string
         }
         Returns: Json
@@ -7273,7 +7286,9 @@ export type Database = {
           p_day: string
           p_department_id: string
           p_expected_fingerprint: string
+          p_from?: string
           p_series_mode?: string
+          p_skip_seats?: boolean
           p_week_start: string
         }
         Returns: Json

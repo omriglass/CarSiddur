@@ -86,3 +86,13 @@ describe("carSwapBlockerMessage", () => {
     expect(message).not.toContain("SOME_MACHINE_CODE");
   });
 });
+
+describe("overlap blocker (REQ §13.180)", () => {
+  it("names the moving ride, the car and the time of the ride staying there", () => {
+    const message = carSwapBlockerMessage(
+      { code: "overlap", ride_id: "ride-1", car_id: "car-b", starts_at: "2026-09-24T09:30:00Z", ends_at: "2026-09-24T10:30:00Z" },
+      [ride()], { "car-b": "ואן" });
+    expect(message).toContain("ואן");
+    expect(message).toContain("12:30–13:30");
+  });
+});

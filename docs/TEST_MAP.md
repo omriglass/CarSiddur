@@ -192,7 +192,7 @@ Migrations `*draft_release_keeps_host_ride*`, `*cancelled_ride_closes_planning_s
 
 **Automated**:
 - Vitest: `npx vitest run src/features/siddur src/features/rides/driverWanted.test.ts src/features/rides/carHandover.test.ts src/features/requests/rowHandover.test.ts src/components/WeekGrid.test.ts src/components/WeekGrid.gestures.test.tsx src/components/weekGridCars.test.ts`
-- SQL: `selected_day_publication.sql`, `day_car_swap.sql`, `car_handover_notes.sql`, `my_upcoming_rides.sql` (the "my rides" read: same visibility as the old people filter), `week_board_rides.sql` (the week read of siddur/board: identical rows and content to `v_board_rides` for every role and every week in the database)
+- SQL: `selected_day_publication.sql`, `day_car_swap.sql`, `car_swap_from_hour.sql` (REQ §13.180: swap from an hour on), `car_handover_notes.sql`, `my_upcoming_rides.sql` (the "my rides" read: same visibility as the old people filter), `week_board_rides.sql` (the week read of siddur/board: identical rows and content to `v_board_rides` for every role and every week in the database)
 - Playwright: `npx playwright test --grep "@siddur"`
 
 **QA script**:

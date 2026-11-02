@@ -227,6 +227,50 @@ test.describe("car swap on the board (Sadran)", { tag: ["@board"] }, () => {
     }
   });
 
+  test("swapping from an hour moves only the rides starting at or after it (REQ §13.180)", async ({ page }) => {
+    const openWeekStart = await getWeekStart("open");
+    const day = openWeekStart;
+    const client = serviceRoleClient();
+    const carA = CAR.hyundai1;
+    const carB = CAR.hyundai2;
+    const at = (time: string) => fromZonedTime(`${day}T${time}:00`, TZ).toISOString();
+    // X takes A 19:00, Y takes B 19:00, Z takes A 20:00, W takes B 21:30 — after any seeded ride
+    const plan = [["x", carA, "19:00", "19:30"], ["y", carB, "19:00", "19:30"], ["z", carA, "20:00", "20:30"], ["w", carB, "21:30", "22:00"]] as const;
+    const ids = new Map<string, string>();
+    try {
+      for (const [key, car, start, end] of plan) {
+        const { data, error } = await client.from("rides").insert({
+          department_id: NEVO_DEPARTMENT_ID, week_start: openWeekStart, car_id: car, starts_at: at(start), ends_at: at(end),
+          origin_id: HOME_DESTINATION_ID, destination_id: HOME_DESTINATION_ID,
+          driver_id: PROFILE.member1, created_by: PROFILE.member1, status: "confirmed",
+        }).select("id").single();
+        if (error) throw error;
+        ids.set(key, data!.id as string);
+      }
+      await signIn(page, SEEDED_USERS.sadran);
+      await page.goto(paths.sadran.board(NEVO_DEPARTMENT_ID, openWeekStart));
+      const dayRadio = page.getByRole("radio").first();
+      await dayRadio.click();
+      await expect(dayRadio).toHaveAttribute("aria-checked", "true");
+
+      const names = await carNames(client, [carA, carB]);
+      await page.locator(`[data-car-header-id="${carA}"]`).getByTestId("week-grid-car-menu-trigger").click();
+      await page.getByRole("menuitem", { name: tv("carSwap.swapWithCar", { car: names.get(carB) ?? "" }), exact: true }).click();
+      const dialog = page.getByRole("dialog");
+      await dialog.getByTestId("car-swap-from").click();
+      await page.getByRole("option", { name: tv("carSwap.fromTime", { time: "21:30" }), exact: true }).click();
+      await expect(dialog.getByText(tv("carSwap.movedCount", { count: "1" }))).toBeVisible();
+      await dialog.getByRole("button", { name: he.common.confirm, exact: true }).click();
+      await expect(dialog).not.toBeVisible();
+
+      const { data: rows } = await client.from("rides").select("id,car_id").in("id", [...ids.values()]);
+      const carOf = (key: string) => rows?.find((r) => r.id === ids.get(key))?.car_id;
+      expect([carOf("x"), carOf("y"), carOf("z"), carOf("w")]).toEqual([carA, carB, carA, carA]);
+    } finally {
+      await client.from("rides").delete().in("id", [...ids.values()]);
+    }
+  });
+
   test("a ride whose adults exceed the target car's seat capacity blocks the swap", async ({ page }) => {
     const openWeekStart = await getWeekStart("open");
     const day = openWeekStart;

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { carSwapConfirmDisabled, carSwapSeriesRangeLabel, groupCarSwapRidesByCar } from "./dialogView";
+import { carSwapConfirmDisabled, carSwapFromOptions, carSwapSeriesRangeLabel, groupCarSwapRidesByCar } from "./dialogView";
 
 import type { CarSwapPreview, CarSwapRide, CarSwapSeries } from "./schema";
 
@@ -72,5 +72,17 @@ describe("carSwapConfirmDisabled", () => {
 
   it("is enabled once a preview allows the swap", () => {
     expect(carSwapConfirmDisabled(preview({ can_swap: true }))).toBe(false);
+  });
+});
+
+describe("carSwapFromOptions (REQ §13.180)", () => {
+  it("offers each later ride's start hour once, sorted; the first start is the whole day", () => {
+    // X, Y 08:00; Z 13:00; W 14:30 (Asia/Jerusalem, UTC+3 in September)
+    const rides = [
+      ride({ ride_id: "w", starts_at: "2026-09-24T11:30:00Z" }), ride({ ride_id: "x", starts_at: "2026-09-24T05:00:00Z" }),
+      ride({ ride_id: "y", car_id: "car-b", starts_at: "2026-09-24T05:00:00Z" }), ride({ ride_id: "z", starts_at: "2026-09-24T10:00:00Z" }),
+    ];
+    expect(carSwapFromOptions(rides)).toEqual(["13:00", "14:30"]);
+    expect(carSwapFromOptions([])).toEqual([]);
   });
 });

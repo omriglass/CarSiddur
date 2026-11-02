@@ -16,7 +16,7 @@ import { invalidateWeekData } from "@/features/rides/invalidateWeek";
 export function useCarSwapPreviewQuery(params: CarSwapArgs | null) {
   return useQuery({
     queryKey: params
-      ? carSwapKeys.preview(params.departmentId, params.weekStart, params.day, params.carA, params.carB)
+      ? carSwapKeys.preview(params.departmentId, params.weekStart, params.day, params.carA, params.carB, params.from ?? null)
       : carSwapKeys.all,
     queryFn: () => previewDayCarSwap(params as CarSwapArgs),
     enabled: !!params,
