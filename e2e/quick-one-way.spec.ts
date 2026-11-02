@@ -182,14 +182,22 @@ test("quick round-trip metadata persists when the member reopens and saves the r
     await openRideDetails(member.page, member.page.locator(`[data-ride-id="${ride!.id}"]:visible`));
     await expect(mainDialog(member.page)).toContainText(description);
     await expect(mainDialog(member.page)).toContainText(guestNames[0]!);
-    // Editing the owned live ride must retain its request's public metadata.
-    await mainDialog(member.page).getByLabel(he.field.return, { exact: true }).fill("12:15");
-    await mainDialog(member.page).getByRole("button", { name: he.common.save, exact: true }).click();
-    await expect(mainDialog(member.page)).not.toBeVisible();
+    // Editing the owned live ride must retain its request's public metadata. The sheet is an edit summary
+    // (REQ §13.171): its "עריכה" link opens the request form, where the hours change.
+    await mainDialog(member.page).getByTestId("ride-edit-request").click();
+    await expect(member.page).toHaveURL(new RegExp(`/requests/${request!.id}/edit`));
+    const returnField = member.page.getByLabel(he.field.return, { exact: true });
+    await returnField.fill("12:15");
+    await returnField.blur();
+    await member.page.getByRole("button", { name: he.action.saveRequest, exact: true }).click();
+    await expect.poll(async () => (await fixture.service.from("requests").select("return_at").eq("id", request!.id).single()).data?.return_at)
+      .toBe(new Date(`${week}T12:15:00+02:00`).toISOString().replace(".000Z", "+00:00"));
     const { data: saved } = await fixture.service.from("requests").select("ride_description,guest_passenger_names,adults").eq("id", request!.id).single();
     expect(saved).toEqual({ ride_description: description, guest_passenger_names: guestNames, adults: 3 });
-    await member.page.reload();
-    await openRideDetails(member.page, member.page.locator(`[data-ride-id="${ride!.id}"]:visible`));
+    // The hour change may re-place the request on a new ride: look it up again.
+    const { data: savedRide } = await fixture.service.from("ride_requests").select("ride_id").eq("request_id", request!.id).limit(1).single();
+    await member.page.goto(`/siddur/${NEVO_DEPARTMENT_ID}/${week}`);
+    await openRideDetails(member.page, member.page.locator(`[data-ride-id="${savedRide!.ride_id}"]:visible`));
     await expect(mainDialog(member.page)).toContainText(description);
     await expect(mainDialog(member.page)).toContainText(guestNames[0]!);
   } finally {
