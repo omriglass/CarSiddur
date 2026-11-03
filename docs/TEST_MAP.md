@@ -48,7 +48,7 @@ Hebrew strings quoted below are copied verbatim from `src/i18n/he.member.ts` / `
 
 ### request-form — Request form & multi-day (series) requests
 
-**Paths**: `src/features/requests/components/RequestForm.tsx` + `requestForm/**` (its field groups),
+**Paths**: `src/features/requests/components/RequestForm.tsx` + `requestForm/**` (its field groups), `src/pages/NewRequestPage.tsx`,
 `TemplateSuggestions.tsx`(+test), `RequestRow.tsx`(+test), `myRequestsRows.ts`(+test), `upcoming.ts`(+test), `series.ts`(+test),
 `src/pages/HomePage.tsx`, `MyHistoryPage.tsx`, `RequestsRedirect.tsx` (the one "my rides" screen, REQ §13.91),
 `templatePrefill.ts`(+test), `duplicate.ts`(+test), `mapper.ts`(+test), `duration.ts`(+test),
@@ -119,7 +119,7 @@ the sentence layout (REQ §13.110: `requestForm/sentence/**`, `timeAnchors.ts`, 
 `components/JoinableRidesDialog.tsx`, `components/RequestForm.tsx`; `src/i18n/he.member.ts`,
 `he.sadran.ts`; migrations matching `*waitlist*`, `*freed_slot*`, `*joinable_rides*`,
 `*join_radius*`; `e2e/waitlist-groups.spec.ts`, `freed-slot.spec.ts`.
-Siddur waiting list (REQ §13.182): migrations `*siddur_waitlist*`, SQL `siddur_waitlist.sql` (+ `department_isolation.sql`), unit `src/features/waitlist/siddurLanes.test.ts`, shared lane packer `src/components/weekGridLanes.ts`, e2e `siddur-waitlist.spec.ts` (list card + sheet, the button scrolls to the waiting list and hides nothing, the table's "חסר רכב" column, the owner's private car row, /my car card "הוספת נסיעה ברכב הזה").
+Siddur waiting list (REQ §13.182/§13.183): migrations `*siddur_waitlist*`, `*place_waiting_request*`, SQL `siddur_waitlist.sql`, `place_waiting_request.sql` (+ `department_isolation.sql`), unit `src/features/waitlist/siddurLanes.test.ts`, shared lane packer `src/components/weekGridLanes.ts`, e2e `siddur-waitlist.spec.ts` (list card + sheet, the button scrolls to the waiting list and hides nothing, the table's "חסר רכב" column, the owner's private car row, /my car card "הוספת נסיעה ברכב הזה", dragging a waiting ride onto a car — refused then placed, a private car's owner "שיבוץ ברכב שלי").
 Freed car vs plan B (REQ §13.168): migrations `*freed_car*`, `*freed_candidates*`, `*waitlist_groups_plan_b*`, `src/features/sadran/claims/**` (`freedOptions.test.ts`), solver `freedSlotOptions` (`src/solver/__tests__/live.test.ts`), SQL `freed_car_options.sql`, `qa_run17_fixes.sql` (R17B1 own drop-off claim refused, R17U2 riders told who drives, R17B6 leftover ride fits its legs); e2e `freed-car-options.spec.ts` (the real cancel → edge function → options page round trip: a waiting candidate steps out from `/my`, the options with them are blocked, the Sadran gives the car to the plan-B member; skipped without a wired cron secret); QA scenario `scripts/qa/freed-car-scenario.sql` (needs the on-ride-cancelled edge function wired on the stack).
 
 **Automated**:

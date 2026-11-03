@@ -16,7 +16,7 @@ A small, fixed department where **every member, car and request demonstrates one
 | m03 רותי מזרחי | **does not drive** | needs הקפצות and a volunteer driver |
 | m04 מיכל אברהם, m05 אבי אברהם | **parent pair**; child נועה (4) shared, איתי (9) only m04's | child seats; the same child on two requests |
 | m06 גיל פרץ | owns a **private car** (הסובארו של גיל) | only the owner puts requests on it |
-| m07 שירן ביטון | very flexible | volunteer driver, merges, ask-to-join |
+| m07 שירן ביטון | very flexible | volunteer driver, merges, joining a ride |
 | m08 עומר דהן | traveller | multi-day request, equipment |
 
 | Car | Principle |
@@ -50,7 +50,7 @@ A small, fixed department where **every member, car and request demonstrates one
 | S15 | Wed | m05 kids run with **נועה** → פרדס חנה 07:45–08:30 | **the same child on two requests** | on a child-seat-capable car (van) + the board's duplicate-child warning | "משיכה ככפילות" on one; the member answers "not a duplicate" |
 | S16 | Wed | m01 alone → כרכור 07:30–09:00 | child seats go to children | **not** on the Skoda (Corolla) | — |
 | S17 | Wed | m06 round trip → נתניה 10:00–13:00 **on his private car** | private car | on הסובארו של גיל, pinned | try dropping someone else on it → refused (private car) |
-| S18 | Wed | m07 → נתניה 10:00–13:00, **ask to join** S17's ride | ask-to-join a private car | a merge draft on the private car's ride (filed in an open week) — *see D2* | in a published week: the owner answers it |
+| S18 | Wed | m07 → נתניה 10:00–13:00, the same hours as S17's private-car ride | a private car's owner gives the car / a member joins a ride | its own request (no car of its own) | m06 "שיבוץ ברכב שלי" on it if it waits; or m07 joins S17 with "+ נוסעים" (owner 2026-11-03: the ask-to-join request is gone) |
 | S19 | Wed–Fri | m08 **multi-day** → ירושלים Wed 08:00 → Fri 14:00 | one car held for days | one car (the small one) for 3 days, "series 1/3…3/3" | Sadran "להציע פחות ימים"; m08 "קיצור הבקשה" (down to one day) |
 | S20–S23 | Thu | m01, m04, m06, m07 round trips 08:00–12:00 to nearby places | **more requests than cars** (S19 holds one car, the Honda is in Hadera) | 3 placed, **1 unmet** with "start from Hadera" suggestion | proposals (origin / external / deny); publish; waiting list |
 
@@ -63,7 +63,6 @@ A small, fixed department where **every member, car and request demonstrates one
 
 ### Known discrepancies (found while building this, 2026-10-06)
 - **D1** — Auto-fill pairs complementary one-way legs (S8 + S9) **automatically**; REQ item 105 a says they are *suggested*, never paired automatically.
-- **D2** — An ask-to-join filed in an open (unpublished) week becomes a Sadran merge *draft* on the private car's ride; in a published week it should go to the owner directly (REQ consistency decision 19) — check it there.
 
 ## Part 2 — coverage checklist for any test data set
 

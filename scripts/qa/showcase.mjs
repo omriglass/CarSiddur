@@ -117,11 +117,6 @@ export async function buildShowcase({ out, apiUrl, tag = "showcase", log = conso
       stops: (s.stops ?? []).map((st) => ({ leg: st.leg, id: place(st.place).id })),
     };
     const payload = buildPayload(ctx, o);
-    if (s.joinOf) {
-      const host = filed.get(s.joinOf);
-      const rr = host ? await svc.from("ride_requests").select("ride_id").eq("request_id", host.requestId).limit(1).maybeSingle() : null;
-      if (rr?.data?.ride_id) payload.join_ride_id = rr.data.ride_id;
-    }
     const fn = s.series ? "submit_series_request" : "submit_request";
     const res = await m.client.rpc(fn, { payload });
     if (res.error) { results.push({ id: s.id, member: m.email, error: res.error.message }); continue; }

@@ -149,7 +149,6 @@ describe("paths.requests", () => {
     expectRoutable(paths.requests.list());
     expectRoutable(paths.requests.list("req-1"));
     expectRoutable(paths.requests.new());
-    expectRoutable(paths.requests.new({ ride: "ride-1" }));
     expectRoutable(paths.requests.new({ week: "2027-01-10", day: "2027-01-12", time: "08:00" }));
     expectRoutable(paths.requests.new({ template: "template-1" }));
     expectRoutable(paths.requests.edit("req-1"));
@@ -163,7 +162,6 @@ describe("paths.requests", () => {
     expect(paths.requests.new({ week: "2027-01-10", day: "2027-01-12", time: "08:00", end: "10:00", car: "car-1" })).toBe(
       "/requests/new?week=2027-01-10&day=2027-01-12&time=08%3A00&end=10%3A00&car=car-1",
     );
-    expect(paths.requests.new({ ride: "ride-1" })).toBe("/requests/new?ride=ride-1");
     expect(paths.requests.new({ week: "2027-01-10", day: "2027-01-12", waitlist: true })).toBe(
       "/requests/new?week=2027-01-10&day=2027-01-12&waitlist=1",
     );

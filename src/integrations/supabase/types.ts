@@ -6696,6 +6696,17 @@ export type Database = {
           travel_minutes: number
         }[]
       }
+      place_waiting_request: {
+        Args: {
+          p_accept?: string[]
+          p_car_id: string
+          p_depart_at: string
+          p_expected_version: number
+          p_request_id: string
+          p_return_at: string
+        }
+        Returns: Json
+      }
       planning_month: {
         Args: { p_department_id: string; p_from: string; p_to: string }
         Returns: Json
@@ -7278,6 +7289,7 @@ export type Database = {
           return_at: string
           starts_at: string
           trip_type: Database["public"]["Enums"]["trip_type"]
+          version: number
         }[]
       }
       snooze_request_template: {

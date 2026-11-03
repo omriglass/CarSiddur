@@ -811,7 +811,6 @@ export interface SubmitRequestPayload {
   reserve_missing_driver?: boolean;
   request_id?: string;
   expected_version?: number;
-  join_ride_id?: string;
   /** REQ §13.127 (a): file for another department member (new requests only; the server keeps the stored requester on edit). */
   requester_id?: string;
   /**

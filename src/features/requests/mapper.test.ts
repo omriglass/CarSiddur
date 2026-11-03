@@ -117,15 +117,13 @@ describe("toSubmitRequestPayload", () => {
     expect(payload.destination_text).toBe("מקום כלשהו");
   });
 
-  it("forwards request_id/expected_version/join_ride_id options", () => {
+  it("forwards request_id/expected_version options", () => {
     const payload = toSubmitRequestPayload(baseValues(), {
       requestId: "req-1",
       expectedVersion: 3,
-      joinRideId: "ride-1",
     });
     expect(payload.request_id).toBe("req-1");
     expect(payload.expected_version).toBe(3);
-    expect(payload.join_ride_id).toBe("ride-1");
   });
 });
 

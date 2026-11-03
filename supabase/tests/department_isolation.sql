@@ -311,6 +311,7 @@ begin
   perform pg_temp.expect_refused('waitlist.waitlist_group_holds', format('select * from public.waitlist_group_holds(%L, %L)', dept_b, week_b));
   -- REQ §13.182: the siddur's waiting list is for the department's own members.
   perform pg_temp.expect_refused('waitlist.siddur_waitlist', format('select * from public.siddur_waitlist(%L, %L)', dept_b, week_b));
+  perform pg_temp.expect_refused('waitlist.place_waiting_request', format('select public.place_waiting_request(%L, %L, now() + interval ''1 day'', now() + interval ''1 day 2 hours'', 1)', req_b_wl1, car_b));
 
   -----------------------------------------------------------------------
   -- R1 regression (`20260924110000_apply_solver_result_department_scope.sql`): sadran_a
@@ -399,7 +400,7 @@ declare
     'publication_readiness','publication_conflicts','publish_siddur','record_solver_preview','form_waitlist_groups',
     'publish_scores_fingerprint','solver_state_fingerprint','sadran_contact_of','fairness_stats','department_stats','joinable_rides_for_request',
     'planning_month','typical_usage','save_reservation',
-    'create_policy_version','set_policy_active','policy_week_alignment','resolve_waitlist_group','cancel_waitlist_group','join_waitlist_discussion','waitlist_group_holds','siddur_waitlist',
+    'create_policy_version','set_policy_active','policy_week_alignment','resolve_waitlist_group','cancel_waitlist_group','join_waitlist_discussion','waitlist_group_holds','siddur_waitlist','place_waiting_request',
     'place_travel_for_week','car_start_locations','set_my_default_origin','route_minutes_preview','request_notes',
     'my_co_guardians','set_ride_driver','withdraw_duplicate_request','restore_duplicate_request','close_request','restore_closed_request','sadran_cancel_ride','place_on_own_car','child_request_overlaps',
     'mark_car_move','shorten_series','join_drop_off_legs','place_series_on_car',

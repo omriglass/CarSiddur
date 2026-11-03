@@ -10,6 +10,7 @@ const ADMIN_ID = "00000000-0000-0000-0000-000000000101";
 const RIDE_TYPE_ID = "00000000-0000-0000-0000-000000000021";
 const PRIVATE_CAR_ID = "00000000-0000-0000-0000-000000000043"; // temporary, owner = member2 (seed.sql)
 const PRIVATE_CAR_NAME = "רכב פרטי של חבר";
+const SHARED_CAR_ID = "00000000-0000-0000-0000-000000000040";
 const DISPLAY_PREFS_KEY = "siddur.display.v1";
 
 /** A never-used Sunday (published weeks can never be deleted), Tuesday of it as the test day. */
@@ -21,9 +22,9 @@ function uniqueFutureWeek(salt: number): { weekStart: string; day: string } {
 }
 
 /** Every shared car blocked for the day, member1's round trip filed, then the day published: it stays waiting (no car, no group). */
-async function publishedDayWithOneWaiting(): Promise<{ weekStart: string; day: string; requestId: string }> {
+async function publishedDayWithOneWaiting(salt = 1): Promise<{ weekStart: string; day: string; requestId: string }> {
   const service = serviceRoleClient();
-  const { weekStart, day } = uniqueFutureWeek(1);
+  const { weekStart, day } = uniqueFutureWeek(salt);
   const { error: weekError } = await service.from("weeks").insert({
     department_id: NEVO_DEPARTMENT_ID, week_start: weekStart, phase: "open",
     open_at: `${weekStart}T00:00:00Z`, close_at: `${day}T00:00:00Z`, publish_at: `${day}T00:00:00Z`,
@@ -65,6 +66,20 @@ async function setTableView(page: Page, tableView: boolean): Promise<void> {
       sessionStorage.setItem("e2e-prefs-set", "1");
     }
   }, [DISPLAY_PREFS_KEY, tableView]);
+}
+
+/** Drags a grid block sideways onto a car column, at the same height (the same hours). */
+async function dragOntoCar(page: Page, block: Locator, carId: string): Promise<void> {
+  const column = page.locator(`[data-car-col-id="${carId}"]`).locator("visible=true");
+  await column.scrollIntoViewIfNeeded();
+  await block.scrollIntoViewIfNeeded();
+  const from = (await block.boundingBox())!;
+  const to = (await column.boundingBox())!;
+  const y = from.y + Math.min(from.height / 2, 20);
+  await page.mouse.move(from.x + from.width / 2, y);
+  await page.mouse.down();
+  await page.mouse.move(to.x + to.width / 2, y, { steps: 12 });
+  await page.mouse.up();
 }
 
 /** How much of the element's width lies inside the grid's scroll viewport (0..1) — sideways only; a column is always taller than the screen. */
@@ -136,6 +151,27 @@ test.describe("siddur waiting list", { tag: ["@waitlist", "@siddur"] }, () => {
     }
   });
 
+  test("two taps on a \"חסר רכב\" column open a new request for those hours", async ({ browser }) => {
+    const member = await newSignedInPage(browser, SEEDED_USERS.member2);
+    const { page } = member;
+    try {
+      await page.setViewportSize({ width: 1280, height: 900 });
+      await setTableView(page, true);
+      await page.goto(`/siddur/${NEVO_DEPARTMENT_ID}/${fixture.weekStart}?day=${fixture.day}`);
+      const column = page.locator('[data-car-col-id="phantom:waiting:0"]').locator("visible=true");
+      await expect(column).toBeVisible({ timeout: 15_000 });
+      await column.scrollIntoViewIfNeeded();
+      const box = (await column.boundingBox())!;
+      // The grid shows 06:00–24:00: 14:00 and 16:00 are below the 09:00–11:00 waiting block.
+      const yAt = (minutes: number) => ((minutes - 360) / (1440 - 360)) * box.height + 4;
+      await column.click({ position: { x: box.width / 2, y: yAt(14 * 60) } });
+      await column.click({ position: { x: box.width / 2, y: yAt(16 * 60) } });
+      await expect(page).toHaveURL(/\/requests\/new\?.*time=14%3A00.*end=16%3A00.*waitlist=1/);
+    } finally {
+      await member.context.close();
+    }
+  });
+
   test("my private car has its row on a day it has no ride; other members do not see it", async ({ browser }) => {
     const owner = await newSignedInPage(browser, SEEDED_USERS.member2);
     const other = await newSignedInPage(browser, SEEDED_USERS.member1);
@@ -163,6 +199,60 @@ test.describe("siddur waiting list", { tag: ["@waitlist", "@siddur"] }, () => {
       await owner.page.getByRole("menuitem", { name: he.carPage.homeCarAddRide }).click();
       await expect(owner.page).toHaveURL(new RegExp(`/requests/new\\?.*car=${PRIVATE_CAR_ID}`));
       await expect(owner.page.getByText(tv("request.myPrivateCar", { name: PRIVATE_CAR_NAME })).first()).toBeVisible({ timeout: 10_000 });
+    } finally {
+      await owner.context.close();
+    }
+  });
+  test("dragging my waiting ride onto a car: a refusal changes nothing; on a free car it is placed", async ({ browser }) => {
+    const requester = await newSignedInPage(browser, SEEDED_USERS.member1);
+    const { page } = requester;
+    try {
+      await page.setViewportSize({ width: 1280, height: 900 });
+      await setTableView(page, true);
+      await page.goto(`/siddur/${NEVO_DEPARTMENT_ID}/${fixture.weekStart}?day=${fixture.day}`);
+      const block = page.locator(`[data-ride-id="waiting:${fixture.requestId}"]`).locator("visible=true");
+      await expect(block).toBeVisible({ timeout: 15_000 });
+      await page.getByTestId("edit-mode-button").locator("visible=true").click();
+
+      // Every shared car is in maintenance that day: refused, still waiting.
+      await dragOntoCar(page, block, SHARED_CAR_ID);
+      await expect(page.getByText(he.waitlist.dropBlocked.maintenance).first()).toBeVisible();
+      await expect(block).toBeVisible();
+
+      // Free one car: the same drag puts the ride on it.
+      await serviceRoleClient().from("car_maintenance_blocks").delete().eq("car_id", SHARED_CAR_ID).eq("reason", "E2E siddur-waitlist fixture");
+      await page.reload();
+      await expect(block).toBeVisible({ timeout: 15_000 });
+      const pencil = page.getByTestId("edit-mode-button").locator("visible=true");
+      if ((await pencil.getAttribute("data-on")) !== "true") await pencil.click();
+      await dragOntoCar(page, block, SHARED_CAR_ID);
+      await expect(block).toHaveCount(0, { timeout: 15_000 });
+      const { data } = await serviceRoleClient().from("requests").select("status, status_reason").eq("id", fixture.requestId).single();
+      expect(data).toEqual({ status: "assigned", status_reason: "MEMBER_PLACED" });
+      await expect(page.locator(`[data-car-col-id="${SHARED_CAR_ID}"] [data-ride-id]`).first()).toBeVisible();
+    } finally {
+      await requester.context.close();
+    }
+  });
+  test("a private car's owner gives it to someone's waiting ride from its sheet", async ({ browser }) => {
+    const own = await publishedDayWithOneWaiting(2);
+    const owner = await newSignedInPage(browser, SEEDED_USERS.member2);
+    const { page } = owner;
+    try {
+      await page.setViewportSize({ width: 1280, height: 900 });
+      await setTableView(page, true);
+      await page.goto(`/siddur/${NEVO_DEPARTMENT_ID}/${own.weekStart}?day=${own.day}`);
+      const block = page.locator(`[data-ride-id="waiting:${own.requestId}"]`).locator("visible=true");
+      await expect(block).toBeVisible({ timeout: 15_000 });
+      await block.click();
+      await page.getByRole("button", { name: he.screen.ride.detail, exact: true }).click();
+      await page.getByTestId("waiting-assign-my-car").click();
+      await expect(block).toHaveCount(0, { timeout: 15_000 });
+      const service = serviceRoleClient();
+      const { data: request } = await service.from("requests").select("status, status_reason").eq("id", own.requestId).single();
+      expect(request).toEqual({ status: "assigned", status_reason: "MEMBER_PLACED" });
+      const { data: rides } = await service.from("ride_requests").select("rides!inner(car_id, driver_id)").eq("request_id", own.requestId);
+      expect(rides?.[0]?.rides).toMatchObject({ car_id: PRIVATE_CAR_ID, driver_id: MEMBER1_ID });
     } finally {
       await owner.context.close();
     }

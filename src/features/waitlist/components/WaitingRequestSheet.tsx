@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Sheet, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { RequestLink } from "@/features/requests/components/RequestLink";
 import { useWithdrawRequestMutation } from "@/features/requests/hooks";
-import { he } from "@/i18n/he";
+import { he, tv } from "@/i18n/he";
 import { formatDayDate } from "@/lib/dayLabels";
 import { formatTime } from "@/lib/time";
 
@@ -20,11 +20,15 @@ import type { WaitingRequest } from "../types";
 /**
  * REQ §13.182: what a waiting request is - who, when, where, which trip - for every member of the
  * department. On my own request (or one I filed) also "edit" and "remove request" (`myVersion` is
- * that request's version from my own list).
+ * that request's version from my own list). REQ §13.183: a private car's owner may put it on that car
+ * ("שיבוץ ברכב שלי", `myCars`) — the requester drives it.
  */
-export function WaitingRequestSheet({ request, myVersion, onOpenChange }: {
+export function WaitingRequestSheet({ request, myVersion, myCars = [], onAssignToCar, onOpenChange }: {
   request: WaitingRequest | null;
   myVersion?: number;
+  /** My active private cars; empty = no "assign to my car". */
+  myCars?: readonly { id: string; name: string }[];
+  onAssignToCar?: (carId: string, carName: string) => void;
   onOpenChange: (open: boolean) => void;
 }) {
   const queryClient = useQueryClient();
@@ -70,6 +74,15 @@ export function WaitingRequestSheet({ request, myVersion, onOpenChange }: {
                   <dd>{TRIP_TYPE_LABEL[request.trip_type]}</dd>
                 </div>
               </dl>
+              {onAssignToCar && request.trip_type === "round_trip" && myCars.length ? (
+                <div className="mb-2 flex flex-col gap-2">
+                  {myCars.map((car) => (
+                    <Button key={car.id} type="button" data-testid="waiting-assign-my-car" onClick={() => onAssignToCar(car.id, car.name)}>
+                      {myCars.length === 1 ? he.waitlist.assignToMyCar : tv("waitlist.assignToCar", { car: car.name })}
+                    </Button>
+                  ))}
+                </div>
+              ) : null}
               {request.is_mine ? (
                 <div className="flex gap-2">
                   <Button asChild variant="outline" className="flex-1">

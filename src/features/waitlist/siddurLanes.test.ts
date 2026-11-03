@@ -9,7 +9,7 @@ function waiting(id: string, day: string, from: string, until: string, extra: Pa
     adults: 1, child_seats: 0, boosters: 0, trip_type: "round_trip",
     depart_at: `${day}T${from}:00.000Z`, return_at: `${day}T${until}:00.000Z`,
     starts_at: `${day}T${from}:00.000Z`, ends_at: `${day}T${until}:00.000Z`, day,
-    origin_name: "home", origin_is_home: true, destination_name: "dest", is_mine: false, ...extra,
+    origin_name: "home", origin_is_home: true, destination_name: "dest", is_mine: false, version: 1, ...extra,
   };
 }
 

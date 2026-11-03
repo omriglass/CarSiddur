@@ -32,9 +32,10 @@ import { WaitlistGroupSheet } from "@/features/waitlist/components/WaitlistGroup
 import { useSiddurWaitlistQuery, useWaitlistGroupsQuery } from "@/features/waitlist/hooks";
 import { WaitingRequestCard } from "@/features/waitlist/components/WaitingRequestCard";
 import { scrollToWaitlist } from "@/features/waitlist/scrollToWaitlist";
+import { useWaitingDrop, waitingDropWarningText } from "@/features/waitlist/useWaitingDrop";
 import { WaitingRequestSheet } from "@/features/waitlist/components/WaitingRequestSheet";
 import { WaitlistScrollButton } from "@/features/waitlist/components/WaitlistScrollButton";
-import { waitingLanes, waitingRequestIdOf } from "@/features/waitlist/siddurLanes";
+import { WAITING_LANE_PREFIX, waitingLanes, waitingRequestIdOf } from "@/features/waitlist/siddurLanes";
 import { waitingLabel } from "@/features/waitlist/waitingLabels";
 import { useMyDepartments } from "@/features/auth/useMyDepartments";
 import { useSession } from "@/features/auth/useSession";
@@ -359,9 +360,15 @@ export function SiddurPage() {
    * The same slot twice gives only the start, with the form's default length.
    */
   function handleSlotRange(carId: string, startMinutes: number, endMinutes: number) {
-    if (!weekStart || !activeDay || carId.startsWith("phantom:")) return;
+    if (!weekStart || !activeDay) return;
     const time = formatMinutes(startMinutes);
     const endTime = endMinutes > startMinutes ? formatMinutes(endMinutes) : undefined;
+    // REQ §13.183 (f): two taps on a "חסר רכב" column - a new request for those hours, no car (placed if one is free, else it waits).
+    if (carId.startsWith(WAITING_LANE_PREFIX)) {
+      navigate(paths.requests.new({ week: weekStart, day: activeDay, time, end: endTime, waitlist: true }), requestLinkProps);
+      return;
+    }
+    if (carId.startsWith("phantom:")) return;
     // Owner 2026-11-03: my own private car's row - the form with that car chosen (a round trip lands on it directly).
     if (myPrivateCarIds.has(carId)) {
       navigate(paths.requests.new({ week: weekStart, day: activeDay, time, end: endTime, car: carId }), requestLinkProps);
@@ -409,6 +416,19 @@ export function SiddurPage() {
     onDone: () => setSelectedRideId(null),
   });
   const { ownsEditableRide, canDragRide, saveMove, moveRide } = rideMoves;
+  // REQ §13.183: a waiting round trip I may edit (mine, the Sadran, the "anyone edits rides" switch) drags onto a car.
+  const waitingDrop = useWaitingDrop(departmentId, weekStart);
+  const waitingOf = (gridId: string) => {
+    const requestId = waitingRequestIdOf(gridId);
+    return requestId ? activeDayWaiting.find((request) => request.request_id === requestId) : undefined;
+  };
+  const myPrivateCars = (carsQuery.data ?? []).filter((car) => myPrivateCarIds.has(car.id));
+  const mayEditWaiting = (request: { is_mine: boolean }) => request.is_mine || isSadran || !!settingsQuery.data?.anyone_edits_rides;
+  // A private car's owner may also put anyone's waiting round trip on that car (REQ §13.183).
+  const canDragWaiting = (gridId: string) => {
+    const request = waitingOf(gridId);
+    return !!request && (mayEditWaiting(request) || myPrivateCars.length > 0) && waitingDrop.canDrag(request);
+  };
   // Owner 2026-10-30: edit mode (the pencil) - off, a ride drags only after a long press.
   const [editMode, setEditMode] = useEditMode();
   const onDragHint = useDragHint();
@@ -521,6 +541,7 @@ export function SiddurPage() {
 
   // The pencil shows only when this day has something this member may drag.
   const canDragSomething = canEditWeek && (canSwapCarsOnActiveDay || weekGridRides.some((ride) => canDragRide(ride.id))
+    || waitingGrid.rides.some((ride) => canDragWaiting(ride.id))
     || maintenanceEditing.gridBlocks.some((block) => block.editable));
   const weekGridDiscussionBlocks: WeekGridDiscussionBlock[] = activeDayWaitlistGroups.map((group) => ({
     id: group.id,
@@ -766,13 +787,20 @@ export function SiddurPage() {
                 dayEndMinutes={dayEndMinutes}
                 initialScrollMinutes={initialGridScrollMinutes}
                 readOnly={!canEditWeek}
-                draggable={canEditWeek && !rideMoves.saving}
-                canDragRide={(ride) => canDragRide(ride.id)}
+                draggable={canEditWeek && !rideMoves.saving && !waitingDrop.saving}
+                canDragRide={(ride) => (waitingRequestIdOf(ride.id) ? canDragWaiting(ride.id) : canDragRide(ride.id))}
                 canResizeRide={(ride) => ownsEditableRide(ride.id)}
                 holdToDrag={!editMode}
                 onDragHint={onDragHint}
-                isDropTargetValid={rideMoves.isValidTarget}
-                onRideDrop={(rideId, carId, startMinutes) => moveRide(rideId, carId, startMinutes)}
+                isDropTargetValid={(rideId, carId, startMinutes, endMinutes) => (waitingRequestIdOf(rideId)
+                  ? weekGridVisibleCars.some((car) => car.id === carId) && (myPrivateCarIds.has(carId) || mayEditWaiting(waitingOf(rideId) ?? { is_mine: false }))
+                  : rideMoves.isValidTarget(rideId, carId, startMinutes, endMinutes))}
+                onRideDrop={(rideId, carId, startMinutes) => {
+                  const waiting = waitingOf(rideId);
+                  const car = weekGridVisibleCars.find((c) => c.id === carId);
+                  if (waiting) { if (car) waitingDrop.drop(waiting, car.id, car.name, startMinutes); }
+                  else moveRide(rideId, carId, startMinutes);
+                }}
                 onRideResize={(rideId, edge, minutes) => {
                   const ride = weekGridRides.find((r) => r.id === rideId);
                   if (ride) moveRide(rideId, ride.carId, edge === "start" ? minutes : ride.startMinutes, edge === "end" ? minutes : ride.endMinutes);
@@ -844,8 +872,26 @@ export function SiddurPage() {
         ) : memberRideEditor ?? undefined}
       />
 
+      <ConfirmDialog
+        open={!!waitingDrop.pending}
+        onOpenChange={(open) => { if (!open) waitingDrop.cancel(); }}
+        title={he.waitlist.dropConfirmTitle}
+        confirmLabel={he.waitlist.dropConfirm}
+        loading={waitingDrop.saving}
+        onConfirm={waitingDrop.confirm}
+      >
+        <ul className="list-disc space-y-1 ps-5 text-sm" data-testid="waiting-drop-warnings">
+          {(waitingDrop.pending?.warnings ?? []).map((warning) => <li key={warning.code}>{waitingDropWarningText(warning)}</li>)}
+        </ul>
+      </ConfirmDialog>
       <WaitingRequestSheet
         request={selectedWaiting}
+        myCars={selectedWaiting && waitingDrop.canDrag(selectedWaiting) ? myPrivateCars : []}
+        onAssignToCar={(carId, carName) => {
+          if (!selectedWaiting) return;
+          waitingDrop.drop(selectedWaiting, carId, carName, minutesSinceMidnight(selectedWaiting.starts_at));
+          setSelectedWaitingId(null);
+        }}
         myVersion={(myRequestsQuery.data ?? []).find((request) => request.id === selectedWaitingId)?.version}
         onOpenChange={(open) => !open && setSelectedWaitingId(null)}
       />

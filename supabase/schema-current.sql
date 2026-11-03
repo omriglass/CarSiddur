@@ -13441,6 +13441,149 @@ $$;
 ALTER FUNCTION "public"."place_travel_for_week"("p_department_id" "uuid", "p_week_start" "date") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."place_waiting_request"("p_request_id" "uuid", "p_car_id" "uuid", "p_depart_at" timestamp with time zone, "p_return_at" timestamp with time zone, "p_expected_version" integer, "p_accept" "text"[] DEFAULT '{}'::"text"[]) RETURNS "jsonb"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  q public.requests%rowtype; v_car public.cars%rowtype; v_uid uuid := (select auth.uid());
+  v_home uuid; v_origin uuid; v_car_at uuid; v_start uuid; v_next uuid; v_buffer int;
+  v_prev_end timestamptz; v_next_start timestamptz; v_day date; v_phase public.week_phase;
+  v_warnings jsonb := '[]'::jsonb; v_ride uuid; v_prev_transition text; v_prev_trunk text;
+  v_accept text[] := coalesce(p_accept, '{}'); v_moved boolean := false;
+begin
+  select * into q from public.requests where id = p_request_id for update;
+  select * into v_car from public.cars where id = p_car_id and department_id = q.department_id and status = 'active';
+  if q.id is null or not (public.can_edit_request(q.id)
+       or (v_car.type = 'temporary' and v_car.owner_id = v_uid and public.member_of(q.department_id))) then
+    raise exception 'not_authorized' using errcode = '42501';
+  end if;
+  if q.version <> p_expected_version then raise exception 'stale_version' using errcode = 'P0409'; end if;
+  if q.status <> 'waitlisted' or q.trip_type <> 'round_trip' or q.series_id is not null then
+    return jsonb_build_object('ok', false, 'blocked', 'not_draggable');
+  end if;
+  if p_depart_at is null or p_return_at is null or p_return_at <= p_depart_at
+     or (p_depart_at at time zone 'Asia/Jerusalem')::date <> (p_return_at at time zone 'Asia/Jerusalem')::date then
+    raise exception 'invalid_ride_window' using errcode = 'P0001';
+  end if;
+  v_day := (p_depart_at at time zone 'Asia/Jerusalem')::date;
+  select phase into v_phase from public.weeks where department_id = q.department_id and week_start = q.week_start;
+  if v_phase not in ('published', 'live') or not public.is_day_public(q.department_id, q.week_start, v_day)
+     or v_day <> ((coalesce(q.depart_at, q.return_at)) at time zone 'Asia/Jerusalem')::date then
+    return jsonb_build_object('ok', false, 'blocked', 'not_draggable');
+  end if;
+  if p_depart_at < now() then return jsonb_build_object('ok', false, 'blocked', 'past'); end if;
+  if exists (select 1 from public.ride_requests rr join public.rides r on r.id = rr.ride_id
+             where rr.request_id = q.id and r.status <> 'cancelled')
+     or exists (select 1 from public.waitlist_group_members gm join public.waitlist_groups g on g.id = gm.group_id
+                where gm.request_id = q.id and g.status = 'open') then
+    return jsonb_build_object('ok', false, 'blocked', 'not_draggable');
+  end if;
+
+  if v_car.id is null then raise exception 'shift_car_invalid' using errcode = 'P0001'; end if;
+  perform pg_advisory_xact_lock(hashtextextended(v_car.id::text, 0));
+
+  -- Refusals: nothing a member may take from someone else.
+  -- Only the owner puts a request on their private car (REQ §13.99).
+  if v_car.type = 'temporary' and v_car.owner_id is distinct from v_uid then
+    return jsonb_build_object('ok', false, 'blocked', 'private_car');
+  end if;
+  if exists (select 1 from public.rides r where r.car_id = v_car.id and r.status <> 'cancelled' and not r.draft_hold
+             and tstzrange(r.starts_at, r.ends_at, '[)') && tstzrange(p_depart_at, p_return_at, '[)')) then
+    return jsonb_build_object('ok', false, 'blocked', 'overlap');
+  end if;
+  if exists (select 1 from public.car_maintenance_blocks m where m.car_id = v_car.id
+             and tstzrange(m.starts_at, m.ends_at, '[)') && tstzrange(p_depart_at, p_return_at, '[)')) then
+    return jsonb_build_object('ok', false, 'blocked', 'maintenance');
+  end if;
+  if not public.car_fits(v_car.id, q.adults, q.child_seats, q.boosters) then
+    return jsonb_build_object('ok', false, 'blocked', 'seats');
+  end if;
+  if public.car_held_by_waitlist_group(v_car.id, p_depart_at, p_return_at, q.id) then
+    return jsonb_build_object('ok', false, 'blocked', 'held');
+  end if;
+  if exists (select 1 from public.freed_slot_offers o where o.car_id = v_car.id and o.status = 'open'
+             and o.expires_at > now() and tstzrange(o.starts_at, o.ends_at, '[)') && tstzrange(p_depart_at, p_return_at, '[)')) then
+    return jsonb_build_object('ok', false, 'blocked', 'offered');
+  end if;
+  if public.eligible_leg_driver(q.id) is null then
+    return jsonb_build_object('ok', false, 'blocked', 'no_driver');
+  end if;
+
+  -- Where the ride starts: the request's place, or — once the member accepts it — where the car stands.
+  select home_destination_id into v_home from public.departments where id = q.department_id;
+  v_origin := case when q.origin_id is null and nullif(q.origin_text, '') is not null then null else coalesce(q.origin_id, v_home) end;
+  v_car_at := coalesce(public.car_location_at(v_car.id, p_depart_at), v_home);
+  v_start := coalesce(v_origin, v_home);
+  -- A shared car is taken where it stands (a free-text start place never matches it); a private car goes with its owner.
+  if v_car.type = 'shared' and (v_origin is null or v_car_at <> v_origin) then
+    if 'location' = any(v_accept) then v_start := v_car_at; v_moved := true;
+    else v_warnings := v_warnings || jsonb_build_object('code', 'location',
+           'place', (select name from public.destinations where id = v_car_at));
+    end if;
+  end if;
+  v_next := public.car_next_ride_origin(v_car.id, p_return_at);
+  if v_next is not null and v_next <> v_start then
+    return jsonb_build_object('ok', false, 'blocked', 'next_elsewhere');
+  end if;
+
+  -- Warnings that concern the member only.
+  v_buffer := coalesce(public.required_turnaround_minutes(q.department_id, q.week_start), 30);
+  select max(r.ends_at) into v_prev_end from public.rides r
+    where r.car_id = v_car.id and r.status <> 'cancelled' and not r.draft_hold and r.ends_at <= p_depart_at;
+  select min(r.starts_at) into v_next_start from public.rides r
+    where r.car_id = v_car.id and r.status <> 'cancelled' and not r.draft_hold and r.starts_at >= p_return_at;
+  if (v_prev_end is not null and v_prev_end + make_interval(mins => v_buffer) > p_depart_at)
+     or (v_next_start is not null and p_return_at + make_interval(mins => v_buffer) > v_next_start) then
+    if not 'turnaround' = any(v_accept) then
+      v_warnings := v_warnings || jsonb_build_object('code', 'turnaround', 'minutes', v_buffer);
+    end if;
+  end if;
+  if q.has_luggage and q.luggage_waived_at is null and not public.car_takes_luggage(v_car.id, 1)
+     and not 'luggage' = any(v_accept) then
+    v_warnings := v_warnings || jsonb_build_object('code', 'luggage');
+  end if;
+  if jsonb_array_length(v_warnings) > 0 then
+    return jsonb_build_object('ok', false, 'warnings', v_warnings);
+  end if;
+
+  -- Place it: the new hours and start place, then the same placement the Sadran's manual drop uses.
+  v_prev_transition := current_setting('app.system_status_transition', true);
+  v_prev_trunk := current_setting('app.small_trunk', true);
+  perform set_config('app.system_status_transition', 'on', true);
+  if 'luggage' = any(v_accept) then perform set_config('app.small_trunk', 'allow', true); end if;
+  update public.requests set depart_at = p_depart_at, return_at = p_return_at, preferred_car_id = case when v_car.type = 'shared' then v_car.id else preferred_car_id end,
+         origin_id = case when v_moved then v_start else origin_id end,
+         origin_text = case when v_moved then null else origin_text end,
+         changed_since_solve = true
+   where id = q.id;
+  v_ride := public.place_request_on_car(q.id, v_car.id, true, v_uid, null, p_depart_at, p_return_at, 'MEMBER_PLACED');
+  perform set_config('app.small_trunk', coalesce(v_prev_trunk, ''), true);
+  perform set_config('app.system_status_transition', coalesce(v_prev_transition, 'off'), true);
+
+  perform public.enqueue_notification(s.profile_id, 'request_changed', q.department_id, q.week_start,
+    jsonb_build_object('requestId', q.id::text), jsonb_build_object('request_id', q.id),
+    format('request_changed:%s:%s', q.id, now()))
+  from public.sadranim_of(q.department_id, q.week_start) as s(profile_id)
+  where s.profile_id is distinct from v_uid;
+
+  -- The owner gave their car: the requester (and a filer) learn they drive it.
+  perform public.enqueue_notification(x.recipient, 'outcome_changed', q.department_id, q.week_start,
+    jsonb_build_object('byName', coalesce((select full_name from public.profiles where id = v_uid), ''),
+      'route', coalesce(public.request_route_label(q.id), ''), 'day', public.day_date_label(p_depart_at),
+      'timeRange', public._window_text(p_depart_at, p_return_at), 'car', v_car.name),
+    jsonb_build_object('variant', 'owner_car_given', 'request_id', q.id, 'ride_id', v_ride),
+    format('owner_car_given:%s:%s', q.id, x.recipient))
+  from (select distinct r as recipient from unnest(array[q.requester_id, q.filed_by]) r) x
+  where v_car.type = 'temporary' and x.recipient is not null and x.recipient <> v_uid;
+
+  return jsonb_build_object('ok', true, 'ride_id', v_ride, 'car_id', v_car.id);
+end $$;
+
+
+ALTER FUNCTION "public"."place_waiting_request"("p_request_id" "uuid", "p_car_id" "uuid", "p_depart_at" timestamp with time zone, "p_return_at" timestamp with time zone, "p_expected_version" integer, "p_accept" "text"[]) OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."planning_month"("p_department_id" "uuid", "p_from" "date", "p_to" "date") RETURNS "jsonb"
     LANGUAGE "plpgsql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -20050,7 +20193,7 @@ $$;
 ALTER FUNCTION "public"."siddur_versions_assign_number"() OWNER TO "postgres";
 
 
-CREATE OR REPLACE FUNCTION "public"."siddur_waitlist"("p_department_id" "uuid", "p_week_start" "date") RETURNS TABLE("request_id" "uuid", "requester_id" "uuid", "requester_name" "text", "companion_names" "text"[], "child_names" "text"[], "guest_names" "text"[], "adults" smallint, "child_seats" smallint, "boosters" smallint, "trip_type" "public"."trip_type", "depart_at" timestamp with time zone, "return_at" timestamp with time zone, "starts_at" timestamp with time zone, "ends_at" timestamp with time zone, "day" "date", "origin_name" "text", "origin_is_home" boolean, "destination_name" "text", "is_mine" boolean)
+CREATE OR REPLACE FUNCTION "public"."siddur_waitlist"("p_department_id" "uuid", "p_week_start" "date") RETURNS TABLE("request_id" "uuid", "requester_id" "uuid", "requester_name" "text", "companion_names" "text"[], "child_names" "text"[], "guest_names" "text"[], "adults" smallint, "child_seats" smallint, "boosters" smallint, "trip_type" "public"."trip_type", "depart_at" timestamp with time zone, "return_at" timestamp with time zone, "starts_at" timestamp with time zone, "ends_at" timestamp with time zone, "day" "date", "origin_name" "text", "origin_is_home" boolean, "destination_name" "text", "is_mine" boolean, "version" integer)
     LANGUAGE "plpgsql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
@@ -20065,7 +20208,7 @@ begin
            ((coalesce(q.depart_at, q.return_at)) at time zone 'Asia/Jerusalem')::date as q_day
     from public.requests q
     left join public.destinations d on d.id = q.destination_id
-    where q.department_id = p_department_id and q.week_start = p_week_start and q.status = 'waitlisted'
+    where q.department_id = p_department_id and q.week_start = p_week_start and q.status = 'waitlisted' and q.join_ride_id is null
       and not exists (select 1 from public.waitlist_group_members gm join public.waitlist_groups g on g.id = gm.group_id
                       where gm.request_id = q.id and g.status = 'open')
       and not exists (select 1 from public.ride_requests rr join public.rides r on r.id = rr.ride_id
@@ -20083,7 +20226,8 @@ begin
     coalesce(o.name, nullif(w.origin_text, ''), home.name),
     (w.origin_id is null and nullif(w.origin_text, '') is null) or w.origin_id = dep.home_destination_id,
     coalesce(dd.name, w.destination_text),
-    (w.requester_id = v_uid or w.filed_by = v_uid)
+    (w.requester_id = v_uid or w.filed_by = v_uid),
+    w.version
   from w
   join public.profiles p on p.id = w.requester_id
   left join public.destinations o on o.id = w.origin_id
@@ -31382,6 +31526,12 @@ GRANT ALL ON FUNCTION "public"."place_travel"("p_from" "uuid", "p_to" "uuid") TO
 REVOKE ALL ON FUNCTION "public"."place_travel_for_week"("p_department_id" "uuid", "p_week_start" "date") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."place_travel_for_week"("p_department_id" "uuid", "p_week_start" "date") TO "service_role";
 GRANT ALL ON FUNCTION "public"."place_travel_for_week"("p_department_id" "uuid", "p_week_start" "date") TO "authenticated";
+
+
+
+REVOKE ALL ON FUNCTION "public"."place_waiting_request"("p_request_id" "uuid", "p_car_id" "uuid", "p_depart_at" timestamp with time zone, "p_return_at" timestamp with time zone, "p_expected_version" integer, "p_accept" "text"[]) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."place_waiting_request"("p_request_id" "uuid", "p_car_id" "uuid", "p_depart_at" timestamp with time zone, "p_return_at" timestamp with time zone, "p_expected_version" integer, "p_accept" "text"[]) TO "service_role";
+GRANT ALL ON FUNCTION "public"."place_waiting_request"("p_request_id" "uuid", "p_car_id" "uuid", "p_depart_at" timestamp with time zone, "p_return_at" timestamp with time zone, "p_expected_version" integer, "p_accept" "text"[]) TO "authenticated";
 
 
 

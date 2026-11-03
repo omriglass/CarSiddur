@@ -85,15 +85,14 @@ export const paths = {
      */
     list: (focusId?: string) => withQuery("/requests", { focus: focusId }),
     /**
-     * `/requests/new`; `ride` triggers the "ask to join" prefill, `day`/`time` the
+     * `/requests/new`; `day`/`time` the
      * quick-request-from-slot prefill, `template` the repeating-request-suggestion prefill
      * (`v_request_template_suggestions`, all mutually exclusive in practice), `waitlist=1` the
      * waitlist checkbox. `end` ("להיות בבית עד") and `car` (preferred car) come with `day`/`time` from a two-tap span
      * on a grid (owner 2026-10-11).
      */
-    new: (params: { ride?: string; week?: string; day?: string; time?: string; end?: string; car?: string; waitlist?: boolean; template?: string; group?: string } = {}) =>
+    new: (params: { week?: string; day?: string; time?: string; end?: string; car?: string; waitlist?: boolean; template?: string; group?: string } = {}) =>
       withQuery("/requests/new", {
-        ride: params.ride,
         week: params.week,
         day: params.day,
         time: params.time,

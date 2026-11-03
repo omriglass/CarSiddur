@@ -22,7 +22,7 @@ export function WaitlistGroupCard({ group, onClick }: WaitlistGroupCardProps) {
       onClick={onClick}
       className="w-full rounded-md border-2 border-dashed border-amber-500 bg-amber-500/5 p-3 text-start text-sm"
     >
-      <span className="block font-medium text-amber-900">{tv("waitlist.blockLabel", { names })}</span>
+      <span className="block font-medium text-foreground">{tv("waitlist.blockLabel", { names })}</span>
       <span className="text-xs text-muted-foreground" dir="ltr">
         {formatTime(new Date(group.starts_at))}–{formatTime(new Date(group.ends_at))}
       </span>

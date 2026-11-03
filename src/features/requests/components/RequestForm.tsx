@@ -35,7 +35,7 @@ import { useSaveReservationMutation } from "@/features/planning/hooks";
 import { he, t, tv } from "@/i18n/he";
 import { asRequestFormSave } from "@/lib/appSurface";
 import { showErrorToast } from "@/lib/rpc";
-import { dateKey, formatTime, weekdayIndex } from "@/lib/time";
+import { formatTime, weekdayIndex } from "@/lib/time";
 import { DEFAULT_HOP_MINUTES } from "@/lib/rideRoute";
 import { cn } from "@/lib/utils";
 import { effectiveWeekSettings } from "@/lib/weekSettings";
@@ -111,17 +111,6 @@ import { fitsJoinWindow, groupJoinWindow } from "@/features/waitlist/summary";
 import { GroupSummary } from "@/features/waitlist/components/GroupSummary";
 import { STAGE_ONE_FIELDS, isStageOneField } from "./requestForm/sentence/sentenceModel";
 
-export interface JoinRidePrefill {
-  rideId: string;
-  driverName: string;
-  carType: "shared" | "temporary";
-  isRelay: boolean;
-  destinationId: string | null;
-  destinationName: string;
-  startsAt: string;
-  endsAt: string;
-}
-
 export interface QuickRequestCarOption {
   id: string;
   name: string;
@@ -169,8 +158,6 @@ interface RequestFormProps {
   weekStart: string;
   /** Edit mode only. */
   initial?: RequestEditRow;
-  /** "Ask to join" prefill from `/requests/new?ride=<id>` (UX_FLOWS §3.4/§3.5). */
-  joinRide?: JoinRidePrefill;
   /**
    * Day/time (and, for the quick variant, car) prefill: on an Open/Solving-week siddur
    * (UX_FLOWS.md §18) only the day and start time carry over from an empty grid cell click
@@ -188,7 +175,7 @@ interface RequestFormProps {
   joinGroupId?: string;
   /**
    * Repeating-request-suggestion prefill (`/requests/new?template=<id>`, UX_FLOWS §3.3/§3.4,
-   * REQ §76) — weekly variant only, mutually exclusive with `joinRide`/`slotPrefill` in
+   * REQ §76) — weekly variant only, mutually exclusive with `slotPrefill` in
    * practice. Pre-checks the "repeat weekly" switch; submitting links the new request straight
    * to this template (`SubmitRequestPayload.template_id`) so the suggestion disappears.
    */
@@ -207,12 +194,6 @@ interface RequestFormProps {
   reservation?: { id?: string };
 }
 
-function dayFromInstant(instant: string): string {
-  return dateKey(instant);
-}
-function timeFromInstant(instant: string): string {
-  return formatTime(new Date(instant));
-}
 function buildDefaultDay(weekStart: string, lastDepartAt: string | null | undefined): string {
   if (!lastDepartAt) return weekStart; // datesOfWeek(weekStart)[0] === weekStart (the Sunday itself)
   const dates = datesOfWeek(weekStart);
@@ -282,28 +263,6 @@ function emptyValues(
   };
 }
 
-function buildJoinRideValues(
-  departmentId: string,
-  weekStart: string,
-  rideTypeId: string,
-  joinRide: JoinRidePrefill,
-): RequestFormValues {
-  const base = emptyValues(departmentId, weekStart, dayFromInstant(joinRide.startsAt), rideTypeId);
-  return {
-    ...base,
-    destination: joinRide.destinationId
-      ? { presetId: joinRide.destinationId, name: joinRide.destinationName }
-      : { freeText: joinRide.destinationName },
-    tripShape: joinRide.isRelay ? "one_way_to" : "round_trip",
-    tripType: joinRide.isRelay ? "one_way" : "round_trip",
-    dropOffPickup: false,
-    departTime: timeFromInstant(joinRide.startsAt),
-    returnTime: joinRide.isRelay ? undefined : timeFromInstant(joinRide.endsAt),
-    oneWayCarMode: joinRide.isRelay ? "passenger" : undefined,
-    needsCarAtDestination: !joinRide.isRelay,
-  };
-}
-
 /** First message among an array field's per-item errors (and its own). */
 function stopsError(errors: unknown): string | undefined {
   if (!errors || typeof errors !== "object") return undefined;
@@ -327,7 +286,6 @@ export function RequestForm({
   departmentId,
   weekStart,
   initial,
-  joinRide,
   slotPrefill,
   carPrefill,
   dayPrefill,
@@ -389,7 +347,6 @@ export function RequestForm({
 
   const defaultValues = useMemo(() => {
     if (mode === "edit") return emptyValues(departmentId, weekStart, weekStart, defaultRideTypeId);
-    if (joinRide) return buildJoinRideValues(departmentId, weekStart, defaultRideTypeId, joinRide);
     if (templateSuggestion) return suggestionToFormValues(templateSuggestion, weekStart);
     if (slotPrefill) {
       const returnTime =
@@ -420,7 +377,7 @@ export function RequestForm({
       carPrefill ?? "",
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [departmentId, weekStart, mode, defaultRideTypeId, variant, dayPrefill, joinRide?.rideId, templateSuggestion?.templateId, slotPrefill?.day, slotPrefill?.departTime, slotPrefill?.returnTime, slotPrefill?.carId, carPrefill]);
+  }, [departmentId, weekStart, mode, defaultRideTypeId, variant, dayPrefill, templateSuggestion?.templateId, slotPrefill?.day, slotPrefill?.departTime, slotPrefill?.returnTime, slotPrefill?.carId, carPrefill]);
 
   const form = useForm<RequestFormValues>({
     resolver: zodResolver(requestFormSchema),
@@ -581,7 +538,7 @@ export function RequestForm({
   // `Controller`, which kept showing an empty "מ אל" (found by e2e 2026-10-04). The applied key
   // lives in a ref, so no state is set inside the effect.
   const appliedOriginKeyRef = useRef<string | null>(null);
-  const shouldApplyOrigin = mode !== "edit" && !joinRide && !templateSuggestion && !!resolvedOrigin;
+  const shouldApplyOrigin = mode !== "edit" && !templateSuggestion && !!resolvedOrigin;
   const resolvedOriginKey = resolvedOrigin ? JSON.stringify(resolvedOrigin) : null;
   useEffect(() => {
     if (!shouldApplyOrigin || !resolvedOriginKey || resolvedOriginKey === appliedOriginKeyRef.current) return;
@@ -616,7 +573,7 @@ export function RequestForm({
       const driver = editDriverOf(formValues) ?? editRequesterId;
       return { requesterId: driver === editRequesterId ? null : driver, companions: editRidersOf(formValues).filter((id) => id !== driver) };
     }
-    return mode === "new" && variant === "weekly" && !joinRide && !isReservation ? splitWho(formValues, membersQuery.data ?? []) : { requesterId: null, companions: [...formValues.companions] };
+    return mode === "new" && variant === "weekly" && !isReservation ? splitWho(formValues, membersQuery.data ?? []) : { requesterId: null, companions: [...formValues.companions] };
   }
   const onBehalfWho = whoOf({ includeMe: values.includeMe, companions: values.companions ?? [], driverId: values.driverId });
   const editDriverOptions = editRidersOf({ includeMe: values.includeMe, companions: values.companions ?? [] })
@@ -744,7 +701,7 @@ export function RequestForm({
   // REQ §13.128: my own active private cars are choosable for a round trip (also when "אני" is out and
   // the borrower drives it), never in ask-to-join. The server places the request straight on that car.
   const myPrivateCars = (myPrivateCarsQuery.data ?? []).filter((car) => car.status === "active");
-  const offerPrivateCars = tripType === "round_trip" && !joinRide && !quickContext;
+  const offerPrivateCars = tripType === "round_trip" && !quickContext;
   const preferredCars = offerPrivateCars
     ? [
         ...sharedPreferredCars,
@@ -974,7 +931,6 @@ export function RequestForm({
           requestId: initial?.id,
           expectedVersion: initial?.version,
           requesterId: whoOf(formValues).requesterId ?? undefined,
-          joinRideId: mode === "new" ? joinRide?.rideId : undefined,
           guestPassengerNames: guestNamesList,
           reserveMissingDriver: variant === "quick" && isOneWayDropOff ? true : undefined,
           layout,
@@ -1399,13 +1355,6 @@ export function RequestForm({
         </p>
       ) : null}
 
-      {joinRide ? (
-        <div className="rounded-md border-s-4 border-primary bg-primary/5 p-3 text-sm">
-          {joinRide.carType === "temporary"
-            ? tv("request.joinRideBannerTemp", { driverName: joinRide.driverName })
-            : tv("request.joinRideBannerShared", { driverName: joinRide.driverName })}
-        </div>
-      ) : null}
       {mode === "edit" && initial?.changedSinceSolve ? (
         <div className="rounded-md border-s-4 border-amber-500 bg-amber-50 p-3 text-sm text-amber-900">
           {t("request.changedSinceSolveBanner")}
@@ -1433,7 +1382,7 @@ export function RequestForm({
           preferredCars={preferredCars}
           initialPreferredCarName={initial?.preferredCarName}
           members={companionMembers}
-          allowOnBehalf={(mode === "new" && variant === "weekly" && !joinRide && !isReservation) || !!editRequesterId}
+          allowOnBehalf={(mode === "new" && variant === "weekly" && !isReservation) || !!editRequesterId}
           driverOptions={editDriverOptions}
           driverId={editRequesterId ? editDriverOf({ includeMe: values.includeMe, companions: values.companions ?? [], driverId: values.driverId }) : null}
           reservation={isReservation}
@@ -1460,7 +1409,7 @@ export function RequestForm({
           stage={twoStage ? stage : 1}
           onStageChange={setStage}
           invalidSignal={invalidSignal}
-          guide={mode === "new" && !joinRide && !templateSuggestion && !readNoAutoDialogs() ? { dayKnown: !!slotPrefill || !!dayPrefill, outKnown: !!slotPrefill?.departTime, returnKnown: !!slotPrefill?.returnTime } : undefined}
+          guide={mode === "new" && !templateSuggestion && !readNoAutoDialogs() ? { dayKnown: !!slotPrefill || !!dayPrefill, outKnown: !!slotPrefill?.departTime, returnKnown: !!slotPrefill?.returnTime } : undefined}
           quickContext={quickContext ? { cars: quickContext.cars, showCarPicker: quickContext.showCarPicker } : undefined}
           quickWindow={{ startMs, endMs, carIsFree, isAway, otherFreeCar, oneWay }}
         />

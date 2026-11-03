@@ -73,7 +73,6 @@ export interface SubmitPayloadOptions {
   expectedVersion?: number;
   /** REQ §13.127 (a): file for this department member (new requests only). */
   requesterId?: string;
-  joinRideId?: string;
   /** Parsed non-member passengers (`guestPassengerNames()`, `../quickRequest.ts`). */
   guestPassengerNames?: string[];
   /** Live one-way quick request: reserve a vehicle while awaiting a driver (quick variant only). */
@@ -222,7 +221,6 @@ export function toSubmitRequestPayload(
     request_id: options.requestId,
     requester_id: options.requesterId,
     expected_version: options.expectedVersion,
-    join_ride_id: options.joinRideId,
     // REQ §13.93 "Multi-stop rides": always sent (even `[]`) so an edit can clear a
     // previously-added stop — `submit_request` only leaves existing stops untouched when the
     // key is entirely absent from the payload. REQ §13.97: the complete list for both legs — a

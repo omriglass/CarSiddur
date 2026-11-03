@@ -76,4 +76,18 @@ export const waitingRequestSchema = z.object({
   origin_is_home: z.boolean(),
   destination_name: z.string().nullable(),
   is_mine: z.boolean(),
+  version: z.number(),
+});
+
+/** REQ §13.183: `place_waiting_request()` — placed, refused (`blocked`), or warnings the member may accept. */
+export const placeWaitingResultSchema = z.object({
+  ok: z.boolean(),
+  ride_id: z.string().optional(),
+  car_id: z.string().optional(),
+  blocked: z.enum(["not_draggable", "past", "private_car", "overlap", "maintenance", "seats", "held", "offered", "no_driver", "next_elsewhere"]).optional(),
+  warnings: z.array(z.object({
+    code: z.enum(["location", "turnaround", "luggage"]),
+    place: z.string().nullable().optional(),
+    minutes: z.number().optional(),
+  })).optional(),
 });

@@ -1,8 +1,8 @@
 import { supabase } from "@/integrations/supabase/client";
 import { rpc, toAppError } from "@/lib/rpc";
 
-import { waitingRequestSchema, waitlistGroupHoldSchema, waitlistGroupRowSchema } from "./schema";
-import type { WaitingRequest, WaitlistGroup, WaitlistGroupHold } from "./types";
+import { placeWaitingResultSchema, waitingRequestSchema, waitlistGroupHoldSchema, waitlistGroupRowSchema } from "./schema";
+import type { PlaceWaitingResult, WaitingRequest, WaitlistGroup, WaitlistGroupHold } from "./types";
 
 /**
  * Contested waiting-list groups (REQ §13.75, DATA_MODEL.md §7.4a). This is
@@ -60,4 +60,15 @@ export async function fetchWaitlistGroupHolds(departmentId: string, weekStart: s
 export async function fetchSiddurWaitlist(departmentId: string, weekStart: string): Promise<WaitingRequest[]> {
   const data = await rpc("siddur_waitlist", { p_department_id: departmentId, p_week_start: weekStart });
   return (data ?? []).map((row) => waitingRequestSchema.parse(row));
+}
+
+/** REQ §13.183: a waiting round trip dragged onto a car at new hours; `accept` = the warnings the member confirmed. */
+export async function placeWaitingRequest(input: {
+  requestId: string; carId: string; departAt: string; returnAt: string; expectedVersion: number; accept: string[];
+}): Promise<PlaceWaitingResult> {
+  const result = await rpc("place_waiting_request", {
+    p_request_id: input.requestId, p_car_id: input.carId, p_depart_at: input.departAt, p_return_at: input.returnAt,
+    p_expected_version: input.expectedVersion, p_accept: input.accept,
+  });
+  return placeWaitingResultSchema.parse(result);
 }

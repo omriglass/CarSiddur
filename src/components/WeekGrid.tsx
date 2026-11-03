@@ -1135,6 +1135,9 @@ export function WeekGrid({
   const realCarCount = sharedCars.length + temporaryCars.length;
   const discussionColIndex = realCarCount + 2;
   const carGridColumn = (index: number) => index + 2 + (hasDiscussionLane && index >= realCarCount ? 1 : 0);
+  // Owner 2026-11-03: a clear line between the real cars and the lanes after them ("בדיון", then the phantom lanes).
+  const EXTRA_LANES_DIVIDER = "border-s-4 border-s-foreground/30";
+  const isFirstExtraCar = (index: number) => index === realCarCount && !hasDiscussionLane;
   const gridTemplateRows = `${pageScroll ? "0px" : `minmax(${HEADER_ROW_HEIGHT_PX}px, auto)`} repeat(${hours.length}, ${HOUR_ROW_HEIGHT_PX}px)`;
   const gridMinWidth = HOUR_COL_WIDTH_PX + (allCars.length + (hasDiscussionLane ? 1 : 0)) * CAR_COL_WIDTH_PX;
   const gridTemplateColumns = `${HOUR_COL_WIDTH_PX}px repeat(${allCars.length}, minmax(${CAR_COL_WIDTH_PX}px, 1fr))${hasDiscussionLane ? ` minmax(${CAR_COL_WIDTH_PX}px, 1fr)` : ""}`;
@@ -1162,6 +1165,7 @@ export function WeekGrid({
           car.group === "temporary" && "bg-booked/[0.04]",
           car.group === "phantom" && "border-dashed bg-maintenance/5",
           isFirstTemporary && "border-s-2 border-s-border",
+          isFirstExtraCar(colIndex) && EXTRA_LANES_DIVIDER,
           showHoverRing && (hoverValid ? "bg-available/10 ring-2 ring-inset ring-available" : "bg-destructive/10 ring-2 ring-inset ring-destructive"),
         )}
         style={{ gridColumn: carGridColumn(colIndex), gridRow: `2 / span ${hours.length}` }}
@@ -1577,6 +1581,7 @@ export function WeekGrid({
               // Owner 2026-10-09: bold alone was not obvious on a phone — the header of a car I ride in that day is tinted violet.
               (myCarIds.has(car.id) || car.today) && "bg-mine/25 bg-none border-b-4 border-b-mine",
               i === sharedCars.length && temporaryCars.length > 0 && "border-s-2 border-s-border",
+              isFirstExtraCar(i) && EXTRA_LANES_DIVIDER,
               swappable && "touch-none",
               isCarDragSource && "opacity-40",
               isCarDropHover && "bg-primary/10 ring-2 ring-inset ring-primary",
@@ -1647,7 +1652,7 @@ export function WeekGrid({
         })() : null}
         {hasDiscussionLane ? (
           <div
-            className="sticky top-0 z-20 flex items-center justify-center border-b border-s-2 border-s-border bg-background bg-gradient-to-b from-maintenance/10 to-maintenance/10 px-2 py-1 text-sm shadow-[0_2px_6px_-2px_hsl(var(--foreground)/0.12)]"
+            className="sticky top-0 z-20 flex items-center justify-center border-b border-s-4 border-s-foreground/30 bg-background bg-gradient-to-b from-maintenance/10 to-maintenance/10 px-2 py-1 text-sm shadow-[0_2px_6px_-2px_hsl(var(--foreground)/0.12)]"
             style={{ gridColumn: discussionColIndex, gridRow: 1 }}
           >
             <span className="font-medium">{he.waitlist.laneTitle}</span>
@@ -1719,7 +1724,7 @@ export function WeekGrid({
         ) : null}
         {hasDiscussionLane ? (
           <div
-            className="relative border-s-2 border-s-border bg-maintenance/5"
+            className="relative border-s-4 border-s-foreground/30 bg-maintenance/5"
             style={{ gridColumn: discussionColIndex, gridRow: `2 / span ${hours.length}` }}
             data-discussion-lane
           >
@@ -1748,7 +1753,7 @@ export function WeekGrid({
                 <button
                   key={block.id}
                   type="button"
-                  className="absolute inset-x-1 overflow-hidden rounded-sm border-2 border-dashed border-amber-500 bg-amber-500/10 p-1 text-start text-xs font-medium text-amber-900 shadow-sm"
+                  className="absolute inset-x-1 overflow-hidden rounded-sm border-2 border-dashed border-amber-500 bg-amber-500/10 p-1 text-start text-xs font-medium text-foreground shadow-sm"
                   style={{ top: rect.top, height: rect.height, minHeight: RIDE_MIN_HEIGHT_PX }}
                   onClick={() => onDiscussionClick?.(block.id)}
                 >

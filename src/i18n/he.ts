@@ -38,6 +38,7 @@ export const STATUS_REASON_CODES = [
   "CLOSE_UNDONE",
   "DENIED_BY_SADRAN",
   "DRIVER_CLAIMED",
+  "MEMBER_PLACED",
   "DUPLICATE_OVERLAP",
   "DUPLICATE_WITHDRAWN",
   "EXTERNAL",
@@ -693,6 +694,8 @@ export const he = {
     ASK_TO_JOIN_TEMP_CAR: "בקשה להצטרף לנסיעה ברכב פרטי",
     AUTO_APPROVED: "אושרה אוטומטית — היה רכב פנוי",
     AUTO_APPROVED_FREE_CAR: "אושרה אוטומטית — הרכב היה פנוי",
+    // REQ §13.183: dragged from the waiting list onto a car (or given a private car by its owner).
+    MEMBER_PLACED: "שובצה ברכב מרשימת ההמתנה",
     CANCELLED_BY_MEMBER: "בוטלה על ידך",
     // REQ §13.162: the Sadran closed the request (the ride is no longer needed) / took that back.
     CLOSED_BY_SADRAN: "נסגרה על ידי הסדרן/ית — הנסיעה כבר לא רלוונטית",

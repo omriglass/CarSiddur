@@ -72,13 +72,18 @@ begin
             ((w + 2) + time '20:00') at time zone 'Asia/Jerusalem', home, home, ((w + 2) + time '20:30') at time zone 'Asia/Jerusalem', 'flagged', true, member2)
     returning id into g;
   insert into public.ride_requests(ride_id, request_id, role, leg, car_mode) values (g, q, 'passenger', 'out', 'chauffeur');
+  -- An old ask-to-join request waits for a merge, not for a car.
+  insert into public.requests(department_id, week_start, requester_id, filed_by, ride_type_id, origin_id, destination_id, trip_shape, trip_type,
+                              depart_at, return_at, adults, status, join_ride_id)
+    values (dept, w, member2, member2, ride_type, home, dest, 'round_trip', 'round_trip',
+            ((w + 2) + time '19:00') at time zone 'Asia/Jerusalem', ((w + 2) + time '20:00') at time zone 'Asia/Jerusalem', 1, 'waitlisted', g);
   insert into sw_ids values ('week', null);
   update sw_ids set id = dept where k = 'week';
   set local session_replication_role = origin;
 end $$;
 
 -- TEST 1: another member sees member1's waiting request (name, companion, hours, place) and nothing else —
--- not the unpublished day, the placed request, the grouped one, or the one already on a driverless ride.
+-- not the unpublished day, the placed request, the grouped one, the one already on a driverless ride, or an ask-to-join.
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000000104","role":"authenticated"}', true);
 set local role authenticated;
 do $$
@@ -96,6 +101,7 @@ begin
   assert r.starts_at = ((w + 2) + time '09:00') at time zone 'Asia/Jerusalem' and r.ends_at = ((w + 2) + time '12:00') at time zone 'Asia/Jerusalem', 'TEST 1 FAILED: window';
   assert r.origin_is_home, 'TEST 1 FAILED: leaving from the department home';
   assert not r.is_mine, 'TEST 1 FAILED: not the viewer''s request';
+  assert r.version = (select version from public.requests where id = r.request_id), 'TEST 1 FAILED: version';
 end $$;
 reset role;
 

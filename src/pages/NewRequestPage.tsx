@@ -9,10 +9,10 @@ import { parseHHMM } from "@/components/timeField15Format";
 import { useMyDepartments } from "@/features/auth/useMyDepartments";
 import { useProfile } from "@/features/auth/useProfile";
 import { resolveWeekStart } from "@/features/requests/resolveWeekStart";
-import { RequestForm, type JoinRidePrefill } from "@/features/requests/components/RequestForm";
+import { RequestForm } from "@/features/requests/components/RequestForm";
 import { TemplateSuggestions } from "@/features/requests/components/TemplateSuggestions";
 import { useTemplateSuggestionsQuery } from "@/features/requests/hooks";
-import { useCarForRide, useBoardRideById, useWeeks } from "@/features/siddur/hooks";
+import { useWeeks } from "@/features/siddur/hooks";
 import { he } from "@/i18n/he";
 
 const isDayKey = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value);
@@ -23,12 +23,11 @@ function validParam(value: string | null, valid: (value: string) => boolean): st
 }
 
 /**
- * `/requests/new` (UX_FLOWS.md §3.4). `?ride=<id>` prefills an "ask to join"
- * request against that ride (§3.5, REQ §7.3, §13.43).
+ * `/requests/new` (UX_FLOWS.md §3.4). (The old `?ride=<id>` "ask to join" prefill is gone, owner 2026-11-03:
+ * members join a ride themselves with "+ נוסעים".)
  */
 export function NewRequestPage() {
   const [searchParams] = useSearchParams();
-  const joinRideId = searchParams.get("ride") ?? undefined;
   const weekOverride = searchParams.get("week") ?? undefined;
   // Quick-request-from-empty-slot on an Open/Solving-week siddur (UX_FLOWS.md §18): the
   // Sadran hasn't solved yet, so there is no car to target — only day/time carry over.
@@ -51,8 +50,6 @@ export function NewRequestPage() {
   const weeksQuery = useWeeks(departmentId);
   const weekStart = resolveWeekStart(weeksQuery.data ?? [], weekOverride);
 
-  const rideQuery = useBoardRideById(joinRideId);
-  const carQuery = useCarForRide(rideQuery.data?.car_id ?? undefined);
   const templateSuggestionsQuery = useTemplateSuggestionsQuery();
   const templateSuggestion = templateId
     ? (templateSuggestionsQuery.data ?? []).find((row) => row.templateId === templateId)
@@ -60,22 +57,7 @@ export function NewRequestPage() {
 
   const isLoading =
     active.isLoading || profileQuery.isLoading || departmentsQuery.isLoading || weeksQuery.isLoading ||
-    (!!joinRideId && (rideQuery.isLoading || carQuery.isLoading)) ||
     (!!templateId && templateSuggestionsQuery.isLoading);
-
-  const joinRide: JoinRidePrefill | undefined =
-    joinRideId && rideQuery.data && carQuery.data
-      ? {
-          rideId: joinRideId,
-          driverName: rideQuery.data.driver_name ?? "",
-          carType: carQuery.data.type,
-          isRelay: rideQuery.data.origin_id !== rideQuery.data.destination_id,
-          destinationId: rideQuery.data.destination_id,
-          destinationName: rideQuery.data.destination_name ?? "",
-          startsAt: rideQuery.data.starts_at ?? new Date().toISOString(),
-          endsAt: rideQuery.data.ends_at ?? new Date().toISOString(),
-        }
-      : undefined;
 
   const close = useCloseRequestOverlay();
   const weekOnSiddur = weekShownOnSiddur((weeksQuery.data ?? []).find((week) => week.week_start === weekStart)?.phase);
@@ -98,10 +80,9 @@ export function NewRequestPage() {
           mode="new"
           departmentId={departmentId}
           weekStart={weekStart}
-          joinRide={joinRide}
-          slotPrefill={!joinRideId && dayParam && timeParam ? { day: dayParam, departTime: timeParam, returnTime: endParam, carId: carParam } : undefined}
-          dayPrefill={!joinRideId && dayParam && !timeParam ? dayParam : undefined}
-          carPrefill={!joinRideId && !timeParam ? carParam : undefined}
+          slotPrefill={dayParam && timeParam ? { day: dayParam, departTime: timeParam, returnTime: endParam, carId: carParam } : undefined}
+          dayPrefill={dayParam && !timeParam ? dayParam : undefined}
+          carPrefill={!timeParam ? carParam : undefined}
           waitlist={waitlist}
           joinGroupId={joinGroupId}
           templateSuggestion={templateSuggestion}
