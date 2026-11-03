@@ -33,16 +33,8 @@ export function requestWindow(request: WeekRequestRow): { startsAt: string; ends
   return endsAt ? { startsAt: anchor, endsAt } : null;
 }
 
-/** Interval partitioning: one lane per simultaneous unmet request, reused after each interval ends. */
-export function packPhantomLanes<T extends { id: string; startMinutes: number; endMinutes: number }>(items: readonly T[]): (T & { lane: number })[] {
-  const ends: number[] = [];
-  return [...items].sort((a, b) => a.startMinutes - b.startMinutes || a.id.localeCompare(b.id)).map((item) => {
-    let lane = ends.findIndex((end) => end <= item.startMinutes);
-    if (lane < 0) lane = ends.length;
-    ends[lane] = item.endMinutes;
-    return { ...item, lane };
-  });
-}
+// Shared with the siddur's waiting-list columns (REQ §13.182).
+export { packPhantomLanes } from "@/components/weekGridLanes";
 
 /** Compare each edited endpoint with the request, never the previously moved ride. */
 export function requestWithinFlex(req: WeekRequestRow, startsAt: string, endsAt: string, servedLeg?: "out" | "return" | "both" | null, chauffeur = false): boolean {

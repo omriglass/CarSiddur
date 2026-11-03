@@ -3,4 +3,6 @@ export const waitlistKeys = {
   all: ["waitlist"] as const,
   groups: (departmentId: string, weekStart: string) => [...waitlistKeys.all, departmentId, weekStart] as const,
   holds: (departmentId: string, weekStart: string) => [...waitlistKeys.all, departmentId, weekStart, "holds"] as const,
+  /** REQ §13.182; under `["waitlist", dept, week]`, so live sync refreshes it with the groups. */
+  waitingRequests: (departmentId: string, weekStart: string) => [...waitlistKeys.all, departmentId, weekStart, "requests"] as const,
 };

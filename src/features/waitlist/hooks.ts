@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { QueryClient } from "@tanstack/react-query";
 
 
-import { cancelWaitlistGroup, fetchWaitlistGroupHolds, fetchWaitlistGroups, joinWaitlistDiscussion, resolveWaitlistGroup } from "./api";
+import { cancelWaitlistGroup, fetchSiddurWaitlist, fetchWaitlistGroupHolds, fetchWaitlistGroups, joinWaitlistDiscussion, resolveWaitlistGroup } from "./api";
 import { waitlistKeys } from "./keys";
 import { invalidateWeekData } from "@/features/rides/invalidateWeek";
 
@@ -12,6 +12,15 @@ export function useWaitlistGroupsQuery(departmentId: string | undefined, weekSta
     queryKey: waitlistKeys.groups(departmentId ?? "", weekStart ?? ""),
     queryFn: () => fetchWaitlistGroups(departmentId as string, weekStart as string),
     enabled: !!departmentId && !!weekStart,
+  });
+}
+
+/** REQ §13.182: requests waiting for a car on the week's published days (members of the department only). */
+export function useSiddurWaitlistQuery(departmentId: string | undefined, weekStart: string | undefined, enabled = true) {
+  return useQuery({
+    queryKey: waitlistKeys.waitingRequests(departmentId ?? "", weekStart ?? ""),
+    queryFn: () => fetchSiddurWaitlist(departmentId as string, weekStart as string),
+    enabled: enabled && !!departmentId && !!weekStart,
   });
 }
 

@@ -7256,6 +7256,30 @@ export type Database = {
         Args: { p_depart_at: string; p_request_id: string; p_return_at: string }
         Returns: string
       }
+      siddur_waitlist: {
+        Args: { p_department_id: string; p_week_start: string }
+        Returns: {
+          adults: number
+          boosters: number
+          child_names: string[]
+          child_seats: number
+          companion_names: string[]
+          day: string
+          depart_at: string
+          destination_name: string
+          ends_at: string
+          guest_names: string[]
+          is_mine: boolean
+          origin_is_home: boolean
+          origin_name: string
+          request_id: string
+          requester_id: string
+          requester_name: string
+          return_at: string
+          starts_at: string
+          trip_type: Database["public"]["Enums"]["trip_type"]
+        }[]
+      }
       snooze_request_template: {
         Args: { p_template_id: string; p_week_start: string }
         Returns: undefined

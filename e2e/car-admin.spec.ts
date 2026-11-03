@@ -13,6 +13,7 @@ import { NEVO_DEPARTMENT_ID, newSignedInPage, SEEDED_USERS, serviceRoleClient, s
 const service = serviceRoleClient();
 const SHARED_CAR_ID = "00000000-0000-0000-0000-000000000041"; // shared, no responsible person (seed.sql)
 const RESPONSIBLE_CAR_ID = "00000000-0000-0000-0000-000000000040"; // shared, responsible = member1 (seed.sql)
+const PRIVATE_CAR_ID = "00000000-0000-0000-0000-000000000043"; // temporary, owner = member2 (seed.sql); on their /my since REQ §13.182
 const MEMBER2_ID = "00000000-0000-0000-0000-000000000104";
 
 async function carAdminFlag(): Promise<boolean> {
@@ -44,9 +45,11 @@ test("admin sets car admin; car admin corrects kilometrage but /my stays persona
 
     const { context, page: member2 } = await newSignedInPage(browser, SEEDED_USERS.member2);
     try {
-      await test.step("/my lists no cars for a car admin who is responsible for none", async () => {
+      await test.step("/my lists no shared car for a car admin who is responsible for none (only their own private car)", async () => {
         await member2.waitForLoadState("networkidle");
-        await expect(member2.getByRole("heading", { name: he.carPage.homeMyCarsTitle })).toHaveCount(0);
+        await expect(member2.getByTestId(`home-car-${PRIVATE_CAR_ID}`)).toBeVisible();
+        await expect(member2.getByTestId(`home-car-${SHARED_CAR_ID}`)).toHaveCount(0);
+        await expect(member2.getByTestId(`home-car-${RESPONSIBLE_CAR_ID}`)).toHaveCount(0);
       });
 
       await test.step("kilometrage reading: saved, then a lower one is refused", async () => {

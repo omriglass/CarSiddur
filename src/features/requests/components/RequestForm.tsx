@@ -178,6 +178,8 @@ interface RequestFormProps {
    * when `returnTime` is omitted, defaults it to `departTime` + `QUICK_REQUEST_DURATION_HOURS`.
    */
   slotPrefill?: { day: string; departTime: string; returnTime?: string; carId?: string };
+  /** Owner 2026-11-03: "add a ride on this car" (the car card on /my) - that car chosen, the usual default times. */
+  carPrefill?: string;
   /** `/requests/new?day=YYYY-MM-DD` (R11B4): only the day is preselected (when it is one of the week's dates). */
   dayPrefill?: string;
   /** Published-day request: join the freed-slot notification queue. */
@@ -327,6 +329,7 @@ export function RequestForm({
   initial,
   joinRide,
   slotPrefill,
+  carPrefill,
   dayPrefill,
   waitlist = false,
   joinGroupId,
@@ -412,9 +415,12 @@ export function RequestForm({
       weekStart,
       dayPrefill && datesOfWeek(weekStart).includes(dayPrefill) ? dayPrefill : buildDefaultDay(weekStart, lastRequest?.departAt),
       defaultRideTypeId,
+      undefined,
+      undefined,
+      carPrefill ?? "",
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [departmentId, weekStart, mode, defaultRideTypeId, variant, dayPrefill, joinRide?.rideId, templateSuggestion?.templateId, slotPrefill?.day, slotPrefill?.departTime, slotPrefill?.returnTime, slotPrefill?.carId]);
+  }, [departmentId, weekStart, mode, defaultRideTypeId, variant, dayPrefill, joinRide?.rideId, templateSuggestion?.templateId, slotPrefill?.day, slotPrefill?.departTime, slotPrefill?.returnTime, slotPrefill?.carId, carPrefill]);
 
   const form = useForm<RequestFormValues>({
     resolver: zodResolver(requestFormSchema),

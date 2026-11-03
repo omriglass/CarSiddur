@@ -258,7 +258,11 @@
         "supabase/tests/withdraw_settles.sql",
         "e2e/waitlist-groups.spec.ts",
         "e2e/freed-slot.spec.ts",
-        "supabase/tests/waitlist_cause.sql"
+        "supabase/tests/waitlist_cause.sql",
+        "supabase/migrations/**/*siddur_waitlist*",
+        "supabase/tests/siddur_waitlist.sql",
+        "e2e/siddur-waitlist.spec.ts",
+        "src/components/weekGridLanes.ts"
       ],
       "vitest": [
         "src/features/waitlist",
@@ -271,7 +275,8 @@
         "waitlist_group_hold.sql",
         "joinable_rides.sql",
         "withdraw_settles.sql",
-        "waitlist_cause.sql"
+        "waitlist_cause.sql",
+        "siddur_waitlist.sql"
       ],
       "playwrightTags": [
         "@waitlist"
@@ -283,7 +288,8 @@
         "13.75",
         "13.83",
         "13.90",
-        "13.143"
+        "13.143",
+        "13.182"
       ],
       "qaChecklist": [
         "Freed car vs plan B (REQ §13.168): run scripts/qa/freed-car-scenario.sql on a disposable stack with the edge function wired; cancel the ride; the Sadran sees the board banner and the options page (recommendation, plan-B badge), gives a combination or sends two to a discussion; a candidate steps out from 'my rides'; a plan-B member who gets the car loses the plan B, one not chosen keeps it",
@@ -291,7 +297,8 @@
         "Tap the join-ride button; confirm it joins the ride and withdraws the waitlisted request (REQ §13.83)",
         "Cancel a live-week ride; confirm an overlapping waitlisted request auto-assigns (REQ §13.66)",
         "Create two overlapping unresolvable requests; confirm one contested discussion group (REQ §13.75)",
-        "Waitlist a large-luggage request while the big-trunk car is busy; /my names the trunk, not 'all cars busy' (REQ §13.143)"
+        "Waitlist a large-luggage request while the big-trunk car is busy; /my names the trunk, not 'all cars busy' (REQ §13.143)",
+        "Siddur waiting list (REQ §13.182): on a published day with a member waiting, the header's people button shows the count; table view has a 'חסר רכב' column (overlaps in a second one), list view a dashed card; tapping opens the details (edit/remove only on your own); the button hides columns, cards and the בדיון lane, and the choice stays after a reload"
       ]
     },
     {
@@ -445,7 +452,9 @@
         "src/lib/rideMoveAgreement.test.ts",
         "src/components/RideMoveAgreementHost.tsx",
         "src/features/rides/relatedRide.ts",
-        "src/features/rides/relatedRide.test.ts"
+        "src/features/rides/relatedRide.test.ts",
+        "e2e/siddur-waitlist.spec.ts",
+        "src/features/cars/components/HomeCarCard.tsx"
       ],
       "vitest": [
         "src/lib/personBusy.test.ts",
@@ -482,7 +491,8 @@
         "13.155",
         "13.166",
         "13.170",
-        "13.171"
+        "13.171",
+        "13.182"
       ],
       "qaChecklist": [
         "Open a ride with no driver: 'מי יכול/ה להקפיץ? — וואטסאפ' opens WhatsApp with 'צריך שמישהו יקפיץ <אותי/את X> <day> ל<place>, לצאת בשעה <time>' and a link; the link's page shows the ride and 'אני אקח' makes you its driver (REQ §13.170)",
@@ -493,7 +503,8 @@
         "Resize an owned ride on the grid (edit mode) and confirm shadow-collision requires explicit driver consent (REQ §13.42)",
         "Give a ride on a published day a follow-up ride on the same car within the turnaround (min. 30 min): the driver/requester sees an amber \"!\" on /my, the Home card and the ride sheet, the next ride's driver sees the mirror note; an unpublished next day or the member's own next ride shows nothing (REQ §13.108 f)",
         "Ask for another member's slot by dragging your ride onto it, then move either ride on the board: the other driver is no longer asked; once your ride reaches the asked hours the request shows as accepted (REQ §13.166)",
-        "In a partly published week, an unpublished day is stamped 'טרם פורסם' all over (phone list, desktop table, /my week column); a member's request for that day is refused (REQ §13.155)"
+        "In a partly published week, an unpublished day is stamped 'טרם פורסם' all over (phone list, desktop table, /my week column); a member's request for that day is refused (REQ §13.155)",
+        "Own private car (REQ §13.182): its row is on the siddur every day for its owner only; a tap on an empty slot opens the form with that car. On /my, tapping a car card offers 'הוספת נסיעה ברכב הזה' (form with the car chosen) and 'דף הרכב'"
       ]
     },
     {

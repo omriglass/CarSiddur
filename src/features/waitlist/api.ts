@@ -1,8 +1,8 @@
 import { supabase } from "@/integrations/supabase/client";
 import { rpc, toAppError } from "@/lib/rpc";
 
-import { waitlistGroupHoldSchema, waitlistGroupRowSchema } from "./schema";
-import type { WaitlistGroup, WaitlistGroupHold } from "./types";
+import { waitingRequestSchema, waitlistGroupHoldSchema, waitlistGroupRowSchema } from "./schema";
+import type { WaitingRequest, WaitlistGroup, WaitlistGroupHold } from "./types";
 
 /**
  * Contested waiting-list groups (REQ §13.75, DATA_MODEL.md §7.4a). This is
@@ -54,4 +54,10 @@ export async function joinWaitlistDiscussion(requestId: string): Promise<{ group
 export async function fetchWaitlistGroupHolds(departmentId: string, weekStart: string): Promise<WaitlistGroupHold[]> {
   const data = await rpc("waitlist_group_holds", { p_department_id: departmentId, p_week_start: weekStart });
   return ((data ?? []) as unknown[]).map((row) => waitlistGroupHoldSchema.parse(row));
+}
+
+/** REQ §13.182: the week's requests waiting for a car on published days (the siddur's "חסר רכב" columns). */
+export async function fetchSiddurWaitlist(departmentId: string, weekStart: string): Promise<WaitingRequest[]> {
+  const data = await rpc("siddur_waitlist", { p_department_id: departmentId, p_week_start: weekStart });
+  return (data ?? []).map((row) => waitingRequestSchema.parse(row));
 }

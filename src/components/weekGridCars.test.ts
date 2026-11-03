@@ -22,6 +22,10 @@ describe("hideIdleTemporaryCars", () => {
     expect(hideIdleTemporaryCars(cars, [{ carId: "temp-idle" }, { carId: "temp-busy" }]).map((c) => c.id))
       .toEqual(["shared-1", "temp-idle", "temp-busy", "phantom"]);
   });
+
+  it("always keeps the viewer's own private cars, even on an empty day", () => {
+    expect(hideIdleTemporaryCars(cars, [], new Set(["temp-idle"])).map((c) => c.id)).toEqual(["shared-1", "temp-idle", "phantom"]);
+  });
 });
 
 describe("carAwayPlaceAtDayStart (R2B14)", () => {

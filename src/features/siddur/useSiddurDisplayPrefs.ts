@@ -2,7 +2,8 @@ import { useState } from "react";
 
 /**
  * Per-device siddur display preferences (UX_FLOWS.md member siddur "display"
- * menu): cards-vs-table, table zoom and "show early hours" persist across
+ * menu): cards-vs-table, table zoom, "show early hours" and the waiting-list
+ * columns' show/hide button (REQ §13.182, default shown) persist across
  * visits on this device only — never account data, so a plain `localStorage`
  * read/write (try/catch, same pattern as `features/sadran/lastUsedPolicy.ts`
  * and `features/auth/useActiveDepartment.ts`) is enough; no Supabase column.
@@ -13,9 +14,10 @@ interface SiddurDisplayPrefsValue {
   tableView: boolean;
   tableZoom: number;
   showEarlyHours: boolean;
+  showWaitlist: boolean;
 }
 
-const DEFAULT_PREFS: SiddurDisplayPrefsValue = { tableView: false, tableZoom: 1, showEarlyHours: false };
+const DEFAULT_PREFS: SiddurDisplayPrefsValue = { tableView: false, tableZoom: 1, showEarlyHours: false, showWaitlist: true };
 
 function readPrefs(): SiddurDisplayPrefsValue {
   try {
@@ -26,6 +28,7 @@ function readPrefs(): SiddurDisplayPrefsValue {
       tableView: typeof parsed.tableView === "boolean" ? parsed.tableView : DEFAULT_PREFS.tableView,
       tableZoom: typeof parsed.tableZoom === "number" ? parsed.tableZoom : DEFAULT_PREFS.tableZoom,
       showEarlyHours: typeof parsed.showEarlyHours === "boolean" ? parsed.showEarlyHours : DEFAULT_PREFS.showEarlyHours,
+      showWaitlist: typeof parsed.showWaitlist === "boolean" ? parsed.showWaitlist : DEFAULT_PREFS.showWaitlist,
     };
   } catch {
     // Private browsing / restrictive webviews may deny storage or hold garbage — today's
@@ -60,5 +63,7 @@ export function useSiddurDisplayPrefs() {
     setTableZoom: (tableZoom: number) => update({ tableZoom }),
     showEarlyHours: prefs.showEarlyHours,
     setShowEarlyHours: (showEarlyHours: boolean) => update({ showEarlyHours }),
+    showWaitlist: prefs.showWaitlist,
+    setShowWaitlist: (showWaitlist: boolean) => update({ showWaitlist }),
   };
 }

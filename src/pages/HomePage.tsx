@@ -1,11 +1,10 @@
 import { useActiveDepartment } from "@/features/auth/useActiveDepartment";
 import { useWeekChangeWatch } from "@/features/liveSync/useWeekChangeWatch";
-import { ChevronDown, Inbox, MessageCircleQuestion, CarFront } from "lucide-react";
+import { ChevronDown, Inbox, MessageCircleQuestion } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 
-import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { EmptyState } from "@/components/EmptyState";
@@ -13,7 +12,6 @@ import { ErrorState } from "@/components/ErrorState";
 import { PageHeader } from "@/components/PageHeader";
 import { RideCard } from "@/components/RideCard";
 import { CardListSkeleton } from "@/components/skeletons/CardListSkeleton";
-import { StatusBadge } from "@/components/StatusBadge";
 import { formatWeekRangeLabel } from "@/components/dateFieldDates";
 import { useProfile } from "@/features/auth/useProfile";
 import { useIsSadranAnywhere } from "@/features/auth/useIsSadran";
@@ -66,6 +64,7 @@ import { VolunteerDriverChange } from "@/features/rides/components/VolunteerDriv
 import { VolunteerDriverPanel } from "@/features/rides/components/VolunteerDriverPanel";
 import { isDrivenOnRide, volunteerDriverOf } from "@/features/rides/driverWanted";
 import { MyCarTasksCard } from "@/features/carTasks/components/MyCarTasksCard";
+import { HomeCarCard } from "@/features/cars/components/HomeCarCard";
 import { RideDetailSheet } from "@/features/siddur/components/RideDetailSheet";
 import { MemberRideEditor } from "@/features/siddur/components/MemberRideEditor";
 import type { BoardRide } from "@/features/siddur/api";
@@ -91,7 +90,7 @@ import { he, t, tv } from "@/i18n/he";
 import { describeStatusReason } from "@/lib/statusReason";
 import { effectiveWeekSettings } from "@/lib/weekSettings";
 import { formatDayDate } from "@/lib/dayLabels";
-import { formatTime } from "@/lib/time";
+import { dateKey, formatTime, weekStartFor } from "@/lib/time";
 import { cn } from "@/lib/utils";
 import { paths } from "@/app/routes";
 
@@ -183,6 +182,16 @@ export function HomePage() {
   const restoreDuplicateMutation = useRestoreDuplicateMutation();
   const ownCarsQuery = useMyTemporaryCars(profileQuery.data?.id);
   const ownCars = (ownCarsQuery.data ?? []).filter((car) => car.status === "active" && !car.retired_at).map((car) => ({ id: car.id, name: car.name }));
+  // Owner 2026-11-03 (REQ §13.182): cars I am responsible for plus my own private cars, each offering "add a ride on this car".
+  const homeCars = [
+    ...(myCarsQuery.data ?? []),
+    ...(ownCarsQuery.data ?? []).filter((car) => car.status !== "retired" && !car.retired_at && !(myCarsQuery.data ?? []).some((mine) => mine.id === car.id)),
+  ];
+  // During a week that is already running the ride is for this week, from today; otherwise the form's own default week.
+  const currentWeekStart = dateKey(weekStartFor(now));
+  const addRideWeek = (weeksQuery.data ?? []).some((week) => week.week_start === currentWeekStart && week.phase !== "archived" && week.phase !== "upcoming")
+    ? { week: currentWeekStart, day: dateKey(now) }
+    : {};
   const withdrawMutation = useWithdrawRequestMutation();
   const withdrawAllMutation = useWithdrawAllRequestsMutation();
   const withdrawClaimMutation = useWithdrawFreedSlotClaimMutation();
@@ -462,30 +471,17 @@ export function HomePage() {
 
       {!active.canSubmit && <p className="text-sm text-muted-foreground">{he.departmentContext.noMembership} <Link to={paths.siddur({ dept: active.departmentId })}>{he.nav.siddur}</Link></p>}
 
-      {(myCarsQuery.data ?? []).length > 0 ? (
+      {homeCars.length > 0 ? (
         <section className="space-y-2">
           <h2 className="text-sm font-semibold text-muted-foreground">{he.carPage.homeMyCarsTitle}</h2>
           <div className="space-y-2">
-            {(myCarsQuery.data ?? []).map((car) => (
-              <Link key={car.id} to={paths.car(car.id)}>
-                <Card className="bg-gradient-card shadow-card transition-smooth hover:shadow-elegant">
-                  <CardContent className="flex items-center justify-between gap-2 p-3 text-sm">
-                    <div className="flex items-center gap-3">
-                      <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                        <CarFront className="size-5" aria-hidden="true" />
-                      </span>
-                      <div>
-                        <p className="font-medium">{car.name}</p>
-                        <p className="text-xs text-muted-foreground" dir="ltr">{car.license_plate}</p>
-                        {checklistPromptCarIds.has(car.id) ? (
-                          <p className="text-xs font-medium text-primary" data-testid="home-checklist-prompt">{he.carChecklist.promptCard}</p>
-                        ) : null}
-                      </div>
-                    </div>
-                    <StatusBadge kind="car" status={car.status} />
-                  </CardContent>
-                </Card>
-              </Link>
+            {homeCars.map((car) => (
+              <HomeCarCard
+                key={car.id}
+                car={car}
+                checklistPrompt={checklistPromptCarIds.has(car.id)}
+                addRideTo={active.canSubmit ? paths.requests.new({ ...addRideWeek, car: car.id }) : undefined}
+              />
             ))}
           </div>
         </section>

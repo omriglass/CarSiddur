@@ -101,6 +101,7 @@ export function NewRequestPage() {
           joinRide={joinRide}
           slotPrefill={!joinRideId && dayParam && timeParam ? { day: dayParam, departTime: timeParam, returnTime: endParam, carId: carParam } : undefined}
           dayPrefill={!joinRideId && dayParam && !timeParam ? dayParam : undefined}
+          carPrefill={!joinRideId && !timeParam ? carParam : undefined}
           waitlist={waitlist}
           joinGroupId={joinGroupId}
           templateSuggestion={templateSuggestion}

@@ -1157,13 +1157,28 @@ export const heMember = {
     exportTireStateOk: "תקין",
     exportTireStateLow: "נמוך",
     exportTireStateVeryLow: "נמוך מאוד",
-    homeMyCarsTitle: "הרכבים באחריותי",
+    homeMyCarsTitle: "הרכבים שלי",
+    // Owner 2026-11-03: tapping a car card on /my.
+    homeCarAddRide: "הוספת נסיעה ברכב הזה",
+    homeCarOpenPage: "דף הרכב",
+    homeCarMenuLabel: "אפשרויות לרכב {{name}}",
   },
   // Contested waiting-list groups (REQ §13.75, UX_FLOWS.md §3.5/§4.2 "בדיון"): the lane/card
   // label, the resolution sheet (`WaitlistGroupSheet`) and the "לדיון" action on a waitlisted
   // request whose `status_reason` is `WAITLISTED_CONTESTED`.
   waitlist: {
     laneTitle: "בדיון",
+    // REQ §13.182: the siddur's "חסר רכב" columns, their show/hide button and a waiting request's sheet.
+    siddurLane: "חסר רכב",
+    siddurLaneN: "חסר רכב {{number}}",
+    toggleShow: "הצגת רשימת ההמתנה ({{count}})",
+    toggleHide: "הסתרת רשימת ההמתנה ({{count}})",
+    waitingSheetTitle: "ממתין/ה לרכב",
+    waitingSheetHint: "ברשימת ההמתנה — מחכה שיתפנה רכב בשעות האלה.",
+    waitingWho: "מי נוסע/ת",
+    waitingWhen: "מתי",
+    waitingRoute: "לאן",
+    waitingTripType: "סוג נסיעה",
     blockLabel: "בדיון: {{names}}",
     sheetTitle: "מי נוסע/ת?",
     driver: "נהג/ת",

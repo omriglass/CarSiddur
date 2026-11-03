@@ -4,14 +4,16 @@
  * nothing useful (the owner's car is simply not going anywhere that day) and only pushes the
  * shared cars around. Shared cars and the board's phantom lanes are always shown. Used by the
  * member siddur (`SiddurPage`) and, since 2026-09-14 (owner), the Sadran board (`BoardScreen`).
- * Pure, so both screens and the unit test share it.
+ * `alwaysShowIds` keeps the viewer's own private cars every day (owner 2026-11-03), so the owner
+ * can add a ride on an empty day. Pure, so both screens and the unit test share it.
  */
 export function hideIdleTemporaryCars<C extends { id: string; group?: string }>(
   cars: readonly C[],
   ridesOfDay: readonly { carId: string }[],
+  alwaysShowIds: ReadonlySet<string> = new Set(),
 ): C[] {
   const carsWithRides = new Set(ridesOfDay.map((ride) => ride.carId));
-  return cars.filter((car) => car.group !== "temporary" || carsWithRides.has(car.id));
+  return cars.filter((car) => car.group !== "temporary" || carsWithRides.has(car.id) || alwaysShowIds.has(car.id));
 }
 
 /**

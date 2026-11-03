@@ -29,7 +29,12 @@ import { WeekGrid, type WeekGridCar, type WeekGridDiscussionBlock, type WeekGrid
 import { WeekStrip } from "@/components/WeekStrip";
 import { WaitlistGroupCard } from "@/features/waitlist/components/WaitlistGroupCard";
 import { WaitlistGroupSheet } from "@/features/waitlist/components/WaitlistGroupSheet";
-import { useWaitlistGroupsQuery } from "@/features/waitlist/hooks";
+import { useSiddurWaitlistQuery, useWaitlistGroupsQuery } from "@/features/waitlist/hooks";
+import { WaitingRequestCard } from "@/features/waitlist/components/WaitingRequestCard";
+import { WaitingRequestSheet } from "@/features/waitlist/components/WaitingRequestSheet";
+import { WaitlistToggleButton } from "@/features/waitlist/components/WaitlistToggleButton";
+import { waitingLanes, waitingRequestIdOf } from "@/features/waitlist/siddurLanes";
+import { waitingLabel } from "@/features/waitlist/waitingLabels";
 import { useMyDepartments } from "@/features/auth/useMyDepartments";
 import { useSession } from "@/features/auth/useSession";
 import { useIsSadran } from "@/features/auth/useIsSadran";
@@ -173,6 +178,7 @@ export function SiddurPage() {
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
   const [selectedRideId, setSelectedRideId] = useState<string | null>(null);
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
+  const [selectedWaitingId, setSelectedWaitingId] = useState<string | null>(null);
   // Swap cars on a day by dragging car names (REQ §13.92, owner batch 2026-09-24 S1).
   const [carSwapPair, setCarSwapPair] = useState<{ carA: string; carB: string } | null>(null);
   const [quickRequestSlot, setQuickRequestSlot] = useState<{
@@ -189,7 +195,7 @@ export function SiddurPage() {
   } | null>(null);
   // Per-device display preferences (cards/table, zoom, early hours) — UX_FLOWS.md member
   // siddur "display" menu, persisted in `localStorage` (`useSiddurDisplayPrefs`).
-  const { tableView, setTableView, tableZoom, setTableZoom, showEarlyHours, setShowEarlyHours } = useSiddurDisplayPrefs();
+  const { tableView, setTableView, tableZoom, setTableZoom, showEarlyHours, setShowEarlyHours, showWaitlist, setShowWaitlist } = useSiddurDisplayPrefs();
   const boardStartMinutes = settingsQuery.data?.board_start_time
     ? parseTimeToMinutes(settingsQuery.data.board_start_time) : 6 * 60;
   const dayStartMinutes = showEarlyHours ? 0 : boardStartMinutes;
@@ -295,6 +301,14 @@ export function SiddurPage() {
   // Contested waiting-list groups (REQ §13.75, UX_FLOWS.md §3.5): one "בדיון" block/card per
   // still-open group on the displayed day, alongside the day's rides.
   const activeDayWaitlistGroups = (waitlistGroupsQuery.data ?? []).filter((group) => group.day === activeDay);
+  // REQ §13.182: requests waiting for a car on published days, for members of the department; one button shows/hides
+  // them together with the "בדיון" lane (per device). The badge counts the day's waiting requests, groups included.
+  const waitlistWeek = isMyDepartment && (resolvedWeek?.phase === "published" || resolvedWeek?.phase === "live");
+  const siddurWaitlistQuery = useSiddurWaitlistQuery(departmentId, weekStart, waitlistWeek);
+  const activeDayWaiting = (siddurWaitlistQuery.data ?? []).filter((request) => request.day === activeDay);
+  const waitingCount = activeDayWaiting.length + activeDayWaitlistGroups.reduce((sum, group) => sum + group.members.length, 0);
+  const shownWaitlistGroups = showWaitlist ? activeDayWaitlistGroups : [];
+  const selectedWaiting = (siddurWaitlistQuery.data ?? []).find((request) => request.request_id === selectedWaitingId) ?? null;
   const selectedWaitlistGroup = (waitlistGroupsQuery.data ?? []).find((group) => group.id === selectedGroupId) ?? null;
   // On the current day, open the calendar at the full hour before now. This
   // leaves enough recent context to see a ride that has just begun.
@@ -307,6 +321,9 @@ export function SiddurPage() {
   // later, so a click there just prefills the normal form's day/time instead (below).
   const isLiveWeek = resolvedWeek?.phase === "live";
   const activeDayPublished = !!activeDay && (resolvedWeek?.published_days?.includes(activeDay) ?? true);
+  const waitlistButton = waitlistWeek && activeDayPublished
+    ? <WaitlistToggleButton count={waitingCount} shown={showWaitlist} onChange={setShowWaitlist} />
+    : null;
   // REQ §13.155: the "טרם פורסם" stamp, only in a week some of which is published.
   const stampUnpublished = !!activeDay && !activeDayPublished && (resolvedWeek?.published_days?.length ?? 0) > 0;
   const isLiveDay = isLiveWeek && activeDayPublished;
@@ -333,15 +350,23 @@ export function SiddurPage() {
   })();
   const dayFreeWindows = useDayFreeWindows(departmentId, isLiveDay ? weekStart : undefined, isLiveDay ? (activeDay ?? undefined) : undefined, now);
 
+  const myPrivateCarIds = new Set((carsQuery.data ?? [])
+    .filter((car) => car.type === "temporary" && car.owner_id === profileId && car.status === "active").map((car) => car.id));
+
   /**
    * Owner 2026-10-11: a two-tap span on an empty part of a car column (first tap = start, second = end) opens the
    * request form with "לצאת ב־<start>", "להיות בבית עד <end>" and that car as the preferred car (a shared car only).
    * The same slot twice gives only the start, with the form's default length.
    */
   function handleSlotRange(carId: string, startMinutes: number, endMinutes: number) {
-    if (!weekStart || !activeDay) return;
+    if (!weekStart || !activeDay || carId.startsWith("phantom:")) return;
     const time = formatMinutes(startMinutes);
     const endTime = endMinutes > startMinutes ? formatMinutes(endMinutes) : undefined;
+    // Owner 2026-11-03: my own private car's row - the form with that car chosen (a round trip lands on it directly).
+    if (myPrivateCarIds.has(carId)) {
+      navigate(paths.requests.new({ week: weekStart, day: activeDay, time, end: endTime, car: carId }), requestLinkProps);
+      return;
+    }
     if (isLiveDay) {
       setQuickRequestSlot({
         carId, day: activeDay, weekStart, time, endTime,
@@ -483,8 +508,12 @@ export function SiddurPage() {
       isMine: original?.isMine, needsDriver: original?.needsDriver });
   }
 
-  // A private (temporary) car is shown only on days it has a ride (REQ §13.80, owner 2026-09-14).
-  const weekGridVisibleCars = hideIdleTemporaryCars(weekGridCars, weekGridRides);
+  // A private (temporary) car is shown only on days it has a ride (REQ §13.80, owner 2026-09-14) — except to its owner.
+  const weekGridVisibleCars = hideIdleTemporaryCars(weekGridCars, weekGridRides, myPrivateCarIds);
+  const waitingGrid = showWaitlist && activeDay
+    ? waitingLanes(activeDayWaiting, activeDay, minutesSinceMidnight,
+        (lane) => (lane === 0 ? he.waitlist.siddurLane : tv("waitlist.siddurLaneN", { number: String(lane + 1) })), waitingLabel)
+    : { cars: [], rides: [] };
   // REQ §13.114: maintenance bands in the car column; draggable by the car's current responsible person, the Sadran, the admin.
   // Owner 2026-10-11: the same hatched "car is at X" band as the board — not from home, but free for someone at X.
   const awayBands = activeDay ? awayBandBlocks(carLocationsQuery.data ?? [], activeDay, (place) => tv("siddur.awayBand", { place })) : [];
@@ -493,7 +522,7 @@ export function SiddurPage() {
   // The pencil shows only when this day has something this member may drag.
   const canDragSomething = canEditWeek && (canSwapCarsOnActiveDay || weekGridRides.some((ride) => canDragRide(ride.id))
     || maintenanceEditing.gridBlocks.some((block) => block.editable));
-  const weekGridDiscussionBlocks: WeekGridDiscussionBlock[] = activeDayWaitlistGroups.map((group) => ({
+  const weekGridDiscussionBlocks: WeekGridDiscussionBlock[] = shownWaitlistGroups.map((group) => ({
     id: group.id,
     startMinutes: minutesSinceMidnight(group.starts_at),
     endMinutes: minutesSinceMidnight(group.starts_at) + (Date.parse(group.ends_at) - Date.parse(group.starts_at)) / 60_000,
@@ -554,6 +583,7 @@ export function SiddurPage() {
           {/* O30-2: the phone's list view drags nothing — the pencil only with the table. */}
           {canDragSomething && tableView ? <EditModeButton on={editMode} onChange={setEditMode} /> : null}
           {departmentId ? <LongRangeMenu departmentId={departmentId} /> : null}
+          {waitlistButton}
           <SiddurDisplayMenu
             table={tableView}
             onTableChange={setTableView}
@@ -604,6 +634,7 @@ export function SiddurPage() {
             {/* Below lg without the table this is the list view (see the day list below). */}
             {canDragSomething ? <span className={tableView ? "contents" : "hidden lg:contents"}><EditModeButton on={editMode} onChange={setEditMode} /></span> : null}
             {departmentId ? <LongRangeMenu departmentId={departmentId} /> : null}
+            {waitlistButton}
             <SiddurDisplayMenu
               table={tableView}
               onTableChange={setTableView}
@@ -630,13 +661,16 @@ export function SiddurPage() {
               ) : null}
               {boardRidesQuery.isLoading ? (
                 <CardListSkeleton />
-              ) : activeDayRides.length === 0 && freeGapRows.length === 0 && activeDayWaitlistGroups.length === 0 ? (
+              ) : activeDayRides.length === 0 && freeGapRows.length === 0 && shownWaitlistGroups.length === 0 && !(showWaitlist && activeDayWaiting.length) ? (
                 <EmptyState icon={CalendarDays} message={he.siddur.noRides} />
               ) : (
                 <>
-                  {activeDayWaitlistGroups.map((group) => (
+                  {shownWaitlistGroups.map((group) => (
                     <WaitlistGroupCard key={group.id} group={group} onClick={() => setSelectedGroupId(group.id)} />
                   ))}
+                  {showWaitlist ? activeDayWaiting.map((request) => (
+                    <WaitingRequestCard key={request.request_id} request={request} onClick={() => setSelectedWaitingId(request.request_id)} />
+                  )) : null}
                   {activeDayRides.map((r) => {
                   // Same fix as `weekGridRides` above (UX_FLOWS §20): a round trip's own
                   // `destination_name` is always the department's home name.
@@ -726,8 +760,8 @@ export function SiddurPage() {
                 onBlockClick={maintenanceEditing.onBlockClick}
                 zoom={tableZoom}
                 onZoomChange={setTableZoom}
-                cars={weekGridVisibleCars}
-                rides={weekGridRides}
+                cars={[...weekGridVisibleCars, ...waitingGrid.cars]}
+                rides={[...weekGridRides, ...waitingGrid.rides]}
                 dayStartMinutes={dayStartMinutes}
                 dayEndMinutes={dayEndMinutes}
                 initialScrollMinutes={initialGridScrollMinutes}
@@ -743,7 +777,11 @@ export function SiddurPage() {
                   const ride = weekGridRides.find((r) => r.id === rideId);
                   if (ride) moveRide(rideId, ride.carId, edge === "start" ? minutes : ride.startMinutes, edge === "end" ? minutes : ride.endMinutes);
                 }}
-                onRideClick={setSelectedRideId}
+                onRideClick={(rideId) => {
+                  const waitingId = waitingRequestIdOf(rideId);
+                  if (waitingId) setSelectedWaitingId(waitingId);
+                  else setSelectedRideId(rideId);
+                }}
                 onSlotRange={isMyDepartment ? handleSlotRange : undefined}
                 rangeResetKey={activeDay ?? undefined}
                 enableCarReport
@@ -806,6 +844,11 @@ export function SiddurPage() {
         ) : memberRideEditor ?? undefined}
       />
 
+      <WaitingRequestSheet
+        request={selectedWaiting}
+        myVersion={(myRequestsQuery.data ?? []).find((request) => request.id === selectedWaitingId)?.version}
+        onOpenChange={(open) => !open && setSelectedWaitingId(null)}
+      />
       <WaitlistGroupSheet
         group={selectedWaitlistGroup}
         departmentId={departmentId as string}
