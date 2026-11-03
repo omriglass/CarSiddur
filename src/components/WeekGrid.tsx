@@ -1163,7 +1163,8 @@ export function WeekGrid({
           "relative transition-smooth",
           !drafting && "border-e",
           car.group === "temporary" && "bg-booked/[0.04]",
-          car.group === "phantom" && "border-dashed bg-maintenance/5",
+          // Only the phantom column's own end border is dashed: the waiting-list divider on its start side stays solid.
+          car.group === "phantom" && "[border-inline-end-style:dashed] bg-maintenance/5",
           isFirstTemporary && "border-s-2 border-s-border",
           isFirstExtraCar(colIndex) && EXTRA_LANES_DIVIDER,
           showHoverRing && (hoverValid ? "bg-available/10 ring-2 ring-inset ring-available" : "bg-destructive/10 ring-2 ring-inset ring-destructive"),
