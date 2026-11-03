@@ -298,7 +298,7 @@
         "Cancel a live-week ride; confirm an overlapping waitlisted request auto-assigns (REQ §13.66)",
         "Create two overlapping unresolvable requests; confirm one contested discussion group (REQ §13.75)",
         "Waitlist a large-luggage request while the big-trunk car is busy; /my names the trunk, not 'all cars busy' (REQ §13.143)",
-        "Siddur waiting list (REQ §13.182): on a published day with a member waiting, the header's people button shows the count; table view has a 'חסר רכב' column (overlaps in a second one), list view a dashed card; tapping opens the details (edit/remove only on your own); the button hides columns, cards and the בדיון lane, and the choice stays after a reload"
+        "Siddur waiting list (REQ §13.182): on a published day with a member waiting, the header's people button shows the count; table view has a 'חסר רכב' column (overlaps in a second one), list view a dashed card; tapping opens the details (edit/remove only on your own); the button sits right after the pencil, is not highlighted and only scrolls to the בדיון lane / חסר רכב columns (nothing hides); the בדיון lane comes right after the cars, before the חסר רכב columns (board too); a הקפצה on a driverless ride is not repeated in the waiting list"
       ]
     },
     {

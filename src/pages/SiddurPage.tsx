@@ -31,8 +31,9 @@ import { WaitlistGroupCard } from "@/features/waitlist/components/WaitlistGroupC
 import { WaitlistGroupSheet } from "@/features/waitlist/components/WaitlistGroupSheet";
 import { useSiddurWaitlistQuery, useWaitlistGroupsQuery } from "@/features/waitlist/hooks";
 import { WaitingRequestCard } from "@/features/waitlist/components/WaitingRequestCard";
+import { scrollToWaitlist } from "@/features/waitlist/scrollToWaitlist";
 import { WaitingRequestSheet } from "@/features/waitlist/components/WaitingRequestSheet";
-import { WaitlistToggleButton } from "@/features/waitlist/components/WaitlistToggleButton";
+import { WaitlistScrollButton } from "@/features/waitlist/components/WaitlistScrollButton";
 import { waitingLanes, waitingRequestIdOf } from "@/features/waitlist/siddurLanes";
 import { waitingLabel } from "@/features/waitlist/waitingLabels";
 import { useMyDepartments } from "@/features/auth/useMyDepartments";
@@ -195,7 +196,7 @@ export function SiddurPage() {
   } | null>(null);
   // Per-device display preferences (cards/table, zoom, early hours) — UX_FLOWS.md member
   // siddur "display" menu, persisted in `localStorage` (`useSiddurDisplayPrefs`).
-  const { tableView, setTableView, tableZoom, setTableZoom, showEarlyHours, setShowEarlyHours, showWaitlist, setShowWaitlist } = useSiddurDisplayPrefs();
+  const { tableView, setTableView, tableZoom, setTableZoom, showEarlyHours, setShowEarlyHours } = useSiddurDisplayPrefs();
   const boardStartMinutes = settingsQuery.data?.board_start_time
     ? parseTimeToMinutes(settingsQuery.data.board_start_time) : 6 * 60;
   const dayStartMinutes = showEarlyHours ? 0 : boardStartMinutes;
@@ -301,13 +302,12 @@ export function SiddurPage() {
   // Contested waiting-list groups (REQ §13.75, UX_FLOWS.md §3.5): one "בדיון" block/card per
   // still-open group on the displayed day, alongside the day's rides.
   const activeDayWaitlistGroups = (waitlistGroupsQuery.data ?? []).filter((group) => group.day === activeDay);
-  // REQ §13.182: requests waiting for a car on published days, for members of the department; one button shows/hides
-  // them together with the "בדיון" lane (per device). The badge counts the day's waiting requests, groups included.
+  // REQ §13.182: requests waiting for a car on published days, for members of the department, always on the siddur.
+  // The header button (only while someone waits) counts the day's waiting requests, groups included, and scrolls to them.
   const waitlistWeek = isMyDepartment && (resolvedWeek?.phase === "published" || resolvedWeek?.phase === "live");
   const siddurWaitlistQuery = useSiddurWaitlistQuery(departmentId, weekStart, waitlistWeek);
   const activeDayWaiting = (siddurWaitlistQuery.data ?? []).filter((request) => request.day === activeDay);
   const waitingCount = activeDayWaiting.length + activeDayWaitlistGroups.reduce((sum, group) => sum + group.members.length, 0);
-  const shownWaitlistGroups = showWaitlist ? activeDayWaitlistGroups : [];
   const selectedWaiting = (siddurWaitlistQuery.data ?? []).find((request) => request.request_id === selectedWaitingId) ?? null;
   const selectedWaitlistGroup = (waitlistGroupsQuery.data ?? []).find((group) => group.id === selectedGroupId) ?? null;
   // On the current day, open the calendar at the full hour before now. This
@@ -321,8 +321,8 @@ export function SiddurPage() {
   // later, so a click there just prefills the normal form's day/time instead (below).
   const isLiveWeek = resolvedWeek?.phase === "live";
   const activeDayPublished = !!activeDay && (resolvedWeek?.published_days?.includes(activeDay) ?? true);
-  const waitlistButton = waitlistWeek && activeDayPublished
-    ? <WaitlistToggleButton count={waitingCount} shown={showWaitlist} onChange={setShowWaitlist} />
+  const waitlistButton = waitlistWeek && activeDayPublished && waitingCount > 0
+    ? <WaitlistScrollButton count={waitingCount} onClick={scrollToWaitlist} />
     : null;
   // REQ §13.155: the "טרם פורסם" stamp, only in a week some of which is published.
   const stampUnpublished = !!activeDay && !activeDayPublished && (resolvedWeek?.published_days?.length ?? 0) > 0;
@@ -510,7 +510,7 @@ export function SiddurPage() {
 
   // A private (temporary) car is shown only on days it has a ride (REQ §13.80, owner 2026-09-14) — except to its owner.
   const weekGridVisibleCars = hideIdleTemporaryCars(weekGridCars, weekGridRides, myPrivateCarIds);
-  const waitingGrid = showWaitlist && activeDay
+  const waitingGrid = activeDay
     ? waitingLanes(activeDayWaiting, activeDay, minutesSinceMidnight,
         (lane) => (lane === 0 ? he.waitlist.siddurLane : tv("waitlist.siddurLaneN", { number: String(lane + 1) })), waitingLabel)
     : { cars: [], rides: [] };
@@ -522,7 +522,7 @@ export function SiddurPage() {
   // The pencil shows only when this day has something this member may drag.
   const canDragSomething = canEditWeek && (canSwapCarsOnActiveDay || weekGridRides.some((ride) => canDragRide(ride.id))
     || maintenanceEditing.gridBlocks.some((block) => block.editable));
-  const weekGridDiscussionBlocks: WeekGridDiscussionBlock[] = shownWaitlistGroups.map((group) => ({
+  const weekGridDiscussionBlocks: WeekGridDiscussionBlock[] = activeDayWaitlistGroups.map((group) => ({
     id: group.id,
     startMinutes: minutesSinceMidnight(group.starts_at),
     endMinutes: minutesSinceMidnight(group.starts_at) + (Date.parse(group.ends_at) - Date.parse(group.starts_at)) / 60_000,
@@ -582,8 +582,8 @@ export function SiddurPage() {
         <div className="flex items-center gap-2">
           {/* O30-2: the phone's list view drags nothing — the pencil only with the table. */}
           {canDragSomething && tableView ? <EditModeButton on={editMode} onChange={setEditMode} /> : null}
-          {departmentId ? <LongRangeMenu departmentId={departmentId} /> : null}
           {waitlistButton}
+          {departmentId ? <LongRangeMenu departmentId={departmentId} /> : null}
           <SiddurDisplayMenu
             table={tableView}
             onTableChange={setTableView}
@@ -633,8 +633,8 @@ export function SiddurPage() {
           <div className="hidden md:flex md:justify-end md:gap-2">
             {/* Below lg without the table this is the list view (see the day list below). */}
             {canDragSomething ? <span className={tableView ? "contents" : "hidden lg:contents"}><EditModeButton on={editMode} onChange={setEditMode} /></span> : null}
-            {departmentId ? <LongRangeMenu departmentId={departmentId} /> : null}
             {waitlistButton}
+            {departmentId ? <LongRangeMenu departmentId={departmentId} /> : null}
             <SiddurDisplayMenu
               table={tableView}
               onTableChange={setTableView}
@@ -661,16 +661,16 @@ export function SiddurPage() {
               ) : null}
               {boardRidesQuery.isLoading ? (
                 <CardListSkeleton />
-              ) : activeDayRides.length === 0 && freeGapRows.length === 0 && shownWaitlistGroups.length === 0 && !(showWaitlist && activeDayWaiting.length) ? (
+              ) : activeDayRides.length === 0 && freeGapRows.length === 0 && activeDayWaitlistGroups.length === 0 && activeDayWaiting.length === 0 ? (
                 <EmptyState icon={CalendarDays} message={he.siddur.noRides} />
               ) : (
                 <>
-                  {shownWaitlistGroups.map((group) => (
+                  {activeDayWaitlistGroups.map((group) => (
                     <WaitlistGroupCard key={group.id} group={group} onClick={() => setSelectedGroupId(group.id)} />
                   ))}
-                  {showWaitlist ? activeDayWaiting.map((request) => (
+                  {activeDayWaiting.map((request) => (
                     <WaitingRequestCard key={request.request_id} request={request} onClick={() => setSelectedWaitingId(request.request_id)} />
-                  )) : null}
+                  ))}
                   {activeDayRides.map((r) => {
                   // Same fix as `weekGridRides` above (UX_FLOWS §20): a round trip's own
                   // `destination_name` is always the department's home name.

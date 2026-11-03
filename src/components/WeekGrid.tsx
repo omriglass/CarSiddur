@@ -1131,7 +1131,10 @@ export function WeekGrid({
   /** Which car header the pointer is over, tracked on `carDrag` itself (never derived at render time — that would read the `colRefs` ref during render). */
   const carDragHoverId = carDrag?.confirmed ? carDrag.hoverCarId : null;
   const hasDiscussionLane = discussionBlocks.length > 0;
-  const discussionColIndex = allCars.length + 2;
+  // REQ §13.182 (owner 2026-11-03): the "בדיון" lane comes right after the real cars, before the phantom lanes.
+  const realCarCount = sharedCars.length + temporaryCars.length;
+  const discussionColIndex = realCarCount + 2;
+  const carGridColumn = (index: number) => index + 2 + (hasDiscussionLane && index >= realCarCount ? 1 : 0);
   const gridTemplateRows = `${pageScroll ? "0px" : `minmax(${HEADER_ROW_HEIGHT_PX}px, auto)`} repeat(${hours.length}, ${HOUR_ROW_HEIGHT_PX}px)`;
   const gridMinWidth = HOUR_COL_WIDTH_PX + (allCars.length + (hasDiscussionLane ? 1 : 0)) * CAR_COL_WIDTH_PX;
   const gridTemplateColumns = `${HOUR_COL_WIDTH_PX}px repeat(${allCars.length}, minmax(${CAR_COL_WIDTH_PX}px, 1fr))${hasDiscussionLane ? ` minmax(${CAR_COL_WIDTH_PX}px, 1fr)` : ""}`;
@@ -1161,7 +1164,7 @@ export function WeekGrid({
           isFirstTemporary && "border-s-2 border-s-border",
           showHoverRing && (hoverValid ? "bg-available/10 ring-2 ring-inset ring-available" : "bg-destructive/10 ring-2 ring-inset ring-destructive"),
         )}
-        style={{ gridColumn: colIndex + 2, gridRow: `2 / span ${hours.length}` }}
+        style={{ gridColumn: carGridColumn(colIndex), gridRow: `2 / span ${hours.length}` }}
         onClick={(e) => handleColumnClick(car.id, e)}
         onPointerMove={rangeStart?.carId === car.id ? (e) => {
           if (e.pointerType !== "mouse") return;
@@ -1579,7 +1582,7 @@ export function WeekGrid({
               isCarDropHover && "bg-primary/10 ring-2 ring-inset ring-primary",
               car.unpublished && "text-muted-foreground",
             )}
-            style={{ gridColumn: i + 2, gridRow: 1, scrollSnapAlign: "start" }}
+            style={{ gridColumn: carGridColumn(i), gridRow: 1, scrollSnapAlign: "start" }}
             onPointerDown={swappable ? (e) => carPointerDownRef.current(car.id, e) : undefined}
           >
             <span className={cn("flex min-w-0 items-center justify-center gap-1 text-center text-sm md:text-base leading-tight", myCarIds.has(car.id) || car.today ? "font-bold" : "font-medium")} data-testid="week-grid-car-name" data-my-car={myCarIds.has(car.id) || undefined} data-today={car.today || undefined} data-unpublished={car.unpublished || undefined}>
@@ -1718,6 +1721,7 @@ export function WeekGrid({
           <div
             className="relative border-s-2 border-s-border bg-maintenance/5"
             style={{ gridColumn: discussionColIndex, gridRow: `2 / span ${hours.length}` }}
+            data-discussion-lane
           >
             {hours.map((h, hi) => {
               const bandRect = clampRideVertical(h * 60, (h + 1) * 60, dayStartMinutes, dayEndMinutes);

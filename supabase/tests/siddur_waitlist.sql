@@ -1,6 +1,6 @@
 -- REQ §13.182: `siddur_waitlist()` — the siddur's "חסר רכב" columns. Every member of the department sees
 -- who waits for a car on a published day; never an unpublished day, a request in an open "בדיון" group,
--- a placed request, or the note to the Sadran.
+-- a placed request, a request already on a ride (a driverless הקפצה, e.g.), or the note to the Sadran.
 -- Transactional (rolled back). Seeded נבו department and members; a far-future week.
 begin;
 
@@ -60,12 +60,25 @@ begin
     returning id into g;
   insert into public.waitlist_group_members(group_id, request_id, profile_id, department_id, week_start, depart_at, return_at)
     values (g, q, member2, dept, w, ((w + 2) + time '16:00') at time zone 'Asia/Jerusalem', ((w + 2) + time '18:00') at time zone 'Asia/Jerusalem');
+  -- A waiting הקפצה already on a ride that still needs a driver: the board shows it on that ride (owner 2026-11-03).
+  insert into public.requests(department_id, week_start, requester_id, filed_by, ride_type_id, origin_id, destination_id, trip_shape, one_way_car_mode, trip_type,
+                              depart_at, adults, status, status_reason)
+    values (dept, w, member2, member2, ride_type, home, dest, 'one_way_to', 'passenger', 'drop_off',
+            ((w + 2) + time '19:00') at time zone 'Asia/Jerusalem', 1, 'waitlisted', 'UNMET_NEEDS_DRIVER')
+    returning id into q;
+  insert into sw_ids values ('on_ride', q);
+  insert into public.rides(id, department_id, week_start, car_id, starts_at, ends_at, origin_id, destination_id, blocked_until, status, needs_driver, created_by)
+    values (gen_random_uuid(), dept, w, '00000000-0000-0000-0000-000000000040', ((w + 2) + time '19:00') at time zone 'Asia/Jerusalem',
+            ((w + 2) + time '20:00') at time zone 'Asia/Jerusalem', home, home, ((w + 2) + time '20:30') at time zone 'Asia/Jerusalem', 'flagged', true, member2)
+    returning id into g;
+  insert into public.ride_requests(ride_id, request_id, role, leg, car_mode) values (g, q, 'passenger', 'out', 'chauffeur');
   insert into sw_ids values ('week', null);
   update sw_ids set id = dept where k = 'week';
   set local session_replication_role = origin;
 end $$;
 
--- TEST 1: another member sees member1's waiting request (name, companion, hours, place) and nothing else.
+-- TEST 1: another member sees member1's waiting request (name, companion, hours, place) and nothing else —
+-- not the unpublished day, the placed request, the grouped one, or the one already on a driverless ride.
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000000104","role":"authenticated"}', true);
 set local role authenticated;
 do $$

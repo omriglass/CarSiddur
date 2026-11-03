@@ -1,9 +1,9 @@
 import { createClient } from "@supabase/supabase-js";
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import { he, tv } from "../src/i18n/he";
 import { NEVO_DEPARTMENT_ID, SEEDED_USERS, SUPABASE_ANON_KEY, SUPABASE_URL, newSignedInPage, serviceRoleClient } from "./helpers";
 
-// REQ §13.182 (owner 2026-11-03): the siddur's "חסר רכב" columns with their show/hide button, the owner's
+// REQ §13.182 (owner 2026-11-03): the siddur's "חסר רכב" columns with the button that scrolls to them, the owner's
 // private car row on every day, and "add a ride on this car" from the car card on /my.
 const MEMBER1_ID = "00000000-0000-0000-0000-000000000103";
 const ADMIN_ID = "00000000-0000-0000-0000-000000000101";
@@ -67,24 +67,38 @@ async function setTableView(page: Page, tableView: boolean): Promise<void> {
   }, [DISPLAY_PREFS_KEY, tableView]);
 }
 
+/** How much of the element's width lies inside the grid's scroll viewport (0..1) — sideways only; a column is always taller than the screen. */
+async function shownWidthShare(locator: Locator): Promise<number> {
+  return locator.evaluate((el) => {
+    const box = el.getBoundingClientRect();
+    const view = el.closest("[data-week-grid-scroll-viewport]")!.getBoundingClientRect();
+    return Math.max(0, Math.min(box.right, view.right) - Math.max(box.left, view.left)) / box.width;
+  });
+}
+
 test.describe("siddur waiting list", { tag: ["@waitlist", "@siddur"] }, () => {
   let fixture: { weekStart: string; day: string; requestId: string };
   test.beforeAll(async () => {
     fixture = await publishedDayWithOneWaiting();
   });
 
-  test("the waiting request shows in the list view; the button hides it and the choice survives a reload", async ({ browser }) => {
+  test("the waiting request shows in the list view; the button counts it and leads to it", async ({ browser }) => {
     const viewer = await newSignedInPage(browser, SEEDED_USERS.member2);
     try {
       await viewer.page.setViewportSize({ width: 390, height: 844 });
       await setTableView(viewer.page, false);
       await viewer.page.goto(`/siddur/${NEVO_DEPARTMENT_ID}/${fixture.weekStart}?day=${fixture.day}`);
-      const toggle = viewer.page.getByTestId("siddur-waitlist-toggle").first();
-      await expect(toggle).toBeVisible({ timeout: 15_000 });
+      const button = viewer.page.getByTestId("siddur-waitlist-button").first();
+      await expect(button).toBeVisible({ timeout: 15_000 });
       await expect(viewer.page.getByTestId("siddur-waitlist-count").first()).toHaveText("1");
+      await expect(button).toHaveAttribute("aria-label", tv("waitlist.scrollTo", { count: "1" }));
       const card = viewer.page.getByTestId("siddur-waiting-card");
       await expect(card).toContainText(SEEDED_USERS.member1.fullName);
       await expect(card).toContainText("E2E waiting destination");
+
+      // The button hides nothing: the card stays, in view.
+      await button.click();
+      await expect(card).toBeInViewport();
 
       // Someone else's waiting request: the details, no edit/remove.
       await card.click();
@@ -92,29 +106,23 @@ test.describe("siddur waiting list", { tag: ["@waitlist", "@siddur"] }, () => {
       await expect(sheet.getByRole("heading", { name: he.waitlist.waitingSheetTitle })).toBeVisible();
       await expect(sheet).toContainText(SEEDED_USERS.member1.fullName);
       await expect(sheet.getByRole("link", { name: he.requestsList.edit })).toHaveCount(0);
-      await viewer.page.keyboard.press("Escape");
-
-      await toggle.click();
-      await expect(card).toHaveCount(0);
-      await expect(toggle).toHaveAttribute("aria-label", tv("waitlist.toggleShow", { count: "1" }));
-      await viewer.page.reload();
-      await expect(viewer.page.getByTestId("siddur-waitlist-toggle").first()).toHaveAttribute("aria-pressed", "false", { timeout: 15_000 });
-      await expect(viewer.page.getByTestId("siddur-waiting-card")).toHaveCount(0);
-      await viewer.page.getByTestId("siddur-waitlist-toggle").first().click();
-      await expect(viewer.page.getByTestId("siddur-waiting-card")).toBeVisible();
     } finally {
       await viewer.context.close();
     }
   });
 
-  test("table view: a \"חסר רכב\" column holds the waiting block; the requester can edit it from the sheet", async ({ browser }) => {
+  test("table view: a \"חסר רכב\" column holds the waiting block; the button scrolls to it; the requester can edit it", async ({ browser }) => {
     const requester = await newSignedInPage(browser, SEEDED_USERS.member1);
     try {
       await requester.page.setViewportSize({ width: 390, height: 844 });
       await setTableView(requester.page, true);
       await requester.page.goto(`/siddur/${NEVO_DEPARTMENT_ID}/${fixture.weekStart}?day=${fixture.day}`);
-      await expect(requester.page.locator('[data-car-col-id="phantom:waiting:0"]')).toBeVisible({ timeout: 15_000 });
-      await expect(requester.page.getByText(he.waitlist.siddurLane, { exact: true })).toBeVisible();
+      const column = requester.page.locator('[data-car-col-id="phantom:waiting:0"]');
+      await expect(column).toBeAttached({ timeout: 15_000 });
+      await expect(requester.page.getByText(he.waitlist.siddurLane, { exact: true })).toBeAttached();
+      // After every car; the button brings the whole column into the table's visible width.
+      await requester.page.getByTestId("siddur-waitlist-button").first().click();
+      await expect.poll(() => shownWidthShare(column)).toBeGreaterThan(0.95);
       const block = requester.page.locator(`[data-ride-id="waiting:${fixture.requestId}"]`);
       await expect(block).toHaveAttribute("data-kind", "waiting");
       // As for any block in the table: a tap opens the grid's preview, "פרטי הנסיעה" the sheet.
@@ -123,11 +131,6 @@ test.describe("siddur waiting list", { tag: ["@waitlist", "@siddur"] }, () => {
       const sheet = requester.page.getByTestId("siddur-waiting-sheet");
       await expect(sheet.getByRole("link", { name: he.requestsList.edit })).toBeVisible();
       await expect(sheet.getByRole("button", { name: he.requestsList.withdraw })).toBeVisible();
-      await requester.page.keyboard.press("Escape");
-
-      // Hiding takes the column away.
-      await requester.page.getByTestId("siddur-waitlist-toggle").first().click();
-      await expect(requester.page.locator('[data-car-col-id="phantom:waiting:0"]')).toHaveCount(0);
     } finally {
       await requester.context.close();
     }
@@ -141,7 +144,7 @@ test.describe("siddur waiting list", { tag: ["@waitlist", "@siddur"] }, () => {
         await page.setViewportSize({ width: 390, height: 844 });
         await setTableView(page, true);
         await page.goto(`/siddur/${NEVO_DEPARTMENT_ID}/${fixture.weekStart}?day=${fixture.day}`);
-        await expect(page.getByTestId("siddur-waitlist-toggle").first()).toBeVisible({ timeout: 15_000 });
+        await expect(page.getByTestId("siddur-waitlist-button").first()).toBeVisible({ timeout: 15_000 });
       }
       await expect(owner.page.locator(`[data-car-col-id="${PRIVATE_CAR_ID}"]`)).toBeVisible();
       await expect(other.page.locator(`[data-car-col-id="${PRIVATE_CAR_ID}"]`)).toHaveCount(0);

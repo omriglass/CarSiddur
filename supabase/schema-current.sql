@@ -20067,7 +20067,9 @@ begin
     left join public.destinations d on d.id = q.destination_id
     where q.department_id = p_department_id and q.week_start = p_week_start and q.status = 'waitlisted'
       and not exists (select 1 from public.waitlist_group_members gm join public.waitlist_groups g on g.id = gm.group_id
-                      where gm.request_id = q.id and g.status = 'open'))
+                      where gm.request_id = q.id and g.status = 'open')
+      and not exists (select 1 from public.ride_requests rr join public.rides r on r.id = rr.ride_id
+                      where rr.request_id = q.id and r.status <> 'cancelled'))
   select w.id, w.requester_id, p.full_name,
     coalesce((select array_agg(cp.full_name order by cp.full_name) from public.request_companions c
               join public.profiles cp on cp.id = c.profile_id where c.request_id = w.id), '{}'),

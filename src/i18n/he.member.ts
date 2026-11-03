@@ -1171,8 +1171,7 @@ export const heMember = {
     // REQ §13.182: the siddur's "חסר רכב" columns, their show/hide button and a waiting request's sheet.
     siddurLane: "חסר רכב",
     siddurLaneN: "חסר רכב {{number}}",
-    toggleShow: "הצגת רשימת ההמתנה ({{count}})",
-    toggleHide: "הסתרת רשימת ההמתנה ({{count}})",
+    scrollTo: "{{count}} ממתינים לרכב — מעבר לרשימת ההמתנה",
     waitingSheetTitle: "ממתין/ה לרכב",
     waitingSheetHint: "ברשימת ההמתנה — מחכה שיתפנה רכב בשעות האלה.",
     waitingWho: "מי נוסע/ת",
