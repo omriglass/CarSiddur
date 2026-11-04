@@ -1465,3 +1465,19 @@ Found while reproducing a production autofill failure for Tue 10.11 (`leg_locati
 ## Ride details of a combined ride are unreadable (owner 2026-11-04)
 
 - RD1 — **"פרטי הנסיעה" on a combined (merged) ride must show, readably, what each person asked for.** Example: Tuesday's ride with Noni, Yan and Elea. Today the details are unreadable, so the Sadran (most of all) and every member cannot tell who asked for what. Show one block per person: name, role (driver / rider / companion / guest), their own request — origin, destination and stops, which legs they ride (out / return), requested hours and flexibility, seats and luggage, note to the Sadran where the viewer may see it (`request_notes`, REQ §13.153) — and where their request differs from the ride as it runs (the merged route, the shifted time). Reuse the ride's people list (`v_board_rides.people`, `features/rides/ridePeople.ts`) and `rideRoute.ts`; same component on the board's ride sheet and the siddur's. Needs a UX_FLOWS design pass; check phone width. Related: TR1 (opening tiny rides).
+
+## Production slow queries and statement timeouts (owner 2026-11-04; address the week of 2026-11-09)
+
+- PF1 — **Production queries time out under load.** On 2026-11-04 (about 20:00–20:25 UTC) the app felt stuck: `client_errors` showed `canceling statement due to statement timeout` (code 57014, "server busy"), about 15 in an hour, on the Sadran board for week 2026-11-08, the siddur and `/requests/new?week=2026-11-08`, on desktop and Android, plus a few `Failed to fetch` and `realtime_channel_refused`. At that moment the database itself was healthy: 26 connections, no lock waits, no long queries. Likely cause: heavy functions called constantly on the Free-tier shared CPU; the CPU graph in the Supabase dashboard was not checked. Slowest, from `pg_stat_statements` (cumulative, read-only):
+
+  | Query | Calls | Average | Slowest |
+  |---|---|---|---|
+  | `week_board_rides` (two variants) | ~1,900 + ~2,600 | 1.5 s / 1.0 s | ~8 s |
+  | `merge_preview` | 959 | 1.2 s | ~7.9 s |
+  | `car_mileage_totals` | 1,501 | 0.6 s | ~7.8 s |
+  | `my_upcoming_rides` | 966 | 0.7 s | ~7.6 s |
+  | `v_car_locations` / `car_start_locations` | ~7,000 | 0.14–0.17 s | ~5.5 s |
+  | `requests` list (`REQUEST_COLUMNS` select) | 2,309 | 0.4 s | ~5.8 s |
+  | `realtime.authorize` (private channels) | ~6,600 | 0.1 s | ~12 s |
+
+  To do: `EXPLAIN (ANALYZE, BUFFERS)` each on the debug copy (`npm run debug`) with the real week, then cut the cost (indexes, fewer calls per screen, caching or longer `staleTime`, `week_board_rides` doing less per row); look at the number of calls per board/siddur open and at the 15 s / 60 s change polling (`liveSync`); check whether the Free-tier compute is the limit (dashboard CPU). Writes to production only with the owner's OK.
