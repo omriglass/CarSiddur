@@ -1434,3 +1434,12 @@ Found while clearing two stuck "ממתין לאישור פינוי הזמן" blo
 - ✅ (c) a guest leaves with "אני לא צריך/ה את הנסיעה הזו" (Yarden on Shachar's ride); the ride keeps its hours (owner).
 - Production note: Yarden's request `5aca0d0e` (2.11 08:15 to בנימינה) went back to "submitted" when it was unmerged by hand on 1.11 — withdraw it if he no longer needs it.
 
+
+## Trip type wording and options (owner 2026-11-03) — to think about next week, not now
+
+Found while reproducing a production autofill failure for Tue 10.11 (`leg_location_mismatch` / `relay_out_route`; report in `.debug/reports/2026-11-03-autofill-leg-location-mismatch.md`). A member filed a **one-way** home -> Binyamina (morning) and a **הקפצה** pickup Hurish -> home (evening). She does not need the car at the destination, so "one way" was the wrong choice; the solver then joined the two through an empty-car drive that the database trigger refuses (`ride_requests_leg_location()`), and the whole day's autofill rolled back.
+
+- TT1 — **Rename the one-way option** so it is clear that it leaves the car at the destination, e.g. "הלוך בלבד (משאיר/ה את הרכב ביעד)". Wording only (`he.enums` / request form copy) — check the sentence form and the classic form.
+- TT2 — **Rethink the trip-type options.** הקפצה is unwieldy; the owner expects most people to choose הלוך-חזור with an אופציה ב׳ (plan B). Decide whether הקפצה stays as a first-class choice, becomes part of plan B, or is renamed. Needs a REQUIREMENTS change first (§13.93, §13.112).
+- TT3 — **Solver/SQL parity gap (SOLVER.md §3.6.1d, item 136 d):** the "nearby place" pairing emits a ride whose origin differs from its relay leg's origin, which the trigger rejects, and one bad pair rolls back the whole day's autofill. Options once TT2 is decided: (a) teach the trigger the hop, (b) never pair a pickup leg through an empty-car drive. Also consider autofill skipping a pair the database refuses instead of failing the day.
+- Workaround meanwhile: the Sadran changes the morning request to הקפצה (`set_request_trip_type`) or places one leg by hand.
