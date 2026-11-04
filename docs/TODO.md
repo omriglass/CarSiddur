@@ -1457,3 +1457,7 @@ Found while reproducing a production autofill failure for Tue 10.11 (`leg_locati
 ## Stops on the request form (owner 2026-11-04)
 
 - ST1 — **"+ עצירה בהלוך" / "+ עצירה בחזור" are unclear to members and hard to add.** Main problem today: people do not understand what the chips do (an extra place on the way there / on the way back, REQ §13.93 multi-stop). Needs thought before building: clearer wording (say what it is, e.g. where else the car should stop), a simpler way in (one "+ עצירה" that asks which leg only when there is a return, or a stop picked right from the destination field), and an example or preview of the route. Check the sentence form and the classic form; needs a UX_FLOWS design pass and owner review. Keep the data model (`request_stops`, leg `out`/`return`) unless the design needs more.
+
+## Tiny rides are hard to open (owner 2026-11-04)
+
+- TR1 — **A short ride is a tiny block on the grid and hard to tap to see its details.** Make short rides easy to open on the siddur and the board (phone and desktop): a minimum tap target (e.g. a minimum block height or an invisible larger hit area that does not cover neighbouring rides), and/or opening the ride sheet from the ride's label or the day list. Must not clash with the board's long-press drag (REQ §13.184) or the siddur edit mode (§13.165). Check `WeekGrid` and the board grid; verify on a phone-width viewport with back-to-back short rides on one car.
