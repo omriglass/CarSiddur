@@ -3,7 +3,7 @@ import { execSync } from "node:child_process";
 import { formatInTimeZone } from "date-fns-tz";
 import { expect, test, type Page } from "@playwright/test";
 
-import { NEVO_DEPARTMENT_ID, serviceRoleClient, primeLanding, confirmAutoFillWholeWeek, scrollGridColumnTo, openRideDetails } from "./helpers";
+import { NEVO_DEPARTMENT_ID, serviceRoleClient, primeLanding, confirmAutoFillWholeWeek, scrollGridColumnTo, openRideDetails, ensureEditMode } from "./helpers";
 import resetDatabase from "./global-setup";
 import { he } from "../src/i18n/he";
 
@@ -468,6 +468,7 @@ test.describe.serial("board (bug-fix pass regression, fake-week data)", { tag: [
 
     // Under load the board's layout shifts after the first measurement (the solver preview lands), so a drag can start
     // from stale coordinates and do nothing: measure and drag again until the ride has really moved.
+    await ensureEditMode(page);
     await expect(async () => {
       await rideLocator.scrollIntoViewIfNeeded();
       const rideBox = await rideLocator.boundingBox();
@@ -647,6 +648,7 @@ test.describe.serial("board (bug-fix pass regression, fake-week data)", { tag: [
     expect(error).toBeNull();
     expect(reserved?.driver_id).toBeNull();
     const block = page.locator(`button[data-ride-id="${reserved!.id}"]:visible`);
+    await ensureEditMode(page);
     await block.scrollIntoViewIfNeeded();
     const edge = block.locator(".bottom-0");
     const box = await edge.boundingBox();

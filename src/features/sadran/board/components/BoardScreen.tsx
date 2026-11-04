@@ -63,6 +63,8 @@ import { useBoardSurface, useUnsentLeaveGuard } from "../useBoardSurface";
 import { useBoardData } from "../hooks/useBoardData";
 import { useBoardDnd } from "../hooks/useBoardDnd";
 import { useBoardDisplayPrefs } from "../useBoardDisplayPrefs";
+import { EditModeButton } from "@/features/rides/components/EditModeButton";
+import { useDragHint, useEditMode } from "@/features/rides/editMode";
 import { BoardActionsMenu } from "./BoardActionsMenu";
 import { BoardDisplayMenu } from "./BoardDisplayMenu";
 import { BoardListMode } from "./BoardListMode";
@@ -139,6 +141,9 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
   // 2026-09-10) — the standalone toggle button and `TableViewControls` row
   // are gone.
   const { tableView, setTableView, tableZoom, setTableZoom, showEarlyHours, setShowEarlyHours, showLegend, setShowLegend, showUnmetPanel, setShowUnmetPanel } = useBoardDisplayPrefs();
+  // Owner 2026-11-04: the board follows the siddur's edit mode (REQ §13.165) — off, a ride drags only after a long press.
+  const [editMode, setEditMode] = useEditMode();
+  const dragHint = useDragHint();
   const boardStartMinutes = board.departmentSettingsQuery.data?.board_start_time
     ? parseTimeToMinutes(board.departmentSettingsQuery.data.board_start_time) : 6 * 60;
   const dayStartMinutes = showEarlyHours ? 0 : boardStartMinutes;
@@ -394,6 +399,8 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
           <Button type="button" variant="outline" size="icon" aria-label={he.sadranBoard.redo} disabled={!dnd.undoStack.canRedo} onClick={() => void dnd.handleRedo()}>
             <Redo2 className="size-4 rtl:rotate-180" />
           </Button>
+          {/* Below lg without the table this is the list view, which drags nothing. */}
+          <span className={tableView ? "contents" : "hidden lg:contents"}><EditModeButton on={editMode} onChange={setEditMode} /></span>
           <BoardDisplayMenu
             table={tableView}
             onTableChange={setTableView}
@@ -490,6 +497,9 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
             dayEndMinutes={dayEndMinutes}
             readOnly={false}
             draggable
+            holdToDrag={!editMode}
+            // Rides the board never drags (merges, drafts) are not "someone else's": only the "turn on edit mode" hint.
+            onDragHint={(hint) => { if (hint === "locked") dragHint(hint); }}
             canDragRide={(ride) => !ride.id.startsWith("merge:") && !ride.id.startsWith("draft:") && (!ride.id.startsWith("change:") || !!(board.rideChangesQuery.data ?? []).find((change) => change.is_planning && `change:${change.id}` === ride.id))}
             canResizeRide={(ride) => !ride.id.startsWith("request:") && !ride.id.startsWith("change:") && !ride.id.startsWith("merge:") && !ride.id.startsWith("draft:")}
             // Owner 2026-10-11: a two-tap span (first tap = start, second = end) prefills the reservation dialog; the same slot twice keeps the 1-hour default.

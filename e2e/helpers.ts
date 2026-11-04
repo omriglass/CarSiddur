@@ -216,6 +216,13 @@ export async function scrollGridColumnTo(column: Locator, minutes: number, gridS
  * Opens a ride's details (owner 2026-10-22): the first click on a ride block shows its summary popup, the popup's
  * "פרטי הנסיעה" button opens the ride sheet / editor.
  */
+/** Turns on edit mode (the pencil, REQ §13.165) so a mouse drag of a grid ride, its ends or a car header starts at once. */
+export async function ensureEditMode(page: Page): Promise<void> {
+  const pencil = page.getByTestId("edit-mode-button").locator("visible=true");
+  if ((await pencil.getAttribute("data-on")) === null) await pencil.click();
+  await expect(pencil).toHaveAttribute("data-on", "true");
+}
+
 export async function openRideDetails(page: Page, ride: Locator): Promise<void> {
   await ride.click();
   await page.getByTestId("ride-peek-open").click();

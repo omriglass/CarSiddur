@@ -6,7 +6,7 @@ import { paths } from "../src/app/routes";
 import { he, tv } from "../src/i18n/he";
 import { TZ } from "../src/lib/time";
 
-import { getWeekStart, newSignedInPage, NEVO_DEPARTMENT_ID, SEEDED_USERS, serviceRoleClient, signIn } from "./helpers";
+import { ensureEditMode, getWeekStart, newSignedInPage, NEVO_DEPARTMENT_ID, SEEDED_USERS, serviceRoleClient, signIn } from "./helpers";
 
 // REQ §13.92 (owner batch 2026-09-24 S1) — swap cars on a day by dragging car names.
 // `supabase/seed.sql`'s fixed demo UUIDs (see CLAUDE.md folder map / e2e/helpers.ts).
@@ -195,6 +195,7 @@ test.describe("car swap on the board (Sadran)", { tag: ["@board"] }, () => {
       const dayRadio = page.getByRole("radio").first(); // Sunday = index 0
       await dayRadio.click();
       await expect(dayRadio).toHaveAttribute("aria-checked", "true");
+      await ensureEditMode(page);
 
       const headerA = page.locator(`[data-car-header-id="${carA}"]`);
       const headerB = page.locator(`[data-car-header-id="${carB}"]`);

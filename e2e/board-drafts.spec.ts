@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { he, tv } from "../src/i18n/he";
-import { newSignedInPage, NEVO_DEPARTMENT_ID, SEEDED_USERS, serviceRoleClient, scrollGridColumnTo, openRideDetails } from "./helpers";
+import { newSignedInPage, NEVO_DEPARTMENT_ID, SEEDED_USERS, serviceRoleClient, scrollGridColumnTo, openRideDetails, ensureEditMode } from "./helpers";
 import { publishedFixtureWeek } from "./published-week";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -312,8 +312,10 @@ test("a draft of a placed ride is drawn on the ride itself; dragging it updates 
     const block = page.locator(`button[data-ride-id="${ride.id}"]:visible`);
     await expect(block).toBeVisible();
 
-    // Drag the ride block by `minutes` (the column spans 06:00-24:00 = 1080 minutes).
+    // Drag the ride block by `minutes` (the column spans 06:00-24:00 = 1080 minutes). Edit mode is in memory, so every
+    // reload turns it off again.
     async function dragBy(minutes: number) {
+      await ensureEditMode(page);
       await block.scrollIntoViewIfNeeded();
       const box = await block.boundingBox();
       const column = await page.locator(`[data-car-col-id="${carId}"]`).boundingBox();

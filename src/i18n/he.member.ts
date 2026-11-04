@@ -278,7 +278,7 @@ export const heMember = {
   requestDeadline: {
     line: "אפשר להגיש בקשות עד יום {{day}} בשעה {{time}}",
   },
-  // Owner 2026-10-30: the pencil on the siddur and "my rides" (src/features/rides/editMode.ts).
+  // Owner 2026-10-30: the pencil on the siddur and "my rides", and the board since 2026-11-04 (src/features/rides/editMode.ts).
   editMode: {
     turnOn: "מצב עריכה — גרירת נסיעות",
     turnOff: "סיום מצב עריכה",

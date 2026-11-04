@@ -7,7 +7,7 @@ import { he } from "@/i18n/he";
  * Edit mode ("עיפרון") on the member's siddur and "my rides" (owner 2026-10-30): off, a ride drags only after a long
  * press, so a ride is never moved by accident. One state for both screens, in memory only — every reopen of the app
  * starts with it off — and it turns itself off after `EDIT_MODE_IDLE_MS` without a touch (in the background too).
- * Never on the Sadran board.
+ * The Sadran board shares the same switch (owner 2026-11-04, REQ §13.184).
  */
 export const EDIT_MODE_IDLE_MS = 5 * 60_000;
 
