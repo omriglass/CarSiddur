@@ -1,7 +1,8 @@
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { fetchCars } from "@/features/fleet/api";
-import { showErrorToast } from "@/lib/rpc";
+import { toast } from "sonner";
+import { toAppError, showErrorToast, type AppError } from "@/lib/rpc";
 
 import * as api from "./api";
 import { sadranKeys } from "./keys";
@@ -218,10 +219,16 @@ export function useEditRideMutation() {
       expectedVersion?: number;
       departmentId: string;
       weekStart: string;
+      /** REQ §13.185 (g): the caller's own wording of a refusal (names what is in the way); null/absent = the per-code message. */
+      explainRefusal?: (error: AppError) => string | null;
     }) => api.editRide(input, expectedVersion),
     // `edit_ride` returns the ride's id (a new one for a new reservation).
     onSuccess: (rideId, { departmentId, weekStart, input }) => invalidateBoard(queryClient, departmentId, weekStart, [rideId, input.id]),
-    onError: showErrorToast,
+    onError: (error, { explainRefusal }) => {
+      const line = explainRefusal?.(toAppError(error));
+      if (line) toast.error(line);
+      else showErrorToast(error);
+    },
   });
 }
 

@@ -194,6 +194,13 @@ export const heSadran = {
     dragOneWayUnsupported: "גרירה תשבץ נסיעה חד־כיוונית או תכין הצעת איחוד או חלופה לפי זמינות הרכב",
     dragPlacedToast: "שובץ/ה ל{{car}} {{start}}",
     dragPlacedMovedToast: "שובץ/ה ל{{car}} ב-{{start}} (השעה שהבקשה ביקשה, לא {{asked}})",
+    /** REQ §13.185 (g): a refused drop names what is in the way. */
+    refusal: {
+      someone: "נסיעה אחרת",
+      draft: "יש טיוטה של {{name}} על הרכב ב־{{start}}",
+      ride: "{{name}} נוסע/ת ברכב ב־{{start}}–{{end}}",
+      turnaround: "אין מספיק זמן בין הנסיעות: {{name}} ברכב ב־{{start}}–{{end}}",
+    },
     placementOverlap: "אי אפשר לשבץ שם — הבקשה מתנגשת בנסיעה אחרת באותו רכב",
     dragInvalidSeatsToast: "לרכב הזה אין מספיק מקומות לנוסעי הבקשה הזו",
     dropOnDraftBlock: "זו טיוטה שעדיין לא נשלחה — אפשר לשחרר על נסיעה אחרת, או לפתוח את הטיוטה",

@@ -15,6 +15,7 @@ import { he, tv } from "@/i18n/he";
 import { needsLargeTrunk } from "@/lib/luggageWaiver";
 import { askSmallTrunk } from "@/lib/smallTrunk";
 import { dateKey } from "@/lib/time";
+import type { AppError } from "@/lib/rpc";
 import { useSession } from "@/features/auth/useSession";
 import { useProfile } from "@/features/auth/useProfile";
 import { useDepartmentMembers } from "@/features/auth/useDepartmentMembers";
@@ -51,6 +52,7 @@ import {
   unmetShiftPayload,
 } from "../dropValidity";
 import type { UnmetListItem } from "../components/UnmetList";
+import { describeObstacle, findObstacle, type CarBlock } from "../dropRefusal";
 import { isoToDayMinutes, slotToIso, wouldOverlap } from "../geometry";
 import { guestDropQuestion, rideDropAsksMerge, splitOutcome, type DropAnswer, type DropAsk, type DropAskSpec } from "../dropQuestions";
 import { planBSwitchPrefill } from "../planBSwitch";
@@ -625,7 +627,7 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
         served: [{ request_id: req.id, ...placement.served }],
         ...(waiver.allowSmallTrunk ? { allow_small_trunk: true } : {}),
       };
-      let placedRideId = await editRideMutation.mutateAsync({ input: placeInput, departmentId, weekStart });
+      let placedRideId = await editRideMutation.mutateAsync({ input: placeInput, departmentId, weekStart, explainRefusal: explainRefusalFor(carId, window) });
       // R2B7: undo works after a drop from the unmet list - it takes the placed ride back out (the request returns to the list).
       const undoEntry = {
         label: req.requester_full_name ?? placedRideId,
@@ -654,6 +656,25 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
     } catch {
       // The mutation reports validation errors; keep the request on its phantom lane.
     }
+  }
+
+  /**
+   * REQ §13.185 (g): the wording for a refused drop of `window` on `carId` - finds the ride or draft in the way among the
+   * board's loaded data (`ignoreRideId`: the ride being moved). Null = keep the per-code message.
+   */
+  function explainRefusalFor(carId: string, window: { startsAt: string; endsAt: string }, ignoreRideId?: string) {
+    return (error: AppError): string | null => {
+      const blocks: CarBlock[] = [
+        ...dropCtx.rides.flatMap((ride): CarBlock[] => ride.car_id === carId && ride.id !== ignoreRideId && ride.status !== "cancelled" && ride.starts_at && ride.ends_at
+          ? [{ startsAt: ride.starts_at, endsAt: ride.ends_at, isDraft: !!ride.id && board.draftByRideId.has(ride.id), name: servedOf(ride)[0]?.requester ?? ride.driver_name ?? "" }]
+          : []),
+        // a draft that places a request on its own (no ride yet) holds the car too (the server's draft hold)
+        ...board.draftPlacements.flatMap((placement): CarBlock[] => placement.carId === carId && placement.type !== "merge" && !placement.replacesRideId
+          ? [{ startsAt: placement.startsAt, endsAt: placement.endsAt, isDraft: true, name: requestsData.find((r) => r.id === placement.requestId)?.requester_full_name ?? "" }]
+          : []),
+      ];
+      return describeObstacle(error, findObstacle(window, blocks, dropCtx.turnaroundMinutes ?? 0));
+    };
   }
 
   /** Return every served request to the unmet board atomically. */
@@ -883,7 +904,7 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
       const undoLabel = ride.destination_name ?? ride.id;
       const applyMove = async () => {
         try {
-          await editRideMutation.mutateAsync({ input: nextInput, expectedVersion: planningChange?.expected_version ?? ride.version ?? undefined, departmentId, weekStart });
+          await editRideMutation.mutateAsync({ input: nextInput, expectedVersion: planningChange?.expected_version ?? ride.version ?? undefined, departmentId, weekStart, explainRefusal: explainRefusalFor(carId, { startsAt: newStartsAt, endsAt: newEndsAt }, rideId) });
           if (hasCollision && ride.status !== "draft") { toast.success(he.boardCoordination.planningSaved); return; }
           undoVersions.current.set(rideId, (ride.version ?? 0) + 1);
           toast.success(he.sadranBoard.dragAppliedToast);

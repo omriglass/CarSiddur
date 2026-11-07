@@ -134,6 +134,12 @@ export type ErrorCode =
   | "offer_not_found"
   | "offer_not_pending"
   | "ride_unavailable"
+  | "ride_overlap"
+  | "ride_turnaround"
+  | "ride_maintenance"
+  | "ride_seats"
+  | "ride_private_car"
+  | "car_not_available"
   | "ride_wrong_day"
   | "ride_same_day"
   | "ride_change_pending"
@@ -194,7 +200,7 @@ const SQLSTATE_TO_CODE: Record<string, ErrorCode> = {
   "40001": "server_busy",
   "55P03": "server_busy",
   // A ride overlapping another on the car (the `rides_no_overlap_per_car` exclusion constraint; RC1B1).
-  "23P01": "ride_unavailable",
+  "23P01": "ride_overlap",
   P0409: "stale_version",
   P0410: "car_chain_broken",
   P0411: "car_away_at_day_end",
@@ -297,15 +303,15 @@ const MESSAGE_TO_CODE: Record<string, ErrorCode> = {
   invalid_token: "invalid_token",
   offer_not_found: "offer_not_found",
   offer_not_pending: "offer_not_pending",
-  car_unavailable: "ride_unavailable",
-  ride_conflicts_with_maintenance: "ride_unavailable",
+  car_unavailable: "car_not_available",
+  ride_conflicts_with_maintenance: "ride_maintenance",
   // REQ §13.114 scheduled maintenance (create/update/delete_car_maintenance).
   invalid_maintenance_period: "maintenance_period_invalid",
   maintenance_in_past: "maintenance_in_past",
   maintenance_overlap: "maintenance_overlap",
   maintenance_finished: "maintenance_finished",
   maintenance_not_found: "maintenance_finished",
-  ride_seats_do_not_fit: "ride_unavailable",
+  ride_seats_do_not_fit: "ride_seats",
   ride_request_day_mismatch: "ride_wrong_day",
   ride_outside_week: "ride_wrong_day",
   ride_must_end_same_day: "ride_same_day",
@@ -326,8 +332,8 @@ const MESSAGE_TO_CODE: Record<string, ErrorCode> = {
   pending_ride_changes: "pending_ride_changes",
   request_window_closed: "request_window_closed",
   request_not_editable: "request_window_closed",
-  seat_config_violation: "ride_unavailable",
-  temporary_car_owner_only: "ride_unavailable",
+  seat_config_violation: "ride_seats",
+  temporary_car_owner_only: "ride_private_car",
   driver_already_busy: "driver_unavailable",
   own_dropoff_driver: "own_dropoff_driver",
   ride_driver_not_assignable: "ride_driver_not_assignable",
@@ -341,8 +347,8 @@ const MESSAGE_TO_CODE: Record<string, ErrorCode> = {
   ride_in_past: "ride_past",
   invalid_preferred_car: "preferred_car_invalid",
   proposal_consent_required: "consent_required",
-  ride_time_overlap: "ride_unavailable",
-  ride_turnaround_conflict: "ride_unavailable",
+  ride_time_overlap: "ride_overlap",
+  ride_turnaround_conflict: "ride_turnaround",
   invalid_ride_description: "ride_description_invalid",
   invalid_passenger_names: "passenger_names_invalid",
   invalid_companions: "companions_invalid",
@@ -464,6 +470,12 @@ const CODE_TO_MESSAGE: Record<ErrorCode, string> = {
   offer_not_found: he.memberErrors.offerNotFound,
   offer_not_pending: he.sadranClaims.offerNotPending,
   ride_unavailable: he.rideEditing.unavailable,
+  ride_overlap: he.rideEditing.overlap,
+  ride_turnaround: he.rideEditing.turnaround,
+  ride_maintenance: he.rideEditing.maintenance,
+  ride_seats: he.rideEditing.seats,
+  ride_private_car: he.rideEditing.privateCar,
+  car_not_available: he.rideEditing.carNotAvailable,
   ride_wrong_day: he.rideEditing.wrongDay,
   ride_same_day: he.boardCoordination.sameDayOnly,
   ride_change_pending: he.rideEditing.alreadyPending,
