@@ -871,10 +871,40 @@ export type SendDraftResult =
   | { proposal_id: string; day: string; ok: true; party_tokens: Record<string, string>; car_conflicts: unknown[] }
   | { proposal_id: string; day: string; ok: false; error: string };
 
-/** REQ §13.138 (d) "שלח את כל ההצעות": sends the week's Sadran drafts for `days` (null = every day), one result each. */
-export async function sendDraftProposals(departmentId: string, weekStart: string, days: string[] | null): Promise<SendDraftResult[]> {
-  const data = await rpc("send_draft_proposals", { p_department_id: departmentId, p_week_start: weekStart, p_days: days ?? undefined });
-  return (Array.isArray(data) ? data : []) as unknown as SendDraftResult[];
+/** What "שלח הצעות / עדכונים" leaves out: held-notice keys (`recipient:kind:subject`) and draft proposal ids. */
+export interface SendAllSkips {
+  keys: string[];
+  proposals: string[];
+}
+
+/**
+ * REQ §13.138 (d) "שלח הצעות / עדכונים": sends the week's Sadran drafts for `days` (null = every day), one result each,
+ * then delivers the held board notices; skipped items stay drafts / stay held.
+ */
+export async function sendAllBoardChanges(departmentId: string, weekStart: string, days: string[] | null, skips: SendAllSkips): Promise<{ proposals: SendDraftResult[]; delivered: number }> {
+  const data = await rpc("send_all_board_changes", {
+    p_department_id: departmentId, p_week_start: weekStart, p_days: days ?? undefined,
+    p_skip_keys: skips.keys.length ? skips.keys : undefined, p_skip_proposals: skips.proposals.length ? skips.proposals : undefined,
+  }) as { proposals?: SendDraftResult[]; delivered?: number } | null;
+  return { proposals: Array.isArray(data?.proposals) ? data.proposals : [], delivered: data?.delivered ?? 0 };
+}
+
+/** TODO SA2: one notice "send" would deliver, as its recipient will read it; `keys` = what unticking it skips. */
+export interface SendAllPreviewItem {
+  id: string;
+  recipient_id: string;
+  recipient_name: string;
+  event: string;
+  title: string;
+  body: string;
+  /** Held-notice keys, or `proposal:<id>` for a draft proposal's notice. */
+  keys: string[];
+}
+
+/** TODO SA2: the send for `days`, rolled back on the server — nothing is sent. */
+export async function previewSendAll(departmentId: string, weekStart: string, days: string[] | null): Promise<SendAllPreviewItem[]> {
+  const data = await rpc("preview_send_all", { p_department_id: departmentId, p_week_start: weekStart, p_days: days ?? undefined });
+  return (Array.isArray(data) ? data : []) as unknown as SendAllPreviewItem[];
 }
 
 /** REQ §13.138 (c): one held board notice — who it is for, what about, which day (null = week-level). */

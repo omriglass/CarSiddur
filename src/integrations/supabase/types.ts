@@ -5582,9 +5582,19 @@ export type Database = {
       _edit_series_request: { Args: { payload: Json }; Returns: Json }
       _fit_ride_to_its_legs: { Args: { p_ride_id: string }; Returns: boolean }
       _flex_floor: { Args: { i: string }; Returns: string }
+      _flush_held_notices: {
+        Args: {
+          p_days: string[]
+          p_department_id: string
+          p_skip: string[]
+          p_week_start: string
+        }
+        Returns: number
+      }
       _frag: { Args: { _key: string; _vars?: Json }; Returns: string }
       _held_request_view: { Args: { p_request: string }; Returns: Json }
       _held_ride_view: { Args: { p_ride: string }; Returns: Json }
+      _held_tagged: { Args: { p_data: Json }; Returns: Json }
       _held_view_of_row: {
         Args: { p_kind: string; p_row: Json }
         Returns: Json
@@ -5871,6 +5881,15 @@ export type Database = {
           p_now: Json
         }
         Returns: undefined
+      }
+      _send_draft_proposals: {
+        Args: {
+          p_days: string[]
+          p_department_id: string
+          p_skip: string[]
+          p_week_start: string
+        }
+        Returns: Json
       }
       _send_held: {
         Args: { h: Database["public"]["Tables"]["held_notices"]["Row"] }
@@ -6802,6 +6821,14 @@ export type Database = {
         }
         Returns: Json
       }
+      preview_send_all: {
+        Args: {
+          p_days?: string[]
+          p_department_id: string
+          p_week_start: string
+        }
+        Returns: Json
+      }
       profile_phones: {
         Args: { p_ids: string[] }
         Returns: {
@@ -7213,6 +7240,16 @@ export type Database = {
           p_payload: Json
         }
         Returns: string
+      }
+      send_all_board_changes: {
+        Args: {
+          p_days?: string[]
+          p_department_id: string
+          p_skip_keys?: string[]
+          p_skip_proposals?: string[]
+          p_week_start: string
+        }
+        Returns: Json
       }
       send_car_checklist_date_reminders: {
         Args: { p_now?: string }

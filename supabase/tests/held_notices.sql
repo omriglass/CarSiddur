@@ -385,4 +385,67 @@ begin
   perform set_config('request.headers', '', true);
   raise notice 'held_notices.sql (closed requests): all assertions passed';
 end $$;
+
+-- SA2 (REQ §13.138 d): preview_send_all() shows every notice "send" would deliver, rendered, with the keys behind it,
+-- and sends nothing; send_all_board_changes() skips an unticked item (it stays held) and sends the rest.
+do $$
+declare
+  dept uuid := '00000000-0000-0000-0000-000000000001';
+  manager uuid := '00000000-0000-0000-0000-000000000102';
+  member uuid := '00000000-0000-0000-0000-000000000103';
+  other uuid := '00000000-0000-0000-0000-000000000104';
+  dest uuid := '00000000-0000-0000-0000-000000000011';
+  typ uuid := '00000000-0000-0000-0000-000000000021';
+  w date := public.current_week_start() + 210;
+  d1 date := w + 1; t1 timestamptz; pub uuid; q1 uuid; q2 uuid; prev jsonb; res jsonb; n int;
+begin
+  t1 := (d1 + time '08:00') at time zone 'Asia/Jerusalem';
+  insert into public.weeks(department_id, week_start, phase, open_at, close_at, publish_at)
+    values (dept, w, 'open', now() - interval '2 days', now() + interval '1 day', now() + interval '2 days');
+  insert into public.siddur_versions(department_id, week_start, snapshot, published_by) values (dept, w, '{}', manager) returning id into pub;
+  perform set_config('app.in_publish', 'on', true);
+  update public.weeks set phase = 'published', published_version_id = pub, published_at = now(), published_days = array[d1]
+    where department_id = dept and week_start = w;
+  perform set_config('app.in_publish', 'off', true);
+  insert into public.requests(department_id, week_start, requester_id, filed_by, destination_id, ride_type_id, depart_at, return_at, trip_shape, status)
+    values (dept, w, member, member, dest, typ, t1, t1 + interval '3 hours', 'round_trip', 'waitlisted') returning id into q1;
+  insert into public.requests(department_id, week_start, requester_id, filed_by, destination_id, ride_type_id, depart_at, return_at, trip_shape, status)
+    values (dept, w, other, other, dest, typ, t1, t1 + interval '3 hours', 'round_trip', 'waitlisted') returning id into q2;
+  perform set_config('request.jwt.claims', jsonb_build_object('sub', manager, 'role', 'authenticated')::text, true);
+  perform set_config('request.headers', '{"x-app-surface":"board"}', true);
+  perform set_config('app.held_audit_floor', (select max(id) from public.audit_log)::text, true);
+  update public.requests set depart_at = t1 + interval '15 minutes' where id in (q1, q2);
+  perform public.enqueue_notification(member, 'outcome_changed', dept, w, '{}'::jsonb,
+    jsonb_build_object('variant', 'trip_type_changed', 'request_id', q1), 'sa2-q1');
+  perform public.enqueue_notification(other, 'outcome_changed', dept, w, '{}'::jsonb,
+    jsonb_build_object('variant', 'trip_type_changed', 'request_id', q2), 'sa2-q2');
+  select count(*) into n from public.notifications where week_start = w;
+
+  prev := public.preview_send_all(dept, w, null);
+  assert jsonb_array_length(prev) = 2, format('preview should list two notices: %s', prev);
+  assert (select bool_and(e ->> 'title' <> '' and e ->> 'body' <> '' and e ->> 'recipient_name' <> '') from jsonb_array_elements(prev) e),
+    format('preview rows are not rendered: %s', prev);
+  assert exists (select 1 from jsonb_array_elements(prev) e
+    where (e ->> 'recipient_id')::uuid = member and e -> 'keys' = jsonb_build_array(member::text || ':request:' || q1::text)),
+    format('preview keys: %s', prev);
+  assert (select count(*) from public.notifications where week_start = w) = n, 'the preview sent a notice';
+  assert (select count(*) from public.held_notices where week_start = w) = 2, 'the preview consumed held notices';
+
+  res := public.send_all_board_changes(dept, w, null, array[other::text || ':request:' || q2::text], null);
+  assert (res ->> 'delivered')::int = 1, format('expected one delivered: %s', res);
+  assert exists (select 1 from public.notifications where dedupe_key = 'sa2-q1'), 'the ticked item was not sent';
+  assert not exists (select 1 from public.notifications where dedupe_key = 'sa2-q2'), 'the unticked item was sent';
+  assert (select count(*) from public.held_notices where week_start = w and recipient_id = other) = 1, 'the unticked item is no longer held';
+  assert not exists (select 1 from public.notifications where week_start = w and data ? 'held_keys'), 'a real send carries preview keys';
+
+  perform set_config('request.jwt.claims', jsonb_build_object('sub', member, 'role', 'authenticated')::text, true);
+  begin
+    perform public.preview_send_all(dept, w, null);
+    raise exception 'a member previewed the send';
+  exception when raise_exception then
+    assert sqlerrm = 'not_authorized', sqlerrm;
+  end;
+  perform set_config('request.headers', '', true);
+  raise notice 'held_notices.sql (send-all preview): all assertions passed';
+end $$;
 rollback;

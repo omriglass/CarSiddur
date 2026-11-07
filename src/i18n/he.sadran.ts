@@ -603,6 +603,13 @@ export const heSadran = {
     weekUpdates: "{{count}} עדכונים לכל השבוע",
     weekUpdatesOne: "עדכון אחד לכל השבוע",
     none: "אין הצעות או עדכונים שממתינים לשליחה",
+    /** TODO SA2: the preview of every notice the ticked days would send, per person. */
+    previewTitle: "מה יישלח",
+    previewLoading: "בודק מה יישלח…",
+    previewEmpty: "אף אחד לא יקבל הודעה (שינוי שבוטל לא נשלח)",
+    previewHint: "כך כל אחד יקרא את ההודעה. בטלו סימון של אדם או הודעה כדי לא לשלוח אותם עכשיו — הם יחכו לשליחה הבאה.",
+    personNotices: "{{count}} הודעות",
+    personNoticesOne: "הודעה אחת",
     send: "שלח",
     sending: "שולח…",
     sent: "נשלחו {{count}} הצעות ו-{{updates}} עדכונים",

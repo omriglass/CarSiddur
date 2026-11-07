@@ -1,6 +1,6 @@
 import { t, tv } from "@/i18n/he";
 
-type CountKey = "dayProposals" | "dayUpdates" | "weekUpdates";
+type CountKey = "dayProposals" | "dayUpdates" | "weekUpdates" | "personNotices";
 
 /** Send-all dialog counts: Hebrew says "הצעה אחת", not "1 הצעות" (R14 follow-up). */
 export function sendAllCount(key: CountKey, count: number): string {

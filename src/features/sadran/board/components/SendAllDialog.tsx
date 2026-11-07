@@ -1,7 +1,9 @@
 // REQ §13.138 (d): "שלח את כל ההצעות" — the board's ⋮ menu item. Lists, per day, the week's unsent Sadran drafts and held
 // board updates (every day ticked; untick a day still being worked on), sends the drafts (`send_draft_proposals`) and
 // delivers the updates (`flush_held_notices`), then shows what could not be sent (with the reason) and the optional
-// WhatsApp messages, one per party, exactly as the composer would write them.
+// WhatsApp messages, one per party, exactly as the composer would write them. TODO SA2: below the days, every notice the
+// ticked days would send, per person and rendered as they will read it (`preview_send_all`, nothing is sent); unticking a
+// person or a notice leaves it for the next send.
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -14,13 +16,14 @@ import { formatDayDate } from "@/lib/dayLabels";
 import { env } from "@/lib/env";
 import { toAppError } from "@/lib/rpc";
 
-import { fetchProposalPartyTexts, type HeldNotice, type ProposalRow, type SendDraftResult } from "../../api";
-import { useProfilesByIds, useSendDraftProposalsMutation } from "../../hooks";
+import { fetchProposalPartyTexts, previewSendAll, type HeldNotice, type ProposalRow, type SendDraftResult } from "../../api";
+import { useProfilesByIds, useSendAllMutation } from "../../hooks";
 import { sadranKeys } from "../../keys";
 import { WhatsappDialog } from "../../proposals/components/WhatsappDialog";
 import { renderTemplate } from "../../proposals/waLink";
 import { heldUpdateCount } from "../heldUpdates";
 import { sendAllCount } from "../sendAllCount";
+import { groupByRecipient, isItemOn, skipsOf, toggleKeys } from "../sendAllPreview";
 
 /** One unsent Sadran draft, with the day it belongs to (its request's day) and who it is for. */
 export interface PendingDraft {
@@ -50,20 +53,29 @@ export function SendAllDialog({ open, onOpenChange, departmentId, weekStart, dra
   const [results, setResults] = useState<SendDraftResult[] | null>(null);
   // Results outlive the drafts list (sent drafts leave it), so remember what each sent proposal was.
   const [sentDrafts, setSentDrafts] = useState<ReadonlyMap<string, PendingDraft>>(new Map());
-  const sendMutation = useSendDraftProposalsMutation();
+  const sendMutation = useSendAllMutation();
   const ticked = days.filter((day) => !unticked.has(day));
+  const tickedDays = ticked.length === days.length ? null : ticked;
+  const [skipped, setSkipped] = useState<ReadonlySet<string>>(new Set());
+  const previewQuery = useQuery({
+    queryKey: [...sadranKeys.all, "sendAllPreview", departmentId, weekStart, tickedDays, drafts.length, held.length],
+    queryFn: () => previewSendAll(departmentId, weekStart, tickedDays),
+    enabled: open && !results,
+  });
+  const recipients = useMemo(() => groupByRecipient(previewQuery.data ?? []), [previewQuery.data]);
 
   function close(next: boolean) {
     if (next) return;
     onOpenChange(false);
     setResults(null);
     setUnticked(new Set());
+    setSkipped(new Set());
   }
 
   async function send() {
     const byId = new Map(drafts.map((draft) => [draft.proposal.id, draft]));
     try {
-      const { proposals: sent, delivered } = await sendMutation.mutateAsync({ departmentId, weekStart, days: ticked.length === days.length ? null : ticked });
+      const { proposals: sent, delivered } = await sendMutation.mutateAsync({ departmentId, weekStart, days: tickedDays, skips: skipsOf(skipped) });
       setSentDrafts(byId);
       setResults(sent);
       const okCount = sent.filter((row) => row.ok).length;
@@ -115,6 +127,55 @@ export function SendAllDialog({ open, onOpenChange, departmentId, weekStart, dra
             })}
           </ul>
         )}
+        {!results && (days.length > 0 || weekLevel > 0) ? (
+          <section className="space-y-2" data-testid="send-all-preview">
+            <h3 className="text-sm font-medium">{he.sendAll.previewTitle}</h3>
+            {previewQuery.isPending ? (
+              <p className="text-xs text-muted-foreground">{he.sendAll.previewLoading}</p>
+            ) : recipients.length === 0 ? (
+              <p className="text-xs text-muted-foreground">{he.sendAll.previewEmpty}</p>
+            ) : (
+              <>
+                <p className="text-xs text-muted-foreground">{he.sendAll.previewHint}</p>
+                <ul className="space-y-2">
+                  {recipients.map((person) => {
+                    const on = person.items.filter((item) => isItemOn(item, skipped)).length;
+                    return (
+                      <li key={person.recipientId} className="rounded-md border p-2" data-testid={`send-all-person-${person.recipientId}`}>
+                        <label className="flex items-center gap-2 text-sm font-medium">
+                          <Checkbox
+                            checked={on === person.items.length ? true : on === 0 ? false : "indeterminate"}
+                            onCheckedChange={(value) => setSkipped((prev) => toggleKeys(prev, person.items.flatMap((item) => item.keys), value === true))}
+                          />
+                          {`${person.name} · ${sendAllCount("personNotices", person.items.length)}`}
+                        </label>
+                        <ul className="mt-1 space-y-1 ps-6">
+                          {person.items.map((item) => (
+                            <li key={item.id}>
+                              <label className="flex items-start gap-2">
+                                <Checkbox
+                                  className="mt-0.5"
+                                  checked={isItemOn(item, skipped)}
+                                  disabled={item.keys.length === 0}
+                                  data-testid={`send-all-notice-${item.id}`}
+                                  onCheckedChange={(value) => setSkipped((prev) => toggleKeys(prev, item.keys, value === true))}
+                                />
+                                <span className="min-w-0">
+                                  <span className="block text-xs font-medium">{item.title}</span>
+                                  <span className="block whitespace-pre-line text-xs text-muted-foreground">{item.body}</span>
+                                </span>
+                              </label>
+                            </li>
+                          ))}
+                        </ul>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </>
+            )}
+          </section>
+        ) : null}
         <DialogFooter className="gap-2">
           {results ? (
             <Button onClick={() => close(false)}>{he.sendAll.done}</Button>

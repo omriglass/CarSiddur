@@ -516,14 +516,11 @@ export function useHeldNoticesQuery(departmentId: string | undefined, weekStart:
 }
 
 /** REQ §13.138 (d): "שלח את כל ההצעות" for the ticked days — the drafts, then the held board notices. */
-export function useSendDraftProposalsMutation() {
+export function useSendAllMutation() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ departmentId, weekStart, days }: { departmentId: string; weekStart: string; days: string[] | null }) => {
-      const proposals = await api.sendDraftProposals(departmentId, weekStart, days);
-      const delivered = await api.flushHeldNotices(departmentId, weekStart, days);
-      return { proposals, delivered };
-    },
+    mutationFn: ({ departmentId, weekStart, days, skips }: { departmentId: string; weekStart: string; days: string[] | null; skips: api.SendAllSkips }) =>
+      api.sendAllBoardChanges(departmentId, weekStart, days, skips),
     onSettled: (_data, _error, { departmentId, weekStart }) => invalidateBoard(queryClient, departmentId, weekStart),
     onError: showErrorToast,
   });
