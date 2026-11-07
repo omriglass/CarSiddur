@@ -6703,6 +6703,10 @@ export type Database = {
         }
         Returns: string
       }
+      place_request_on_any_free_car_as_system: {
+        Args: { p_actor: string; p_request_id: string }
+        Returns: string
+      }
       place_request_on_car: {
         Args: {
           p_actor: string

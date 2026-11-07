@@ -13226,6 +13226,22 @@ end $$;
 ALTER FUNCTION "public"."place_request_on_any_free_car"("p_request_id" "uuid", "p_actor" "uuid", "p_dep" timestamp with time zone, "p_ret" timestamp with time zone, "p_reason" "text") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."place_request_on_any_free_car_as_system"("p_request_id" "uuid", "p_actor" "uuid") RETURNS "uuid"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare v_prev text := coalesce(nullif(current_setting('app.system_status_transition', true), ''), 'off'); v_ride uuid;
+begin
+  perform set_config('app.system_status_transition', 'on', true);
+  v_ride := public.place_request_on_any_free_car(p_request_id, p_actor, null, null, 'AUTO_APPROVED_FREE_CAR');
+  perform set_config('app.system_status_transition', v_prev, true);
+  return v_ride;
+end $$;
+
+
+ALTER FUNCTION "public"."place_request_on_any_free_car_as_system"("p_request_id" "uuid", "p_actor" "uuid") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."place_request_on_car"("p_request_id" "uuid", "p_car_id" "uuid", "p_manual" boolean, "p_actor" "uuid", "p_named_driver" "uuid", "p_dep" timestamp with time zone, "p_ret" timestamp with time zone, "p_reason" "text" DEFAULT 'PROPOSAL_APPLIED'::"text") RETURNS "uuid"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -20759,6 +20775,7 @@ declare
   v_keep_car boolean := coalesce((payload ->> 'keep_car_at_destination')::boolean, false);
   v_keep_car_id uuid;
   v_published_edit boolean := false; v_old_edit_car uuid; v_edit_ride uuid; v_edit_prev_sys text;
+  v_needs_driver boolean;
   v_confirm boolean := coalesce((payload ->> 'confirm_release')::boolean, false);
   v_booking jsonb;
   v_probe jsonb;
@@ -21539,6 +21556,28 @@ begin
     if v_edit_ride is not null then
       v_auto_result := jsonb_build_object('status', 'assigned', 'reason', 'AUTO_APPROVED_FREE_CAR', 'ride_id', v_edit_ride,
         'car_id', (select car_id from public.rides where id = v_edit_ride));
+    end if;
+  elsif v_week.phase in ('published', 'live') and v_trip_type = 'drop_off' and v_request_id is not null
+    and public.is_day_public(v_department_id, v_week_start, (coalesce(v_depart_at, v_return_at) at time zone 'Asia/Jerusalem')::date)
+    and public.place_request_on_any_free_car_as_system(v_request_id, v_actor) is not null then
+    -- REQ §13.192 (HK1, owner 2026-11-07): a NEW הקפצה on a published day is placed like an edit into one (owner
+    -- 2026-10-11): on a free shared car, else the waiting list (the branch below). A ride nobody drives yet is
+    -- `needs_driver` (the request waits as UNMET_NEEDS_DRIVER) and the driver-wanted flow (REQ §13.170) finds one.
+    select r.id, r.car_id, coalesce(bool_or(r.needs_driver) over (), false) into v_edit_ride, v_keep_car_id, v_needs_driver
+    from public.ride_requests rr join public.rides r on r.id = rr.ride_id
+    where rr.request_id = v_request_id and r.status <> 'cancelled' order by r.starts_at, r.id limit 1;
+    if v_needs_driver then
+      v_auto_result := jsonb_build_object('status', 'waitlisted', 'reason', 'UNMET_NEEDS_DRIVER', 'needs_driver', true,
+        'ride_id', v_edit_ride, 'car_id', v_keep_car_id);
+      perform public.enqueue_notification(s.profile_id, 'waitlisted_request', v_department_id, v_week_start,
+        jsonb_build_object('requestId', v_request_id::text), jsonb_build_object('request_id', v_request_id, 'ride_id', v_edit_ride),
+        format('waitlisted_request:%s', v_request_id))
+      from public.sadranim_of(v_department_id, v_week_start) as s(profile_id)
+      where coalesce(current_setting('app.late_request_notice', true), 'off') <> 'on'
+        and s.profile_id is distinct from v_actor;
+    else
+      v_auto_result := jsonb_build_object('status', 'assigned', 'reason', 'AUTO_APPROVED_FREE_CAR', 'needs_driver', false,
+        'ride_id', v_edit_ride, 'car_id', v_keep_car_id);
     end if;
   elsif v_week.phase = 'live' then
     perform set_config('app.system_status_transition', 'on', true);
@@ -31856,6 +31895,11 @@ GRANT ALL ON FUNCTION "public"."place_on_own_car"("p_request_id" "uuid", "p_car_
 
 REVOKE ALL ON FUNCTION "public"."place_request_on_any_free_car"("p_request_id" "uuid", "p_actor" "uuid", "p_dep" timestamp with time zone, "p_ret" timestamp with time zone, "p_reason" "text") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."place_request_on_any_free_car"("p_request_id" "uuid", "p_actor" "uuid", "p_dep" timestamp with time zone, "p_ret" timestamp with time zone, "p_reason" "text") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."place_request_on_any_free_car_as_system"("p_request_id" "uuid", "p_actor" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."place_request_on_any_free_car_as_system"("p_request_id" "uuid", "p_actor" "uuid") TO "service_role";
 
 
 

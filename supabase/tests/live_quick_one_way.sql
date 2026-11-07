@@ -52,7 +52,8 @@ begin
   assert not (second->>'needs_driver')::boolean and second->>'reason'='WAITLISTED_NO_CAR','extra volunteer seat was not included';
   assert not exists(select 1 from public.ride_requests where request_id=(second->>'request_id')::uuid),'no-fit request created a booking';
   second:=public.submit_request((payload-array['guest_passenger_names','companion_ids','reserve_missing_driver'])||jsonb_build_object('depart_at',dt+interval '4 hours','adults',1));
-  assert second->>'reason'='WAITLISTED_ONE_WAY' and not(second ? 'ride_id'),'ordinary one-way path changed';
+  -- REQ §13.192 (HK1): the ordinary form's new הקפצה on a published day is placed too (a ride still needing a driver).
+  assert second->>'reason'='UNMET_NEEDS_DRIVER' and (second->>'needs_driver')::boolean and second ? 'ride_id','ordinary drop-off not placed: '||second::text;
   -- REQ §13.88 (2026-09-16): the member no longer chooses a car mode, so the quick
   -- reservation must accept any/no `one_way_car_mode` — the DB decides later whether a
   -- returner pairs it into a relay leg (car_chain_healing.sql covers that mechanism).
