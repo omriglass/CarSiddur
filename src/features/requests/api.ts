@@ -956,8 +956,11 @@ async function settleShortTurnaround(result: Json, retryAllowed: () => Promise<J
   if (!info) return result;
   const accepted = await askShortTurnaround(info);
   if (rest.edit_refused) return accepted ? retryAllowed() : rest;
-  if (typeof rest.request_id !== "string") return rest;
-  const answer = await rpc("answer_short_turnaround", { p_request_id: rest.request_id, p_accept: accepted });
+  // A multi-day request (TG2) is answered through its first day; the server settles the whole series.
+  const requestId = typeof rest.request_id === "string" ? rest.request_id
+    : Array.isArray(rest.request_ids) && typeof rest.request_ids[0] === "string" ? rest.request_ids[0] : null;
+  if (!requestId) return rest;
+  const answer = await rpc("answer_short_turnaround", { p_request_id: requestId, p_accept: accepted });
   return answer && typeof answer === "object" && !Array.isArray(answer) ? { ...rest, ...answer } : rest;
 }
 
@@ -987,7 +990,9 @@ export interface SubmitSeriesRequestResult {
  * not_supported`, MDR02); cancel and resubmit instead.
  */
 export async function submitSeriesRequest(payload: SubmitRequestPayload): Promise<Json> {
-  return rpc("submit_series_request", { payload: payload as unknown as Json });
+  // REQ §13.190 (TG2): the last day may end less than the turnaround before the car's next ride, after the question.
+  const result = await rpc("submit_series_request", { payload: { ...payload, short_turnaround_ask: true } as unknown as Json });
+  return settleShortTurnaround(result, async () => result);
 }
 
 /**

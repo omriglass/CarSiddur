@@ -5564,7 +5564,9 @@ begin
   end if;
   if q.status <> 'waitlisted' then return jsonb_build_object('status', q.status, 'unchanged', true); end if;
   perform set_config('app.short_turnaround', case when p_accept then 'allow' else 'off' end, true);
-  v_result := public.try_auto_approve(p_request_id);
+  -- REQ §13.190 (TG2): a multi-day request is placed (or waitlisted) as a whole.
+  v_result := case when q.series_id is not null then public.try_auto_approve_series(q.series_id)
+                   else public.try_auto_approve(p_request_id) end;
   perform set_config('app.short_turnaround', 'off', true);
   return coalesce(v_result, jsonb_build_object('status', q.status));
 end $$;
@@ -13479,7 +13481,7 @@ declare
   v_first_week date; v_turnaround interval; v_legs int; v_expected int; v_actor uuid := (select auth.uid());
   v_ride_ids uuid[] := '{}'; v_weeks date[] := '{}';
   leg record; v_ride_id uuid; v_origin_leg uuid; v_destination uuid; v_pin boolean; v_reason text;
-  w date;
+  w date; v_after interval; v_gap smallint; v_last_ride uuid;
 begin
   begin
     select q.department_id, min(q.depart_at), max(q.return_at), count(*)::int, max(q.series_count)::int
@@ -13517,11 +13519,14 @@ begin
     from (select distinct q.week_start from public.requests q
           where q.series_id = p_series_id and q.status not in ('withdrawn','cancelled','denied','external')) wk;
 
+    -- REQ §13.190 (TG2): after "תיאמתם עם X…?" (`app.short_turnaround` = 'allow') the car's next ride may start less
+    -- than the turnaround after the last day ends; the turnaround after the ride before stays.
+    v_after := case when coalesce(current_setting('app.short_turnaround', true), '') = 'allow' then interval '0' else v_turnaround end;
     -- Nobody else uses the car anywhere inside the span.
     if exists (select 1 from public.rides r
       where r.car_id = p_car_id and r.status <> 'cancelled' and not r.draft_hold and not r.planning_conflict
         and r.series_id is distinct from p_series_id
-        and tstzrange(r.starts_at, r.blocked_until, '[)') && tstzrange(v_first, v_last + v_turnaround, '[)')) then
+        and tstzrange(r.starts_at, r.blocked_until, '[)') && tstzrange(v_first, v_last + v_after, '[)')) then
       raise exception 'series_car_unavailable' using errcode = 'MDR03', detail = 'car_busy';
     end if;
     if exists (select 1 from public.car_maintenance_blocks b where b.car_id = p_car_id
@@ -13550,14 +13555,17 @@ begin
       v_pin    := p_pin or leg.week_start <> v_first_week;
       v_reason := case when leg.week_start <> v_first_week then 'SERIES_CARRY_OVER'
                        else coalesce(p_pin_reason, 'SERIES_PLACED') end;
+      v_gap := case when v_after = interval '0' and leg.series_index = leg.series_count
+                    then (public._short_turnaround_info(p_car_id, leg.return_at, null) ->> 'gap')::smallint end;
       insert into public.rides (department_id, week_start, car_id, starts_at, ends_at, origin_id, destination_id,
-        driver_id, status, is_pinned, pin_reason, created_by, series_id)
+        driver_id, status, is_pinned, pin_reason, created_by, series_id, turnaround_override_minutes)
       values (v_dept, leg.week_start, p_car_id, leg.depart_at, leg.return_at, v_origin_leg, v_destination,
         leg.requester_id,
         case when public.is_week_public(v_dept, leg.week_start) then 'confirmed'::public.ride_status
              else 'draft'::public.ride_status end,
-        v_pin, case when v_pin then v_reason else null end, coalesce(v_actor, leg.requester_id), p_series_id)
+        v_pin, case when v_pin then v_reason else null end, coalesce(v_actor, leg.requester_id), p_series_id, v_gap)
       returning id into v_ride_id;
+      if v_gap is not null then v_last_ride := v_ride_id; end if;
       insert into public.ride_requests (ride_id, request_id, role, leg, car_mode)
       values (v_ride_id, leg.id, 'driver', 'both', 'keep');
       perform public.assert_ride_seats_fit(v_ride_id);
@@ -13571,6 +13579,10 @@ begin
     for w in select distinct x from unnest(v_weeks) x order by 1 loop
       perform public.assert_car_chain(p_car_id, w);
     end loop;
+    if v_last_ride is not null then
+      perform public._notify_short_turnaround(p_car_id, v_last, v_last_ride,
+        coalesce(v_actor, (select q.requester_id from public.requests q where q.series_id = p_series_id order by q.series_index limit 1)));
+    end if;
   exception when others then
     if sqlstate = 'MDR03' then raise; end if;
     raise exception 'series_car_unavailable' using errcode = 'MDR03', detail = sqlerrm;
@@ -21771,7 +21783,12 @@ begin
       end;
     end if;
     if v_auto is null then
+      -- REQ §13.190 (TG2): a new series from the form may be named the car's next ride instead of waitlisted.
+      if v_prefer is null and coalesce((payload ->> 'short_turnaround_ask')::boolean, false) then
+        perform set_config('app.short_turnaround', 'offer', true);
+      end if;
       v_auto := public.try_auto_approve_series(v_series);
+      perform set_config('app.short_turnaround', 'off', true);
     end if;
   elsif nullif(current_setting('app.series_prefer_car', true), '') is not null then
     -- R13B5: before publishing, an edited series keeps the Sadran's draft car when it is still free for the
@@ -22395,7 +22412,7 @@ CREATE OR REPLACE FUNCTION "public"."try_auto_approve_series"("p_series_id" "uui
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
-declare v_head record; v_car record; v_result jsonb;
+declare v_head record; v_car record; v_result jsonb; v_last timestamptz; v_short jsonb; v_prev text;
 begin
   select q.id, q.department_id, q.week_start, q.requester_id, q.preferred_car_id
     into v_head from public.requests q where q.series_id = p_series_id order by q.series_index limit 1;
@@ -22417,6 +22434,44 @@ begin
       null;                                        -- try the next car; the subtransaction unwinds
     end;
   end loop;
+
+  -- REQ §13.190 (TG2): with `app.short_turnaround` = 'offer', a series that only the turnaround before the car's next
+  -- ride keeps out waits silently and the result names that ride (answer_short_turnaround settles it); when that ride
+  -- is the requester's own there is nobody to ask and the series is placed.
+  select max(q.return_at) into v_last from public.requests q
+  where q.series_id = p_series_id and q.status not in ('withdrawn','cancelled','denied','external');
+  if coalesce(current_setting('app.short_turnaround', true), '') = 'offer'
+     and public.is_day_public(v_head.department_id, v_head.week_start, (v_last at time zone 'Asia/Jerusalem')::date) then
+    v_prev := current_setting('app.short_turnaround', true);
+    for v_car in
+      select c.id from public.cars c
+      where c.department_id = v_head.department_id and c.status = 'active' and c.type = 'shared'
+      order by (c.id = v_head.preferred_car_id) desc, c.id
+    loop
+      v_short := public._short_turnaround_info(v_car.id, v_last, null);
+      continue when v_short is null;
+      begin
+        perform set_config('app.short_turnaround', 'allow', true);
+        v_result := public.place_series(p_series_id, v_car.id, true, 'SERIES_PLACED');
+        perform set_config('app.short_turnaround', v_prev, true);
+        if (v_short ->> 'recipient_id')::uuid is not distinct from v_head.requester_id then
+          return v_result || jsonb_build_object('status', 'assigned', 'reason', 'SERIES_PLACED');
+        end if;
+        raise exception 'short_turnaround_probe' using errcode = 'PXST1';   -- ask first: undo the placement
+      exception when others then
+        perform set_config('app.short_turnaround', v_prev, true);
+        if sqlstate = 'PXST1' then
+          perform set_config('app.system_status_transition', 'on', true);
+          perform set_config('app.audit_reason', 'try_auto_approve_series:short_turnaround', true);
+          update public.requests set status = 'waitlisted', status_reason = 'WAITLISTED_SERIES_NO_CAR'
+          where series_id = p_series_id;
+          perform set_config('app.system_status_transition', 'off', true);
+          return jsonb_build_object('status', 'waitlisted', 'reason', 'WAITLISTED_SERIES_NO_CAR', 'series_id', p_series_id,
+            'short_turnaround', v_short - 'recipient_id');
+        end if;
+      end;
+    end loop;
+  end if;
 
   perform set_config('app.system_status_transition', 'on', true);
   perform set_config('app.audit_reason', 'try_auto_approve_series:no_car', true);

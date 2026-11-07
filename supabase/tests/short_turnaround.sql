@@ -137,6 +137,32 @@ begin
     'depart_at',at18-interval '6 hours','return_at',at18-interval '3 hours 15 minutes','trip_type','round_trip','adults',1,'short_turnaround_ask',true));
   assert res->>'status'='assigned' and not (res ? 'short_turnaround'), format('(4) my own next ride: placed at once, got %s', res);
   set constraints all immediate; set constraints all deferred;
+  -- ======== (5) TG2: a multi-day request whose last day ends 15 minutes before m2's 18:00 ride ========
+  day:=w+4; at18:=(day+time '18:00') at time zone 'Asia/Jerusalem';
+  insert into public.requests(department_id,week_start,requester_id,filed_by,destination_id,ride_type_id,depart_at,return_at,trip_shape,status,origin_id)
+    values(dept,w,m2,m2,dest,typ,at18,at18+interval '2 hours','round_trip','assigned',home) returning id into q2;
+  insert into public.rides(department_id,week_start,car_id,starts_at,ends_at,origin_id,destination_id,driver_id,status,is_pinned,pin_reason,created_by)
+    values(dept,w,car40,at18,at18+interval '2 hours',home,home,m2,'confirmed',true,'SADRAN_MANUAL',sadran) returning id into r2;
+  insert into public.ride_requests(ride_id,request_id,role,leg,car_mode) values(r2,q2,'driver','both','keep');
+  insert into public.car_maintenance_blocks(car_id,department_id,starts_at,ends_at,reason,created_by)
+    select c, dept, ((w+3)+time '06:00') at time zone 'Asia/Jerusalem', (day+time '23:00') at time zone 'Asia/Jerusalem', 'SCHEDULED', sadran from unnest(array[car41,car42]) c;
+  set constraints all immediate; set constraints all deferred;
+  perform pg_temp.as_user(m1);
+  res:=public.submit_series_request(jsonb_build_object('department_id',dept,'week_start',w,'destination_id',dest,'ride_type_id',typ,'origin_id',home,
+    'depart_at',((w+3)+time '09:00') at time zone 'Asia/Jerusalem','return_at',at18-interval '15 minutes','trip_type','round_trip','adults',1,
+    'short_turnaround_ask',true));
+  assert res->>'status'='waitlisted' and res->'short_turnaround'->>'at'='18:00' and (res->'short_turnaround'->>'gap')::int=15
+    and res->'short_turnaround'->>'name'=(select full_name from public.profiles where id=m2), format('(5) the series waits and names m2, got %s', res);
+  q1:=(res->'request_ids'->>0)::uuid;
+  assert not exists(select 1 from public.notifications where event='waitlisted_request' and data->>'series_id'=res->>'series_id'), '(5) the Sadran hears nothing yet';
+  perform pg_temp.as_user(m1);
+  res:=public.answer_short_turnaround(q1, true);
+  set constraints all immediate; set constraints all deferred;
+  assert res->>'status'='assigned' and (res->>'car_id')::uuid=car40, format('(5) yes places the series on car40, got %s', res);
+  assert (select turnaround_override_minutes from public.rides r join public.requests q on q.series_id=r.series_id
+          where q.id=q1 and r.ends_at=at18-interval '15 minutes' and r.status<>'cancelled')=15, '(5) the last day keeps the 15-minute gap';
+  assert (select count(*) from public.notifications where recipient_id=m2 and event='ride_edited' and data->>'variant'='short_turnaround' and data->>'ride_id'=r2::text)=1,
+    '(5) m2 is told';
   raise notice 'short_turnaround.sql: all assertions passed';
 end $$;
 rollback;
