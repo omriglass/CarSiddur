@@ -67,6 +67,8 @@ export const NOTIFICATION_EVENT_META: Record<NotificationEvent, NotificationEven
   // REQ §13.169 (e): always in the inbox; the push follows the profile switch `push_on_ride_edits`, not a mute.
   ride_edited: { category: "siddur", memberMutable: false, sadranRole: false, weekScoped: true },
   changelog: { category: "account", memberMutable: false, sadranRole: false, weekScoped: false },
+  // REQ §13.191: the profile switch `driver_reminder` decides, not a mute.
+  driver_reminder: { category: "siddur", memberMutable: false, sadranRole: false, weekScoped: true },
 };
 
 /** Every mutable event, grouped by `category` — the source `muteCategories.ts` builds on. */

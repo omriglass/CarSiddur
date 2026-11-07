@@ -394,6 +394,16 @@ export function ProfilePage() {
                 data-testid="profile-push-ride-edits"
               />
             </div>
+            {/* REQ §13.191: "צא/י בעוד 30 דקות" before a ride I drive for someone else; null = not asked yet = on. */}
+            <div className="flex items-center justify-between">
+              <Label htmlFor="profile-driver-reminder" className="text-sm font-normal">{he.profileExtra.driverReminderLabel}</Label>
+              <Switch
+                id="profile-driver-reminder"
+                checked={profileQuery.data?.driver_reminder ?? true}
+                onCheckedChange={(checked) => updateProfileMutation.mutate({ driver_reminder: checked })}
+                data-testid="profile-driver-reminder"
+              />
+            </div>
             <div className="flex items-center justify-between opacity-60">
               <span className="text-sm">{he.nav.sadran}</span>
               <span className="text-xs text-muted-foreground">{he.profileExtra.sadranEventsNote}</span>

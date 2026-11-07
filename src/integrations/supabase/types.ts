@@ -2209,6 +2209,7 @@ export type Database = {
           default_department_id: string | null
           display_name: string | null
           does_not_drive: boolean
+          driver_reminder: boolean | null
           email: string
           full_name: string
           google_name: string
@@ -2233,6 +2234,7 @@ export type Database = {
           default_department_id?: string | null
           display_name?: string | null
           does_not_drive?: boolean
+          driver_reminder?: boolean | null
           email: string
           full_name?: string
           google_name?: string
@@ -2257,6 +2259,7 @@ export type Database = {
           default_department_id?: string | null
           display_name?: string | null
           does_not_drive?: boolean
+          driver_reminder?: boolean | null
           email?: string
           full_name?: string
           google_name?: string
@@ -7220,6 +7223,7 @@ export type Database = {
         }
         Returns: Json
       }
+      send_driver_reminders: { Args: { p_now?: string }; Returns: number }
       send_due_reminders: { Args: { p_now?: string }; Returns: number }
       send_proposal: {
         Args: {
@@ -7780,6 +7784,7 @@ export type Database = {
         | "changelog"
         | "car_task"
         | "ride_edited"
+        | "driver_reminder"
       party_response: "pending" | "accepted" | "declined"
       proposal_status:
         | "draft"
@@ -8033,6 +8038,7 @@ export const Constants = {
         "changelog",
         "car_task",
         "ride_edited",
+        "driver_reminder",
       ],
       party_response: ["pending", "accepted", "declined"],
       proposal_status: [

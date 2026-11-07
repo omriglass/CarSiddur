@@ -700,6 +700,7 @@ begin
     ('profiles', 'muted_events', 'public'),
     ('profiles', 'my_rides_week_view', 'public'),
     ('profiles', 'push_on_ride_edits', 'public'),
+    ('profiles', 'driver_reminder', 'public'),
     ('profiles', 'updated_at', 'public'),
     ('text_fragments', 'key', 'public'),
     ('text_fragments', 'body', 'public'),

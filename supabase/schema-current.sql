@@ -241,7 +241,8 @@ CREATE TYPE "public"."notification_event" AS ENUM (
     'companion_added',
     'changelog',
     'car_task',
-    'ride_edited'
+    'ride_edited',
+    'driver_reminder'
 );
 
 
@@ -19082,6 +19083,50 @@ end $$;
 ALTER FUNCTION "public"."send_draft_proposals"("p_department_id" "uuid", "p_week_start" "date", "p_days" "date"[]) OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."send_driver_reminders"("p_now" timestamp with time zone DEFAULT "now"()) RETURNS integer
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare v_count int := 0; r record;
+begin
+  for r in
+    select rd.id, rd.department_id, rd.week_start, rd.driver_id, rd.starts_at, x.leg, x.name, x.place
+    from public.rides rd
+    join public.profiles p on p.id = rd.driver_id
+    -- the first person the driver drives (by their departure): who and where, for the copy
+    cross join lateral (
+      select rr.leg, pr.full_name as name, coalesce(d.name, q.destination_text) as place
+      from public.ride_requests rr
+      join public.requests q on q.id = rr.request_id
+      join public.profiles pr on pr.id = q.requester_id
+      left join public.destinations d on d.id = q.destination_id
+      where rr.ride_id = rd.id and q.requester_id <> rd.driver_id
+      order by q.depart_at, q.id
+      limit 1) x
+    where rd.status in ('confirmed', 'flagged') and rd.driver_id is not null and not rd.draft_hold
+      and rd.starts_at > p_now + interval '15 minutes' and rd.starts_at <= p_now + interval '30 minutes'
+      and coalesce(p.driver_reminder, true)
+      and public.is_day_public(rd.department_id, rd.week_start, (rd.starts_at at time zone 'Asia/Jerusalem')::date)
+      and not exists (
+        select 1 from public.ride_requests rr join public.requests q on q.id = rr.request_id
+        where rr.ride_id = rd.id and (q.requester_id = rd.driver_id
+          or exists (select 1 from public.request_companions rc where rc.request_id = q.id and rc.profile_id = rd.driver_id)))
+  loop
+    perform public.enqueue_notification(r.driver_id, 'driver_reminder', r.department_id, r.week_start,
+      jsonb_build_object('minutes', ((round(extract(epoch from (r.starts_at - p_now)) / 300) * 5)::int)::text,
+        'depart', to_char(r.starts_at at time zone 'Asia/Jerusalem', 'HH24:MI'),
+        'name', coalesce(r.name, ''), 'place', coalesce(r.place, '')),
+      jsonb_build_object('variant', case when r.leg = 'return' then 'pickup' else 'drop_off' end, 'ride_id', r.id),
+      format('driver_reminder:%s:%s', r.id, to_char(r.starts_at, 'YYYYMMDDHH24MI')));
+    v_count := v_count + 1;
+  end loop;
+  return v_count;
+end $$;
+
+
+ALTER FUNCTION "public"."send_driver_reminders"("p_now" timestamp with time zone) OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."send_due_reminders"("p_now" timestamp with time zone DEFAULT "now"()) RETURNS integer
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -19119,6 +19164,9 @@ begin
       v_count := v_count + 1;
     end if;
   end loop;
+
+  -- REQ §13.191: "צא/י בעוד 30 דקות" to the driver of someone else's ride.
+  v_count := v_count + public.send_driver_reminders(p_now);
 
   return v_count;
 end;
@@ -24707,6 +24755,7 @@ CREATE TABLE IF NOT EXISTS "public"."profiles" (
     "classic_request_form" boolean DEFAULT false NOT NULL,
     "my_rides_week_view" boolean DEFAULT false NOT NULL,
     "push_on_ride_edits" boolean DEFAULT true NOT NULL,
+    "driver_reminder" boolean,
     CONSTRAINT "profiles_default_boosters_ck" CHECK (("default_boosters" >= 0)),
     CONSTRAINT "profiles_default_child_seats_ck" CHECK (("default_child_seats" >= 0)),
     CONSTRAINT "profiles_phone_format" CHECK ((("phone" IS NULL) OR ("phone" ~ '^\+[1-9][0-9]{7,14}$'::"text")))
@@ -32649,6 +32698,11 @@ GRANT ALL ON FUNCTION "public"."send_draft_proposals"("p_department_id" "uuid", 
 
 
 
+REVOKE ALL ON FUNCTION "public"."send_driver_reminders"("p_now" timestamp with time zone) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."send_driver_reminders"("p_now" timestamp with time zone) TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."send_due_reminders"("p_now" timestamp with time zone) FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."send_due_reminders"("p_now" timestamp with time zone) TO "service_role";
 
@@ -33585,6 +33639,10 @@ GRANT SELECT("my_rides_week_view") ON TABLE "public"."profiles" TO "authenticate
 
 
 GRANT SELECT("push_on_ride_edits") ON TABLE "public"."profiles" TO "authenticated";
+
+
+
+GRANT SELECT("driver_reminder") ON TABLE "public"."profiles" TO "authenticated";
 
 
 

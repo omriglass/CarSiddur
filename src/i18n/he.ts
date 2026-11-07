@@ -189,6 +189,13 @@ export const he = {
     notifiedToast: "נשלחו {{count}} הודעות",
   },
   /** REQ §13.111 (a): the large-trunk requirement waived by whoever places by hand ("allow_small_trunk"). */
+  // REQ §13.191 (DR2): asked once after volunteering to drive.
+  driverReminder: {
+    askTitle: "להזכיר לך 30 דקות לפני היציאה?",
+    askBody: "נשלח לך תזכורת לצאת בזמן לנסיעות שאת/ה נוהג/ת בהן בשביל אחרים. אפשר לשנות בכל עת בפרופיל.",
+    askYes: "כן, להזכיר לי",
+    askNo: "לא צריך",
+  },
   // REQ §13.190: a member leaves less than the turnaround before the car's next ride.
   shortTurnaround: {
     confirmTitle: "הרכב צריך לחזור בזמן",
@@ -940,6 +947,7 @@ export const he = {
     changelog: "מה חדש",
     companion_added: "נרשמת כנוסע/ת בבקשה של מישהו",
     ride_edited: "מישהו שינה את הנסיעה שלך",
+    driver_reminder: "תזכורת לצאת לנסיעה שאני נוהג/ת בה",
   } satisfies Record<NotificationEvent, string>,
   car: {
     status: {

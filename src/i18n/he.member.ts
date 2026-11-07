@@ -655,6 +655,7 @@ export const heMember = {
     classicRequestFormLabel: "טופס הבקשה הקלאסי",
     classicRequestFormHelp: "הטופס הישן, שדה אחרי שדה",
     pushRideEditsLabel: "התראה כשמישהו משנה את הנסיעות שלי",
+    driverReminderLabel: "תזכורת לצאת, 30 דקות לפני נסיעה שאני נוהג/ת בה",
     historyLink: "היסטוריה וסטטיסטיקה",
     managementTitle: "ניהול",
     themeTitle: "מראה",

@@ -1,3 +1,4 @@
+import { useAskDriverReminder } from "@/features/member/driverReminder";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { useSession } from "@/features/auth/useSession";
@@ -96,11 +97,13 @@ export function useHandOverOwnRideMutation() {
 
 export function useClaimRideDriverMutation() {
   const client = useQueryClient();
+  const askDriverReminder = useAskDriverReminder();
   return useMutation({
     mutationFn: ({ rideId, expectedVersion }: { rideId: string; expectedVersion: number }) => claimRideDriver(rideId, expectedVersion),
     onSuccess: () => {
       for (const key of [siddurKeys.all, sadranKeys.all, requestsKeys.all, inboxKeys.all])
         void client.invalidateQueries({ queryKey: key });
+      void askDriverReminder();
     },
     onError: showErrorToast,
   });
@@ -109,12 +112,14 @@ export function useClaimRideDriverMutation() {
 /** REQ §13.174: "אני לא יכול/ה לנהוג" (`release_ride_driver`) and "אני אנהג" over a volunteer (`take_over_ride_driver`). */
 export function useVolunteerDriverChangeMutation() {
   const client = useQueryClient();
+  const askDriverReminder = useAskDriverReminder();
   return useMutation({
     mutationFn: ({ rideId, expectedVersion, action }: { rideId: string; expectedVersion: number; action: "release" | "takeOver" }) =>
       action === "release" ? releaseRideDriver(rideId, expectedVersion) : takeOverRideDriver(rideId, expectedVersion),
-    onSuccess: () => {
+    onSuccess: (_data, { action }) => {
       for (const key of [siddurKeys.all, sadranKeys.all, requestsKeys.all, inboxKeys.all])
         void client.invalidateQueries({ queryKey: key });
+      if (action === "takeOver") void askDriverReminder();
     },
     onError: showErrorToast,
   });
