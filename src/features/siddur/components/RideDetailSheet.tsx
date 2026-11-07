@@ -22,6 +22,8 @@ import { relayPartnerOf, servedOf, type ServedEntry } from "@/features/rides/ser
 import type { BoardRide } from "../api";
 import { AddPassengersDialog } from "@/features/rides/components/AddPassengersDialog";
 import { RidePassengersList } from "@/features/rides/components/RidePassengersList";
+import { RidePersonBlocks } from "@/features/rides/components/RidePersonBlocks";
+import { buildPersonBlocks, needsPersonBlocks } from "@/features/rides/ridePersonBlocks";
 import { RidePublicNotesEditor } from "@/features/rides/components/RidePublicNotesEditor";
 import { RideRoute } from "@/features/rides/components/RideRoute";
 import { RideCarHandover } from "@/features/rides/components/RideCarHandover";
@@ -201,6 +203,8 @@ export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = 
               ) : null}
 
               {mergedNames.length > 1 ? <p className="text-muted-foreground" data-testid="ride-merged-of">{tv("rideDetail.mergedOf", { names: mergedNames.join(", ") })}</p> : null}
+
+              {needsPersonBlocks(ride, served) ? <RidePersonBlocks blocks={buildPersonBlocks({ ride, served, homeDestinationId })} /> : null}
 
               <RidePassengersList
                 rideId={ride.id}

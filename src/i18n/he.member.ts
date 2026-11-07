@@ -479,6 +479,26 @@ export const heMember = {
     routeStopsTitle: "עצירות בדרך",
     routeStopsOut: "הלוך:",
     routeStopsReturn: "חזור:",
+    /** RD1: one block per person on a shared ride - who asked for what. */
+    person: {
+      title: "מי ביקש מה",
+      roleRider: "נוסע/ת",
+      roleAdded: "נוסע/ת שנוסף/ה",
+      withNames: "יחד עם: {{names}}",
+      legOut: "הלוך",
+      legReturn: "חזור",
+      legBoth: "הלוך וחזור",
+      stopsReturn: "עצירות בחזור: {{stops}}",
+      asked: "ביקש/ה:",
+      departAt: "יציאה",
+      returnAt: "חזרה",
+      adults: "מבוגרים/ות: {{count}}",
+      childSeats: "מושבי ילדים: {{count}}",
+      boosters: "בוסטרים: {{count}}",
+      luggage: "ציוד גדול",
+      differsStart: "ביקש/ה יציאה ב־{{asked}}, הנסיעה יוצאת ב־{{ride}}",
+      differsRoute: "הנסיעה עוברת גם דרך: {{places}}",
+    },
   },
   /** REQ §13.94: the ride's whole route (both legs, with estimated times) in the ride sheet/ride detail. */
   rideRoute: {

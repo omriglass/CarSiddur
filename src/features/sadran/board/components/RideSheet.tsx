@@ -5,6 +5,8 @@ import { ridePassengerSummary } from "@/lib/ridePassengerSummary";
 import { joinableDropOffLegs } from "../joinLegs";
 import { AddPassengersDialog } from "@/features/rides/components/AddPassengersDialog";
 import { RidePassengersList } from "@/features/rides/components/RidePassengersList";
+import { RidePersonBlocks } from "@/features/rides/components/RidePersonBlocks";
+import { buildPersonBlocks, needsPersonBlocks, type RequestExtras } from "@/features/rides/ridePersonBlocks";
 import { RidePublicNotesEditor } from "@/features/rides/components/RidePublicNotesEditor";
 import { RideRoute } from "@/features/rides/components/RideRoute";
 import { RideRouteStops } from "@/features/rides/components/RideRouteStops";
@@ -155,6 +157,18 @@ export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenCha
   // Directly `add_ride_passengers()`-added names (`people`, `source: 'added'`) — not tied to
   // any served request, so the summary/details lines take them as an extra list of their own.
   const addedNames = ride ? addedPeopleNames(ride, servedEntries) : [];
+  // RD1: hours, flexibility and the note to the Sadran come from the week's requests the board already loaded.
+  const personExtras = new Map<string, RequestExtras>(
+    requests.map((request) => [request.id, {
+      departAt: request.depart_at,
+      returnAt: request.return_at,
+      flexDepartEarly: request.flex_depart_early,
+      flexDepartLate: request.flex_depart_late,
+      flexReturnEarly: request.flex_return_early,
+      flexReturnLate: request.flex_return_late,
+      note: request.notes,
+    }]),
+  );
 
   return (
     <Sheet open={!!ride} onOpenChange={onOpenChange}>
@@ -343,6 +357,9 @@ export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenCha
                   works on any confirmed, uncancelled ride — the board's own authorized
                   viewer always satisfies `can_manage_week` for this week. Same unified
                   `people` list the siddur's `RideDetailSheet` renders (REQ §13.85). */}
+              {needsPersonBlocks(ride, servedEntries) ? (
+                <RidePersonBlocks blocks={buildPersonBlocks({ ride, served: servedEntries, homeDestinationId, requests: personExtras })} />
+              ) : null}
               <RidePassengersList
                 rideId={ride.id}
                 expectedVersion={ride.version}
