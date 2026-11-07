@@ -94,3 +94,27 @@ describe("WeekGrid hold to drag", () => {
     expect(block("ride")).not.toHaveClass("touch-none");
   });
 });
+
+describe("WeekGrid short-ride tap area (REQ 13.185 e)", () => {
+  const short = { id: "s1", carId: "a", startMinutes: 600, endMinutes: 615, label: "Short one" };
+  const next = { id: "s2", carId: "a", startMinutes: 615, endMinutes: 630, label: "Short two" };
+
+  it("a short ride gets an invisible hit area that opens it; a real neighbour block still wins its own click", () => {
+    const onRideClick = vi.fn();
+    const { container, block } = grid({ rides: [short, next], onRideClick });
+    const hit = container.querySelector('[data-ride-hit="s1"]')!;
+    expect(hit).not.toBeNull();
+    // Same as tapping the block: the first tap peeks, the second opens the ride.
+    fireEvent.click(hit);
+    fireEvent.click(hit);
+    expect(onRideClick).toHaveBeenLastCalledWith("s1");
+    fireEvent.click(block("s2"));
+    fireEvent.click(block("s2"));
+    expect(onRideClick).toHaveBeenLastCalledWith("s2");
+  });
+
+  it("a long ride has no extra hit area", () => {
+    const { container } = grid({ rides: [ride] });
+    expect(container.querySelector("[data-ride-hit]")).toBeNull();
+  });
+});

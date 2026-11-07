@@ -1460,7 +1460,7 @@ Found while reproducing a production autofill failure for Tue 10.11 (`leg_locati
 
 ## Tiny rides are hard to open (owner 2026-11-04)
 
-- TR1 — **A short ride is a tiny block on the grid and hard to tap to see its details.** Make short rides easy to open on the siddur and the board (phone and desktop): a minimum tap target (e.g. a minimum block height or an invisible larger hit area that does not cover neighbouring rides), and/or opening the ride sheet from the ride's label or the day list. Must not clash with the board's long-press drag (REQ §13.184) or the siddur edit mode (§13.165). Check `WeekGrid` and the board grid; verify on a phone-width viewport with back-to-back short rides on one car.
+- TR1 — ✅ 2026-11-07 (REQ §13.185 e) **A short ride is a tiny block on the grid and hard to tap to see its details.** Make short rides easy to open on the siddur and the board (phone and desktop): a minimum tap target (e.g. a minimum block height or an invisible larger hit area that does not cover neighbouring rides), and/or opening the ride sheet from the ride's label or the day list. Must not clash with the board's long-press drag (REQ §13.184) or the siddur edit mode (§13.165). Check `WeekGrid` and the board grid; verify on a phone-width viewport with back-to-back short rides on one car.
 
 ## Ride details of a combined ride are unreadable (owner 2026-11-04)
 

@@ -377,6 +377,8 @@ const HOUR_ROW_HEIGHT_PX = 80;
 const RIDE_MIN_HEIGHT_PX = 32;
 /** R4U1: a ride this short or shorter gets slim resize handles so most of the card stays a click target. */
 const SHORT_RIDE_MINUTES = 30;
+/** REQ §13.185 (e): a ride block shorter than this gets an invisible tap-only extension up to this height, centred on it. */
+const RIDE_TAP_TARGET_PX = 44;
 /** Below this many pixels of movement, a pointerdown/up pair is a click, not a drag. */
 const DRAG_START_THRESHOLD_PX = 4;
 /** A scroll this soon after the ride popup opened does not close it (layout settling, not the user). */
@@ -1294,6 +1296,33 @@ export function WeekGrid({
             </div>
           </div>
         ) : null}
+        {/* REQ §13.185 (e): invisible tap area for short rides. Rendered before every block and ride, so any real block
+            (a neighbour included) paints above it and keeps its own taps; it only opens the ride sheet - no drag, no resize. */}
+        {ridesFor(car.id).map((ride) => {
+          const rect = clampRideVertical(ride.startMinutes, ride.endMinutes, dayStartMinutes, dayEndMinutes);
+          const shownMinutes = Math.min(ride.endMinutes, dayEndMinutes) - Math.max(ride.startMinutes, dayStartMinutes);
+          const height = Math.max((shownMinutes / 60) * HOUR_ROW_HEIGHT_PX * zoom, RIDE_MIN_HEIGHT_PX);
+          if (height >= RIDE_TAP_TARGET_PX) return null;
+          const laneCount = Math.max(1, ride.laneCount ?? 1);
+          const lane = Math.min(Math.max(0, ride.lane ?? 0), laneCount - 1);
+          const laneStyle = laneCount > 1
+            ? { insetInlineStart: `calc(${(lane / laneCount) * 100}% + 2px)`, width: `calc(${100 / laneCount}% - 4px)` }
+            : {};
+          return (
+            <div
+              key={`hit-${ride.id}`}
+              data-ride-hit={ride.id}
+              aria-hidden="true"
+              className={cn("absolute", laneCount <= 1 && "inset-x-1", onRideClick && "cursor-pointer")}
+              style={{ top: `calc(${rect.top} - ${(RIDE_TAP_TARGET_PX - height) / 2}px)`, height: RIDE_TAP_TARGET_PX, ...laneStyle }}
+              onClick={(e) => {
+                e.stopPropagation();
+                setRangeStart(null);
+                openRide(ride.id);
+              }}
+            />
+          );
+        })}
         {blocksFor(car.id).map((b) => {
           const isAway = b.kind === "away";
           const editable = !isAway && !!b.editable && !!onBlockChange;
