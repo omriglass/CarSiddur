@@ -197,9 +197,9 @@ export function CarManageScreen({ car, isAdmin, canEdit, canManageCar, canDefine
     <div className="mx-auto max-w-2xl space-y-4 p-4 pb-24">
       <PageHeader
         title={
-          <span className="inline-flex items-center gap-1">
+          <span className="relative inline-flex items-center gap-1 px-2">
             <CarNameWithReport carId={car.id} carName={car.name} />
-            {washed?.has(car.id) ? <CarSparkle className="static" /> : null}
+            {washed?.has(car.id) ? <CarSparkle /> : null}
           </span>
         }
         actions={headerActions}

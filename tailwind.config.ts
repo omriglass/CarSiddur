@@ -113,10 +113,10 @@ export default {
         },
         // A long-pressed ride became movable (owner 2026-11-01, `WeekGrid.tsx`): one short shake of the whole ride,
         // or of the one edge whose time is changing. Gated behind `motion-safe:` at the call site.
-        // WS1 (REQ §13.185 f): faint shimmer of the freshly-washed sparkle; gated with `motion-reduce:animate-none` at the call site.
+        // WS1 (REQ §13.185 f): one freshly-washed speck fading in and out; gated with `motion-reduce:animate-none` at the call site.
         "car-sparkle": {
-          "0%, 100%": { opacity: "0.45", transform: "scale(0.9)" },
-          "50%": { opacity: "1", transform: "scale(1.1)" },
+          "0%, 70%, 100%": { opacity: "0", transform: "scale(0.5)" },
+          "35%": { opacity: "0.85", transform: "scale(1)" },
         },
         "ride-armed-shake": {
           "0%, 100%": { transform: "translateX(0)" },
@@ -143,7 +143,7 @@ export default {
         "accordion-up": "accordion-up 0.2s ease-out",
         "car-care-bounce": "car-care-bounce 0.5s ease-out",
         "car-care-pop": "car-care-pop 1.2s ease-in-out infinite",
-        "car-sparkle": "car-sparkle 2.8s ease-in-out infinite",
+        "car-sparkle": "car-sparkle 3.6s ease-in-out infinite",
         "ride-armed-shake": "ride-armed-shake 0.38s ease-in-out",
         "ride-edge-shake-top": "ride-edge-shake-top 0.38s ease-in-out",
         "ride-edge-shake-bottom": "ride-edge-shake-bottom 0.38s ease-in-out",
