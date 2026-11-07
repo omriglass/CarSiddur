@@ -4,10 +4,15 @@ import { formatTime } from "@/lib/time";
 
 import type { CarSwapBlocker, CarSwapRide } from "./schema";
 
-/** The moved ride's own label, falling back to the driver's name, then a bare "הנסיעה" (owner A4: every blocker names the ride when it can). */
+/**
+ * The moved ride as "who to where" ("אגתה לתל יצחק", REQ §13.186 c), else whichever half is known, then a bare
+ * "הנסיעה" (owner A4: every blocker names the ride when it can).
+ */
 export function carSwapRideLabel(ride: CarSwapRide | undefined): string {
   if (!ride) return he.carSwap.unknownRide;
-  return ride.label ?? ride.driver_name ?? he.carSwap.unknownRide;
+  const person = ride.person_name ?? ride.driver_name;
+  if (person && ride.label) return tv("carSwap.rideLabel", { person, place: ride.label });
+  return person ?? ride.label ?? he.carSwap.unknownRide;
 }
 
 /**

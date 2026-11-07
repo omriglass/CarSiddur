@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { carSwapBlockerMessage } from "@/features/carSwap/blockerMessages";
+import { carSwapBlockerMessage, carSwapRideLabel } from "@/features/carSwap/blockerMessages";
 import { carSwapConfirmDisabled, carSwapFromOptions, carSwapSeriesRangeLabel, groupCarSwapRidesByCar } from "@/features/carSwap/dialogView";
 import { useCarSwapMutation, useCarSwapPreviewQuery } from "@/features/carSwap/hooks";
 import { he, tv } from "@/i18n/he";
@@ -137,7 +137,7 @@ export function CarSwapDialog({ open, onOpenChange, departmentId, weekStart, day
                     {group.rides.map((ride) => (
                       <li key={ride.ride_id} className="flex items-center justify-between gap-2 text-xs">
                         <span dir="ltr">{formatTime(new Date(ride.starts_at))}–{formatTime(new Date(ride.ends_at))}</span>
-                        <span className="truncate">{ride.label ?? ride.driver_name ?? "—"}</span>
+                        <span className="truncate">{carSwapRideLabel(ride)}</span>
                       </li>
                     ))}
                   </ul>
@@ -152,7 +152,7 @@ export function CarSwapDialog({ open, onOpenChange, departmentId, weekStart, day
                   {staying.map((ride) => (
                     <li key={ride.ride_id} className="flex items-center justify-between gap-2">
                       <span dir="ltr">{formatTime(new Date(ride.starts_at))}–{formatTime(new Date(ride.ends_at))}</span>
-                      <span className="truncate">{ride.label ?? ride.driver_name ?? "—"}</span>
+                      <span className="truncate">{carSwapRideLabel(ride)}</span>
                     </li>
                   ))}
                 </ul>
@@ -170,7 +170,7 @@ export function CarSwapDialog({ open, onOpenChange, departmentId, weekStart, day
                     <li key={ride.ride_id}>
                       {formatDayDate(ride.starts_at)}{" "}
                       <span dir="ltr">{formatTime(new Date(ride.starts_at))}–{formatTime(new Date(ride.ends_at))}</span>{" "}
-                      {ride.label ?? ride.driver_name ?? he.carSwap.unknownRide} · {carNameById[ride.car_id] ?? ""} ←{" "}
+                      {carSwapRideLabel(ride)} · {carNameById[ride.car_id] ?? ""} ←{" "}
                       {carNameById[ride.car_id === carA.id ? carB.id : carA.id]}
                     </li>
                   ))}

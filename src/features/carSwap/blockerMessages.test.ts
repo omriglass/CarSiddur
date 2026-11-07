@@ -26,8 +26,16 @@ function blocker(overrides: Partial<CarSwapBlocker> = {}): CarSwapBlocker {
 }
 
 describe("carSwapRideLabel", () => {
-  it("prefers the ride's own label", () => {
-    expect(carSwapRideLabel(ride())).toBe("חיפה");
+  it("names who rides and where to", () => {
+    expect(carSwapRideLabel(ride())).toBe("יואב לחיפה");
+  });
+
+  it("prefers the first person on the ride over a missing driver", () => {
+    expect(carSwapRideLabel(ride({ driver_name: null, person_name: "אגתה", label: "תל יצחק" }))).toBe("אגתה לתל יצחק");
+  });
+
+  it("falls back to the place when nobody is named", () => {
+    expect(carSwapRideLabel(ride({ driver_name: null }))).toBe("חיפה");
   });
 
   it("falls back to the driver's name when there is no label", () => {
@@ -49,13 +57,13 @@ describe("carSwapBlockerMessage", () => {
 
   it("names the ride and the target car for a seats/luggage blocker", () => {
     expect(carSwapBlockerMessage(blocker({ code: "seats" }), rides, carNames)).toBe(
-      tv("carSwap.blockerSeats", { ride: "חיפה", car: "יונדאי 3" }),
+      tv("carSwap.blockerSeats", { ride: "יואב לחיפה", car: "יונדאי 3" }),
     );
   });
 
   it("names the car and the ride for a maintenance blocker", () => {
     expect(carSwapBlockerMessage(blocker({ code: "maintenance" }), rides, carNames)).toBe(
-      tv("carSwap.blockerMaintenance", { car: "יונדאי 3", ride: "חיפה" }),
+      tv("carSwap.blockerMaintenance", { car: "יונדאי 3", ride: "יואב לחיפה" }),
     );
   });
 
@@ -65,13 +73,13 @@ describe("carSwapBlockerMessage", () => {
 
   it("names the ride for a past blocker", () => {
     expect(carSwapBlockerMessage(blocker({ code: "past" }), rides, carNames)).toBe(
-      tv("carSwap.blockerPast", { ride: "חיפה" }),
+      tv("carSwap.blockerPast", { ride: "יואב לחיפה" }),
     );
   });
 
   it("names the ride for a not_allowed blocker that has one", () => {
     expect(carSwapBlockerMessage(blocker({ code: "not_allowed" }), rides, carNames)).toBe(
-      tv("carSwap.blockerNotAllowedRide", { ride: "חיפה" }),
+      tv("carSwap.blockerNotAllowedRide", { ride: "יואב לחיפה" }),
     );
   });
 
@@ -104,6 +112,6 @@ describe("carSwapBlockerMessage — REQ §13.186 closed set", () => {
     );
   });
   it("names a pulled-in ride in an archived week", () => {
-    expect(carSwapBlockerMessage(blocker({ code: "archived" }), [ride()], {})).toBe(tv("carSwap.blockerArchived", { ride: "חיפה" }));
+    expect(carSwapBlockerMessage(blocker({ code: "archived" }), [ride()], {})).toBe(tv("carSwap.blockerArchived", { ride: "יואב לחיפה" }));
   });
 });

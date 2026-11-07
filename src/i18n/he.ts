@@ -159,6 +159,8 @@ export const he = {
     noRidesToMove: "אין נסיעות להעברה",
     fromCarHeading: "מ{{car}}",
     unknownRide: "הנסיעה",
+    /** REQ §13.186 c: one person and the destination, e.g. "אגתה לתל יצחק". */
+    rideLabel: "{{person}} ל{{place}}",
     blockersTitle: "לא ניתן להחליף",
     blockerSeats: "הנסיעה {{ride}} לא נכנסת לרכב {{car}} (מקומות/מטען)",
     blockerLuggage: "הנסיעה {{ride}} כוללת ציוד גדול, ולרכב {{car}} אין תא מטען גדול",
