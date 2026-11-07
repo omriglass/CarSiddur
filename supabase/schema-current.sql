@@ -3280,6 +3280,19 @@ end $$;
 ALTER FUNCTION "public"."_publish_ride_line"("p_request_id" "uuid", "p_ride_id" "uuid") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."_publish_ride_line"("p_request_id" "uuid", "p_ride_id" "uuid", "p_viewer" "uuid") RETURNS "text"
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  select concat_ws(' · ', public._publish_ride_line(p_request_id, p_ride_id),
+    (select public._frag('publish.with', jsonb_build_object('names', n))
+     from (select public._ride_other_names(p_ride_id, p_viewer) as n) x where n is not null));
+$$;
+
+
+ALTER FUNCTION "public"."_publish_ride_line"("p_request_id" "uuid", "p_ride_id" "uuid", "p_viewer" "uuid") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."_refresh_car_task_notices"("p_car_id" "uuid") RETURNS "void"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -3879,6 +3892,36 @@ end $$;
 
 
 ALTER FUNCTION "public"."_ride_moved_by_member"("p_ride_id" "uuid", "p_before" "jsonb", "p_agreed" boolean) OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."_ride_other_names"("p_ride_id" "uuid", "p_viewer" "uuid") RETURNS "text"
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  with people as (
+    select r.driver_id as pid, null::text as name, 0 as ord from public.rides r where r.id = p_ride_id and r.driver_id is not null
+    union all
+    select q.requester_id, null, 1 from public.ride_requests rr join public.requests q on q.id = rr.request_id where rr.ride_id = p_ride_id
+    union all
+    select rc.profile_id, null, 2 from public.ride_requests rr
+      join public.request_companions rc on rc.request_id = rr.request_id where rr.ride_id = p_ride_id
+    union all
+    select null, ch.full_name, 3 from public.ride_requests rr
+      join public.request_children rch on rch.request_id = rr.request_id
+      join public.children ch on ch.id = rch.child_id where rr.ride_id = p_ride_id
+    union all
+    select rp.person_id, case when rp.person_id is null then rp.display_name end, 4 from public.ride_passengers rp where rp.ride_id = p_ride_id
+  ), named as (
+    select coalesce(pf.full_name, pe.name) as name, min(pe.ord) as ord
+    from people pe left join public.profiles pf on pf.id = pe.pid
+    where pe.pid is distinct from p_viewer or pe.pid is null
+    group by coalesce(pe.pid::text, pe.name), coalesce(pf.full_name, pe.name)
+  )
+  select string_agg(name, ', ' order by ord, name) from named where coalesce(name, '') <> '';
+$$;
+
+
+ALTER FUNCTION "public"."_ride_other_names"("p_ride_id" "uuid", "p_viewer" "uuid") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."_ride_person_ids"("p_ride_id" "uuid") RETURNS TABLE("pid" "uuid")
@@ -15184,7 +15227,7 @@ begin
       -- (my-rides lists it). The line is the ride's line as its served request reads it.
       select distinct on (p.pid, x.id) p.pid as requester_id, p.request_id,
         (x.starts_at at time zone 'Asia/Jerusalem')::date as request_day, x.starts_at as line_start,
-        public._publish_ride_line(p.request_id, x.id) as line
+        public._publish_ride_line(p.request_id, x.id, p.pid) as line
       from public.rides x
       cross join lateral (
         select x.driver_id as pid, rr.request_id from public.ride_requests rr where rr.ride_id = x.id
@@ -15204,7 +15247,7 @@ begin
       -- no live ride keeps its single requested-time line. Rides outside the published days are not listed.
       -- R14B4: one line per ride, even when the request rides it on two legs (two ride_requests rows).
       select distinct on (c.id, x.id) c.requester_id, c.id as request_id, c.request_day, x.starts_at as line_start,
-        public._publish_ride_line(c.id, x.id) as line
+        public._publish_ride_line(c.id, x.id, c.requester_id) as line
       from classified c
       join public.ride_requests rr on rr.request_id = c.id
       join public.rides x on x.id = rr.ride_id and x.status <> 'cancelled'
@@ -30350,6 +30393,11 @@ GRANT ALL ON FUNCTION "public"."_publish_ride_line"("p_request_id" "uuid", "p_ri
 
 
 
+REVOKE ALL ON FUNCTION "public"."_publish_ride_line"("p_request_id" "uuid", "p_ride_id" "uuid", "p_viewer" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_publish_ride_line"("p_request_id" "uuid", "p_ride_id" "uuid", "p_viewer" "uuid") TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."_refresh_car_task_notices"("p_car_id" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."_refresh_car_task_notices"("p_car_id" "uuid") TO "service_role";
 
@@ -30434,6 +30482,11 @@ GRANT ALL ON FUNCTION "public"."_ride_fp_matches"("p_ride_id" "uuid", "p_stored"
 
 REVOKE ALL ON FUNCTION "public"."_ride_moved_by_member"("p_ride_id" "uuid", "p_before" "jsonb", "p_agreed" boolean) FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."_ride_moved_by_member"("p_ride_id" "uuid", "p_before" "jsonb", "p_agreed" boolean) TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."_ride_other_names"("p_ride_id" "uuid", "p_viewer" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_ride_other_names"("p_ride_id" "uuid", "p_viewer" "uuid") TO "service_role";
 
 
 
