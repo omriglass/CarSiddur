@@ -201,3 +201,12 @@ html {
     font-size: 16px !important;
   }
 }
+
+/* Profile switch "ביטול אנימציות" (REQ §13.185 h, `features/member/useReduceMotion.ts`): no animation or transition anywhere. */
+html[data-reduce-motion] *,
+html[data-reduce-motion] *::before,
+html[data-reduce-motion] *::after {
+  animation: none !important;
+  transition: none !important;
+  scroll-behavior: auto !important;
+}

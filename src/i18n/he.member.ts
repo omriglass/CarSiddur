@@ -645,6 +645,9 @@ export const heMember = {
     /** Owner 2026-10-12: per-device opt-in for features still being tried out (today: the Google calendar on "my rides"). */
     noAutoDialogsLabel: "לא לפתוח חלונות אוטומטית בבקשה חדשה",
     noAutoDialogsHelp: "בבקשה חדשה לא ייפתחו בזה אחר זה בחירת היום, השעות והיעד. במכשיר הזה בלבד.",
+    accessibilityTitle: "נגישות",
+    reduceMotionLabel: "ביטול אנימציות",
+    reduceMotionHelp: "בלי נצנוצים, תנועה ומעברים מונפשים, במכשיר הזה בלבד.",
     experimentalTitle: "ניסיוני",
     experimentalLabel: "אפשר תכונות ניסיוניות",
     experimentalHelp: "תכונות חדשות שעוד בבדיקה, במכשיר הזה בלבד. כרגע: הצגת יומן Google בתצוגת השבוע של ״הנסיעות שלי״.",

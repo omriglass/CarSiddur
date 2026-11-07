@@ -25,6 +25,7 @@ import { useIsSadranAnywhere } from "@/features/auth/useIsSadran";
 import { useTheme, type ThemePreference } from "@/hooks/useTheme";
 import { useNoAutoDialogs } from "@/features/member/useNoAutoDialogs";
 import { useExperimentalFeatures } from "@/features/member/useExperimentalFeatures";
+import { useReduceMotion } from "@/features/member/useReduceMotion";
 import { useMyDepartments, useSetMyDefaultOriginMutation } from "@/features/auth/useMyDepartments";
 import { useProfile, useUpdateProfileMutation } from "@/features/auth/useProfile";
 import { usePushSubscriptionStatus } from "@/features/auth/usePushSubscriptionStatus";
@@ -59,6 +60,7 @@ export function ProfilePage() {
   const isAdmin = !!profileQuery.data?.is_admin;
   const { preference: themePreference, setPreference: setThemePreference } = useTheme();
   const experimental = useExperimentalFeatures();
+  const reduceMotion = useReduceMotion();
   const noAutoDialogs = useNoAutoDialogs();
 
   // REQ §13.93: "נקודת יציאה קבועה" for the active department — `department_members.default_origin_id`.
@@ -301,6 +303,22 @@ export function ProfilePage() {
               {he.profileExtra.themeSystem}
             </ToggleGroupItem>
           </ToggleGroup>
+        </CardContent>
+      </Card>
+
+      {/* Owner 2026-11-07 (REQ §13.185 h): per-device, stops every animation and transition. */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">{he.profileExtra.accessibilityTitle}</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center justify-between gap-3">
+            <div className="space-y-0.5">
+              <Label htmlFor="profile-reduce-motion">{he.profileExtra.reduceMotionLabel}</Label>
+              <p className="text-xs text-muted-foreground">{he.profileExtra.reduceMotionHelp}</p>
+            </div>
+            <Switch id="profile-reduce-motion" checked={reduceMotion.enabled} onCheckedChange={reduceMotion.setEnabled} data-testid="profile-reduce-motion" />
+          </div>
         </CardContent>
       </Card>
 
