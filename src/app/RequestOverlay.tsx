@@ -26,7 +26,8 @@ export function RequestOverlay({ title, subtitle, children }: RequestOverlayProp
       <PortalSheetContent
         side="bottom"
         data-testid="request-overlay"
-        className={`max-h-[92dvh] overflow-y-auto overscroll-contain rounded-t-2xl p-0 md:max-h-[85dvh] ${CENTERED_ON_DESKTOP}`}
+        maxDvh={92}
+        className={`overflow-y-auto overscroll-contain rounded-t-2xl p-0 ${CENTERED_ON_DESKTOP}`}
         onOpenAutoFocus={(event) => event.preventDefault()}
       >
         <SheetHeader className="flex-row items-baseline gap-2 space-y-0 px-4 pb-0 pe-12 pt-4 text-start">

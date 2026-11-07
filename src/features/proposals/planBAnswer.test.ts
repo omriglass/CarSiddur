@@ -1,3 +1,4 @@
+import { he } from "@/i18n/he";
 import { describe, expect, it } from "vitest";
 
 import { planBLines } from "./planBAnswer";
@@ -23,7 +24,7 @@ describe("planBLines", () => {
     expect(other.pickup).toMatch(/איסוף מפרדס/);
     const oneWay = planBLines({ dropPlace: "צומת חריש", arriveBy: t("06:00"), pickupAt: null, carName: "ואן", departAt: t("05:15") }, { ...request, tripType: "one_way", returnAt: null });
     expect(oneWay.pickup).toBeNull();
-    expect(oneWay.replaces).toMatch(/הלוך בלבד לחיפה/);
+    expect(oneWay.replaces).toContain(`${he.request.tripTypeOneWay} לחיפה`);
   });
   it("is null-safe for an older summary without the new fields", () => {
     const lines = planBLines({ dropPlace: "צומת חריש", arriveBy: t("06:00"), pickupAt: null }, null);

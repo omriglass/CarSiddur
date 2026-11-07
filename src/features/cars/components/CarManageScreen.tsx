@@ -138,8 +138,6 @@ interface CarManageScreenProps {
   canSetStatusOnly?: boolean;
   /** Admin, the car's responsible person or the department's Sadran: may edit fields, the private switch, maintenance. Everyone else gets a read-only page. */
   canEdit: boolean;
-  /** The signed-in viewer's own name — used to show a read-only "אחראי/ת רכב" value when the viewer *is* the responsible person (not an admin, so the field can't be reassigned here, REQ §13.71). */
-  viewerName: string;
   /**
    * Extra header actions slot, empty by default — the car report dialog now
    * opens from the header's own car icon (`CarNameWithReport`, replacing the
@@ -150,15 +148,15 @@ interface CarManageScreenProps {
 }
 
 /** `/cars/:carId` (UX_FLOWS.md §5.11 "Car page"). */
-export function CarManageScreen({ car, isAdmin, canEdit, canManageCar, canDefineChecklist = false, canSetStatusOnly = false, viewerName, headerActions }: CarManageScreenProps) {
+export function CarManageScreen({ car, isAdmin, canEdit, canManageCar, canDefineChecklist = false, canSetStatusOnly = false, headerActions }: CarManageScreenProps) {
   const issuesQuery = useCarIssueHistoryQuery(car.id);
   const careEventsQuery = useCarCareHistoryQuery(car.id);
   const odometerQuery = useCarOdometerHistoryQuery(car.id);
   const currentKmQuery = useCarCurrentKmQuery(car.id);
   const tasksQuery = useCarTasksQuery(car.id, canManageCar);
   // Department-members combobox candidates for the responsible-person picker — only fetched (and only
-  // rendered as a picker by `CarForm`) when the viewer is an admin; the responsible viewer sees their
-  // own name read-only, no fetch needed (`car.responsible_id` already is their own id).
+  // rendered as a picker by `CarForm`) when the viewer is an admin; everyone else sees the responsible
+  // person's name read-only, looked up in the profiles every approved member may read.
   const deptMembersQuery = useAllDepartmentMembers();
   const profilesQuery = useAllProfiles();
 
@@ -167,15 +165,16 @@ export function CarManageScreen({ car, isAdmin, canEdit, canManageCar, canDefine
   const [dateTo, setDateTo] = useState("");
 
   const responsibleOptions: ResponsibleOption[] = useMemo(() => {
-    if (!isAdmin) {
-      return car.responsible_id ? [{ id: car.responsible_id, name: viewerName }] : [];
-    }
     const profilesById = new Map((profilesQuery.data ?? []).map((p) => [p.id, p.full_name]));
+    if (!isAdmin) {
+      // Read-only value for every other viewer: the car's real responsible person (owner 2026-11-07, CR1), not the viewer.
+      return car.responsible_id ? [{ id: car.responsible_id, name: profilesById.get(car.responsible_id) ?? "" }] : [];
+    }
     return (deptMembersQuery.data ?? [])
       .filter((member) => member.department_id === car.department_id)
       .map((member) => ({ id: member.profile_id, name: profilesById.get(member.profile_id) ?? member.profile_id }))
       .filter((option, index, all) => all.findIndex((o) => o.id === option.id) === index);
-  }, [isAdmin, car.responsible_id, car.department_id, viewerName, deptMembersQuery.data, profilesQuery.data]);
+  }, [isAdmin, car.responsible_id, car.department_id, deptMembersQuery.data, profilesQuery.data]);
 
   const merged = mergeCarHistory(issuesQuery.data ?? [], careEventsQuery.data ?? [], odometerQuery.data ?? [], tasksQuery.data ?? []);
   const filtered = filterCarHistory(merged, filter, { from: dateFrom || undefined, to: dateTo || undefined });

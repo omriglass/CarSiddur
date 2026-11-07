@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/command";
 import { SheetPortalContext } from "@/components/SheetPortalContext";
 import { t } from "@/i18n/he";
+import { useKeyboardInset } from "@/lib/keyboardInset";
 import { cn } from "@/lib/utils";
 import { filterDestinations } from "./destinationFilter";
 
@@ -61,6 +62,7 @@ export function DestinationCombobox({ destinations, value, onChange, autoFocus, 
   const matches = filterDestinations(destinations, query);
   const trimmedQuery = query.trim();
   const portalContainer = useContext(SheetPortalContext);
+  const keyboardInset = useKeyboardInset();
 
   function select(next: DestinationValue) {
     onChange(next);
@@ -89,6 +91,7 @@ export function DestinationCombobox({ destinations, value, onChange, autoFocus, 
       <PopoverPrimitive.Portal container={portalContainer ?? undefined}>
         <PopoverPrimitive.Content
           align="start"
+          collisionPadding={{ bottom: 8 + keyboardInset }}
           sideOffset={4}
           className={cn(
             "z-50 w-[--radix-popover-trigger-width] rounded-md border bg-popover p-0 text-popover-foreground shadow-md outline-none data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2",
@@ -100,7 +103,7 @@ export function DestinationCombobox({ destinations, value, onChange, autoFocus, 
               onValueChange={setQuery}
               placeholder={placeholder || t("field.destination")}
             />
-            <CommandList>
+            <CommandList className="max-h-[min(300px,calc(var(--radix-popover-content-available-height)-3rem))]">
               <CommandEmpty>{t("field.destinationFreeText")}</CommandEmpty>
               <CommandGroup>
                 {matches.map((dest) => {

@@ -12,9 +12,12 @@ import { SheetContent, type SheetContentProps } from "@/components/ui/sheet";
  * the sheet's modal scroll lock (see `SheetPortalContext`'s docstring for
  * why). Use this instead of the raw `SheetContent` for any Sheet that hosts
  * one of those fields (UX_FLOWS.md component inventory).
+ *
+ * A bottom sheet also stays above the on-screen keyboard (`src/lib/keyboardInset.ts`): it sits at
+ * `--kb-inset` and fits the visible area, never taller than `maxDvh` (default 85dvh).
  */
-export const PortalSheetContent = React.forwardRef<HTMLDivElement, SheetContentProps>(
-  function PortalSheetContent({ children, ...props }, forwardedRef) {
+export const PortalSheetContent = React.forwardRef<HTMLDivElement, SheetContentProps & { maxDvh?: number }>(
+  function PortalSheetContent({ children, maxDvh = 85, style, ...props }, forwardedRef) {
     const [node, setNode] = React.useState<HTMLDivElement | null>(null);
     const setRef = React.useCallback(
       (el: HTMLDivElement | null) => {
@@ -25,7 +28,13 @@ export const PortalSheetContent = React.forwardRef<HTMLDivElement, SheetContentP
       [forwardedRef],
     );
     return (
-      <SheetContent ref={setRef} {...props}>
+      <SheetContent
+        ref={setRef}
+        style={props.side === "bottom"
+          ? { bottom: "var(--kb-inset, 0px)", maxHeight: `min(${maxDvh}dvh, calc(var(--vv-height, 100dvh) - 0.5rem))`, ...style }
+          : style}
+        {...props}
+      >
         <SheetPortalContext.Provider value={node}>{children}</SheetPortalContext.Provider>
       </SheetContent>
     );

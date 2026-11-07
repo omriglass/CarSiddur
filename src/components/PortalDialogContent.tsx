@@ -11,11 +11,13 @@ import { DialogContent } from "@/components/ui/dialog";
  * inside needs the same fix (see `SheetPortalContext`'s docstring). Use this
  * instead of the raw `DialogContent` for any Dialog that hosts one of those
  * fields (UX_FLOWS.md component inventory).
+ *
+ * Centred in the area the on-screen keyboard leaves visible (`src/lib/keyboardInset.ts`).
  */
 export const PortalDialogContent = React.forwardRef<
   React.ElementRef<typeof DialogContent>,
   React.ComponentPropsWithoutRef<typeof DialogContent>
->(function PortalDialogContent({ children, ...props }, forwardedRef) {
+>(function PortalDialogContent({ children, style, ...props }, forwardedRef) {
   const [node, setNode] = React.useState<HTMLDivElement | null>(null);
   const setRef = React.useCallback(
     (el: HTMLDivElement | null) => {
@@ -26,7 +28,11 @@ export const PortalDialogContent = React.forwardRef<
     [forwardedRef],
   );
   return (
-    <DialogContent ref={setRef} {...props}>
+    <DialogContent
+      ref={setRef}
+      style={{ top: "calc(var(--vv-top, 0px) + var(--vv-height, 100dvh) / 2)", maxHeight: "min(90dvh, calc(var(--vv-height, 100dvh) - 1rem))", ...style }}
+      {...props}
+    >
       <SheetPortalContext.Provider value={node}>{children}</SheetPortalContext.Provider>
     </DialogContent>
   );

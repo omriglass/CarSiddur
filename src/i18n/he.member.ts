@@ -141,7 +141,7 @@ export const heMember = {
     // REQ §13.93: the three trip types shown in the request form, replacing
     // TripShapeControl/CarAtDestinationToggle (step O5a).
     tripTypeRoundTrip: "הלוך-חזור",
-    tripTypeOneWay: "הלוך בלבד",
+    tripTypeOneWay: "כיוון אחד (הרכב נשאר ביעד)",
     tripTypeDropOff: "הקפצה",
     /** Origin line above the destination field, tap to change (REQ §13.93). */
     fromOrigin: "מ{{place}} אל",
@@ -681,8 +681,8 @@ export const heMember = {
     oneWayHelp: "הרכב יישמר להסעה ויופיע באדום עד שמישהו יתנדב לנהוג. נשמר גם מקום נוסף לנהג/ת.",
     arrivalHomeHelp: "השעה היא שעת ההגעה הביתה. הרכב יוצא לאיסוף מוקדם יותר.",
     vehicleWindow: "הרכב נדרש בשעות ⁦{{start}}–{{end}}⁩, כולל נסיעת הנהג/ת והאיסוף.",
-    submitOneWayTakeCar: "קח/י את הרכב (הלוך בלבד)",
-    successOneWayAssigned: "{{car}} שלך ב-{{start}} — הלוך בלבד, הרכב יישאר ביעד",
+    submitOneWayTakeCar: "קח/י את הרכב (כיוון אחד)",
+    successOneWayAssigned: "{{car}} שלך ב-{{start}} — כיוון אחד, הרכב יישאר ביעד",
     successNeedsDriver: "{{car}} נשמר להסעה — עדיין דרוש/ה נהג/ת",
     header: "לוקח/ת את {{car}} ביום {{day}} {{start}}",
     headerNoCar: "לוקח/ת רכב ביום {{day}} {{start}}",

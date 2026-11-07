@@ -15,6 +15,7 @@ import { errorToReport, reportClientError } from "@/features/diagnostics/reportC
 import { applyTheme, getStoredPreference } from "@/hooks/useTheme";
 import { he } from "@/i18n/he";
 import { captureInstallPrompt } from "@/lib/installPrompt";
+import { installKeyboardInset } from "@/lib/keyboardInset";
 import { createQueryClient } from "@/lib/queryPolicy";
 import { AppError, showErrorToast } from "@/lib/rpc";
 
@@ -105,6 +106,8 @@ if (!rootElement) {
 // them then stamps `dir="ltr"` on its own DOM root, overriding the ambient
 // `<html dir="rtl">` (owner bug report 2026-09-14: ride-type chips and the preferred-car
 // select rendered left-to-right). One provider here fixes every primitive app-wide.
+installKeyboardInset();
+
 createRoot(rootElement).render(
   <StrictMode>
     <DirectionProvider dir="rtl">

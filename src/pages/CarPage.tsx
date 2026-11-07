@@ -82,7 +82,6 @@ export function CarPage() {
       canManageCar={canManageCar}
       canDefineChecklist={canDefineChecklist}
       canSetStatusOnly={canSetStatusOnly}
-      viewerName={profile?.full_name ?? ""}
     />
   );
 }

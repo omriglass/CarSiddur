@@ -4,6 +4,7 @@ import { useCallback, useContext, useEffect, useRef, useState } from "react";
 import { Input } from "@/components/ui/input";
 import { SheetPortalContext } from "@/components/SheetPortalContext";
 import { he } from "@/i18n/he";
+import { useKeyboardInset } from "@/lib/keyboardInset";
 import { cn } from "@/lib/utils";
 import { MAX_MINUTES, MIN_MINUTES, normalizeTypedTime, pad2, parseHHMM, snapToQuarterHour } from "./timeField15Format";
 
@@ -63,6 +64,7 @@ export function TimeField15({ value, min, max, onChange, disabled, ...rest }: Ti
   const highHour = Math.floor((bounds.max ?? MAX_MINUTES) / 60);
   const hours = Array.from({ length: highHour - lowHour + 1 }, (_, i) => lowHour + i);
   const portalContainer = useContext(SheetPortalContext);
+  const keyboardInset = useKeyboardInset();
 
   const [inlineOpen, setInlineOpen] = useState(false);
   const inlineRef = useRef<HTMLDivElement>(null);
@@ -182,9 +184,9 @@ export function TimeField15({ value, min, max, onChange, disabled, ...rest }: Ti
           // R10U6: centred under the input, never closer than 8px to the screen edge (360px phones).
           align="center"
           sideOffset={4}
-          collisionPadding={8}
+          collisionPadding={{ top: 8, right: 8, left: 8, bottom: 8 + keyboardInset }}
           className={cn(
-            "z-50 w-56 max-w-[calc(100vw-1rem)] rounded-md border bg-popover p-2 text-popover-foreground shadow-md outline-none data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2",
+            "z-50 max-h-[var(--radix-popover-content-available-height)] w-56 max-w-[calc(100vw-1rem)] overflow-y-auto rounded-md border bg-popover p-2 text-popover-foreground shadow-md outline-none data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2",
           )}
         >
           {picker(false)}

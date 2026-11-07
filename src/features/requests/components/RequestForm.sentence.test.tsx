@@ -361,7 +361,7 @@ describe("RequestForm time window (REQ §13.112 c)", () => {
     show();
     expect(screen.getByTestId("window-link")).toBeVisible();
     fireEvent.click(screen.getByTestId("chip-trip"));
-    fireEvent.click(screen.getByRole("radio", { name: new RegExp(he.request.tripTypeOneWay) }));
+    fireEvent.click(screen.getByRole("radio", { name: he.request.tripTypeOneWay }));
     expect(screen.queryByTestId("window-link")).not.toBeInTheDocument();
   });
 });

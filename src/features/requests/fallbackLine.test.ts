@@ -1,3 +1,4 @@
+import { he } from "@/i18n/he";
 import { describe, expect, it } from "vitest";
 
 import { originalRequestLine, planBRecapLine, servedByAlternativeLine, waitingFallbackLine } from "./fallbackLine";
@@ -54,7 +55,7 @@ describe("originalRequestLine", () => {
   });
 
   it("one-way shows one time, free text destination is used as is, garbage gives null", () => {
-    expect(originalRequestLine({ ...main, trip_type: "one_way", destination_id: null, destination_text: "קיסריה", return_at: null }, { destinationName: () => undefined })).toBe("הבקשה המקורית: הלוך בלבד לקיסריה ד׳ 14.10 08:00");
+    expect(originalRequestLine({ ...main, trip_type: "one_way", destination_id: null, destination_text: "קיסריה", return_at: null }, { destinationName: () => undefined })).toBe(`הבקשה המקורית: ${he.request.tripTypeOneWay} לקיסריה ד׳ 14.10 08:00`);
     expect(originalRequestLine(null, { destinationName: () => undefined })).toBeNull();
     expect(originalRequestLine({ nope: 1 }, { destinationName: () => undefined })).toBeNull();
   });
