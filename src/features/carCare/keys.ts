@@ -8,5 +8,6 @@
  */
 export const carCareKeys = {
   issues: (carId: string | undefined) => ["carCare", "issues", carId] as const,
+  recentWashes: (departmentId: string | undefined) => ["carCare", "recentWashes", departmentId] as const,
   events: (carId: string | undefined) => ["carCare", "events", carId] as const,
 };

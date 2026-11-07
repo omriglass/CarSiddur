@@ -62,6 +62,7 @@ import { useMemberRideMoves } from "@/features/rides/useMemberRideMoves";
 import { useRideSheetCarActions } from "@/features/rides/useRideSheetCarActions";
 import { awayBandBlocks } from "@/features/siddur/awayBands";
 import { tightRideIdsOf } from "@/features/rides/tightSchedule";
+import { useRecentlyWashedCarIds } from "@/features/carCare/hooks";
 import { useDepartmentSettings, useWeekRequestsWithNames } from "@/features/sadran/hooks";
 import { groupByDay } from "@/features/siddur/dayGrouping";
 import { carAwayPlaceAtDayStart, hideIdleTemporaryCars } from "@/components/weekGridCars";
@@ -175,6 +176,7 @@ export function SiddurPage() {
   const carStartLocationsQuery = useCarStartLocations(departmentId, weekStart);
   const rideTypesQuery = useRideTypes(departmentId);
   const settingsQuery = useDepartmentSettings(departmentId);
+  const recentlyWashedCarIds = useRecentlyWashedCarIds(departmentId);
   const changesQuery = useRideChanges(departmentId, weekStart, { scoped: true });
 
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
@@ -776,6 +778,7 @@ export function SiddurPage() {
             />
             <div className="mt-3">
               <WeekGrid
+                recentlyWashedCarIds={recentlyWashedCarIds}
                 blocks={[...maintenanceEditing.gridBlocks, ...awayBands]}
                 onBlockChange={maintenanceEditing.onBlockChange}
                 onBlockClick={maintenanceEditing.onBlockClick}

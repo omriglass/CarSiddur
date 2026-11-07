@@ -17,6 +17,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CarForm, type ResponsibleOption } from "@/features/admin/cars/components/CarForm";
 import type { Car } from "@/features/admin/cars/api";
 import { useAllDepartmentMembers, useAllProfiles } from "@/features/admin/members/hooks";
+import { CarSparkle } from "@/components/CarSparkle";
+import { useRecentlyWashedCarIds } from "@/features/carCare/hooks";
 import { CarNameWithReport } from "@/features/carCare/components/CarNameWithReport";
 import { CarTasksManagerCard } from "@/features/carTasks/components/CarTasksManagerCard";
 import { useCarTasksQuery } from "@/features/carTasks/hooks";
@@ -149,6 +151,7 @@ interface CarManageScreenProps {
 
 /** `/cars/:carId` (UX_FLOWS.md §5.11 "Car page"). */
 export function CarManageScreen({ car, isAdmin, canEdit, canManageCar, canDefineChecklist = false, canSetStatusOnly = false, headerActions }: CarManageScreenProps) {
+  const washed = useRecentlyWashedCarIds(car.department_id);
   const issuesQuery = useCarIssueHistoryQuery(car.id);
   const careEventsQuery = useCarCareHistoryQuery(car.id);
   const odometerQuery = useCarOdometerHistoryQuery(car.id);
@@ -193,7 +196,12 @@ export function CarManageScreen({ car, isAdmin, canEdit, canManageCar, canDefine
   return (
     <div className="mx-auto max-w-2xl space-y-4 p-4 pb-24">
       <PageHeader
-        title={<CarNameWithReport carId={car.id} carName={car.name} />}
+        title={
+          <span className="inline-flex items-center gap-1">
+            <CarNameWithReport carId={car.id} carName={car.name} />
+            {washed?.has(car.id) ? <CarSparkle className="static" /> : null}
+          </span>
+        }
         actions={headerActions}
       />
       <div className="flex items-center gap-2 text-sm text-muted-foreground">

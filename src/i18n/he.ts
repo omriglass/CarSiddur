@@ -145,6 +145,9 @@ export const he = {
    * `CarSwapDialog` (`src/components/`) and the `WeekGrid` car-header
    * drag/menu affordance both read from here.
    */
+  carSparkle: {
+    label: "נשטף לאחרונה",
+  },
   carSwap: {
     carMenuLabel: "תפריט הרכב {{car}}",
     carReportItem: "דיווח / טיפול ברכב",

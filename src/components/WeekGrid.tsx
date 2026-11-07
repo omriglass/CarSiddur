@@ -2,6 +2,7 @@ import { CarFront, ChevronDown, Pin, Clock3, UserRoundX, Star, X } from "lucide-
 import type { MouseEvent, PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import { Fragment, useEffect, useMemo, useRef, useState, useCallback, useSyncExternalStore } from "react";
 
+import { CarSparkle } from "@/components/CarSparkle";
 import { edgeScrollStep } from "@/components/dragAutoScroll";
 import { nextZoom } from "@/components/pinchZoom";
 import { ScaledGrid } from "@/components/ScaledGrid";
@@ -221,6 +222,8 @@ export interface WeekGridDiscussionBlock {
 }
 
 export interface WeekGridProps {
+  /** Cars washed lately (WS1, REQ §13.185 f): their header shows a faint sparkle. Data comes from the screen. */
+  recentlyWashedCarIds?: ReadonlySet<string>;
   cars: readonly WeekGridCar[];
   rides: readonly WeekGridRide[];
   /** Maintenance/blocked windows, hatched (UX_FLOWS §7.4). */
@@ -469,6 +472,7 @@ interface CarDragState {
  * See UX_FLOWS.md "Page scrolling for the Siddur table".
  */
 export function WeekGrid({
+  recentlyWashedCarIds,
   cars,
   rides,
   blocks = [],
@@ -1620,6 +1624,7 @@ export function WeekGrid({
             style={{ gridColumn: carGridColumn(i), gridRow: 1, scrollSnapAlign: "start" }}
             onPointerDown={swappable ? (e) => carPointerDownRef.current(car.id, e) : undefined}
           >
+            {recentlyWashedCarIds?.has(car.id) ? <CarSparkle /> : null}
             <span className={cn("flex min-w-0 items-center justify-center gap-1 text-center text-sm md:text-base leading-tight", myCarIds.has(car.id) || car.today ? "font-bold" : "font-medium")} data-testid="week-grid-car-name" data-my-car={myCarIds.has(car.id) || undefined} data-today={car.today || undefined} data-unpublished={car.unpublished || undefined}>
               {renderCarName ? renderCarName(car) : hasCarMenu ? (
                 <DropdownMenu open={menuCarId === car.id} onOpenChange={(o) => { if (!o) setMenuCarId(null); }}>

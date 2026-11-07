@@ -1,3 +1,4 @@
+import { useRecentlyWashedCarIds } from "@/features/carCare/hooks";
 import { useMaintenanceGridEditing } from "@/features/fleet/useMaintenanceGridEditing";
 import { useWeekChangeWatch } from "@/features/liveSync/useWeekChangeWatch";
 import { paths } from "@/app/routes";
@@ -95,6 +96,7 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
   const navigate = useNavigate();
   // REQ §13.128: past/archived weeks never open on the board — they are read-only in the siddur.
   const weeksQuery = useWeeks(departmentId);
+  const recentlyWashedCarIds = useRecentlyWashedCarIds(departmentId);
   const thisWeekRow = (weeksQuery.data ?? []).find((week) => week.week_start === weekStart);
   const weekIsPast = !!thisWeekRow && isPastWeek(thisWeekRow, dateKey(new Date()));
   // REQ §13.168 (c): freed cars waiting for the Sadran's decision get a card on the board too, not only the push.
@@ -485,6 +487,7 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
             </Button>
           )}
           <WeekGrid
+            recentlyWashedCarIds={recentlyWashedCarIds}
             surface="drafting"
             zoom={tableZoom}
             onZoomChange={setTableZoom}

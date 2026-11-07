@@ -1,11 +1,12 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { carKeys } from "@/features/cars/keys";
 import { carTaskKeys } from "@/features/carTasks/keys";
 import { showErrorToast } from "@/lib/rpc";
 
-import { logCarCare, logCarKilometrage, reportCarIssue, setCarKilometrage } from "./api";
+import { fetchRecentWashes, logCarCare, logCarKilometrage, reportCarIssue, setCarKilometrage } from "./api";
 import { carCareKeys } from "./keys";
+import { recentWashSince, recentlyWashedCarIds } from "./recentWash";
 
 /**
  * Also invalidates `features/cars`' own history query keys (`carKeys.issues`/
@@ -35,6 +36,7 @@ export function useLogCarCareMutation() {
     mutationFn: logCarCare,
     onSuccess: (_result, { carId }) => {
       void queryClient.invalidateQueries({ queryKey: carCareKeys.events(carId) });
+      void queryClient.invalidateQueries({ queryKey: ["carCare", "recentWashes"] });
       void queryClient.invalidateQueries({ queryKey: carKeys.careEvents(carId) });
       void queryClient.invalidateQueries({ queryKey: carTaskKeys.all }); // a log completes the car's matching open task
     },
@@ -67,4 +69,22 @@ export function useSetCarKilometrageMutation() {
     },
     onError: showErrorToast,
   });
+}
+
+const SIX_HOURS_MS = 6 * 60 * 60 * 1000;
+
+/** Ids of cars washed since last week's Sunday (WS1). One department read, cached for the session. */
+export function useRecentlyWashedCarIds(departmentId: string | undefined): ReadonlySet<string> | undefined {
+  const query = useQuery({
+    queryKey: carCareKeys.recentWashes(departmentId),
+    enabled: Boolean(departmentId),
+    staleTime: SIX_HOURS_MS,
+    gcTime: SIX_HOURS_MS * 2,
+    queryFn: async () => {
+      const now = new Date();
+      const rows = await fetchRecentWashes(departmentId as string, recentWashSince(now).toISOString());
+      return recentlyWashedCarIds(rows, now);
+    },
+  });
+  return query.data;
 }

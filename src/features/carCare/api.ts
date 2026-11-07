@@ -1,4 +1,5 @@
-import { rpc } from "@/lib/rpc";
+import { supabase } from "@/integrations/supabase/client";
+import { rpc, toAppError } from "@/lib/rpc";
 
 import type { Json } from "@/integrations/supabase/types";
 import type { CarCareKind } from "@/lib/enums";
@@ -57,4 +58,21 @@ export async function logCarKilometrage(input: { carId: string; km: number }): P
 /** `set_car_kilometrage(p_car_id, p_km, p_note)` — the car's managers (`can_manage_car`) set any value, recorded as a correction. */
 export async function setCarKilometrage(input: { carId: string; km: number; note?: string }): Promise<string> {
   return rpc("set_car_kilometrage", { p_car_id: input.carId, p_km: input.km, p_note: input.note });
+}
+
+/**
+ * WS1 (REQ §13.185 f): wash events since `sinceIso` for the whole department, one read (RLS `car_care_events_select_member`
+ * lets every department member read them). Never joined into the week views.
+ */
+export async function fetchRecentWashes(departmentId: string, sinceIso: string): Promise<{ car_id: string; created_at: string }[]> {
+  const { data, error } = await supabase
+    .from("car_care_events")
+    .select("car_id, created_at")
+    .eq("department_id", departmentId)
+    .eq("kind", "wash")
+    .gte("created_at", sinceIso)
+    .order("created_at", { ascending: false })
+    .limit(500);
+  if (error) throw toAppError(error);
+  return data ?? [];
 }
