@@ -200,6 +200,8 @@ export const heSadran = {
       draft: "יש טיוטה של {{name}} על הרכב ב־{{start}}",
       ride: "{{name}} נוסע/ת ברכב ב־{{start}}–{{end}}",
       turnaround: "אין מספיק זמן בין הנסיעות: {{name}} ברכב ב־{{start}}–{{end}}",
+      /** DB2: the refusal toast's action when a draft is in the way. */
+      openDraft: "פתח טיוטה",
     },
     placementOverlap: "אי אפשר לשבץ שם — הבקשה מתנגשת בנסיעה אחרת באותו רכב",
     dragInvalidSeatsToast: "לרכב הזה אין מספיק מקומות לנוסעי הבקשה הזו",

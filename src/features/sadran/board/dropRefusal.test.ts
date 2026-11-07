@@ -21,6 +21,10 @@ describe("findObstacle", () => {
     const found = findObstacle(window, [block("14:00", "16:00", "Noni", true)], 30);
     expect(found).toMatchObject({ name: "Noni", isDraft: true, turnaroundOnly: true });
   });
+  it("keeps the draft's open id so the refusal can open it (DB2)", () => {
+    const found = findObstacle(window, [{ ...block("10:00", "12:00", "Noni", true), openId: "draft:p1" }], 30);
+    expect(found).toMatchObject({ isDraft: true, openId: "draft:p1" });
+  });
   it("back-to-back is free without a turnaround", () => {
     expect(findObstacle(window, [block("13:45", "15:00", "A")], 0)).toBeNull();
   });

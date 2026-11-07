@@ -52,7 +52,7 @@ import {
   unmetShiftPayload,
 } from "../dropValidity";
 import type { UnmetListItem } from "../components/UnmetList";
-import { describeObstacle, findObstacle, type CarBlock } from "../dropRefusal";
+import { describeObstacle, findObstacle, type CarBlock, type RefusalToast } from "../dropRefusal";
 import { isoToDayMinutes, slotToIso, wouldOverlap } from "../geometry";
 import { guestDropQuestion, rideDropAsksMerge, splitOutcome, type DropAnswer, type DropAsk, type DropAskSpec } from "../dropQuestions";
 import { planBSwitchPrefill } from "../planBSwitch";
@@ -663,17 +663,22 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
    * board's loaded data (`ignoreRideId`: the ride being moved). Null = keep the per-code message.
    */
   function explainRefusalFor(carId: string, window: { startsAt: string; endsAt: string }, ignoreRideId?: string) {
-    return (error: AppError): string | null => {
+    return (error: AppError): RefusalToast | null => {
       const blocks: CarBlock[] = [
         ...dropCtx.rides.flatMap((ride): CarBlock[] => ride.car_id === carId && ride.id !== ignoreRideId && ride.status !== "cancelled" && ride.starts_at && ride.ends_at
-          ? [{ startsAt: ride.starts_at, endsAt: ride.ends_at, isDraft: !!ride.id && board.draftByRideId.has(ride.id), name: servedOf(ride)[0]?.requester ?? ride.driver_name ?? "" }]
+          ? [{ startsAt: ride.starts_at, endsAt: ride.ends_at, isDraft: !!ride.id && board.draftByRideId.has(ride.id), openId: ride.id ?? undefined, name: servedOf(ride)[0]?.requester ?? ride.driver_name ?? "" }]
           : []),
         // a draft that places a request on its own (no ride yet) holds the car too (the server's draft hold)
         ...board.draftPlacements.flatMap((placement): CarBlock[] => placement.carId === carId && placement.type !== "merge" && !placement.replacesRideId
-          ? [{ startsAt: placement.startsAt, endsAt: placement.endsAt, isDraft: true, name: requestsData.find((r) => r.id === placement.requestId)?.requester_full_name ?? "" }]
+          ? [{ startsAt: placement.startsAt, endsAt: placement.endsAt, isDraft: true, openId: `draft:${placement.proposalId}`, name: requestsData.find((r) => r.id === placement.requestId)?.requester_full_name ?? "" }]
           : []),
       ];
-      return describeObstacle(error, findObstacle(window, blocks, dropCtx.turnaroundMinutes ?? 0));
+      const obstacle = findObstacle(window, blocks, dropCtx.turnaroundMinutes ?? 0);
+      const line = describeObstacle(error, obstacle);
+      if (!line) return null;
+      // DB2: a draft in the way can be opened straight from the refusal.
+      const openId = obstacle?.isDraft ? obstacle.openId : undefined;
+      return { line, action: openId ? { label: he.sadranBoard.refusal.openDraft, onClick: () => handleRideClick(openId) } : undefined };
     };
   }
 

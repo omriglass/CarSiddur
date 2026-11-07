@@ -11,6 +11,7 @@ import { publishWithScores } from "./publish/publishWithScores";
 import type { Json } from "@/integrations/supabase/types";
 import type { NotificationChannel, RideLeg, TripType } from "@/lib/enums";
 import { invalidateWeekData } from "@/features/rides/invalidateWeek";
+import type { RefusalToast } from "./board/dropRefusal";
 
 // ---------------------------------------------------------------------------
 // Week / phase
@@ -219,14 +220,17 @@ export function useEditRideMutation() {
       expectedVersion?: number;
       departmentId: string;
       weekStart: string;
-      /** REQ §13.185 (g): the caller's own wording of a refusal (names what is in the way); null/absent = the per-code message. */
-      explainRefusal?: (error: AppError) => string | null;
+      /**
+       * REQ §13.185 (g): the caller's own wording of a refusal (names what is in the way), with an optional toast action
+       * (DB2: "פתח טיוטה"); null/absent = the per-code message.
+       */
+      explainRefusal?: (error: AppError) => RefusalToast | null;
     }) => api.editRide(input, expectedVersion),
     // `edit_ride` returns the ride's id (a new one for a new reservation).
     onSuccess: (rideId, { departmentId, weekStart, input }) => invalidateBoard(queryClient, departmentId, weekStart, [rideId, input.id]),
     onError: (error, { explainRefusal }) => {
-      const line = explainRefusal?.(toAppError(error));
-      if (line) toast.error(line);
+      const refusal = explainRefusal?.(toAppError(error));
+      if (refusal) toast.error(refusal.line, refusal.action ? { action: refusal.action, duration: 8000 } : undefined);
       else showErrorToast(error);
     },
   });

@@ -11,6 +11,14 @@ export interface CarBlock {
   name: string;
   /** A Sadran draft (a draft placement or a drafted ride), not a booked ride. */
   isDraft: boolean;
+  /** The board click id that opens it (`draft:<proposal>` or the drafted ride's id) — DB2's "פתח טיוטה". */
+  openId?: string;
+}
+
+/** A refusal toast: the line, and for a draft in the way an action that opens it (DB2). */
+export interface RefusalToast {
+  line: string;
+  action?: { label: string; onClick: () => void };
 }
 
 export interface Obstacle extends CarBlock {
