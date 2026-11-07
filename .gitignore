@@ -46,3 +46,6 @@ user-guides/
 
 # Local debug copy of production (scripts/debug): member data, never commit
 .debug/
+
+# scripts/perf: production load snapshots (TODO PF1) — never commit
+.perf/
