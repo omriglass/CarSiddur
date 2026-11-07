@@ -18,3 +18,14 @@ export function conflictingRides(move: RideMove, rides: readonly BoardRide[], bu
     Date.parse(move.startsAt) < Date.parse(r.ends_at) + bufferMinutes * 60_000 &&
     Date.parse(move.endsAt) + bufferMinutes * 60_000 > Date.parse(r.starts_at));
 }
+
+/**
+ * REQ §13.190: when the only rides in the way are the car's next ones, starting less than the turnaround after the
+ * move ends (not overlapping it), the member may go ahead after "תיאמתם עם X…?" — returns the first of them; else null.
+ */
+export function shortTurnaroundNextRide(move: RideMove, rides: readonly BoardRide[], bufferMinutes: number): BoardRide | null {
+  const conflicts = conflictingRides(move, rides, bufferMinutes);
+  const end = Date.parse(move.endsAt);
+  if (!conflicts.length || !conflicts.every((r) => Date.parse(r.starts_at as string) >= end)) return null;
+  return [...conflicts].sort((a, b) => Date.parse(a.starts_at as string) - Date.parse(b.starts_at as string))[0] ?? null;
+}

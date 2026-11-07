@@ -3,6 +3,7 @@ import { ageFromBirthYear, isAdultPassenger } from "@/lib/childAge";
 import { isActiveStop, parseRouteStops, type RouteStop } from "@/lib/routeStops";
 import { rpc, toAppError } from "@/lib/rpc";
 import { withPersonBusyRetry } from "@/lib/personBusy";
+import { askShortTurnaround, parseShortTurnaround } from "@/lib/shortTurnaround";
 import { withSmallTrunkRetry } from "@/lib/smallTrunk";
 import { siddurCarName } from "@/lib/siddurCarName";
 
@@ -936,9 +937,28 @@ export async function submitRequest(payload: SubmitRequestPayload): Promise<Json
   if (payload.waitlist) return rpc("enter_waiting_list", { p_payload: payload as unknown as Json });
   // REQ §13.111 (a): `needs_large_trunk` (quick / car-now, ask-to-join) asks the shared dialog and retries with the flag;
   // REQ §13.176: so does `person_busy` (an overlap with the member's own ride or request), retried as `overlap_confirmed`.
-  return withPersonBusyRetry((allowBusy) => withSmallTrunkRetry((allowSmallTrunk) => rpc("submit_request", {
-    payload: { ...payload, ...(allowSmallTrunk ? { allow_small_trunk: true } : {}), ...(allowBusy ? { overlap_confirmed: true } : {}) } as unknown as Json,
+  // REQ §13.190: `short_turnaround_ask` - when only the car's next ride is too close, the server names it instead of waitlisting.
+  const send = (extra: Record<string, boolean>) => withPersonBusyRetry((allowBusy) => withSmallTrunkRetry((allowSmallTrunk) => rpc("submit_request", {
+    payload: { ...payload, short_turnaround_ask: true, ...extra, ...(allowSmallTrunk ? { allow_small_trunk: true } : {}), ...(allowBusy ? { overlap_confirmed: true } : {}) } as unknown as Json,
   })));
+  return settleShortTurnaround(await send({}), () => send({ allow_short_turnaround: true }));
+}
+
+/**
+ * REQ §13.190: the result names the car's next ride (`short_turnaround`) → "תיאמתם עם X שצריך לקחת את הרכב ב-18:00?".
+ * A refused edit is sent again with `allow_short_turnaround` on a yes; a request left waiting is settled by
+ * `answer_short_turnaround` (yes = placed, no = the usual waiting list, which only then tells the Sadran).
+ */
+async function settleShortTurnaround(result: Json, retryAllowed: () => Promise<Json>): Promise<Json> {
+  if (!result || typeof result !== "object" || Array.isArray(result)) return result;
+  const { short_turnaround: raw, ...rest } = result;
+  const info = parseShortTurnaround(raw);
+  if (!info) return result;
+  const accepted = await askShortTurnaround(info);
+  if (rest.edit_refused) return accepted ? retryAllowed() : rest;
+  if (typeof rest.request_id !== "string") return rest;
+  const answer = await rpc("answer_short_turnaround", { p_request_id: rest.request_id, p_accept: accepted });
+  return answer && typeof answer === "object" && !Array.isArray(answer) ? { ...rest, ...answer } : rest;
 }
 
 /**

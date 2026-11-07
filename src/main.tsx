@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { router } from "@/app/router";
 import { PersonBusyHost } from "@/components/PersonBusyHost";
 import { RideMoveAgreementHost } from "@/components/RideMoveAgreementHost";
+import { ShortTurnaroundHost } from "@/components/ShortTurnaroundHost";
 import { SmallTrunkHost } from "@/components/SmallTrunkHost";
 import { Toaster } from "@/components/ui/sonner";
 import { SessionProvider } from "@/features/auth/SessionProvider";
@@ -118,6 +119,7 @@ createRoot(rootElement).render(
           <RouterProvider router={router} />
           <Toaster position="top-center" />
           <SmallTrunkHost />
+          <ShortTurnaroundHost />
           <PersonBusyHost />
           <RideMoveAgreementHost />
         </SessionProvider>

@@ -1,6 +1,7 @@
 // A member moving / resizing their own ride on a grid — one implementation for the siddur table and the "my rides"
 // week view (owner 2026-10-11: dragging must behave the same in both). REQ: members move their own future rides to a
-// free slot on the same local day; a collision asks the other drivers instead (`request_ride_change`).
+// free slot on the same local day; a collision asks the other drivers instead (`request_ride_change`) - except a ride
+// that only ends less than the turnaround before the car's next one, which asks the mover (REQ §13.190).
 import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -10,9 +11,10 @@ import { useDepartmentSettings, useEditRideMutation } from "@/features/sadran/ho
 import type { Week } from "@/features/siddur/api";
 import { useBoardRides } from "@/features/siddur/hooks";
 import { siddurKeys } from "@/features/siddur/queryKeys";
-import { conflictingRides, moveOnRideDay } from "@/features/siddur/rideEditing";
+import { conflictingRides, moveOnRideDay, shortTurnaroundNextRide } from "@/features/siddur/rideEditing";
 import { he, tv } from "@/i18n/he";
-import { dateKey } from "@/lib/time";
+import { askShortTurnaround } from "@/lib/shortTurnaround";
+import { dateKey, formatTime } from "@/lib/time";
 import { effectiveWeekSettings } from "@/lib/weekSettings";
 
 import type { RideMove } from "./api";
@@ -106,6 +108,7 @@ export function useMemberRideMoves({ departmentId, weekStart, week, profileId, m
   async function persistMove(move: RideMove) {
     const ride = rides.find((r) => r.id === move.rideId);
     if (!ride || !departmentId || !weekStart || !ride.origin_id || !ride.destination_id) return;
+    let allowShortTurnaround = false;
     if (ownsEditableRide(move.rideId)) {
       const conflicts = conflictingRides(move, rides, turnaroundMinutes);
       const target = memberMergeTarget(conflicts, profileId);
@@ -113,7 +116,13 @@ export function useMemberRideMoves({ departmentId, weekStart, week, profileId, m
         void memberMerge.start(ride, target);
         return;
       }
-      if (conflicts.length) {
+      // REQ §13.190: only the car's next ride is too close — go ahead after "תיאמתם עם X…?" (no question when it is mine)
+      const next = shortTurnaroundNextRide(move, rides, turnaroundMinutes);
+      if (next) {
+        const name = next.driver_name ?? servedOf(next).find((entry) => entry.requester)?.requester ?? null;
+        if (next.driver_id !== profileId && !(await askShortTurnaround({ at: formatTime(new Date(next.starts_at as string)), name }))) return;
+        allowShortTurnaround = true;
+      } else if (conflicts.length) {
         setCollisionMove({ ...move, departmentId, weekStart });
         return;
       }
@@ -122,7 +131,7 @@ export function useMemberRideMoves({ departmentId, weekStart, week, profileId, m
       await editMutation.mutateAsync({
         input: { id: move.rideId, department_id: departmentId, week_start: weekStart, car_id: move.carId,
           starts_at: move.startsAt, ends_at: move.endsAt, origin_id: ride.origin_id, destination_id: ride.destination_id,
-          driver_id: ride.driver_id },
+          driver_id: ride.driver_id, ...(allowShortTurnaround ? { allow_short_turnaround: true } : {}) },
         expectedVersion: move.expectedVersion, departmentId, weekStart,
       });
       await queryClient.invalidateQueries({ queryKey: siddurKeys.boardRides(departmentId, weekStart) });
@@ -155,7 +164,7 @@ export function useMemberRideMoves({ departmentId, weekStart, week, profileId, m
     const conflicts = conflictingRides(move, rides, buffer);
     // REQ §13.175 (d): onto someone's pickup / drop-off = take them along (my ride itself does not move there)
     if (conflicts.length && ownsEditableRide(rideId) && memberMergeTarget(conflicts, profileId)) return true;
-    if (conflicts.length) return false;
+    if (conflicts.length && !(ownsEditableRide(rideId) && shortTurnaroundNextRide(move, rides, buffer))) return false;
     if ((maintenanceQuery.data ?? []).some((block) => block.car_id === carId && Date.parse(move.startsAt) < Date.parse(block.ends_at)
       && Date.parse(move.endsAt) + buffer * 60_000 > Date.parse(block.starts_at))) return false;
     const served = servedOf(ride);

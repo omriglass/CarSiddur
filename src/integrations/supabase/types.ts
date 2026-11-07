@@ -5366,6 +5366,17 @@ export type Database = {
         Args: { p_department_id: string; p_payload: Json; p_request_id: string }
         Returns: undefined
       }
+      _auto_approve_free_car: {
+        Args: {
+          p_after: string
+          p_end: string
+          p_is_one_way: boolean
+          p_pref: string
+          p_request_id: string
+          p_turnaround: string
+        }
+        Returns: string
+      }
       _board_hold_applies: {
         Args: {
           _department_id: string
@@ -5672,6 +5683,15 @@ export type Database = {
         }
         Returns: undefined
       }
+      _notify_short_turnaround: {
+        Args: {
+          p_actor: string
+          p_car: string
+          p_end: string
+          p_exclude: string
+        }
+        Returns: undefined
+      }
       _offer_freed_slot: { Args: { p_ride_id: string }; Returns: string }
       _person_busy_mode: { Args: { p_allow: boolean }; Returns: undefined }
       _person_busy_rides: {
@@ -5711,10 +5731,12 @@ export type Database = {
         Args: { p: Database["public"]["Tables"]["proposals"]["Row"] }
         Returns: boolean
       }
-      _publish_ride_line: {
-        Args: { p_request_id: string; p_ride_id: string }
-        Returns: string
-      }
+      _publish_ride_line:
+        | { Args: { p_request_id: string; p_ride_id: string }; Returns: string }
+        | {
+            Args: { p_request_id: string; p_ride_id: string; p_viewer: string }
+            Returns: string
+          }
       _refresh_car_task_notices: {
         Args: { p_car_id: string }
         Returns: undefined
@@ -5773,6 +5795,10 @@ export type Database = {
       _ride_moved_by_member: {
         Args: { p_agreed: boolean; p_before: Json; p_ride_id: string }
         Returns: undefined
+      }
+      _ride_other_names: {
+        Args: { p_ride_id: string; p_viewer: string }
+        Returns: string
       }
       _ride_person_ids: {
         Args: { p_ride_id: string }
@@ -5848,6 +5874,10 @@ export type Database = {
         Returns: undefined
       }
       _shift_place_on_car: { Args: { p_proposal_id: string }; Returns: string }
+      _short_turnaround_info: {
+        Args: { p_car: string; p_end: string; p_exclude: string }
+        Returns: Json
+      }
       _small_trunk_check: {
         Args: { p_allow: boolean; p_car_id: string; p_request_ids: string[] }
         Returns: undefined
@@ -5928,6 +5958,10 @@ export type Database = {
           p_token: string
           p_via?: Database["public"]["Enums"]["answer_channel"]
         }
+        Returns: Json
+      }
+      answer_short_turnaround: {
+        Args: { p_accept: boolean; p_request_id: string }
         Returns: Json
       }
       apply_proposal: { Args: { p_proposal_id: string }; Returns: string }

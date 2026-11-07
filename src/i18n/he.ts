@@ -189,6 +189,13 @@ export const he = {
     notifiedToast: "נשלחו {{count}} הודעות",
   },
   /** REQ §13.111 (a): the large-trunk requirement waived by whoever places by hand ("allow_small_trunk"). */
+  // REQ §13.190: a member leaves less than the turnaround before the car's next ride.
+  shortTurnaround: {
+    confirmTitle: "הרכב צריך לחזור בזמן",
+    confirmBody: "תיאמתם עם {{name}} שצריך לקחת את הרכב ב-{{at}}?",
+    confirmAction: "כן, תיאמנו",
+    unknownName: "מי שנוסע/ת אחריך",
+  },
   smallTrunk: {
     confirmTitle: "צריך תא מטען גדול",
     confirmBody: "הבקשה של {{name}} צריכה תא מטען גדול, ול{{car}} אין. לשבץ בכל זאת?",

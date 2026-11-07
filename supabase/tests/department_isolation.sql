@@ -146,6 +146,7 @@ begin
     format('select public.withdraw_request(%L, (select version from public.requests where id = %L))', req_b, req_b));
   perform pg_temp.expect_refused('requests.set_manual_boost', format('select public.set_manual_boost(%L, 5, %L)', req_b, 'x'));
   perform pg_temp.expect_refused('requests.set_freed_slot_opt_out', format('select public.set_freed_slot_opt_out(%L, true)', req_b));
+  perform pg_temp.expect_refused('requests.answer_short_turnaround', format('select public.answer_short_turnaround(%L, true)', req_b));
   perform pg_temp.expect_refused('requests.set_request_children', format('select public.set_request_children(%L, array[%L]::uuid[])', req_b3, child_b));
   perform pg_temp.expect_refused('children.my_co_guardians', format('select * from public.my_co_guardians(%L)', dept_b));
   perform pg_temp.expect_refused('requests.set_request_companions', format('select public.set_request_companions(%L, array[%L]::uuid[])', req_b3, member_b2));
@@ -389,7 +390,7 @@ end $$;
 do $$
 declare
   iso_covered text[] := array[
-    'submit_request','withdraw_request','set_manual_boost','set_freed_slot_opt_out','set_request_children',
+    'submit_request','withdraw_request','set_manual_boost','set_freed_slot_opt_out','set_request_children','answer_short_turnaround',
     'set_request_companions','withdraw_all_requests','submit_series_request','enter_waiting_list','apply_solver_result',
     'edit_ride','cancel_ride','unassign_ride','unmerge_request','merge_preview','set_request_trip_type','switch_request_plan','ride_route','request_ride_change','respond_ride_change','cancel_ride_change',
     'update_ride_public_notes','add_ride_passengers','set_ride_passengers','remove_ride_person',

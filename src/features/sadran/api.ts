@@ -559,6 +559,8 @@ export interface EditRideInput {
   served?: EditRideServedLeg[];
   /** REQ §13.111 (a): the Sadran accepted a car without a large trunk for the large-luggage request(s) this edit places. */
   allow_small_trunk?: boolean;
+  /** REQ §13.190: a member agreed with the car's next ride to leave less than the turnaround before it. */
+  allow_short_turnaround?: boolean;
 }
 
 export async function editRide(input: EditRideInput, expectedVersion?: number): Promise<string> {
