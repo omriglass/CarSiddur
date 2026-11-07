@@ -370,15 +370,20 @@ export function chauffeurCarElsewhere(ctx: BoardDropContext, req: WeekRequestRow
 
 /**
  * REQUIREMENTS §13.93: a request that leaves the car somewhere other than where it started
- * (today, only an explicit הלוך בלבד — `trip_type === 'one_way'`) may only be dropped where the
- * car's *next* scheduled ride on that car, if any, already starts at that same place — mirrors
- * `CarTimeline.isFree(..., endLocationId)`. No next ride at all never blocks (nothing to strand).
+ * (today, only an explicit one-way — `trip_type === 'one_way'`) strands the car's *next* scheduled
+ * ride when that ride starts elsewhere — mirrors `CarTimeline.isFree(..., endLocationId)`. No next
+ * ride at all never strands. Automatic placement refuses it; a Sadran's drop asks (CH1).
  */
 export function strandsNextRide(ctx: BoardDropContext, carId: string, endLocationId: string, afterIso: string, excludeRideId?: string): boolean {
+  return strandedNextRide(ctx, carId, endLocationId, afterIso, excludeRideId) !== null;
+}
+
+/** The car's next ride that would not find the car where it starts (`strandsNextRide`), or null. */
+export function strandedNextRide(ctx: BoardDropContext, carId: string, endLocationId: string, afterIso: string, excludeRideId?: string): BoardRide | null {
   const next = ctx.rides
     .filter((r) => r.id !== excludeRideId && !isReservation(r) && r.car_id === carId && r.starts_at && Date.parse(r.starts_at) >= Date.parse(afterIso))
     .sort((a, b) => Date.parse(a.starts_at as string) - Date.parse(b.starts_at as string))[0];
-  return !!next && next.origin_id != null && next.origin_id !== endLocationId;
+  return next && next.origin_id != null && next.origin_id !== endLocationId ? next : null;
 }
 
 /** Why a merge is refused (R2M3/R2B17) - keys of `he.mergedRide.invalid`; the server's reason codes map to the same texts in `lib/rpc.ts`. */
@@ -419,8 +424,8 @@ export function isUnmetDropValid(ctx: BoardDropContext, item: UnmetListItem, car
   const connects = !host && connectsOtherLeg(ctx, item, carId);
   if (!host && !connects && originId && originMismatch(ctx, carId, originId, window.startsAt)) return false;
   if (!host && !connects && chauffeurCarElsewhere(ctx, item.request, carId, window.startsAt)) return false;
-  if (!host && tripTypeOf(item.request) === "one_way" && item.request.destination_id
-    && strandsNextRide(ctx, carId, item.request.destination_id, window.endsAt)) return false;
+  // CH1 (REQ §13.93, owner 2026-11-07): a one-way leg that would strand the car's next ride stays a valid target —
+  // the drop asks "לשבץ בכל זאת?" (useBoardDnd) instead of refusing.
   if (host && mergeRefusalReason(ctx, host, item.request, mergeLegForCard(item.request, item.leg ?? null))) return false;
   const need = host ? passengersOf(host) : { adults: 1, childSeats: 0, boosters: 0 };
   if (!seatsFit(ctx, carId, host || !(requesterDrives(item.request) || connects)

@@ -14,7 +14,7 @@ import { formatMinutes, parseHHMM } from "@/components/timeField15Format";
 import { he, tv } from "@/i18n/he";
 import { needsLargeTrunk } from "@/lib/luggageWaiver";
 import { askSmallTrunk } from "@/lib/smallTrunk";
-import { dateKey } from "@/lib/time";
+import { dateKey, formatTime } from "@/lib/time";
 import type { AppError } from "@/lib/rpc";
 import { useSession } from "@/features/auth/useSession";
 import { useProfile } from "@/features/auth/useProfile";
@@ -25,7 +25,7 @@ import { combineMergeLegs, defaultMergeLeg, mergeLegForCard, mergeLegOptions, me
 import { mergeGhostTarget } from "../mergeGhostClick";
 import { isDropOffWithPickup, legView, unmetItemId, unmetItemKey } from "../unmetLegs";
 import type { GuestDropTarget } from "@/components/GuestChips";
-import { requestStart, requestWithinFlex } from "../phantomLanes";
+import { requestStart, requestWithinFlex, tripTypeOf } from "../phantomLanes";
 import { reservationRoutePlaces, routeEditPayload, type RouteEditValues } from "../rideRouteEdit";
 import { buildDraftInput, type ComposerPrefill } from "../draftInput";
 import {
@@ -50,6 +50,7 @@ import {
   unmetRequestPassengers,
   rideShiftPayload,
   unmetShiftPayload,
+  strandedNextRide,
 } from "../dropValidity";
 import type { UnmetListItem } from "../components/UnmetList";
 import { describeObstacle, findObstacle, type CarBlock, type RefusalToast } from "../dropRefusal";
@@ -141,6 +142,8 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
   const [invalidDropConfirm, setInvalidDropConfirm] = useState<{ run: () => Promise<void> } | null>(null);
   // REQ §13.129 (a): the owner of a private car (here: the Sadran) is asked before someone else's request/ride lands on it.
   const [ownCarAsk, setOwnCarAsk] = useState<{ name: string; carName: string; resolve: (ok: boolean) => void } | null>(null);
+  // CH1 (REQ §13.93): "לשבץ בכל זאת?" before a one-way leg leaves the car where its next ride does not start.
+  const [chainBreakAsk, setChainBreakAsk] = useState<{ car: string; place: string; nextStart: string; nextPlace: string; resolve: (ok: boolean) => void } | null>(null);
   const [guestHover, setGuestHover] = useState<{ guest: { requestId: string; name: string }; target: GuestDropTarget | null } | null>(null);
   // Item 136 (e): the open displacement checklist - a snapshot of the card and its suggestion (the card itself may
   // vanish from the unmet list while the Sadran works through the steps).
@@ -188,6 +191,10 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
   function answerOwnCarAsk(ok: boolean) {
     ownCarAsk?.resolve(ok);
     setOwnCarAsk(null);
+  }
+  function answerChainBreakAsk(ok: boolean) {
+    chainBreakAsk?.resolve(ok);
+    setChainBreakAsk(null);
   }
   const undoVersions = useRef(new Map<string, number>());
 
@@ -604,9 +611,19 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
     // Placement by the member-facing trip type and the request's own places (REQ §13.93).
     const placement = unmetPlacement(dropCtx, req, carId, window.startsAt);
     if (!placement) { toast.error(he.sadranBoard.invalidWindow); return; }
+    // CH1 (REQ §13.93): leaving the car where its next ride does not start is the Sadran's call — asked, not refused.
+    let allowChainBreak = false;
+    const stranded = !connects && tripTypeOf(req) === "one_way" && req.destination_id
+      ? strandedNextRide(dropCtx, carId, req.destination_id, window.endsAt) : null;
+    if (stranded?.starts_at) {
+      const ask = { car: carsData.find((c) => c.id === carId)?.name ?? "", place: req.destination_resolved_name ?? "",
+        nextStart: formatTime(new Date(stranded.starts_at)), nextPlace: stranded.origin_name ?? "" };
+      if (!(await new Promise<boolean>((resolve) => setChainBreakAsk({ ...ask, resolve })))) return;
+      allowChainBreak = true;
+    }
     if (!(await askSmallTrunk())) return;
     if (!requestWithinFlex(req, window.startsAt, window.endsAt)) {
-      goToComposer({ requestId: req.id, rideId: null, type: "shift", payload: { ...unmetShiftPayload(req, carId, window, placement, item.leg), ...(waiver.allowSmallTrunk ? { allow_small_trunk: true } : {}) } });
+      goToComposer({ requestId: req.id, rideId: null, type: "shift", payload: { ...unmetShiftPayload(req, carId, window, placement, item.leg), ...(waiver.allowSmallTrunk ? { allow_small_trunk: true } : {}), ...(allowChainBreak ? { allow_chain_break: true } : {}) } });
       return;
     }
     try {
@@ -1181,6 +1198,8 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
     setInvalidDropConfirm,
     ownCarAsk,
     answerOwnCarAsk,
+    chainBreakAsk,
+    answerChainBreakAsk,
     unmetDragHover,
     setUnmetDragHover,
     editRideMutation,

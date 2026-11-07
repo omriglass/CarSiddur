@@ -828,6 +828,14 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
         onConfirm={() => dnd.answerOwnCarAsk(true)}
       />
       <ConfirmDialog
+        open={!!dnd.chainBreakAsk}
+        onOpenChange={(open) => { if (!open) dnd.answerChainBreakAsk(false); }}
+        title={he.sadranBoard.chainBreakTitle}
+        description={tv("sadranBoard.chainBreakBody", { car: dnd.chainBreakAsk?.car ?? "", place: dnd.chainBreakAsk?.place ?? "", time: dnd.chainBreakAsk?.nextStart ?? "", nextPlace: dnd.chainBreakAsk?.nextPlace ?? "" })}
+        confirmLabel={he.sadranBoard.chainBreakConfirm}
+        onConfirm={() => dnd.answerChainBreakAsk(true)}
+      />
+      <ConfirmDialog
         open={!!dnd.invalidDropConfirm}
         onOpenChange={(open) => { if (!open) dnd.setInvalidDropConfirm(null); }}
         title={he.sadranBoard.invalidDropTitle}

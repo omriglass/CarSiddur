@@ -281,6 +281,15 @@ begin
   exception when others then
     if sqlerrm<>'car_next_ride_elsewhere' then raise; end if;
   end;
+  -- CH1 (REQ §13.93, owner 2026-11-07): the Sadran confirmed "לשבץ בכל זאת?" -> the same leg is placed, the car is left in Haifa.
+  begin
+    rid:=pg_temp.shift_apply(q2,m1,jsonb_build_object('car_id',car3,'allow_chain_break',true));
+    select * into r from public.rides where id=rid;
+    assert r.car_id=car3 and r.destination_id=haifa, 'chain-break waiver places the one_way leg on car3';
+    raise exception 'ch1_rollback';
+  exception when others then
+    if sqlerrm<>'ch1_rollback' then raise; end if;
+  end;
 
   -- drop_off, one leg: chauffeur ride at the car's place (car3 at home), needs a driver.
   insert into public.requests(department_id,week_start,requester_id,filed_by,origin_id,destination_id,ride_type_id,depart_at,trip_shape,trip_type,needs_car_at_destination,one_way_car_mode,status)

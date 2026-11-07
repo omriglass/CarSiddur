@@ -13151,7 +13151,12 @@ begin
     if public.car_location_at(v_car, v_dep) is distinct from q.origin_id then
       raise exception 'car_not_at_leg_origin' using errcode = 'P0001';
     end if;
-    if coalesce(public.car_next_ride_origin(v_car, v_end), q.destination_id) <> q.destination_id then
+    -- REQ §13.93 (CH1, owner 2026-11-07): a Sadran who saw "לשבץ בכל זאת?" (payload `allow_chain_break`) may leave the
+    -- car where its next ride does not start; the board's chain-break warning stays as the reminder.
+    if coalesce(public.car_next_ride_origin(v_car, v_end), q.destination_id) <> q.destination_id
+       and not (v_manual and exists(select 1 from public.proposals pp
+         where pp.id::text = nullif(current_setting('app.applying_proposal', true), '')
+           and pp.created_via = 'sadran' and coalesce((pp.payload ->> 'allow_chain_break')::boolean, false))) then
       raise exception 'car_next_ride_elsewhere' using errcode = 'P0001';
     end if;
     -- REQ §13.136 c: an automatic placement never leaves a shared car away from its base with nothing bringing it

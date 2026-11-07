@@ -211,6 +211,10 @@ export const heSadran = {
     passengerNeedsHost: "אין נסיעה מתאימה ברכב הזה — נפתחת הצעה להסעה חלופית",
     relayNeedsCoordination: "השיבוץ דורש תיאום של מסלול הרכב — נפתחת הצעה לשינוי השעות",
     dragInvalidLocationToast: "הרכב לא נמצא בבית בשעה הזו",
+    /** CH1 (REQ §13.93): a hand placement that leaves the car where its next ride does not start. */
+    chainBreakTitle: "לשבץ בכל זאת?",
+    chainBreakBody: "{{car}} יישאר ב{{place}}, אבל הנסיעה הבאה שלו ב־{{time}} יוצאת מ{{nextPlace}}. צריך לדאוג שהרכב יגיע לשם.",
+    chainBreakConfirm: "לשבץ בכל זאת",
     unassignedToast: "השיבוץ הוסר — הבקשות חזרו ללא שיבוץ",
     legsJoinedToast: "ההקפצה והאיסוף חוברו לנסיעה אחת",
     /**
