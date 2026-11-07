@@ -29747,7 +29747,7 @@ CREATE POLICY "child_guardians_admin_write_update" ON "public"."child_guardians"
 
 
 
-CREATE POLICY "child_guardians_select" ON "public"."child_guardians" FOR SELECT TO "authenticated" USING (("public"."is_approved"() AND (("profile_id" = "auth"."uid"()) OR "public"."is_admin"())));
+CREATE POLICY "child_guardians_select" ON "public"."child_guardians" FOR SELECT TO "authenticated" USING (("public"."is_approved"() AND (("profile_id" = ( SELECT "auth"."uid"() AS "uid")) OR "public"."is_admin"())));
 
 
 
@@ -29768,7 +29768,7 @@ CREATE POLICY "children_admin_write_update" ON "public"."children" FOR UPDATE TO
 
 CREATE POLICY "children_select" ON "public"."children" FOR SELECT TO "authenticated" USING (("public"."is_approved"() AND (EXISTS ( SELECT 1
    FROM "public"."department_members" "dm"
-  WHERE (("dm"."department_id" = "children"."department_id") AND ("dm"."profile_id" = "auth"."uid"()) AND ("dm"."removed_at" IS NULL))))));
+  WHERE (("dm"."department_id" = "children"."department_id") AND ("dm"."profile_id" = ( SELECT "auth"."uid"() AS "uid")) AND ("dm"."removed_at" IS NULL))))));
 
 
 
@@ -30094,29 +30094,29 @@ CREATE POLICY "request_children_published_select" ON "public"."request_children"
 
 CREATE POLICY "request_children_select" ON "public"."request_children" FOR SELECT TO "authenticated" USING ((EXISTS ( SELECT 1
    FROM "public"."requests" "q"
-  WHERE (("q"."id" = "request_children"."request_id") AND (("q"."requester_id" = "auth"."uid"()) OR "public"."can_manage_week"("q"."department_id", "q"."week_start"))))));
+  WHERE (("q"."id" = "request_children"."request_id") AND (("q"."requester_id" = ( SELECT "auth"."uid"() AS "uid")) OR "public"."can_manage_week"("q"."department_id", "q"."week_start"))))));
 
 
 
 CREATE POLICY "request_children_write_delete" ON "public"."request_children" FOR DELETE TO "authenticated" USING ((EXISTS ( SELECT 1
    FROM "public"."requests" "q"
-  WHERE (("q"."id" = "request_children"."request_id") AND (("q"."requester_id" = "auth"."uid"()) OR "public"."can_manage_week"("q"."department_id", "q"."week_start"))))));
+  WHERE (("q"."id" = "request_children"."request_id") AND (("q"."requester_id" = ( SELECT "auth"."uid"() AS "uid")) OR "public"."can_manage_week"("q"."department_id", "q"."week_start"))))));
 
 
 
 CREATE POLICY "request_children_write_insert" ON "public"."request_children" FOR INSERT TO "authenticated" WITH CHECK ((EXISTS ( SELECT 1
    FROM ("public"."requests" "q"
      JOIN "public"."children" "c" ON (("c"."id" = "request_children"."child_id")))
-  WHERE (("q"."id" = "request_children"."request_id") AND ("c"."department_id" = "q"."department_id") AND (("q"."requester_id" = "auth"."uid"()) OR "public"."can_manage_week"("q"."department_id", "q"."week_start"))))));
+  WHERE (("q"."id" = "request_children"."request_id") AND ("c"."department_id" = "q"."department_id") AND (("q"."requester_id" = ( SELECT "auth"."uid"() AS "uid")) OR "public"."can_manage_week"("q"."department_id", "q"."week_start"))))));
 
 
 
 CREATE POLICY "request_children_write_update" ON "public"."request_children" FOR UPDATE TO "authenticated" USING ((EXISTS ( SELECT 1
    FROM "public"."requests" "q"
-  WHERE (("q"."id" = "request_children"."request_id") AND (("q"."requester_id" = "auth"."uid"()) OR "public"."can_manage_week"("q"."department_id", "q"."week_start")))))) WITH CHECK ((EXISTS ( SELECT 1
+  WHERE (("q"."id" = "request_children"."request_id") AND (("q"."requester_id" = ( SELECT "auth"."uid"() AS "uid")) OR "public"."can_manage_week"("q"."department_id", "q"."week_start")))))) WITH CHECK ((EXISTS ( SELECT 1
    FROM ("public"."requests" "q"
      JOIN "public"."children" "c" ON (("c"."id" = "request_children"."child_id")))
-  WHERE (("q"."id" = "request_children"."request_id") AND ("c"."department_id" = "q"."department_id") AND (("q"."requester_id" = "auth"."uid"()) OR "public"."can_manage_week"("q"."department_id", "q"."week_start"))))));
+  WHERE (("q"."id" = "request_children"."request_id") AND ("c"."department_id" = "q"."department_id") AND (("q"."requester_id" = ( SELECT "auth"."uid"() AS "uid")) OR "public"."can_manage_week"("q"."department_id", "q"."week_start"))))));
 
 
 
