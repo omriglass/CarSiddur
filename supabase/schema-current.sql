@@ -1344,6 +1344,61 @@ end $$;
 ALTER FUNCTION "public"."_day_car_swap_authorize"("p_department_id" "uuid", "p_week_start" "date", "p_day" "date", "p_car_a" "uuid", "p_car_b" "uuid", "p_actor" "uuid") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."_day_car_swap_close_set"("p_department_id" "uuid", "p_day" "date", "p_ride_ids" "uuid"[], "p_car_a" "uuid", "p_car_b" "uuid") RETURNS "uuid"[]
+    LANGUAGE "plpgsql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  v_ids uuid[] := public._day_car_swap_expand_whole(p_ride_ids);
+  v_next uuid[];
+  v_days date[];
+  i int := 0;
+begin
+  loop
+    i := i + 1;
+    v_days := array(select d from unnest(public._day_car_swap_ride_days(v_ids)) d where d <> p_day);
+    v_next := public._day_car_swap_expand_whole(v_ids || coalesce((
+      select array_agg(r.id)
+      from public.rides r
+      where r.department_id = p_department_id and r.car_id in (p_car_a, p_car_b) and r.status <> 'cancelled'
+        and not (r.id = any(v_ids))
+        and r.week_start between (select min(d) from unnest(v_days) d) - 7 and (select max(d) from unnest(v_days) d)
+        and public._day_car_swap_ride_days(array[r.id]) && v_days), '{}'));
+    exit when coalesce(array_length(v_next, 1), 0) = coalesce(array_length(v_ids, 1), 0);
+    v_ids := v_next;
+    -- loop guard: the caller reports `swap_too_large` once the set passes the cap
+    exit when i >= 20 or array_length(v_ids, 1) > 60;
+  end loop;
+  return array(select x from unnest(v_ids) x order by x);
+end $$;
+
+
+ALTER FUNCTION "public"."_day_car_swap_close_set"("p_department_id" "uuid", "p_day" "date", "p_ride_ids" "uuid"[], "p_car_a" "uuid", "p_car_b" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."_day_car_swap_closure_blockers"("p_ride_ids" "uuid"[]) RETURNS "jsonb"
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  select
+    case when coalesce(array_length(p_ride_ids, 1), 0) > 60
+           or coalesce(array_length(public._day_car_swap_ride_days(p_ride_ids), 1), 0) > 14
+      then jsonb_build_array(jsonb_build_object('code', 'swap_too_large', 'whole_only', true,
+        'rides', coalesce(array_length(p_ride_ids, 1), 0),
+        'days', coalesce(array_length(public._day_car_swap_ride_days(p_ride_ids), 1), 0)))
+      else '[]'::jsonb end
+    || coalesce((
+      select jsonb_agg(jsonb_build_object('code', 'archived', 'whole_only', true, 'ride_id', r.id, 'car_id', r.car_id,
+          'day', (r.starts_at at time zone 'Asia/Jerusalem')::date, 'starts_at', r.starts_at, 'ends_at', r.ends_at)
+        order by r.starts_at)
+      from public.rides r join public.weeks w on w.department_id = r.department_id and w.week_start = r.week_start
+      where r.id = any(p_ride_ids) and w.phase = 'archived'), '[]'::jsonb);
+$$;
+
+
+ALTER FUNCTION "public"."_day_car_swap_closure_blockers"("p_ride_ids" "uuid"[]) OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."_day_car_swap_day_ride_ids"("p_department_id" "uuid", "p_week_start" "date", "p_day" "date", "p_car_a" "uuid", "p_car_b" "uuid") RETURNS "uuid"[]
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -1521,6 +1576,23 @@ $$;
 
 
 ALTER FUNCTION "public"."_day_car_swap_private_car_blockers"("p_car_a" "uuid", "p_car_b" "uuid", "p_actor" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."_day_car_swap_ride_days"("p_ride_ids" "uuid"[]) RETURNS "date"[]
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  select coalesce(array_agg(distinct d::date order by d::date), '{}')
+  from public.rides r
+  cross join lateral generate_series(
+    (r.starts_at at time zone 'Asia/Jerusalem')::date,
+    ((greatest(r.blocked_until, r.ends_at) - interval '1 microsecond') at time zone 'Asia/Jerusalem')::date,
+    interval '1 day') d
+  where r.id = any(p_ride_ids) and r.status <> 'cancelled';
+$$;
+
+
+ALTER FUNCTION "public"."_day_car_swap_ride_days"("p_ride_ids" "uuid"[]) OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."_day_car_swap_ride_ids_from"("p_ride_ids" "uuid"[], "p_from" time without time zone) RETURNS "uuid"[]
@@ -13865,6 +13937,7 @@ declare
   v_day_ids uuid[];
   v_series_ids uuid[];
   v_whole_ids uuid[];
+  v_closed uuid[] := '{}';
   v_blockers jsonb;
   v_notices jsonb := '[]'::jsonb;
   v_can_swap boolean;
@@ -13872,31 +13945,39 @@ declare
   -- REQ §13.180: with a cutoff only the rides starting at or after it move; a ride the other car has too few seats for
   -- stays where it is (the dialog asks first) and a ride that would overlap one staying on the other car refuses.
   v_all_ids uuid[] := '{}'; v_skip uuid[] := '{}';
+  v_fp_ids uuid[] := '{}';
 begin
   v_blockers := public._day_car_swap_authorize(p_department_id, p_week_start, p_day, p_car_a, p_car_b, v_actor);
 
   if jsonb_array_length(v_blockers) = 0 then
     v_all_ids := public._day_car_swap_day_ride_ids(p_department_id, p_week_start, p_day, p_car_a, p_car_b);
     v_day_ids := public._day_car_swap_ride_ids_from(v_all_ids, p_from);
+    -- REQ §13.186: the fingerprint covers the closed set of the cutoff's rides (same computation in swap_day_cars).
+    v_fp_ids := v_all_ids || public._day_car_swap_close_set(p_department_id, p_day, v_day_ids, p_car_a, p_car_b);
     if p_from is not null then
       v_skip := public._day_car_swap_seat_skips(v_day_ids, p_car_a, p_car_b);
       v_day_ids := array(select x from unnest(v_day_ids) x where x <> all (v_skip) order by x);
     end if;
     v_series_ids := public._day_car_swap_series_ids(v_day_ids);
     v_whole_ids := public._day_car_swap_expand_whole(v_day_ids);
+    v_closed := public._day_car_swap_close_set(p_department_id, p_day, v_day_ids, p_car_a, p_car_b);
     v_blockers := v_blockers
       || public._day_car_swap_private_car_blockers(p_car_a, p_car_b, v_actor)
       || public._day_car_swap_physical_blockers(v_whole_ids, p_car_a, p_car_b)
-      || public._day_car_swap_series_day_blockers(v_whole_ids, p_day, p_car_a, p_car_b)
-      || case when p_from is not null then public._day_car_swap_overlap_blockers(v_whole_ids, p_car_a, p_car_b) else '[]'::jsonb end;
+      -- a problem only with a pulled-in ride refuses only the "whole" mode (like series_other_day_busy)
+      || coalesce((select jsonb_agg(b || '{"whole_only": true}'::jsonb)
+           from jsonb_array_elements(public._day_car_swap_physical_blockers(
+             array(select x from unnest(v_closed) x where x <> all (v_whole_ids)), p_car_a, p_car_b)) b), '[]'::jsonb)
+      || public._day_car_swap_closure_blockers(v_closed)
+      || public._day_car_swap_series_day_blockers(v_closed, p_day, p_car_a, p_car_b)
+      || public._day_car_swap_overlap_blockers(v_closed, p_car_a, p_car_b);
     if coalesce(array_length(v_day_ids, 1), 0) > 0 then
       v_notices := public._day_car_swap_notices(v_day_ids, p_car_a, p_car_b, p_day);
     end if;
     v_notify := public.is_day_public(p_department_id, p_week_start, p_day);
   else
-    v_day_ids := '{}'; v_series_ids := '{}';
+    v_day_ids := '{}'; v_series_ids := '{}'; v_whole_ids := '{}';
   end if;
-  v_all_ids := coalesce(v_all_ids, '{}');
 
   -- REQ §13.111 (a): a luggage-only blocker is waivable, so the swap can still go ahead (with allow_small_trunk).
   -- REQ §13.92 (2026-10-16): a whole_only blocker refuses only the 'whole' series mode; 'day' mode stays available.
@@ -13904,11 +13985,15 @@ begin
     where not coalesce((b ->> 'waivable')::boolean, false) and not coalesce((b ->> 'whole_only')::boolean, false));
 
   return jsonb_build_object(
-    'fingerprint', public._day_car_swap_fingerprint(v_all_ids),
+    'fingerprint', public._day_car_swap_fingerprint(v_fp_ids),
     'rides', public._day_car_swap_rides_json(v_day_ids),
     -- REQ §13.180: rides after the cutoff that stay on their car (too few seats on the other one) - skipped only after "yes"
     'staying', public._day_car_swap_rides_json(v_skip),
     'series', public._day_car_swap_series_json(v_series_ids),
+    -- REQ §13.186: rides the "whole" mode also moves (other days' rides of either car pulled in by the chain)
+    'chain', public._day_car_swap_rides_json(array(select x from unnest(v_closed) x where x <> all (v_whole_ids))),
+    'chain_days', coalesce(array_length(public._day_car_swap_ride_days(v_closed), 1), 0),
+    'chain_rides', coalesce(array_length(v_closed, 1), 0),
     'blockers', v_blockers,
     'notices', v_notices,
     'can_swap', v_can_swap,
@@ -21479,12 +21564,14 @@ begin
   end if;
 
   v_all_ids := public._day_car_swap_day_ride_ids(p_department_id, p_week_start, p_day, p_car_a, p_car_b);
-  v_fp := public._day_car_swap_fingerprint(v_all_ids);
+  -- REQ §13.180: with a cutoff only the rides starting at or after it; seat-blocked ones stay when the caller agreed.
+  v_day_ids := public._day_car_swap_ride_ids_from(v_all_ids, p_from);
+  -- REQ §13.186: same fingerprint as preview_day_car_swap (the day's rides + the closed set of the cutoff's rides).
+  v_fp := public._day_car_swap_fingerprint(
+    v_all_ids || public._day_car_swap_close_set(p_department_id, p_day, v_day_ids, p_car_a, p_car_b));
   if p_expected_fingerprint is null or v_fp <> p_expected_fingerprint then
     perform public.raise_stale_version();
   end if;
-  -- REQ §13.180: with a cutoff only the rides starting at or after it; seat-blocked ones stay when the caller agreed.
-  v_day_ids := public._day_car_swap_ride_ids_from(v_all_ids, p_from);
   if p_from is not null and coalesce(p_skip_seats, false) then
     v_skip := public._day_car_swap_seat_skips(v_day_ids, p_car_a, p_car_b);
     v_day_ids := array(select x from unnest(v_day_ids) x where x <> all (v_skip) order by x);
@@ -21493,7 +21580,7 @@ begin
   v_series_ids := public._day_car_swap_series_ids(v_day_ids);
 
   if p_series_mode = 'whole' then
-    v_moving := public._day_car_swap_expand_whole(v_day_ids);
+    v_moving := public._day_car_swap_close_set(p_department_id, p_day, v_day_ids, p_car_a, p_car_b);
   else
     v_moving := v_day_ids;   -- 'day': only the swapped day's own legs change car
   end if;
@@ -21501,9 +21588,11 @@ begin
   v_phys_blockers := public._day_car_swap_private_car_blockers(p_car_a, p_car_b, v_actor)
     || public._day_car_swap_physical_blockers(v_moving, p_car_a, p_car_b);
   if p_series_mode = 'whole' then
-    v_phys_blockers := v_phys_blockers || public._day_car_swap_series_day_blockers(v_moving, p_day, p_car_a, p_car_b);
-  end if;
-  if p_from is not null then
+    v_phys_blockers := v_phys_blockers
+      || public._day_car_swap_closure_blockers(v_moving)
+      || public._day_car_swap_series_day_blockers(v_moving, p_day, p_car_a, p_car_b)
+      || public._day_car_swap_overlap_blockers(v_moving, p_car_a, p_car_b);
+  elsif p_from is not null then
     v_phys_blockers := v_phys_blockers || public._day_car_swap_overlap_blockers(v_moving, p_car_a, p_car_b);
   end if;
   -- REQ §13.111 (a): a luggage blocker is waivable; everything else still refuses.
@@ -21579,22 +21668,25 @@ begin
     perform public.assert_car_chain(p_car_b, w);
   end loop;
 
-  if public.is_day_public(p_department_id, p_week_start, p_day) and coalesce(array_length(v_day_ids, 1), 1) > 0 then
-    for v_person in
-      select distinct (pe ->> 'person_id')::uuid as person_id, vbr.id as ride_id
-      from public.v_board_rides vbr
-      cross join lateral jsonb_array_elements(vbr.people) pe
-      where vbr.id = any(v_day_ids) and pe ->> 'person_id' is not null
-    loop
-      if v_person.person_id is distinct from v_actor then
-        perform public.enqueue_notification(v_person.person_id, 'car_swapped', p_department_id, p_week_start,
-          jsonb_build_object('fromCar', coalesce(v_old_car_names ->> v_person.ride_id::text, '')),
-          jsonb_build_object('ride_id', v_person.ride_id),
-          format('car_swapped:%s:%s', v_person.ride_id, v_person.person_id));
-        v_notified := v_notified + 1;
-      end if;
-    end loop;
-  end if;
+  -- REQ §13.186: one notice per person (notification noise), for the moved rides of public days — the swapped day's
+  -- ride first, else their earliest; 'day' mode moves only the day's rides, so this is the old behaviour there.
+  for v_person in
+    select distinct on ((pe ->> 'person_id')::uuid) (pe ->> 'person_id')::uuid as person_id, vbr.id as ride_id
+    from public.v_board_rides vbr
+    join public.rides r on r.id = vbr.id
+    cross join lateral jsonb_array_elements(vbr.people) pe
+    where vbr.id = any(v_moving) and pe ->> 'person_id' is not null
+      and public.is_day_public(p_department_id, r.week_start, (r.starts_at at time zone 'Asia/Jerusalem')::date)
+    order by (pe ->> 'person_id')::uuid, (r.id = any(v_day_ids)) desc, r.starts_at, r.id
+  loop
+    if v_person.person_id is distinct from v_actor then
+      perform public.enqueue_notification(v_person.person_id, 'car_swapped', p_department_id, p_week_start,
+        jsonb_build_object('fromCar', coalesce(v_old_car_names ->> v_person.ride_id::text, '')),
+        jsonb_build_object('ride_id', v_person.ride_id),
+        format('car_swapped:%s:%s', v_person.ride_id, v_person.person_id));
+      v_notified := v_notified + 1;
+    end if;
+  end loop;
 
   return jsonb_build_object('moved_rides', v_moved, 'notified', v_notified, 'notices', v_notices);
 end $$;
@@ -29944,6 +30036,16 @@ GRANT ALL ON FUNCTION "public"."_day_car_swap_authorize"("p_department_id" "uuid
 
 
 
+REVOKE ALL ON FUNCTION "public"."_day_car_swap_close_set"("p_department_id" "uuid", "p_day" "date", "p_ride_ids" "uuid"[], "p_car_a" "uuid", "p_car_b" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_day_car_swap_close_set"("p_department_id" "uuid", "p_day" "date", "p_ride_ids" "uuid"[], "p_car_a" "uuid", "p_car_b" "uuid") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."_day_car_swap_closure_blockers"("p_ride_ids" "uuid"[]) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_day_car_swap_closure_blockers"("p_ride_ids" "uuid"[]) TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."_day_car_swap_day_ride_ids"("p_department_id" "uuid", "p_week_start" "date", "p_day" "date", "p_car_a" "uuid", "p_car_b" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."_day_car_swap_day_ride_ids"("p_department_id" "uuid", "p_week_start" "date", "p_day" "date", "p_car_a" "uuid", "p_car_b" "uuid") TO "service_role";
 
@@ -29976,6 +30078,11 @@ GRANT ALL ON FUNCTION "public"."_day_car_swap_physical_blockers"("p_ride_ids" "u
 
 REVOKE ALL ON FUNCTION "public"."_day_car_swap_private_car_blockers"("p_car_a" "uuid", "p_car_b" "uuid", "p_actor" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."_day_car_swap_private_car_blockers"("p_car_a" "uuid", "p_car_b" "uuid", "p_actor" "uuid") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."_day_car_swap_ride_days"("p_ride_ids" "uuid"[]) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_day_car_swap_ride_days"("p_ride_ids" "uuid"[]) TO "service_role";
 
 
 

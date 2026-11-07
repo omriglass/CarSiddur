@@ -47,6 +47,10 @@ export function carSwapBlockerMessage(
       });
     case "private_car":
       return he.carSwap.blockerPrivateCar;
+    case "swap_too_large":
+      return tv("carSwap.blockerSwapTooLarge", { rides: String(blocker.rides ?? 0), days: String(blocker.days ?? 0) });
+    case "archived":
+      return tv("carSwap.blockerArchived", { ride: rideLabel });
     case "past":
       return tv("carSwap.blockerPast", { ride: rideLabel });
     case "not_allowed":

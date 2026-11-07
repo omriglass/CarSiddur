@@ -34,7 +34,7 @@ export const carSwapSeriesSchema = z.object({
 export type CarSwapSeries = z.infer<typeof carSwapSeriesSchema>;
 
 /** A4: refused on `seats`/`maintenance`/`private_car`/`not_allowed`; `past` covers a day already archived-by-time. */
-export const CAR_SWAP_BLOCKER_CODES = ["seats", "maintenance", "private_car", "not_allowed", "past", "luggage", "series_other_day_busy", "overlap"] as const;
+export const CAR_SWAP_BLOCKER_CODES = ["seats", "maintenance", "private_car", "not_allowed", "past", "luggage", "series_other_day_busy", "overlap", "swap_too_large", "archived"] as const;
 export type CarSwapBlockerCode = (typeof CAR_SWAP_BLOCKER_CODES)[number];
 export const carSwapBlockerSchema = z.object({
   code: z.enum(CAR_SWAP_BLOCKER_CODES),
@@ -51,6 +51,9 @@ export const carSwapBlockerSchema = z.object({
   day: z.string().optional(),
   starts_at: z.string().optional(),
   ends_at: z.string().optional(),
+  /** `swap_too_large` (REQ §13.186): the closed set's size. */
+  rides: z.number().optional(),
+  days: z.number().optional(),
 });
 export type CarSwapBlocker = z.infer<typeof carSwapBlockerSchema>;
 
@@ -69,6 +72,11 @@ export const carSwapPreviewSchema = z.object({
   /** REQ §13.180: rides after the cutoff that stay on their car — the other car has too few seats (asked before the swap). */
   staying: z.array(carSwapRideSchema).optional(),
   series: z.array(carSwapSeriesSchema),
+  /** REQ §13.186: rides the "whole" mode also moves — other days' rides of either car pulled in by the chain. */
+  chain: z.array(carSwapRideSchema).optional(),
+  /** REQ §13.186: the whole closed set (day + series + chain), for "ההחלפה כוללת N נסיעות ב־M ימים". */
+  chain_rides: z.number().optional(),
+  chain_days: z.number().optional(),
   blockers: z.array(carSwapBlockerSchema),
   notices: z.array(carSwapNoticeSchema),
   can_swap: z.boolean(),

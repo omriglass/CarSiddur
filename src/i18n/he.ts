@@ -178,6 +178,10 @@ export const he = {
     seriesQuestion: "הנסיעה היא חלק מבקשה רב-יומית",
     seriesWhole: "כל ימי הנסיעה ({{range}})",
     seriesDayOnly: "רק היום (הנסיעה תפוצל)",
+    /** REQ §13.186: the "whole" mode pulls in other days' rides of both cars. */
+    chainSummary: "ההחלפה כוללת {{rides}} נסיעות ב־{{days}} ימים. גם אלה יוחלפו:",
+    blockerSwapTooLarge: "ההחלפה גדולה מדי ({{rides}} נסיעות ב־{{days}} ימים) — אפשר להחליף רק את היום הזה",
+    blockerArchived: "{{ride}} בשבוע שכבר בארכיון — אפשר להחליף רק את היום הזה",
     noticeEndsAway: "שים/י לב: {{car}} מסיים/ת את היום ב{{place}}",
     successToast: "הרכבים הוחלפו",
     notifiedToast: "נשלחו {{count}} הודעות",

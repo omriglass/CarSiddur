@@ -613,10 +613,9 @@ begin
 end $$;
 
 -- ---------------------------------------------------------------------------
--- (i) REQ §13.92 (owner 2026-10-16): 'whole' mode where car_b has a ride on ANOTHER day of the
--- series overlapping a leg that would move onto it: a series_other_day_busy blocker (preview
--- keeps can_swap, whole_blocked = true) and a friendly day_car_swap_blocked, never a raw 23P01;
--- the 'day' mode still works.
+-- (i) REQ §13.186 (owner 2026-11-06/07; replaced the 2026-10-16 refusal): 'whole' mode where car_b has a ride on
+-- ANOTHER day of the series pulls that day in - and, through car_b's own multi-day ride continuing to day 4, day 4
+-- too (a chain) - while a day nothing touches stays. The 'day' mode still works.
 -- ---------------------------------------------------------------------------
 do $$
 declare
@@ -629,7 +628,8 @@ declare
   car_a uuid := '00000000-0000-0000-0000-000000000040';
   car_b uuid := '00000000-0000-0000-0000-000000000041';
   w date := public.current_week_start() + 560;
-  series uuid; submit_result jsonb; preview jsonb; result jsonb; r_other uuid; code text; st text;
+  series uuid; series_b uuid; submit_result jsonb; preview jsonb; result jsonb; r_other uuid; r_day4 uuid; r_day5 uuid;
+  code text; st text;
 begin
   insert into public.weeks(department_id, week_start, phase, open_at, close_at, publish_at)
     values (dept, w, 'open', now() - interval '1 day', now() + interval '1 day', now() + interval '2 days');
@@ -658,19 +658,54 @@ begin
   set constraints all immediate;
   set constraints all deferred;
 
+  -- car_b: member2's two-day ride, day 3 13:00 -> day 4 17:00 (the chain's second link).
+  perform set_config('request.jwt.claims', jsonb_build_object('sub', member2, 'role', 'authenticated')::text, true);
+  submit_result := public.submit_series_request(jsonb_build_object(
+    'department_id', dept, 'week_start', w, 'destination_text', 'בדיקת שרשרת', 'ride_type_id', ride_type,
+    -- start where earlier cases left car_b (a series must start where its car is)
+    'origin_id', public.car_location_at(car_b, ((w + 3) + time '13:00') at time zone 'Asia/Jerusalem'),
+    'trip_shape', 'round_trip', 'adults', 1,
+    'depart_at', ((w + 3) + time '13:00') at time zone 'Asia/Jerusalem',
+    'return_at', ((w + 4) + time '17:00') at time zone 'Asia/Jerusalem'));
+  series_b := (submit_result ->> 'series_id')::uuid;
+  set constraints all immediate;
+  set constraints all deferred;
+  perform set_config('request.jwt.claims', jsonb_build_object('sub', sadran, 'role', 'authenticated')::text, true);
+  perform public.place_series(series_b, car_b, false, null);
+  set constraints all immediate;
+  set constraints all deferred;
+  -- car_a: a ride on day 4 (pulled in by the chain) and one on day 5 (untouched, stays).
+  insert into public.rides(department_id, week_start, car_id, starts_at, ends_at, origin_id, destination_id, driver_id, status, created_by)
+  values (dept, w, car_a, ((w + 4) + time '10:00') at time zone 'Asia/Jerusalem', ((w + 4) + time '11:00') at time zone 'Asia/Jerusalem',
+    home, home, member2, 'confirmed', sadran) returning id into r_day4;
+  insert into public.rides(department_id, week_start, car_id, starts_at, ends_at, origin_id, destination_id, driver_id, status, created_by)
+  values (dept, w, car_a, ((w + 5) + time '10:00') at time zone 'Asia/Jerusalem', ((w + 5) + time '11:00') at time zone 'Asia/Jerusalem',
+    home, home, member2, 'confirmed', sadran) returning id into r_day5;
+  set constraints all immediate;
+  set constraints all deferred;
+
   preview := public.preview_day_car_swap(dept, w, w + 2, car_a, car_b);
-  assert exists (select 1 from jsonb_array_elements(preview -> 'blockers') b
-                 where b ->> 'code' = 'series_other_day_busy' and (b ->> 'car_id')::uuid = car_b and b ->> 'day' = (w + 3)::text),
-    format('(i) preview must report series_other_day_busy for car_b on day 3, got %s', preview -> 'blockers');
-  assert (preview ->> 'whole_blocked')::boolean and (preview ->> 'can_swap')::boolean,
-    '(i) whole mode blocked but the swap itself (day mode) must stay possible';
+  assert not (preview ->> 'whole_blocked')::boolean and (preview ->> 'can_swap')::boolean,
+    format('(i) the chain must make the whole swap possible, blockers %s', preview -> 'blockers');
+  assert exists (select 1 from jsonb_array_elements(preview -> 'chain') c where (c ->> 'ride_id')::uuid = r_other)
+     and exists (select 1 from jsonb_array_elements(preview -> 'chain') c where (c ->> 'ride_id')::uuid = r_day4)
+     and not exists (select 1 from jsonb_array_elements(preview -> 'chain') c where (c ->> 'ride_id')::uuid = r_day5),
+    format('(i) chain must hold the day-3 and day-4 rides, not day 5: %s', preview -> 'chain');
+  assert (preview ->> 'chain_days')::int = 4, format('(i) the set spans days 1-4, got %s', preview ->> 'chain_days');
 
   begin
-    perform public.swap_day_cars(dept, w, w + 2, car_a, car_b, preview ->> 'fingerprint', 'whole');
-    assert false, '(i) whole swap must be refused';
+    result := public.swap_day_cars(dept, w, w + 2, car_a, car_b, preview ->> 'fingerprint', 'whole');
+    assert not exists (select 1 from public.rides where series_id = series and status <> 'cancelled' and car_id <> car_b),
+      '(i) every leg of the series moves to car_b';
+    assert not exists (select 1 from public.rides where series_id = series_b and status <> 'cancelled' and car_id <> car_a),
+      '(i) every leg of car_b''s series moves to car_a';
+    assert (select car_id from public.rides where id = r_other) = car_a and (select car_id from public.rides where id = r_day4) = car_b,
+      '(i) the pulled-in rides trade cars';
+    assert (select car_id from public.rides where id = r_day5) = car_a, '(i) the untouched day stays';
+    raise exception 'rollback_i';
   exception when others then
-    get stacked diagnostics code = returned_sqlstate, st = message_text;
-    assert code = 'P0001' and st = 'day_car_swap_blocked', format('(i) expected friendly day_car_swap_blocked, got %s %s', code, st);
+    get stacked diagnostics st = message_text;
+    assert st = 'rollback_i', format('(i) whole swap failed: %s', st);
   end;
 
   result := public.swap_day_cars(dept, w, w + 2, car_a, car_b, preview ->> 'fingerprint', 'day');

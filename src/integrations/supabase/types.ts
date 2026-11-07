@@ -5452,6 +5452,20 @@ export type Database = {
         }
         Returns: Json
       }
+      _day_car_swap_close_set: {
+        Args: {
+          p_car_a: string
+          p_car_b: string
+          p_day: string
+          p_department_id: string
+          p_ride_ids: string[]
+        }
+        Returns: string[]
+      }
+      _day_car_swap_closure_blockers: {
+        Args: { p_ride_ids: string[] }
+        Returns: Json
+      }
       _day_car_swap_day_ride_ids: {
         Args: {
           p_car_a: string
@@ -5490,6 +5504,10 @@ export type Database = {
       _day_car_swap_private_car_blockers: {
         Args: { p_actor: string; p_car_a: string; p_car_b: string }
         Returns: Json
+      }
+      _day_car_swap_ride_days: {
+        Args: { p_ride_ids: string[] }
+        Returns: string[]
       }
       _day_car_swap_ride_ids_from: {
         Args: { p_from: string; p_ride_ids: string[] }

@@ -96,3 +96,14 @@ describe("overlap blocker (REQ §13.180)", () => {
     expect(message).toContain("12:30–13:30");
   });
 });
+
+describe("carSwapBlockerMessage — REQ §13.186 closed set", () => {
+  it("names the size of a swap that is too large", () => {
+    expect(carSwapBlockerMessage(blocker({ code: "swap_too_large", ride_id: null, rides: 61, days: 9 }), [], {})).toBe(
+      tv("carSwap.blockerSwapTooLarge", { rides: "61", days: "9" }),
+    );
+  });
+  it("names a pulled-in ride in an archived week", () => {
+    expect(carSwapBlockerMessage(blocker({ code: "archived" }), [ride()], {})).toBe(tv("carSwap.blockerArchived", { ride: "חיפה" }));
+  });
+});

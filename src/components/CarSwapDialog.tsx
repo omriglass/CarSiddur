@@ -65,6 +65,9 @@ export function CarSwapDialog({ open, onOpenChange, departmentId, weekStart, day
   const effectiveMode: CarSwapSeriesMode = preview?.whole_blocked ? "day" : seriesMode;
   const carNameById: Record<string, string> = { [carA.id]: carA.name, [carB.id]: carB.name };
   const groups = preview ? groupCarSwapRidesByCar(preview.rides, carA, carB) : [];
+  // REQ §13.186: other days' rides the "whole" mode pulls in; blockers may name them too.
+  const chain = preview?.chain ?? [];
+  const labelRides = preview ? [...preview.rides, ...chain] : [];
 
   async function handleConfirm() {
     if (!preview) return;
@@ -157,6 +160,23 @@ export function CarSwapDialog({ open, onOpenChange, departmentId, weekStart, day
               </div>
             ) : null}
 
+            {chain.length > 0 && effectiveMode === "whole" ? (
+              <div className="space-y-1 rounded-md border p-2 text-sm" data-testid="car-swap-chain">
+                <p className="font-medium">
+                  {tv("carSwap.chainSummary", { rides: String(preview.chain_rides ?? chain.length), days: String(preview.chain_days ?? 0) })}
+                </p>
+                <ul className="space-y-0.5">
+                  {chain.map((ride) => (
+                    <li key={ride.ride_id}>
+                      {formatDayDate(ride.starts_at)}{" "}
+                      <span dir="ltr">{formatTime(new Date(ride.starts_at))}–{formatTime(new Date(ride.ends_at))}</span>{" "}
+                      {ride.label ?? ride.driver_name ?? he.carSwap.unknownRide} · {carNameById[ride.car_id] ?? ""} ←{" "}
+                      {carNameById[ride.car_id === carA.id ? carB.id : carA.id]}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
             {preview.series.length > 0 ? (
               <div className="space-y-2 rounded-md border p-2" data-testid="car-swap-series-choice">
                 <p className="font-medium">{he.carSwap.seriesQuestion}</p>
@@ -172,7 +192,7 @@ export function CarSwapDialog({ open, onOpenChange, departmentId, weekStart, day
                 </RadioGroup>
                 {wholeOnlyBlockers.map((blocker, index) => (
                   <p key={index} className="text-xs text-destructive" data-testid="car-swap-whole-blocked">
-                    {carSwapBlockerMessage(blocker, preview.rides, carNameById)}
+                    {carSwapBlockerMessage(blocker, labelRides, carNameById)}
                   </p>
                 ))}
               </div>
@@ -183,7 +203,7 @@ export function CarSwapDialog({ open, onOpenChange, departmentId, weekStart, day
                 <p className="font-medium text-destructive">{he.carSwap.blockersTitle}</p>
                 <ul className="space-y-1 text-xs text-destructive">
                   {hardBlockers.map((blocker, index) => (
-                    <li key={index}>{carSwapBlockerMessage(blocker, preview.rides, carNameById)}</li>
+                    <li key={index}>{carSwapBlockerMessage(blocker, labelRides, carNameById)}</li>
                   ))}
                 </ul>
               </div>
@@ -194,7 +214,7 @@ export function CarSwapDialog({ open, onOpenChange, departmentId, weekStart, day
                 <p className="font-medium">{he.smallTrunk.confirmTitle}</p>
                 <ul className="space-y-1 text-xs">
                   {waivableBlockers.map((blocker, index) => (
-                    <li key={index}>{carSwapBlockerMessage(blocker, preview.rides, carNameById)}</li>
+                    <li key={index}>{carSwapBlockerMessage(blocker, labelRides, carNameById)}</li>
                   ))}
                 </ul>
               </div>
