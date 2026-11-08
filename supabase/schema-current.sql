@@ -1049,38 +1049,82 @@ ALTER FUNCTION "public"."_car_last_km"("p_car_id" "uuid") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."_car_mileage_estimate"("p_department_id" "uuid", "p_week_start" "date", "p_weeks" integer) RETURNS TABLE("car_id" "uuid", "km" numeric)
-    LANGUAGE "plpgsql" SECURITY DEFINER
+    LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
-begin
-  return query
-    select c.id,
-      coalesce(sum(
-        case served.leg
-          when 'both' then coalesce(public.request_leg_route_km(served.request_id, 'out'), 0)
-                           + coalesce(public.request_leg_route_km(served.request_id, 'return'), 0)
-          when 'out' then coalesce(public.request_leg_route_km(served.request_id, 'out'), 0)
-          when 'return' then coalesce(public.request_leg_route_km(served.request_id, 'return'), 0)
-          else 0
-        end
-      ), 0)::numeric as km
-    from public.cars c
-    left join public.rides r
-      on r.car_id = c.id
-      and r.status <> 'cancelled'
-      and r.week_start >= p_week_start - (p_weeks * 7)
-      and r.week_start <= p_week_start
-      and (r.week_start < p_week_start or r.status = 'confirmed')
-    left join lateral (
-      select rq.request_id, rq.leg
-      from public.ride_requests rq
-      where rq.ride_id = r.id
-      order by case when rq.role = 'driver' then 0 else 1 end, rq.request_id
-      limit 1
-    ) served on true
-    where c.department_id = p_department_id and c.type = 'shared' and c.status = 'active'
-    group by c.id;
-end;
+  with
+  served as (
+    select c.id as car_id, s.request_id, s.leg
+      from public.cars c
+      left join public.rides r
+        on r.car_id = c.id
+        and r.status <> 'cancelled'
+        and r.week_start >= p_week_start - (p_weeks * 7)
+        and r.week_start <= p_week_start
+        and (r.week_start < p_week_start or r.status = 'confirmed')
+      left join lateral (
+        select rq.request_id, rq.leg
+          from public.ride_requests rq
+         where rq.ride_id = r.id
+         order by case when rq.role = 'driver' then 0 else 1 end, rq.request_id
+         limit 1
+      ) s on true
+     where c.department_id = p_department_id and c.type = 'shared' and c.status = 'active'
+  ),
+  legs as (
+    select distinct sv.request_id, l.leg
+      from served sv
+      cross join lateral (values ('out'::public.ride_leg), ('return'::public.ride_leg)) l(leg)
+     where sv.request_id is not null and (sv.leg = 'both' or sv.leg = l.leg)
+  ),
+  pts as (
+    select lg.request_id, lg.leg, p.pos, p.ord, p.place_id
+      from legs lg
+      join public.requests q on q.id = lg.request_id
+      cross join lateral (
+        select 0 as pos, 0 as ord, case when lg.leg = 'out' then q.origin_id else q.destination_id end as place_id
+        union all
+        select s."position", 1, s.place_id
+          from public.request_stops s
+         where s.request_id = q.id and s.leg = lg.leg and (lg.leg = 'out' or q.return_at is not null)
+        union all
+        select (select count(*) from public.request_stops s
+                 where s.request_id = q.id and s.leg = lg.leg and (lg.leg = 'out' or q.return_at is not null))::int + 1,
+               2,
+               case when lg.leg = 'out' then q.destination_id else q.origin_id end) p
+  ),
+  hops as (
+    select p.request_id, p.leg, lag(p.place_id) over w as from_id, p.place_id as to_id, row_number() over w as i
+      from pts p
+    window w as (partition by p.request_id, p.leg order by p.pos, p.ord)
+  ),
+  pairs as (
+    select distinct h.from_id, h.to_id from hops h where h.i > 1 and h.from_id is not null and h.to_id is not null
+  ),
+  dist as (
+    select pr.from_id, pr.to_id, (select t.distance_km from public.place_travel(pr.from_id, pr.to_id) t) as km
+      from pairs pr
+  ),
+  leg_km as (
+    select h.request_id, h.leg, coalesce(sum(coalesce(d.km, 0)), 0) as km
+      from hops h
+      left join dist d on d.from_id = h.from_id and d.to_id = h.to_id
+     where h.i > 1
+     group by h.request_id, h.leg
+  )
+  select sv.car_id,
+         coalesce(sum(
+           case sv.leg
+             when 'both' then coalesce(o.km, 0) + coalesce(rt.km, 0)
+             when 'out' then coalesce(o.km, 0)
+             when 'return' then coalesce(rt.km, 0)
+             else 0
+           end
+         ), 0)::numeric
+    from served sv
+    left join leg_km o on o.request_id = sv.request_id and o.leg = 'out'
+    left join leg_km rt on rt.request_id = sv.request_id and rt.leg = 'return'
+   group by sv.car_id;
 $$;
 
 
@@ -6978,7 +7022,7 @@ CREATE OR REPLACE FUNCTION "public"."can_edit_request"("p_request" "uuid") RETUR
     AS $$
   select public.is_approved() and exists (
     select 1 from public.requests q where q.id = p_request
-      and (public.request_related(q.id, (select auth.uid())) or public.can_manage_week(q.department_id, q.week_start)));
+      and (public.can_manage_week(q.department_id, q.week_start) or public.request_related(q.id, (select auth.uid()))));
 $$;
 
 
@@ -26307,7 +26351,43 @@ CREATE OR REPLACE VIEW "public"."v_ride_car_neighbours" WITH ("security_invoker"
             "k"."kind",
             "nm"."name",
             "pe"."people"
-           FROM ((("public"."rides" "n"
+           FROM (((( SELECT "n_1"."id",
+                    "n_1"."department_id",
+                    "n_1"."week_start",
+                    "n_1"."car_id",
+                    "n_1"."starts_at",
+                    "n_1"."ends_at",
+                    "n_1"."origin_id",
+                    "n_1"."destination_id",
+                    "n_1"."turnaround",
+                    "n_1"."blocked_until",
+                    "n_1"."driver_id",
+                    "n_1"."overflow_allowed",
+                    "n_1"."overnight_ack_by",
+                    "n_1"."overnight_ack_at",
+                    "n_1"."status",
+                    "n_1"."is_pinned",
+                    "n_1"."pin_reason",
+                    "n_1"."created_by_solver_run_id",
+                    "n_1"."created_by",
+                    "n_1"."cancelled_at",
+                    "n_1"."cancelled_by",
+                    "n_1"."cancel_reason",
+                    "n_1"."flag_reason",
+                    "n_1"."version",
+                    "n_1"."created_at",
+                    "n_1"."updated_at",
+                    "n_1"."notes",
+                    "n_1"."turnaround_override_minutes",
+                    "n_1"."needs_driver",
+                    "n_1"."planning_conflict",
+                    "n_1"."series_id",
+                    "n_1"."auto_relocation",
+                    "n_1"."draft_hold"
+                   FROM "public"."rides" "n_1"
+                  WHERE (("n_1"."car_id" = "r"."car_id") AND ("n_1"."id" <> "r"."id") AND ("n_1"."status" = ANY (ARRAY['confirmed'::"public"."ride_status", 'flagged'::"public"."ride_status"])) AND (NOT "n_1"."planning_conflict") AND ("n_1"."starts_at" >= "r"."ends_at") AND (("r"."series_id" IS NULL) OR ("n_1"."series_id" IS DISTINCT FROM "r"."series_id")) AND "public"."is_day_public"("n_1"."department_id", "n_1"."week_start", (("n_1"."starts_at" AT TIME ZONE 'Asia/Jerusalem'::"text"))::"date"))
+                  ORDER BY "n_1"."starts_at", "n_1"."id"
+                 LIMIT 1) "n"
              CROSS JOIN LATERAL ( SELECT
                         CASE
                             WHEN ("n"."auto_relocation" AND ("n"."pin_reason" = 'CAR_MOVE'::"text")) THEN 'car_move'::"text"
@@ -26344,16 +26424,49 @@ CREATE OR REPLACE VIEW "public"."v_ride_car_neighbours" WITH ("security_invoker"
                         UNION ALL
                          SELECT "rp"."person_id"
                            FROM "public"."ride_passengers" "rp"
-                          WHERE ("rp"."ride_id" = "n"."id")) "x") "pe")
-          WHERE (("n"."car_id" = "r"."car_id") AND ("n"."id" <> "r"."id") AND ("n"."status" = ANY (ARRAY['confirmed'::"public"."ride_status", 'flagged'::"public"."ride_status"])) AND (NOT "n"."planning_conflict") AND ("n"."starts_at" >= "r"."ends_at") AND (("r"."series_id" IS NULL) OR ("n"."series_id" IS DISTINCT FROM "r"."series_id")) AND "public"."is_day_public"("n"."department_id", "n"."week_start", (("n"."starts_at" AT TIME ZONE 'Asia/Jerusalem'::"text"))::"date"))
-          ORDER BY "n"."starts_at", "n"."id"
-         LIMIT 1) "nx" ON (true))
+                          WHERE ("rp"."ride_id" = "n"."id")) "x") "pe")) "nx" ON (true))
      LEFT JOIN LATERAL ( SELECT "n"."id",
             "n"."ends_at",
             "k"."kind",
             "nm"."name",
             "pe"."people"
-           FROM ((("public"."rides" "n"
+           FROM (((( SELECT "n_1"."id",
+                    "n_1"."department_id",
+                    "n_1"."week_start",
+                    "n_1"."car_id",
+                    "n_1"."starts_at",
+                    "n_1"."ends_at",
+                    "n_1"."origin_id",
+                    "n_1"."destination_id",
+                    "n_1"."turnaround",
+                    "n_1"."blocked_until",
+                    "n_1"."driver_id",
+                    "n_1"."overflow_allowed",
+                    "n_1"."overnight_ack_by",
+                    "n_1"."overnight_ack_at",
+                    "n_1"."status",
+                    "n_1"."is_pinned",
+                    "n_1"."pin_reason",
+                    "n_1"."created_by_solver_run_id",
+                    "n_1"."created_by",
+                    "n_1"."cancelled_at",
+                    "n_1"."cancelled_by",
+                    "n_1"."cancel_reason",
+                    "n_1"."flag_reason",
+                    "n_1"."version",
+                    "n_1"."created_at",
+                    "n_1"."updated_at",
+                    "n_1"."notes",
+                    "n_1"."turnaround_override_minutes",
+                    "n_1"."needs_driver",
+                    "n_1"."planning_conflict",
+                    "n_1"."series_id",
+                    "n_1"."auto_relocation",
+                    "n_1"."draft_hold"
+                   FROM "public"."rides" "n_1"
+                  WHERE (("n_1"."car_id" = "r"."car_id") AND ("n_1"."id" <> "r"."id") AND ("n_1"."status" = ANY (ARRAY['confirmed'::"public"."ride_status", 'flagged'::"public"."ride_status"])) AND (NOT "n_1"."planning_conflict") AND ("n_1"."ends_at" <= "r"."starts_at") AND (("r"."series_id" IS NULL) OR ("n_1"."series_id" IS DISTINCT FROM "r"."series_id")) AND "public"."is_day_public"("n_1"."department_id", "n_1"."week_start", (("n_1"."starts_at" AT TIME ZONE 'Asia/Jerusalem'::"text"))::"date"))
+                  ORDER BY "n_1"."ends_at" DESC, "n_1"."id"
+                 LIMIT 1) "n"
              CROSS JOIN LATERAL ( SELECT
                         CASE
                             WHEN ("n"."auto_relocation" AND ("n"."pin_reason" = 'CAR_MOVE'::"text")) THEN 'car_move'::"text"
@@ -26390,10 +26503,7 @@ CREATE OR REPLACE VIEW "public"."v_ride_car_neighbours" WITH ("security_invoker"
                         UNION ALL
                          SELECT "rp"."person_id"
                            FROM "public"."ride_passengers" "rp"
-                          WHERE ("rp"."ride_id" = "n"."id")) "x") "pe")
-          WHERE (("n"."car_id" = "r"."car_id") AND ("n"."id" <> "r"."id") AND ("n"."status" = ANY (ARRAY['confirmed'::"public"."ride_status", 'flagged'::"public"."ride_status"])) AND (NOT "n"."planning_conflict") AND ("n"."ends_at" <= "r"."starts_at") AND (("r"."series_id" IS NULL) OR ("n"."series_id" IS DISTINCT FROM "r"."series_id")) AND "public"."is_day_public"("n"."department_id", "n"."week_start", (("n"."starts_at" AT TIME ZONE 'Asia/Jerusalem'::"text"))::"date"))
-          ORDER BY "n"."ends_at" DESC, "n"."id"
-         LIMIT 1) "pv" ON (true))
+                          WHERE ("rp"."ride_id" = "n"."id")) "x") "pe")) "pv" ON (true))
   WHERE ("r"."status" = ANY (ARRAY['confirmed'::"public"."ride_status", 'flagged'::"public"."ride_status"]));
 
 

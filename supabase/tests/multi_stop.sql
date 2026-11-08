@@ -300,4 +300,31 @@ begin
   raise notice 'ride routes parity: % rides identical (% with stops or guests)', n_rides, n_rich;
 end $$;
 
+-- PF1 (20261108150100): the set-based `_car_mileage_estimate` equals the per-leg `request_leg_route_km` sum.
+do $$
+declare n_diff int; n_cases int;
+begin
+  with cases as (select distinct r.department_id as dept, r.week_start as wk from public.rides r),
+  oracle as (
+    select k.dept, k.wk, c.id as car_id,
+      coalesce(sum(case s.leg
+        when 'both' then coalesce(public.request_leg_route_km(s.request_id, 'out'), 0) + coalesce(public.request_leg_route_km(s.request_id, 'return'), 0)
+        when 'out' then coalesce(public.request_leg_route_km(s.request_id, 'out'), 0)
+        when 'return' then coalesce(public.request_leg_route_km(s.request_id, 'return'), 0)
+        else 0 end), 0)::numeric as km
+    from cases k
+    join public.cars c on c.department_id = k.dept and c.type = 'shared' and c.status = 'active'
+    left join public.rides r on r.car_id = c.id and r.status <> 'cancelled'
+      and r.week_start >= k.wk - 28 and r.week_start <= k.wk and (r.week_start < k.wk or r.status = 'confirmed')
+    left join lateral (select rq.request_id, rq.leg from public.ride_requests rq where rq.ride_id = r.id
+                        order by case when rq.role = 'driver' then 0 else 1 end, rq.request_id limit 1) s on true
+    group by k.dept, k.wk, c.id
+  )
+  select count(*), count(*) filter (where o.km is distinct from e.km) into n_cases, n_diff
+    from oracle o
+    left join lateral public._car_mileage_estimate(o.dept, o.wk, 4) e on e.car_id = o.car_id;
+  assert n_diff = 0, format('_car_mileage_estimate differs from the per-leg sum on %s of %s cars', n_diff, n_cases);
+  raise notice 'car mileage parity: % car-weeks identical', n_cases;
+end $$;
+
 rollback;
