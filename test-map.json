@@ -376,6 +376,7 @@
         "src/components/weekGridScale.ts",
         "e2e/car-handover.spec.ts",
         "e2e/ride-editing.spec.ts",
+        "e2e/make-room-request.spec.ts",
         "e2e/edit-mode.spec.ts",
         "src/components/holdGesture.ts",
         "src/components/WeekGrid.holdToDrag.test.tsx",
