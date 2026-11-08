@@ -275,6 +275,8 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
         names: [mergeRequest?.requester_full_name ?? ""],
         carId: mergeHost?.car_id ?? null,
         carName: (board.carsQuery.data ?? []).find((car) => car.id === mergeHost?.car_id)?.name ?? null,
+        needs: mergeVerdictNow.needs ?? [],
+        towTakenBy: null,
       });
       if (!accepted) return;
       await next({ ...prefill, payload: { ...prefill.payload, allow_small_trunk: true } });
@@ -312,7 +314,7 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
   const conflictCount = board.conflicts.length;
   const fewerDays: FewerDaysSupport = {
     cars: (board.carsQuery.data ?? []).filter((car) => car.type !== "temporary" && car.status === "active").map((car) => ({ id: car.id, name: car.name })),
-    isCarFree: (carId, startsAt, endsAt, hasLuggage, originId) => carFreeForSpan(board.dropCtx, carId, startsAt, endsAt, hasLuggage, originId ?? board.dropCtx.homeDestinationId),
+    isCarFree: (carId, startsAt, endsAt, hasLuggage, originId, hasTow) => carFreeForSpan(board.dropCtx, carId, startsAt, endsAt, hasLuggage, originId ?? board.dropCtx.homeDestinationId, hasTow),
     onPropose: dnd.goToComposer,
     requestIds: new Set(board.boardRequests.map((request) => request.id)),
   };

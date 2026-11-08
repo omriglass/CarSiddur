@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { he, tv } from "@/i18n/he";
 import { formatDayDate } from "@/lib/dayLabels";
-import { needsLargeTrunk } from "@/lib/luggageWaiver";
+import { needsLargeTrunk, needsTowHitch } from "@/lib/luggageWaiver";
 
 import { useSeriesLegsQuery } from "../../hooks";
 import { activeSeriesLegs, buildSeriesSpan, seriesHead, seriesSpanPrefill } from "../seriesSpan";
@@ -20,7 +20,7 @@ import type { WeekRequestRow } from "../../api";
 export interface FewerDaysSupport {
   cars: readonly { id: string; name: string }[];
   /** Is the car free for the whole span (the board's own rides/maintenance; the server re-checks)? */
-  isCarFree: (carId: string, startsAt: string, endsAt: string, hasLuggage: boolean, originId?: string | null) => boolean;
+  isCarFree: (carId: string, startsAt: string, endsAt: string, hasLuggage: boolean, originId?: string | null, hasTow?: boolean) => boolean;
   /** The board's proposal entry point (draft / prepare choice). */
   onPropose: (prefill: ComposerPrefill) => void;
   /** Requests loaded on this board - the proposal's request must be one of them. */
@@ -28,7 +28,7 @@ export interface FewerDaysSupport {
 }
 
 export interface FewerDaysActionProps {
-  request: Pick<WeekRequestRow, "id" | "series_id" | "has_luggage" | "luggage_waived_at" | "origin_id" | "requester_full_name">;
+  request: Pick<WeekRequestRow, "id" | "series_id" | "has_luggage" | "needs_tow_hitch" | "luggage_waived_at" | "origin_id" | "requester_full_name">;
   support: FewerDaysSupport;
   /** Controlled mode (the unmet card's "⋮" menu opens it): no inline trigger button is rendered. */
   open?: boolean;
@@ -51,7 +51,7 @@ export function FewerDaysAction({ request, support, open: controlledOpen, onOpen
   // Default last day: one day short of the whole series, but never before the chosen first day.
   const toIndex = to ?? Math.max(fromIndex, fromIndex === 0 ? legs.length - 2 : legs.length - 1);
   const span = buildSeriesSpan(legs, fromIndex, toIndex);
-  const freeCar = span ? support.cars.find((car) => support.isCarFree(car.id, span.depart_at, span.return_at, needsLargeTrunk(request), request.origin_id)) : undefined;
+  const freeCar = span ? support.cars.find((car) => support.isCarFree(car.id, span.depart_at, span.return_at, needsLargeTrunk(request), request.origin_id, needsTowHitch(request))) : undefined;
   const carId = carChoice ?? freeCar?.id ?? null;
   const head = seriesHead(legs);
   // The proposal belongs to a request this board has loaded: the head when it is in this week, else this leg.
@@ -112,7 +112,7 @@ export function FewerDaysAction({ request, support, open: controlledOpen, onOpen
                   <SelectContent>
                     {support.cars.map((car) => (
                       <SelectItem key={car.id} value={car.id}>
-                        {span && support.isCarFree(car.id, span.depart_at, span.return_at, needsLargeTrunk(request), request.origin_id) ? car.name : `${car.name} · ${he.fewerDays.notFree}`}
+                        {span && support.isCarFree(car.id, span.depart_at, span.return_at, needsLargeTrunk(request), request.origin_id, needsTowHitch(request)) ? car.name : `${car.name} · ${he.fewerDays.notFree}`}
                       </SelectItem>
                     ))}
                   </SelectContent>

@@ -21,7 +21,7 @@ import { SERIES_EARLY_BONUS, addSeriesBlocks, trySeriesOnCar, type PlacedSeries,
 import { addsChainBreak, chainBreakIds } from './improve';
 import { carName, memberName } from './names';
 import { dayBoundsForSlot, formatSlotTime, minutesToSlots, type NormalizedRequest } from './slots';
-import { fits, luggageFits } from './seatFit';
+import { fits, needsFit } from './seatFit';
 import { joinNames, reason, weekdayName } from './reasons';
 import type { Block, CarTimeline } from './timeline';
 import type { Car, Relocation, SolverInput, Suggestion } from './types';
@@ -140,7 +140,7 @@ function tryRepairOnCar(
     for (const target of carsByPreference(sharedCars, b.nr.request.preferredCarId)) {
       if (budget.left <= 0) break;
       budget.left--;
-      if (!fits(target, b.nr.passengers) || !luggageFits(target, b.nr.luggage ? 1 : 0)) continue;
+      if (!fits(target, b.nr.passengers) || !needsFit(target, b.nr.luggage ? 1 : 0, b.nr.tow ? 1 : 0)) continue;
       const targetTl = timelines.get(target.id);
       if (!targetTl) continue;
       const place = bestPlacementWithinFlex(targetTl, b.nr);
@@ -210,7 +210,7 @@ export function runSeriesRepair(
     const trials: Trial[] = [];
     for (const car of sharedCars) {
       if (perUnit.left <= 0) break;
-      if (!su.legs.every((leg) => fits(car, leg.passengers) && luggageFits(car, leg.luggage ? 1 : 0))) continue;
+      if (!su.legs.every((leg) => fits(car, leg.passengers) && needsFit(car, leg.luggage ? 1 : 0, leg.tow ? 1 : 0))) continue;
       const blockers = placedSingles
         .filter(
           (p) =>
@@ -281,7 +281,7 @@ export function suggestSeriesSpan(
 
   let best: { car: Car; D: number; R: number; cost: number } | null = null;
   for (const car of [...input.cars].filter((c) => c.type === 'shared').sort((a, b) => (a.id < b.id ? -1 : 1))) {
-    if (!su.legs.every((leg) => fits(car, leg.passengers) && luggageFits(car, leg.luggage ? 1 : 0))) continue;
+    if (!su.legs.every((leg) => fits(car, leg.passengers) && needsFit(car, leg.luggage ? 1 : 0, leg.tow ? 1 : 0))) continue;
     const tl = timelines.get(car.id);
     if (!tl) continue;
     for (let ds = 0; ds <= maxStartShift; ds++) {
@@ -345,7 +345,7 @@ function suggestNextDayStart(
   if (R <= D) return null;
   let bestCar: Car | null = null;
   for (const car of [...input.cars].filter((c) => c.type === 'shared').sort((a, b) => (a.id < b.id ? -1 : 1))) {
-    if (!su.legs.slice(1).every((leg) => fits(car, leg.passengers) && luggageFits(car, leg.luggage ? 1 : 0))) continue;
+    if (!su.legs.slice(1).every((leg) => fits(car, leg.passengers) && needsFit(car, leg.luggage ? 1 : 0, leg.tow ? 1 : 0))) continue;
     const tl = timelines.get(car.id);
     if (!tl || !tl.isFree({ start: D, end: R }, first.originId, undefined, last.destinationId)) continue;
     bestCar = car;
@@ -405,7 +405,7 @@ export function suggestSeriesDisplacement(
   const trials: DisplaceTrial[] = [];
 
   for (const car of sharedCars) {
-    if (!su.legs.every((leg) => fits(car, leg.passengers) && luggageFits(car, leg.luggage ? 1 : 0))) continue;
+    if (!su.legs.every((leg) => fits(car, leg.passengers) && needsFit(car, leg.luggage ? 1 : 0, leg.tow ? 1 : 0))) continue;
     const tl = timelines.get(car.id);
     if (!tl) continue;
     const blockers = placedSingles
@@ -453,7 +453,7 @@ export function suggestSeriesDisplacement(
     for (const b of blockers) {
       let best: Move | null = null;
       for (const target of carsByPreference(sharedCars, b.nr.request.preferredCarId)) {
-        if (!fits(target, b.nr.passengers) || !luggageFits(target, b.nr.luggage ? 1 : 0)) continue;
+        if (!fits(target, b.nr.passengers) || !needsFit(target, b.nr.luggage ? 1 : 0, b.nr.tow ? 1 : 0)) continue;
         const targetTl = timelines.get(target.id);
         if (!targetTl) continue;
         const place = bestPlacementWithinFlex(targetTl, b.nr);

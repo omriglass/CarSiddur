@@ -12,7 +12,7 @@ import { useQuery } from "@tanstack/react-query";
 import { paths } from "@/app/routes";
 import { formatMinutes, parseHHMM } from "@/components/timeField15Format";
 import { he, tv } from "@/i18n/he";
-import { needsLargeTrunk } from "@/lib/luggageWaiver";
+import { needsLargeTrunk, needsTowHitch } from "@/lib/luggageWaiver";
 import { askSmallTrunk } from "@/lib/smallTrunk";
 import { dateKey, formatTime } from "@/lib/time";
 import type { AppError } from "@/lib/rpc";
@@ -42,6 +42,8 @@ import {
   seatsFit,
   luggageCountOf,
   luggageWarns,
+  towCountOf,
+  towWarns,
   mergeRefusalReason,
   unavailable,
   unmetCandidateWindow,
@@ -177,14 +179,27 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
   // large-luggage request on a car without a large trunk (the server stays the decider: `needs_large_trunk`;
   // a refusal it still raises is answered by the same dialog in `lib/smallTrunk.ts` `withSmallTrunkRetry`).
   /** Resolves `true` when no waiver is needed (or the Sadran accepted it), `false` when declined. `waived` = the flag to send. */
-  async function confirmSmallTrunk(carId: string, people: readonly { requestId: string | null; name: string | null | undefined }[]): Promise<{ ok: boolean; waived: boolean }> {
-    if (people.length === 0 || !luggageWarns(dropCtx, carId, people.length)) return { ok: true, waived: false };
+  // REQ §13.200: the same question for a towing request (a car without the hitch, or one whose hitch the ride already
+  // uses): `luggage` / `tow` say which need each person has; `towHolder` = the member whose towing request is already on the ride.
+  async function confirmSmallTrunk(
+    carId: string,
+    people: readonly { requestId: string | null; name: string | null | undefined; luggage?: boolean; tow?: boolean }[],
+    existing?: { tow: number; towHolder: string | null },
+  ): Promise<{ ok: boolean; waived: boolean }> {
+    const luggagePeople = people.filter((person) => person.luggage !== false);
+    const towPeople = people.filter((person) => person.tow === true);
+    const lackLuggage = luggagePeople.length > 0 && luggageWarns(dropCtx, carId, luggagePeople.length);
+    const lackTow = towPeople.length > 0 && towWarns(dropCtx, carId, towPeople.length, existing?.tow ?? 0);
+    if (people.length === 0 || (!lackLuggage && !lackTow)) return { ok: true, waived: false };
     const car = carsData.find((c) => c.id === carId);
+    const hitchTaken = lackTow && !!car?.features.includes("tow_hitch");
     const accepted = await askSmallTrunk({
       requestIds: people.flatMap((person) => (person.requestId ? [person.requestId] : [])),
       names: people.map((person) => person.name ?? ""),
       carId,
       carName: car?.name ?? null,
+      needs: [...(lackLuggage ? ["large_trunk" as const] : []), ...(lackTow ? ["tow_hitch" as const] : [])],
+      towTakenBy: hitchTaken ? (existing?.towHolder ?? null) : null,
     });
     return { ok: accepted, waived: accepted };
   }
@@ -336,7 +351,7 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
       try { server = await fetchMergePreview(hostId, req.id, leg); } catch { return { leg: preferred, anchor }; }
       if (!server) return { leg: preferred, anchor };
       if (server.ok || server.waivable) return { leg, anchor: leg === "return" ? "return" : leg === "out" && anchor === "return" ? null : anchor };
-      firstRefusal ??= mergeRefusalText(server.code, server.turnaroundSide);
+      firstRefusal ??= mergeRefusalText(server.code, server.turnaroundSide, server.needs);
     }
     toast.error(firstRefusal ?? he.mergedRide.invalid.unknown);
     return null;
@@ -550,8 +565,14 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
     // REQ §13.111 (a): a large-luggage request on a car without a large trunk - ask first, send the waiver with the placement.
     const waiver = { allowSmallTrunk: false };
     const askSmallTrunk = async (): Promise<boolean> => {
-      if (!needsLargeTrunk(req)) return true;
-      const asked = await confirmSmallTrunk(carId, [{ requestId: req.id, name: req.requester_full_name }]);
+      if (!needsLargeTrunk(req) && !needsTowHitch(req)) return true;
+      const target = droppedOnRideId ? dropCtx.rides.find((r) => r.id === droppedOnRideId) : undefined;
+      const holder = target ? servedOf(target).find((entry) => entry.tow_hitch && !entry.luggage_waived) : undefined;
+      const asked = await confirmSmallTrunk(
+        carId,
+        [{ requestId: req.id, name: req.requester_full_name, luggage: needsLargeTrunk(req), tow: needsTowHitch(req) }],
+        { tow: target ? towCountOf(target) : 0, towHolder: holder?.requester ?? null },
+      );
       waiver.allowSmallTrunk = asked.waived;
       return asked.ok;
     };
@@ -874,8 +895,8 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
     }
     // REQ §13.111 (a): moving a ride with large luggage onto a car without a large trunk asks first.
     let allowSmallTrunk = false;
-    if (carId !== ride.car_id && luggageCountOf(ride) > 0) {
-      const asked = await confirmSmallTrunk(carId, servedOf(ride).filter((entry) => entry.luggage && !entry.luggage_waived).map((entry) => ({ requestId: entry.request_id, name: entry.requester })));
+    if (carId !== ride.car_id && (luggageCountOf(ride) > 0 || towCountOf(ride) > 0)) {
+      const asked = await confirmSmallTrunk(carId, servedOf(ride).filter((entry) => (entry.luggage || entry.tow_hitch) && !entry.luggage_waived).map((entry) => ({ requestId: entry.request_id, name: entry.requester, luggage: !!entry.luggage, tow: !!entry.tow_hitch })));
       if (!asked.ok) return;
       allowSmallTrunk = asked.waived;
     }

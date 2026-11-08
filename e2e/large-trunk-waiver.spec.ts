@@ -92,3 +92,54 @@ test.describe("large trunk waiver on the board", { tag: ["@board"] }, () => {
     expect(links).toEqual([]);
   });
 });
+
+// REQ §13.200: a towing request ("צריך רכב גורר") is the second car need and works the same way: a car without the
+// hitch asks "הבקשה של … צריכה רכב גורר, ול… אין. לשבץ בכל זאת?"; a yes places it and waives (the chip says "רכב גורר — ויתור").
+test.describe("tow hitch waiver on the board", { tag: ["@board"] }, () => {
+  const service = serviceRoleClient();
+  const contexts: BrowserContext[] = [];
+  let requestId = "";
+  let carId = "";
+
+  test.beforeEach(async () => {
+    await ensureUnpublishedWeek(service, WEEK, "solving");
+    carId = await sharedCarIdByName(service, SMALL_CAR);
+    requestId = await insertRequest(service, DAY, {
+      week: WEEK, requester: PROFILE_IDS.member1, depart: "08:00", return: "10:00", destinationId: PLACES.haifa.id,
+      flex: "01:00:00", extra: { needs_tow_hitch: true },
+    });
+  });
+
+  test.afterEach(async () => {
+    for (const context of contexts.splice(0)) await context.close().catch(() => undefined);
+    await removeWeek(service, WEEK);
+  });
+
+  test("dropping a towing request on a car without a hitch asks, and confirming places and waives it", async ({ browser }) => {
+    const sadran = await newSignedInPage(browser, SEEDED_USERS.sadran);
+    contexts.push(sadran.context);
+    const page = sadran.page;
+    await page.setViewportSize({ width: 1600, height: 1100 });
+    await page.goto(paths.sadran.board(NEVO_DEPARTMENT_ID, WEEK));
+    await expect(page.locator(`[data-request-id="${requestId}"]:visible`).first()).toBeVisible();
+
+    await dragRequestToCar(page, requestId, carId, 8 * 60);
+
+    const dialog = page.getByRole("dialog").filter({ hasText: he.smallTrunk.towTitle });
+    await expect(dialog).toBeVisible();
+    await expect(dialog).toContainText(SMALL_CAR);
+    await expect(dialog).toContainText("צריכה רכב גורר");
+    await dialog.getByRole("button", { name: he.smallTrunk.confirmAction, exact: true }).click();
+    await expect(dialog).toHaveCount(0);
+
+    const block = page.locator(`[data-car-col-id="${carId}"] button[data-ride-id]`).first();
+    await expect(block).toBeVisible({ timeout: 15_000 });
+    await expect(block.getByTestId("tow-marker")).toHaveAttribute("data-waived", "true");
+    await expect(block.getByTestId("tow-marker")).toHaveText(he.smallTrunk.towWaivedLabel);
+
+    const { data: request } = await service.from("requests").select("luggage_waived_at, luggage_waived_by, needs_tow_hitch").eq("id", requestId).single();
+    expect(request!.needs_tow_hitch).toBe(true);
+    expect(request!.luggage_waived_at).not.toBeNull();
+    expect(request!.luggage_waived_by).toBe(PROFILE_IDS.sadran);
+  });
+});

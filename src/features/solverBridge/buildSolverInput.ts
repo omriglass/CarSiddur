@@ -17,7 +17,7 @@
 import { addDays, format, parseISO } from "date-fns";
 import { fromZonedTime } from "date-fns-tz";
 
-import { needsLargeTrunk } from "@/lib/luggageWaiver";
+import { needsLargeTrunk, needsTowHitch } from "@/lib/luggageWaiver";
 import { isActiveStop } from "@/lib/routeStops";
 import { TZ, weekdayIndex } from "@/lib/time";
 import { effectiveWeekSettings } from "@/lib/weekSettings";
@@ -362,6 +362,7 @@ export function buildSolverInput(params: BuildSolverInputParams): SolverInput {
         passengers: { adults: r.adults, childSeats: r.child_seats, boosters: r.boosters },
         coRiderMemberIds: params.companionsByRequestId?.[r.id] ?? [],
         luggage: needsLargeTrunk(r),   // REQ §13.111 (a): a waived request is solved as one without large luggage
+        ...(needsTowHitch(r) ? { towHitch: true } : {}),   // REQ §13.200: same for towing (waived -> false)
         needsCarAtDestination: r.needs_car_at_destination,
         // REQ §13.126 g: the car waits at the destination between the two legs on purpose.
         keepCarAtDestination: r.keep_car_at_destination ? true : undefined,
@@ -417,6 +418,7 @@ export function buildSolverInput(params: BuildSolverInputParams): SolverInput {
     })),
     features: car.features,
     luggageCapacity: car.features.includes("large_trunk") ? 1 : 0,
+    ...(car.features.includes("tow_hitch") ? { towHitch: true } : {}),   // REQ §13.200
     maintenance: (params.maintenanceBlocksByCarId?.[car.id] ?? []).map((b) =>
       toWindow(b.starts_at, b.ends_at, weekStartMs),
     ),

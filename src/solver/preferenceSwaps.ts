@@ -20,7 +20,7 @@
 // the loop is bounded.
 
 import { addsChainBreak, chainBreakIds } from './improve';
-import { fits, luggageFits, sum } from './seatFit';
+import { fits, needsFit, sum } from './seatFit';
 import { minutesToSlots } from './slots';
 import type { Block, CarTimeline } from './timeline';
 import type { Car, SolverInput } from './types';
@@ -35,17 +35,18 @@ const byIdAsc = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
 const satisfied = (p: PlacedSingle, carId = p.carId): number =>
   p.nr.request.preferredCarId !== undefined && p.nr.request.preferredCarId === carId ? 1 : 0;
 
-function loadOf(p: PlacedSingle): { passengers: ReturnType<typeof sum>; luggage: number } {
+function loadOf(p: PlacedSingle): { passengers: ReturnType<typeof sum>; luggage: number; tow: number } {
   const guests = p.guests ?? [];
   return {
     passengers: sum(p.nr.passengers, ...guests.map((g) => g.passengers)),
     luggage: (p.nr.luggage ? 1 : 0) + guests.filter((g) => g.luggage).length,
+    tow: (p.nr.tow ? 1 : 0) + guests.filter((g) => g.tow).length,
   };
 }
 
 function seatsAll(p: PlacedSingle, car: Car): boolean {
   const load = loadOf(p);
-  return fits(car, load.passengers) && luggageFits(car, load.luggage);
+  return fits(car, load.passengers) && needsFit(car, load.luggage, load.tow);
 }
 
 export interface PreferenceSwapResult {

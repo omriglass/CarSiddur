@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { luggageCountOf, luggageWarns, requestsNeedingSmallTrunkWaiver } from "./dropValidity";
+import { luggageCountOf, luggageWarns, requestsNeedingSmallTrunkWaiver, towCountOf, towWarns } from "./dropValidity";
 
 import type { BoardDropContext } from "./dropValidity";
 import type { BoardRide } from "../api";
@@ -12,7 +12,7 @@ const ride = (id: string, luggage: number, waived = 0) => ({
   })),
 }) as unknown as BoardRide;
 const ctx = {
-  cars: [{ id: "big", features: ["large_trunk"] }, { id: "small", features: [] }],
+  cars: [{ id: "big", features: ["large_trunk"] }, { id: "small", features: [] }, { id: "hitch", features: ["tow_hitch"] }],
 } as unknown as Pick<BoardDropContext, "cars">;
 
 describe("luggageWarns (REQ §13.111 a: a warning, no longer a refusal)", () => {
@@ -46,5 +46,28 @@ describe("requestsNeedingSmallTrunkWaiver", () => {
   });
   it("lists nothing on a large-trunk car", () => {
     expect(requestsNeedingSmallTrunkWaiver(ctx, "big", requests)).toEqual([]);
+  });
+});
+
+describe("towing (REQ §13.200): a warning like luggage, plus one hitch per ride", () => {
+  it("towWarns: no hitch warns, a hitch does not, a second towing request on the ride does", () => {
+    expect(towWarns(ctx, "small", 1)).toBe(true);
+    expect(towWarns(ctx, "hitch", 1)).toBe(false);
+    expect(towWarns(ctx, "hitch", 0)).toBe(false);
+    expect(towWarns(ctx, "hitch", 1, 1)).toBe(true);
+  });
+  it("towCountOf counts only unwaived towing entries", () => {
+    const r = { id: "r", served: [{ request_id: "a", role: "driver", tow_hitch: true }, { request_id: "b", role: "passenger", tow_hitch: true, luggage_waived: true }] } as unknown as BoardRide;
+    expect(towCountOf(r)).toBe(1);
+  });
+  it("requestsNeedingSmallTrunkWaiver lists a towing request on a car without the hitch, and not on a hitch car", () => {
+    const requests = [
+      { id: "tow", needs_tow_hitch: true, luggage_waived_at: null },
+      { id: "waived", needs_tow_hitch: true, luggage_waived_at: "2026-11-08T08:00:00Z" },
+      { id: "lug", has_luggage: true, luggage_waived_at: null },
+    ];
+    expect(requestsNeedingSmallTrunkWaiver(ctx, "small", requests).map((request) => request.id)).toEqual(["tow", "lug"]);
+    expect(requestsNeedingSmallTrunkWaiver(ctx, "hitch", requests).map((request) => request.id)).toEqual(["lug"]);
+    expect(requestsNeedingSmallTrunkWaiver(ctx, "hitch", requests.slice(0, 1), 1).map((request) => request.id)).toEqual(["tow"]);
   });
 });

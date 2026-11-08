@@ -15,7 +15,7 @@
 import { fromZonedTime } from "date-fns-tz";
 
 import { formatMinutes } from "@/components/timeField15Format";
-import { needsLargeTrunk, type LuggageFields } from "@/lib/luggageWaiver";
+import { needsLargeTrunk, needsTowHitch, type LuggageFields } from "@/lib/luggageWaiver";
 import { TZ, dateKey } from "@/lib/time";
 import type { Car } from "@/features/fleet/api";
 
@@ -162,20 +162,40 @@ export function luggageWarns(ctx: Pick<BoardDropContext, "cars">, carId: string,
   return !car || !car.features.includes("large_trunk");
 }
 
+/** REQ §13.200: how many of `ride`'s served requests still need a towing car (towing that was not waived by hand). */
+export function towCountOf(ride: BoardRide): number {
+  return servedOf(ride).filter((entry) => entry.tow_hitch && !entry.luggage_waived).length;
+}
+
 /**
- * The requests among `requests` that would need the waiver on `carId` (they still need a large trunk and
- * the car has none) - what the board's "צריך תא מטען גדול" confirmation is about.
+ * REQ §13.200: a towing request goes only on a car with the `tow_hitch` feature, and the hitch carries one
+ * towing request per ride: `incoming` towing requests added to `existing` already on the ride. Like
+ * `luggageWarns`, a warning the Sadran may accept ("לשבץ בכל זאת"), not a refusal.
  */
-export function requestsNeedingSmallTrunkWaiver<T extends LuggageFields>(ctx: Pick<BoardDropContext, "cars">, carId: string, requests: readonly T[]): T[] {
-  const needing = requests.filter((request) => needsLargeTrunk(request));
-  return luggageWarns(ctx, carId, needing.length) ? needing : [];
+export function towWarns(ctx: Pick<BoardDropContext, "cars">, carId: string, incoming: number, existing = 0): boolean {
+  if (incoming <= 0) return false;
+  const car = ctx.cars.find((c) => c.id === carId);
+  return !car || !car.features.includes("tow_hitch") || incoming + existing > 1;
+}
+
+/**
+ * The requests among `requests` that would need the waiver on `carId` (they still need a large trunk or a
+ * towing car and the car has none) - what the board's "צריך תא מטען גדול / רכב גורר" confirmation is about.
+ * `existingTow` = towing requests already riding the ride they are dropped onto (the hitch holds one).
+ */
+export function requestsNeedingSmallTrunkWaiver<T extends LuggageFields>(ctx: Pick<BoardDropContext, "cars">, carId: string, requests: readonly T[], existingTow = 0): T[] {
+  const luggageNeeding = requests.filter((request) => needsLargeTrunk(request));
+  const towNeeding = requests.filter((request) => needsTowHitch(request));
+  const luggageWarn = luggageWarns(ctx, carId, luggageNeeding.length);
+  const towWarn = towWarns(ctx, carId, towNeeding.length, existingTow);
+  return requests.filter((request) => (luggageWarn && needsLargeTrunk(request)) || (towWarn && needsTowHitch(request)));
 }
 
 /** REQ §13.101 (j): can `carId` take `request` for the whole `[startsAt, endsAt)` span (active, no maintenance, no ride, luggage ok)? Only this week's rides are known here - the server re-checks. */
-export function carFreeForSpan(ctx: BoardDropContext, carId: string, startsAt: string, endsAt: string, hasLuggage: boolean, originId?: string | null): boolean {
+export function carFreeForSpan(ctx: BoardDropContext, carId: string, startsAt: string, endsAt: string, hasLuggage: boolean, originId?: string | null, hasTow = false): boolean {
   // R2B5: only a car that is at the series' starting place when the span begins (not one parked away).
   if (originId && originMismatch(ctx, carId, originId, startsAt)) return false;
-  if (unavailable(ctx, carId, startsAt, endsAt) || luggageWarns(ctx, carId, hasLuggage ? 1 : 0)) return false;
+  if (unavailable(ctx, carId, startsAt, endsAt) || luggageWarns(ctx, carId, hasLuggage ? 1 : 0) || towWarns(ctx, carId, hasTow ? 1 : 0)) return false;
   const car = ctx.cars.find((c) => c.id === carId);
   if (!car || car.type === "temporary") return false;
   return !wouldOverlap({ startsAt, endsAt }, ctx.rides.filter((ride) => ride.car_id === carId && ride.status !== "cancelled" && ride.starts_at && ride.ends_at)

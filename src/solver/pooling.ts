@@ -52,6 +52,7 @@ function hostRideOf(p: PlacedSingle): HostRide {
     requestDestinationId: p.nr.destinationId,
     passengers: sum(p.nr.passengers, ...guests.map((g) => g.passengers)),
     luggageCount: (p.nr.luggage ? 1 : 0) + guests.filter((g) => g.luggage).length,
+    towCount: (p.nr.tow ? 1 : 0) + guests.filter((g) => g.tow).length,
     guestCount: guests.length,
     isFixed: false,
     isTemporary: false,

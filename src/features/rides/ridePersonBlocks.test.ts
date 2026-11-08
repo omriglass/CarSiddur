@@ -58,7 +58,7 @@ describe("buildPersonBlocks", () => {
     ],
   } as never;
   const served = [
-    entry({ request_id: "b", requester: "ב", destination: "עיר", origin_name: "נבו" }),
+    entry({ request_id: "b", requester: "ב", destination: "עיר", origin_name: "נבו", tow_hitch: true }),
     entry({ request_id: "a", role: "driver", requester: "א", destination: "עיר", origin_name: "נבו", adults: 2, luggage: true }),
   ];
 
@@ -67,6 +67,7 @@ describe("buildPersonBlocks", () => {
     expect(blocks.map((b) => [b.name, b.role])).toEqual([["א", "driver"], ["ב", "rider"], ["מוסיף", "added"]]);
     expect(blocks[0]?.seats?.adults).toBe(2);
     expect(blocks[0]?.luggage).toBe(true);
+    expect([blocks[0]?.tow, blocks[1]?.tow]).toEqual([false, true]);
     expect(blocks[1]?.withNames).toEqual(["אורח"]);
   });
 

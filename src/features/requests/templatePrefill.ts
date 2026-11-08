@@ -67,6 +67,7 @@ export function suggestionToFormValues(row: TemplateSuggestion, weekStart: strin
     companions: row.companionIds,
     children: row.childIds,
     luggage: row.hasLuggage,
+    towHitch: row.needsTowHitch ?? false,
     flexDepartEarly: intervalToFlexValue(row.flexDepartEarly) as FlexValue,
     flexDepartLate: intervalToFlexValue(row.flexDepartLate) as FlexValue,
     flexReturnEarly: intervalToFlexValue(row.flexReturnEarly) as FlexValue,

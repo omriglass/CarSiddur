@@ -31,7 +31,7 @@ export type RequestSentenceInput = Pick<WeekRequestRow,
   | "flex_depart_early" | "flex_depart_late" | "flex_return_early" | "flex_return_late" | "adults" | "child_seats" | "boosters"
   | "has_luggage" | "notes" | "ride_description" | "template_id" | "fallback" | "served_by_alternative" | "series_id" | "series_index" | "series_count"
   | "destination_text" | "origin_text"> & Partial<Pick<WeekRequestRow,
-  "requester_full_name" | "companions" | "childNames" | "guest_passenger_names" | "destination_resolved_name" | "origin_resolved_name"
+  "needs_tow_hitch" | "requester_full_name" | "companions" | "childNames" | "guest_passenger_names" | "destination_resolved_name" | "origin_resolved_name"
   | "stops" | "ride_type_name_he" | "preferred_car_name" | "alternative" | "trip_shape">>;
 
 /** Keeps every `HH:mm` in the text left-to-right inside an RTL spreadsheet cell. */
@@ -103,6 +103,7 @@ export function requestSentenceText(row: RequestSentenceInput): string {
   }
   if (row.preferred_car_name) modifiers.push(tv("excelExport.sentence.preferredCar", { name: row.preferred_car_name }));
   if (row.has_luggage) modifiers.push(he.requestSentence.carLuggage);
+  if (row.needs_tow_hitch) modifiers.push(he.requestSentence.carTow);   // REQ §13.200
   const plan = fallbackLine({ fallback: row.fallback, alternative: row.alternative ?? null, trip_type: row.trip_type, keep_car_at_destination: row.keep_car_at_destination, series_id: row.series_id, served_by_alternative: row.served_by_alternative });
   if (plan) modifiers.push(plan);
   if (row.ride_type_name_he) modifiers.push(`${he.requestSentence.rideType}: ${row.ride_type_name_he}`);

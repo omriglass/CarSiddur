@@ -58,7 +58,7 @@ import { solve } from "@/solver";
 import * as api from "./api";
 import { isoToSlot, slotToIso } from "./board/geometry";
 import { DEFAULT_STOP_MINUTES, homeTravelEdges, makeHop, type Hop } from "@/lib/rideRoute";
-import { needsLargeTrunk } from "@/lib/luggageWaiver";
+import { needsLargeTrunk, needsTowHitch } from "@/lib/luggageWaiver";
 import { dateKey } from "@/lib/time";
 import { effectiveWeekSettings } from "@/lib/weekSettings";
 import { alternativeLegs, requestIdsWithOpenProposal, resolveDraftPlacements } from "./board/draftOverlay";
@@ -143,6 +143,7 @@ export function boardRideToFixedRide(ride: BoardRide, weekStartMs: number): Fixe
     { adults: 0, childSeats: 0, boosters: 0 },
   );
   const luggageCount = served.filter((s) => s.luggage && !s.luggage_waived).length;
+  const towCount = served.filter((s) => s.tow_hitch && !s.luggage_waived).length;   // REQ §13.200
 
   return {
     id: ride.id,
@@ -156,6 +157,7 @@ export function boardRideToFixedRide(ride: BoardRide, weekStartMs: number): Fixe
     servedRequestIds: served.map((s) => s.request_id as string),
     passengers,
     luggageCount,
+    ...(towCount > 0 ? { towCount } : {}),
     overnightAck: !!ride.overnight_ack_by,
     // REQ §13.96: a reservation (no served requests, not an auto relocation ride) is location-neutral.
     ...(isReservation(ride) ? { locationNeutral: true } : {}),
@@ -327,7 +329,7 @@ export function draftFixedRides(
           legs: [{ requestId: request.id, leg: leg.leg, carMode: "chauffeur", originId: origin, destinationId: placement.destinationId ?? origin, role: "passenger" }],
           servedRequestIds: [request.id],
           passengers: { adults: request.adults, childSeats: request.child_seats, boosters: request.boosters },
-          luggageCount: needsLargeTrunk(request) ? 1 : 0, overnightAck: false, kind: "pinned",
+          luggageCount: needsLargeTrunk(request) ? 1 : 0, ...(needsTowHitch(request) ? { towCount: 1 } : {}), overnightAck: false, kind: "pinned",
         });
       }
       continue;
@@ -361,6 +363,7 @@ export function draftFixedRides(
       servedRequestIds: [request.id],
       passengers: { adults: request.adults, childSeats: request.child_seats, boosters: request.boosters },
       luggageCount: needsLargeTrunk(request) ? 1 : 0,
+      ...(needsTowHitch(request) ? { towCount: 1 } : {}),
       overnightAck: false,
       kind: "pinned",
     });

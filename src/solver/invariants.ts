@@ -10,7 +10,7 @@
 // warning, not an invariant) flags it away from its base at week end. A
 // violation throws SolverInvariantError — the caller keeps the previous draft.
 
-import { fits, luggageFits } from './seatFit';
+import { fits, needsFit } from './seatFit';
 import { minutesToSlots, SLOT_MS } from './slots';
 import { CarTimeline } from './timeline';
 import type { Assignment, FixedRide, SolverInput, SolverOutput } from './types';
@@ -77,7 +77,7 @@ export function assertInvariants(input: SolverInput, output: SolverOutput): void
       if (a.source === 'solver' && !fits(car, a.passengers)) {
         throw new SolverInvariantError(`ride ${a.rideId} does not fit car ${carId}'s seat configs`, 'SEAT_OVERFLOW');
       }
-      if (a.source === 'solver' && !luggageFits(car, a.luggageCount)) {
+      if (a.source === 'solver' && !needsFit(car, a.luggageCount, a.towCount ?? 0)) {
         throw new SolverInvariantError(`ride ${a.rideId} exceeds car ${carId}'s luggage capacity`, 'LUGGAGE_OVERFLOW');
       }
       try {

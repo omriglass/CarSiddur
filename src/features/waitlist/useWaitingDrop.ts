@@ -85,5 +85,7 @@ export function useWaitingDrop(departmentId: string | undefined, weekStart: stri
 export function waitingDropWarningText(warning: PlaceWaitingWarning): string {
   if (warning.code === "location") return tv("waitlist.dropWarn.location", { place: warning.place ?? "" });
   if (warning.code === "turnaround") return tv("waitlist.dropWarn.turnaround", { minutes: String(warning.minutes ?? 30) });
+  const needs = warning.needs ?? [];
+  if (needs.includes("tow_hitch")) return needs.includes("large_trunk") ? he.waitlist.dropWarn.luggageAndTow : he.waitlist.dropWarn.tow;
   return he.waitlist.dropWarn.luggage;
 }

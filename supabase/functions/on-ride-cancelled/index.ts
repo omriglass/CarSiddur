@@ -49,6 +49,8 @@ interface Car {
   seatConfigs: Passengers[];
   features: string[];
   luggageCapacity: number;
+  /** REQ §13.200: the `tow_hitch` feature. */
+  towHitch?: boolean;
   maintenance: { start: number; end: number }[];
   startLocationId?: string;
   /** REQUIREMENTS §13.93 (ORIGINS_PLAN §2 item 4): `cars.base_location_id`, null = home. */
@@ -108,6 +110,8 @@ interface SolverRequest {
   passengers: Passengers;
   coRiderMemberIds: string[];
   luggage: boolean;
+  /** REQ §13.200: needs a towing car. */
+  towHitch?: boolean;
   needsCarAtDestination: boolean;
   submittedAtMs: number;
   isLate: boolean;
@@ -270,7 +274,7 @@ async function handle(req: Request, onOffer: (id: string) => void): Promise<Resp
         .select(
           'id, requester_id, department_id, destination_id, destination_text, trip_shape, depart_at, return_at, ' +
             'origin_id, origin_text, trip_type, ' +
-            'adults, child_seats, boosters, has_luggage, needs_car_at_destination, ' +
+            'adults, child_seats, boosters, has_luggage, needs_tow_hitch, needs_car_at_destination, ' +
             'flex_depart_early, flex_depart_late, flex_return_early, flex_return_late, duration_locked, ' +
             'submitted_at, created_at, is_late, manual_boost, manual_boost_reason, served_by_alternative, ride_types(code)',
         )
@@ -434,6 +438,7 @@ async function handle(req: Request, onOffer: (id: string) => void): Promise<Resp
     features: (carRow.features as string[]) ?? [],
     // REQ §13.101 (a): item 21 (yes/no, 2026-10-07) — a car without the `large_trunk` feature takes no large luggage, with it any number (> 0 = has a large trunk).
     luggageCapacity: ((carRow.features as string[]) ?? []).includes('large_trunk') ? 1 : 0,
+    ...(((carRow.features as string[]) ?? []).includes('tow_hitch') ? { towHitch: true } : {}),
     maintenance,
     startLocationId: carStartLocation?.location_id ?? homeLocationId,
     // `car_base_location()`: cars.base_location_id, else a temporary car's owner default origin.
@@ -505,6 +510,7 @@ async function handle(req: Request, onOffer: (id: string) => void): Promise<Resp
     passengers: { adults: r.adults as number, childSeats: r.child_seats as number, boosters: r.boosters as number },
     coRiderMemberIds: [],
     luggage: r.has_luggage as boolean,
+    ...(r.needs_tow_hitch ? { towHitch: true } : {}),
     needsCarAtDestination: r.needs_car_at_destination as boolean,
     submittedAtMs: Date.parse((r.submitted_at as string) ?? (r.created_at as string)),
     isLate: r.is_late as boolean,

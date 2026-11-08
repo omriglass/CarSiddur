@@ -88,6 +88,8 @@ export interface NormalizedRequest {
   travelSlots: number;
   passengers: Passengers;
   luggage: boolean;
+  /** REQ §13.200: needs a towing car (hitch), one per ride. */
+  tow: boolean;
   destinationId: string;
   dayIndex: number;
   /** Hard scheduling bounds, independent of declared or suggested flexibility. */
@@ -227,6 +229,8 @@ export interface SeriesLeg {
   destinationId: string;
   passengers: Passengers;
   luggage: boolean;
+  /** REQ §13.200: needs a towing car (hitch), one per ride. */
+  tow: boolean;
   dayIndex: number;
   flexDep: [number, number];
   flexRet: [number, number];
@@ -285,6 +289,7 @@ function buildRoundTripNormalized(
     travelSlots,
     passengers: request.passengers,
     luggage: request.luggage,
+    tow: request.towHitch === true,
     destinationId: request.destinationId,
     dayIndex: day.dayIndex,
     dayWindow,
@@ -337,6 +342,7 @@ function buildSeriesUnits(
           destinationId: isGlobalLast ? originIdOf(request, home) : request.destinationId,
           passengers: request.passengers,
           luggage: request.luggage,
+          tow: request.towHitch === true,
           dayIndex: 0,
           flexDep: [0, 0],
           flexRet: [0, 0],
@@ -382,6 +388,7 @@ function buildSeriesUnits(
         destinationId: isGlobalLast ? originIdOf(request, home) : request.destinationId,
         passengers: request.passengers,
         luggage: request.luggage,
+        tow: request.towHitch === true,
         dayIndex: day.dayIndex,
         flexDep,
         flexRet,
@@ -475,6 +482,7 @@ export function normalize(input: SolverInput): NormalizeResult {
         travelSlots,
         passengers: request.passengers,
         luggage: request.luggage,
+        tow: request.towHitch === true,
         destinationId: request.destinationId,
         dayIndex: day.dayIndex,
         dayWindow,
@@ -519,6 +527,7 @@ export function normalize(input: SolverInput): NormalizeResult {
         travelSlots,
         passengers: request.passengers,
         luggage: request.luggage,
+        tow: request.towHitch === true,
         destinationId: request.destinationId,
         dayIndex: day.dayIndex,
         dayWindow,
@@ -566,6 +575,7 @@ export function normalize(input: SolverInput): NormalizeResult {
         travelSlots,
         passengers: request.passengers,
         luggage: request.luggage,
+        tow: request.towHitch === true,
         destinationId: request.destinationId,
         dayIndex: day.dayIndex,
         dayWindow,
@@ -606,6 +616,7 @@ export function normalize(input: SolverInput): NormalizeResult {
       travelSlots: returnTravelSlots,
       passengers: request.passengers,
       luggage: request.luggage,
+      tow: request.towHitch === true,
       destinationId: request.destinationId,
       dayIndex: day.dayIndex,
       dayWindow,

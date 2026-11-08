@@ -36,6 +36,7 @@ function assignmentToFixed(a: Assignment): FixedRide {
     servedRequestIds: a.servedRequestIds,
     passengers: a.passengers,
     luggageCount: a.luggageCount,
+    towCount: a.towCount ?? 0,
     overnightAck: false,
     ...(a.seriesId ? { seriesId: a.seriesId } : {}),
     kind: 'pinned',

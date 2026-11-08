@@ -10,7 +10,7 @@ import type { HostRide } from './merge';
 import { buildHostRides, findMergeHosts } from './merge';
 import { reason } from './reasons';
 import { carName as carNameOf, memberName, placeName, requestDestName, rideHostLabel } from './names';
-import { chauffeurLoad, fits, luggageFits } from './seatFit';
+import { chauffeurLoad, fits, needsFit } from './seatFit';
 import { dayBoundsForSlot, formatSlotTime, minutesToSlots, travelSlotsFor, type NormalizedRequest } from './slots';
 import type { SplitLegsContext } from './splitLegs';
 import { trySplitLegs } from './splitLegs';
@@ -70,7 +70,7 @@ function findChauffeurCar(
   for (const candidate of candidates) {
     if (candidate.window.start < day.startSlot || candidate.window.end > day.endSlot) continue;
     for (const car of sharedCars) {
-      if (!fits(car, load) || !luggageFits(car, nr.luggage ? 1 : 0)) continue;
+      if (!fits(car, load) || !needsFit(car, nr.luggage ? 1 : 0, nr.tow ? 1 : 0)) continue;
       const tl = ctx.timelines.get(car.id);
       if (!tl || !tl.isFree(candidate.window, candidate.carOriginId)) continue;
       return { carId: car.id, window: candidate.window };
@@ -198,7 +198,7 @@ function shiftBeyondFlexSuggestion(nr: NormalizedRequest, ctx: SuggestionContext
   const sharedCars = ctx.input.cars.filter((c) => c.type === 'shared').sort((a, b) => (a.id < b.id ? -1 : 1));
   let best: { car: Car; placement: NonNullable<ReturnType<typeof bestPlacementWithinFlex>> } | null = null;
   for (const car of sharedCars) {
-    if (!fits(car, nr.passengers) || !luggageFits(car, nr.luggage ? 1 : 0)) continue;
+    if (!fits(car, nr.passengers) || !needsFit(car, nr.luggage ? 1 : 0, nr.tow ? 1 : 0)) continue;
     const tl = ctx.timelines.get(car.id);
     if (!tl) continue;
     const placement = bestPlacementWithinFlex(tl, nr, { widenMinutes: ctx.input.config.beyondFlexMaxMinutes });
@@ -317,7 +317,7 @@ export function buildSuggestions(nr: NormalizedRequest, ctx: SuggestionContext, 
       const day = dayBoundsForSlot(ctx.input.week.days, leg.window.start);
       const sharedCars = ctx.input.cars.filter((c) => c.type === 'shared').sort((a, b) => (a.id < b.id ? -1 : 1));
       for (const car of sharedCars) {
-        if (!fits(car, nr.passengers) || !luggageFits(car, nr.luggage ? 1 : 0)) continue;
+        if (!fits(car, nr.passengers) || !needsFit(car, nr.luggage ? 1 : 0, nr.tow ? 1 : 0)) continue;
         const tl = ctx.timelines.get(car.id);
         if (!tl) continue;
         // Latest feasible return that day: search gaps at destination for the latest end <= dayEndSlot.
@@ -409,7 +409,7 @@ function chainOneWaySuggestion(nr: NormalizedRequest, ctx: SuggestionContext): S
     if (a.destinationId !== nr.originId || a.originId === a.destinationId || a.servedRequestIds.includes(nr.id)) continue;
     const car = cars.get(a.carId);
     const tl = ctx.timelines.get(a.carId);
-    if (!car || car.type !== 'shared' || !tl || !fits(car, nr.passengers) || !luggageFits(car, nr.luggage ? 1 : 0)) continue;
+    if (!car || car.type !== 'shared' || !tl || !fits(car, nr.passengers) || !needsFit(car, nr.luggage ? 1 : 0, nr.tow ? 1 : 0)) continue;
     const start = Math.max(leg.window.start, a.window.end + bufferSlots);
     const shift = start - leg.window.start;
     const window = { start, end: start + length };
@@ -463,7 +463,7 @@ function changeOriginSuggestion(nr: NormalizedRequest, ctx: SuggestionContext): 
   if (!placeable) return null;
   const sharedCars = ctx.input.cars.filter((c) => c.type === 'shared').sort((a, b) => (a.id < b.id ? -1 : 1));
   for (const car of sharedCars) {
-    if (!fits(car, nr.passengers) || !luggageFits(car, nr.luggage ? 1 : 0)) continue;
+    if (!fits(car, nr.passengers) || !needsFit(car, nr.luggage ? 1 : 0, nr.tow ? 1 : 0)) continue;
     const tl = ctx.timelines.get(car.id);
     if (!tl) continue;
     for (const gap of tl.gaps()) {

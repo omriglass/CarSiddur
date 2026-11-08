@@ -14,7 +14,7 @@
 // that a compatible partner and hosts exist (the actual car reservation
 // happens only if the Sadran accepts the suggestion).
 
-import { fits, luggageFits } from './seatFit';
+import { fits, needsFit } from './seatFit';
 import { buildHostRides, findMergeHosts, type HostRide, type MergeCandidate } from './merge';
 import { tryPair } from './relay';
 import { roundTripOutLeg, roundTripReturnLeg, type NormalizedRequest } from './slots';
@@ -85,7 +85,7 @@ function selfPairCombo(nr: NormalizedRequest, ctx: SplitLegsContext): SplitLegRe
   const sharedCars = [...ctx.cars.values()].filter((c) => c.type === 'shared').sort((a, b) => (a.id < b.id ? -1 : 1));
 
   for (const car of sharedCars) {
-    if (!fits(car, nr.passengers) || !luggageFits(car, nr.luggage ? 1 : 0)) continue;
+    if (!fits(car, nr.passengers) || !needsFit(car, nr.luggage ? 1 : 0, nr.tow ? 1 : 0)) continue;
     const tl = ctx.timelines.get(car.id);
     if (!tl) continue;
     if (outLeg.window.end > retLeg.window.start) continue;

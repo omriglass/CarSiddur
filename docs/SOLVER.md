@@ -35,7 +35,7 @@ The solver is a pure TypeScript package at `src/solver`. No DOM, no Supabase, no
   - **Legs.** `tripShape ∈ {round_trip, one_way_to, one_way_from}`. A round trip has an **out** leg (leave `H` at departure `D`, travel `H → dest`) and a **return** leg (arrive `H` at return `R`, travel `dest → H`). `one_way_to` has only the out leg, `one_way_from` only the return leg.
   - **Car mode of a leg** `mode(leg) ∈ {keep, relay, passenger, chauffeur}` (REQUIREMENTS §5.4). Round trips with `needsCarAtDestination = true` are one fused `keep` block, driven by the requester unless `canDrive === false` (§1.3.10a). **Pairing decides the mode of a one-way leg, not the member** (REQUIREMENTS §13.88, rule made precise 2026-09-16, superseding the 2026-09-15 wording): the member never states a mode, and any stored `oneWayCarMode` is ignored for everyone. A leg is a **relay candidate** whenever it has an eligible driver on board (the requester, if `canDrive !== false`, else a `drivingCompanionIds` entry) — `relay.ts`'s pairing then either confirms it as a real `relay` leg (a matching leg to the same destination, also with an eligible driver on board) or, when unpaired, places it as a standalone `chauffeur` ride (§3.6.1a) — never left waiting at the destination. A leg with no eligible driver on board is `passenger` unconditionally, falling back to `chauffeur` when no host exists (§3.11 item 5). `chauffeur` from the suggestion ladder is only ever a suggestion; the §3.6.1a standalone chauffeur placement is an actual solver placement (nobody's plan needs to change — it is simply the outcome). For a `drop_off` round trip (`needsCarAtDestination = false`) each leg is resolved independently the same way, and **never** falls back to `keep` (§1.3a, REQUIREMENTS §13.94).
   - **Flexibility.** Independent intervals `FD(r) = [D − a, D + b]` and `FR(r) = [R − c, R + d]` (each side one of 0/15/30/60/120 min or "any time that day", which the caller resolves to the day's slot bounds).
-- **Car** `c`: `type ∈ {shared, temporary}`, seat configurations `Q(c) = {(A, C, B)…}`, features (e.g. `large_trunk`), maintenance blocks (slot intervals), `luggageCapacity` (REQ §13 item 21, yes/no since 2026-10-07: 0 without `large_trunk`, > 0 with it — a flag, not a count; a large-luggage request is placed, merged, relayed, shifted or swapped only onto a big-trunk car, and any number of them may share that car), and a **location timeline**: the car starts the week at `H`; every ride moves it from its `originId` to its `destinationId`; between rides it sits where the last ride left it.
+- **Car** `c`: `type ∈ {shared, temporary}`, seat configurations `Q(c) = {(A, C, B)…}`, features (e.g. `large_trunk`), maintenance blocks (slot intervals), `luggageCapacity` (REQ §13 item 21, yes/no since 2026-10-07: 0 without `large_trunk`, > 0 with it — a flag, not a count; a large-luggage request is placed, merged, relayed, shifted or swapped only onto a big-trunk car, and any number of them may share that car), `towHitch` (REQ §13.200: the `tow_hitch` feature; optional, absent = false), and a **location timeline**: the car starts the week at `H`; every ride moves it from its `originId` to its `destinationId`; between rides it sits where the last ride left it.
 - **Fixed rides**: pinned rides, applied/accepted proposals, temporary-car owner rides. Immutable inputs with a car, a window, origin/destination and passengers; the requests they serve are excluded from solving.
 - **Policy**: `{ id, version, rules: {type, weight, params}[] }`.
 - **Ride** (output): one car, one window `[s, e)`, an `originId` and `destinationId` (where the *car* is when the ride starts and ends — both `H` for a round trip or a chauffeur ride), one driver (a driver request, or a volunteer for chauffeur rides), served legs with their car modes, passenger totals.
@@ -63,6 +63,7 @@ Every window is rounded outward to the grid and has `minDurationSlots = max(1, c
 1. **No overlap.** For rides `x ≠ y` on the same car: `s_y ≥ e_x + buffer` or `s_x ≥ e_y + buffer`. The same rule applies between a ride and a maintenance block. `buffer = config.bufferMinutes` (30, REQUIREMENTS §13.10). **Exception (owner 2026-09-24, REQUIREMENTS §13.88):** the two legs of one relay pair need only `s_return ≥ e_out` — the car just waits at the destination — while each leg keeps the full buffer against every other ride and block (`CarTimeline` `relayPairId`, the same zero-buffer rule as legs of one multi-day series).
 2. **Seat fit** (§3.3): `Σ p(r)` over the ride's requests (plus one adult for a chauffeur volunteer) is dominated by some configuration of the car. Each request's `adults` includes its own would-be driver; when a request rides along as a passenger, *all* of its adults/childSeats/boosters join the host's load (its former driver is now a passenger) and the host's driver is counted exactly once, inside the host request's own `adults`. Nothing is ever subtracted.
 3. **Luggage** (yes/no): a ride with any luggage request needs `luggageCapacity(c) > 0` (a large-trunk car); there is no per-car count cap (`luggageFits(car, n) = n ≤ 0 ∨ luggageCapacity > 0`).
+   **Towing** (REQ §13.200, the second car need): a ride with a towing request (`Request.towHitch`, already absent for a request whose need was waived by hand) needs `Car.towHitch`, and **at most one** towing request rides together (one hitch): `towFits(car, n) = n ≤ 0 ∨ (n ≤ 1 ∧ car.towHitch)`. `needsFit(car, luggage, tow) = luggageFits ∧ towFits` replaces `luggageFits` at every placement/merge/relay/chauffeur/pooling/series-repair/live/suggestion check; `Assignment`/`FixedRide`/`HostRide` carry `towCount` beside `luggageCount` (omitted when 0, so towing-free output is unchanged); invariant `LUGGAGE_OVERFLOW` covers both.
 4. **Temporary cars** are never assigned by the solver; they are never merge hosts either: `findMergeHosts` skips hosts on temporary cars, so auto-fill, merge suggestions and `splitLegs` never put another member's request on a private car (REQUIREMENTS §13.99; ask-to-join to the owner stays a manual request). They never relay or chauffeur — `origin = destination = car.baseLocationId ?? H` always (REQUIREMENTS §13.93, §1.3a: a temporary car's base need not be `H`).
 5. **Fixed rides** are never moved.
 6. Placements stay inside the request's declared flexibility, except `shiftBeyondFlex` *suggestions* (≤ 2 h, consent required).
@@ -144,7 +145,7 @@ export interface Request {
   flexDeparture: Flexibility; flexReturn: Flexibility;
   durationLocked?: boolean;   // REQ §13.112 (c): a window request shifts as one block (§3.7a)
   passengers: Passengers; coRiderMemberIds: string[];
-  luggage: boolean; needsCarAtDestination: boolean;   // round trips only
+  luggage: boolean; towHitch?: boolean; needsCarAtDestination: boolean;   // round trips only; towHitch = REQ §13.200
   submittedAtMs: number; isLate: boolean;
   manualBoost?: { value: number; reason: string };   // value 0..1
   preferredCarId?: string;                  // carried over from a previous draft
@@ -155,7 +156,7 @@ export interface Request {
 
 export interface Car {
   id: string; name: string; type: 'shared' | 'temporary'; ownerMemberId?: string;
-  seatConfigs: Passengers[]; features: string[]; luggageCapacity: number;
+  seatConfigs: Passengers[]; features: string[]; luggageCapacity: number; towHitch?: boolean;   // towHitch = REQ §13.200
   maintenance: Window[];
   startLocationId?: string;                 // where the car is at week start; default = home
   baseLocationId?: string;                  // REQUIREMENTS §13.93 (§1.3a): "where it belongs"; default = home; used only by weekEndAway()
@@ -536,6 +537,7 @@ Merging is **per leg**: a `both` guest needs a host whose ride covers both direc
 - **Seats:** `fits(car_h, sum(h.passengers on leg L, g.passengers))` — per leg, §3.3.
 - **Free-text places never merge (2026-10-17):** a guest whose destination is free text, or a host whose request's destination is, is never a candidate — every free-text destination shares one pseudo id, so two different typed-in places would otherwise look identical (found on the 18.10 replay: Yakum pooled into a ride to "the north"). Same rule as relay pairing (`relay.ts`).
 - **Luggage:** if `h.luggageCount + g.luggage > 0` then `luggageCapacity(car_h) > 0` (yes/no, no count cap).
+- **Towing (REQ §13.200):** if `h.towCount + g.tow > 0` then `car_h.towHitch` and `h.towCount + g.tow ≤ 1` — a second towing request never joins a ride (one hitch).
 
 `MergeCandidate`/`Suggestion.merge` always carry `boardAtLocationId` (the guest's boarding place) — informational, for the UI/proposal.
 
@@ -619,6 +621,8 @@ Every assignment, unmet record and suggestion has a `reasonCode` and a Hebrew `r
 | `UNMET_ONE_WAY_AWAY_AT_WEEK_END` | `נסיעה בכיוון אחד ל{dest} תשאיר את הרכב שם בסוף השבוע, ואין נסיעה שמחזירה אותו; אפשר לבקש הלוך-חזור או לצרף נסיעה חוזרת מ{dest}` (item 136 c, §1.3a) |
 | `UNMET_CAR_TO_DRIVER` | `הרכב ניתן ל{member}, שנוהג/ת בעצמ/ה, ולכן ההסעה ל{dest} (בלי נהג/ת קבוע/ה) חזרה לרשימת הממתינים` (§3.6.7, item 136 b: a driverless ride evicted for a driver) |
 | `UNMET_NEEDS_LARGE_TRUNK` | `צריך רכב עם תא מטען גדול` (large luggage and no shared car has a big trunk) |
+| `UNMET_NEEDS_TOW_HITCH` | `צריך רכב גורר, ואין רכב גורר פנוי` (REQ §13.200: a towing request and no shared car has a hitch; classified right after `UNMET_NEEDS_LARGE_TRUNK`; `noCarReason()` also returns it when only the hitch is missing) |
+| `UNMET_TOW_HITCH_BUSY` | `צריך רכב גורר, וכל הרכבים כאלה תפוסים בזמן הנסיעה: {cars}` (REQ §13.200: the towing twin of `UNMET_LARGE_TRUNK_BUSY`) |
 | `UNMET_SERIES_NO_CAR` | `אין רכב פנוי לכל ימי הבקשה הרב-יומית ({index}/{count})` |
 | `UNMET_NO_RELAY_PARTNER` | `אין מי שיחזיר/יביא את הרכב מ{dest}: לא נמצא/ה נהג/ת שיחזיר/ה אותו, והנסיעה בכיוון אחד תשאיר אותו שם` (no day-end wording, REQ §13.93) |
 | `UNMET_NEEDS_DRIVER` | `אין נסיעה מתאימה להצטרף אליה; דרוש/ה נהג/ת מתנדב/ת להסעה ל{dest} ב-{dep}` |

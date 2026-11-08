@@ -10,7 +10,7 @@
 import { bestPlacementWithinFlex } from './flexibility';
 import { scoreRequests } from './policy/engine';
 import { reason } from './reasons';
-import { chauffeurLoad, fits, luggageFits } from './seatFit';
+import { chauffeurLoad, fits, needsFit } from './seatFit';
 import { byId, dayBoundsForSlot, formatSlotTime, minutesToSlots, normalize, travelSlotsFor } from './slots';
 import type { NormalizedRequest } from './slots';
 import { chauffeurCandidates, chauffeurTotalSlots, originIdOf, resolveStopMinutes } from './travel';
@@ -94,7 +94,7 @@ export function matchFreedSlot(
     const envelopeStart = nr.flexDep[0];
     const envelopeEnd = nr.flexRet[1];
     if (envelopeEnd <= input.freedWindow.start || input.freedWindow.end <= envelopeStart) continue;
-    if (!fits(input.car, nr.passengers) || !luggageFits(input.car, nr.luggage ? 1 : 0)) continue;
+    if (!fits(input.car, nr.passengers) || !needsFit(input.car, nr.luggage ? 1 : 0, nr.tow ? 1 : 0)) continue;
     const placement = bestPlacementWithinFlex(input.timeline, nr);
     if (!placement) continue;
     const day = dayBoundsForSlot(input.week.days, placement.window.start);
@@ -146,7 +146,7 @@ export function matchFreedSlot(
 function singleDropOffWindow(input: SolverInput, timeline: CarTimeline, car: Car, nr: NormalizedRequest): Window | null {
   const leg = nr.legs[0];
   if (!leg || leg.side === 'both') return null;
-  if (!fits(car, chauffeurLoad(nr.passengers)) || !luggageFits(car, nr.luggage ? 1 : 0)) return null;
+  if (!fits(car, chauffeurLoad(nr.passengers)) || !needsFit(car, nr.luggage ? 1 : 0, nr.tow ? 1 : 0)) return null;
   const side: 'out' | 'return' = leg.side === 'out' ? 'out' : 'return';
   const point = side === 'out' ? leg.window.start : leg.window.end;
   const day = dayBoundsForSlot(input.week.days, point);

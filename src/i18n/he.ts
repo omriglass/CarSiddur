@@ -209,6 +209,17 @@ export const he = {
     confirmTitle: "צריך תא מטען גדול",
     confirmBody: "הבקשה של {{name}} צריכה תא מטען גדול, ול{{car}} אין. לשבץ בכל זאת?",
     confirmBodyMany: "הבקשות של {{name}} צריכות תא מטען גדול, ול{{car}} אין. לשבץ בכל זאת?",
+    // REQ §13.200: the second car need, a towing car (the one waiver covers both needs)
+    towTitle: "צריך רכב גורר",
+    bothTitle: "צריך תא מטען גדול ורכב גורר",
+    towBody: "הבקשה של {{name}} צריכה רכב גורר, ו{{car}} אינו רכב גורר. לשבץ בכל זאת?",
+    towBodyMany: "הבקשות של {{name}} צריכות רכב גורר, ו{{car}} אינו רכב גורר. לשבץ בכל זאת?",
+    bothBody: "הבקשה של {{name}} צריכה תא מטען גדול ורכב גורר, ול{{car}} אין תא מטען גדול והוא אינו רכב גורר. לשבץ בכל זאת?",
+    bothBodyMany: "הבקשות של {{name}} צריכות תא מטען גדול ורכב גורר, ול{{car}} אין תא מטען גדול והוא אינו רכב גורר. לשבץ בכל זאת?",
+    towTakenBody: "הבקשה של {{name}} צריכה רכב גורר, ו{{car}} כבר גורר עבור {{other}}. לשבץ בכל זאת?",
+    towWaivedLabel: "רכב גורר — ויתור",
+    towLabel: "רכב גורר",
+    towDropWarning: "אין וו גרירה ברכב, או שהוא כבר גורר — יידרש אישור",
     confirmAction: "לשבץ בכל זאת",
     unknownName: "הנוסע/ת",
     unknownCar: "רכב זה",
@@ -360,6 +371,9 @@ export const he = {
     mergeTalkedYes: "כן, כבר סיכמנו",
     /** REQ §13.175 (g): large luggage on my car without a large trunk. */
     mergeLuggageBody: "ל{{name}} יש ציוד רב, והנסיעה צריכה תא מטען גדול — ולרכב שלך אין.",
+    /** REQ §13.200: the same step for a towing request (the merge preview's `needs`). */
+    mergeTowBody: "{{name}} צריך/ה רכב גורר — והרכב שלך אינו רכב גורר, או שכבר גורר עבור מישהו אחר.",
+    mergeBothBody: "ל{{name}} יש ציוד רב וצריך/ה רכב גורר — ולרכב שלך אין תא מטען גדול והוא אינו רכב גורר.",
     mergeLuggageAware: "אני מודע/ת",
     collisionBody: "אפשר לבקש מהנהגים/ות לפנות את הזמן. הנסיעה הקיימת תישאר בתוקף עד שכולם יאשרו את הביטול. השינוי שלך יופיע בהמתנה לאישור.",
     acknowledge: "אני מודע/ת — שליחת בקשה",

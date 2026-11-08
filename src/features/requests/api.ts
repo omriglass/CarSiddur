@@ -96,8 +96,12 @@ export interface MyRequestRow {
   hasPublishedRide?: boolean;
   window?: RequestWindow | null;
   hasLuggage?: boolean;
+  /** REQ §13.200: the request needs a towing car (hitch). */
+  needsTowHitch?: boolean;
   /** REQ §13.111 (a): the large-trunk requirement was waived by whoever placed the request by hand (`requests.luggage_waived_at`). */
   luggageWaived?: boolean;
+  /** REQ §13.200: the towing requirement was waived (the one waiver covers both needs). */
+  towWaived?: boolean;
   /** Named children on this request (`request_children` → `children.full_name`), UX_FLOWS.md §4.2. */
   childNames?: string[];
   /** R11U2/R11F2: the other people on the request — member companions, named guests, unnamed adults/children — and the public description. */
@@ -171,7 +175,7 @@ const SELECT = `
   department_id, week_start, status, status_reason, is_late, changed_since_solve,
   depart_at, return_at, trip_shape, needs_car_at_destination, destination_id, destination_text, version, ride_type_id,
   origin_id, origin_text, trip_type, keep_car_at_destination, depart_anchor, arrive_by, return_anchor, leave_dest_at,
-  freed_slot_opt_out, has_luggage, luggage_waived_at, preferred_car_id, template_id, series_id, series_index, series_count,
+  freed_slot_opt_out, has_luggage, needs_tow_hitch, luggage_waived_at, preferred_car_id, template_id, series_id, series_index, series_count,
   duration_locked, flex_return_late, fallback, served_by_alternative, plan_b_parent_id,
   alternative:request_alternatives(drop_place_id, drop_place_text, arrive_by, pickup, pickup_at, original_main, drop_place:destinations!request_alternatives_place_fk(name), pickup_place_id, pickup_place_text, pickup_place:destinations!request_alternatives_pickup_place_fk(name)),
   preferred_car:cars!requests_preferred_car_id_fkey(name),
@@ -266,6 +270,7 @@ interface RawRequestRow {
   version: number;
   freed_slot_opt_out: boolean;
   has_luggage: boolean | null;
+  needs_tow_hitch?: boolean | null;
   luggage_waived_at?: string | null;
   ride_type_id: string;
   origin_id: string | null;
@@ -382,6 +387,8 @@ function mapRow(row: RawRequestRow, profileId?: string): MyRequestRow {
     window: row.window,
     hasLuggage: row.has_luggage ?? false,
     luggageWaived: !!row.has_luggage && !!row.luggage_waived_at,
+    needsTowHitch: row.needs_tow_hitch ?? false,
+    towWaived: !!row.needs_tow_hitch && !!row.luggage_waived_at,
     hasPublishedRide: row.ride_requests.some((link) => link.ride && link.ride.status !== "cancelled" && link.ride.status !== "draft"),
     childNames: row.request_children.flatMap((entry) => entry.child?.full_name ? [entry.child.full_name] : []),
     ...mapOtherPeople(row),
@@ -515,6 +522,7 @@ export interface RequestEditRow {
   childSeats: number;
   boosters: number;
   hasLuggage: boolean;
+  needsTowHitch?: boolean;
   flexDepartEarly: string;
   flexDepartLate: string;
   flexReturnEarly: string;
@@ -536,7 +544,7 @@ const EDIT_SELECT = `
   origin_id, origin_text, trip_type, keep_car_at_destination, depart_anchor, arrive_by, return_anchor, leave_dest_at, duration_locked,
   fallback, served_by_alternative, plan_b_parent_id,
   alternative:request_alternatives(drop_place_id, drop_place_text, arrive_by, pickup, pickup_at, drop_place:destinations!request_alternatives_place_fk(name), pickup_place_id, pickup_place_text, pickup_place:destinations!request_alternatives_pickup_place_fk(name)),
-  adults, child_seats, boosters, has_luggage,
+  adults, child_seats, boosters, has_luggage, needs_tow_hitch,
   flex_depart_early, flex_depart_late, flex_return_early, flex_return_late, ride_description, guest_passenger_names, changed_since_solve, preferred_car_id, template_id, series_id,
   preferred_car:cars!requests_preferred_car_id_fkey(name),
   template:request_templates!requests_template_id_fkey(schedule, repeat_every_weeks),
@@ -622,6 +630,7 @@ export async function fetchRequestRowById(requestId: string): Promise<RequestEdi
     child_seats: number;
     boosters: number;
     has_luggage: boolean;
+    needs_tow_hitch?: boolean;
     flex_depart_early: string;
     flex_depart_late: string;
     flex_return_early: string;
@@ -689,6 +698,7 @@ export async function fetchRequestRowById(requestId: string): Promise<RequestEdi
     childSeats: row.child_seats,
     boosters: row.boosters,
     hasLuggage: row.has_luggage,
+    needsTowHitch: row.needs_tow_hitch ?? false,
     flexDepartEarly: row.flex_depart_early,
     flexDepartLate: row.flex_depart_late,
     flexReturnEarly: row.flex_return_early,
@@ -780,6 +790,7 @@ export interface SubmitRequestPayload {
   child_seats: number;
   boosters: number;
   has_luggage?: boolean;
+  needs_tow_hitch?: boolean;
   needs_car_at_destination?: boolean;
   one_way_car_mode?: LegCarMode;
   flex_depart_early?: string;
@@ -1263,6 +1274,7 @@ export interface TemplateSuggestion {
   childIds: string[];
   companionIds: string[];
   hasLuggage: boolean;
+  needsTowHitch?: boolean;
   flexDepartEarly: string;
   flexDepartLate: string;
   flexReturnEarly: string;
@@ -1315,6 +1327,7 @@ function mapTemplateSuggestion(row: TemplateSuggestionRow): TemplateSuggestion {
     childIds: row.child_ids,
     companionIds: row.companion_ids,
     hasLuggage: row.has_luggage ?? false,
+    needsTowHitch: row.needs_tow_hitch ?? false,
     flexDepartEarly: row.flex_depart_early,
     flexDepartLate: row.flex_depart_late,
     flexReturnEarly: row.flex_return_early,
@@ -1334,7 +1347,7 @@ const TEMPLATE_SUGGESTION_SELECT = `
   ride_type_id, ride_type_name, trip_shape, origin_id, origin_text, origin_name, trip_type,
   depart_dow, depart_time, return_dow, return_time,
   depart_at, return_at, depart_anchor, arrive_by, return_anchor, leave_dest_at, one_way_car_mode, needs_car_at_destination, adults, child_seats, boosters,
-  child_ids, companion_ids, has_luggage, flex_depart_early, flex_depart_late, flex_return_early,
+  child_ids, companion_ids, has_luggage, needs_tow_hitch, flex_depart_early, flex_depart_late, flex_return_early,
   flex_return_late, duration_locked, preferred_car_id, ride_description, guest_passenger_names, notes, stops,
   schedule, planned_date, planned_until, repeat_every_weeks
 `;

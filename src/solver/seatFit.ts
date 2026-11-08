@@ -49,7 +49,25 @@ export function luggageFits(car: Car, luggageCount: number): boolean {
   return luggageCount <= 0 || car.luggageCapacity > 0;
 }
 
+/**
+ * Towing fit (REQ §13.200): a towing request needs a car with the hitch (`Car.towHitch`), and the hitch is used
+ * by one towing request at a time - at most one per ride (and per leg).
+ */
+export function towFits(car: Car, towCount: number): boolean {
+  return towCount <= 0 || (towCount <= 1 && car.towHitch === true);
+}
+
+/** Both car needs at once: large luggage (large trunk) and towing (hitch, one per ride). */
+export function needsFit(car: Car, luggageCount: number, towCount: number): boolean {
+  return luggageFits(car, luggageCount) && towFits(car, towCount);
+}
+
 /** Chauffeur load: served requests' passengers plus one adult for the volunteer (SOLVER §3.3, REQ §13.65). */
 export function chauffeurLoad(served: Passengers): Passengers {
   return sum(served, { adults: 1, childSeats: 0, boosters: 0 });
+}
+
+/** `{ towCount }` only when a towing request rides (keeps assignments without towing byte-identical). */
+export function towCountField(towCount: number): { towCount?: number } {
+  return towCount > 0 ? { towCount } : {};
 }

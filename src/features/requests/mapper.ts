@@ -203,6 +203,7 @@ export function toSubmitRequestPayload(
     child_seats: values.childSeats,
     boosters: values.boosters,
     has_luggage: values.luggage,
+    needs_tow_hitch: values.towHitch,
     needs_car_at_destination: isRoundTrip && !keepCar ? values.needsCarAtDestination : undefined,
     // REQ §88: the member no longer chooses a one-way car mode — `submit_request`
     // defaults it server-side from the requester's `does_not_drive` flag. The one
