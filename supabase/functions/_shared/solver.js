@@ -3557,6 +3557,7 @@ function startsByDistance(nr) {
 function pairId(a, b) {
   return `oneway:${a}:${b}`;
 }
+var NEARBY_BACK_PLACE = false;
 function outAndBackCandidates(lone, input) {
   const candidates = [];
   const maxHopMinutes = input.config.detour.maxMinutes;
@@ -3570,7 +3571,7 @@ function outAndBackCandidates(lone, input) {
       if (la.originId !== lb.destinationId) continue;
       let hop = 0;
       if (la.destinationId !== lb.originId) {
-        if (!sameMember || b.request.originIsFreeText) continue;
+        if (!NEARBY_BACK_PLACE || !sameMember || b.request.originIsFreeText) continue;
         const t = travelBetween(input, la.destinationId, lb.originId);
         if (t.minutes > maxHopMinutes || t.km !== void 0 && t.km > maxHopKm) continue;
         hop = Math.max(1, Math.ceil(t.minutes / 15));

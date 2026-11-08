@@ -71,6 +71,7 @@ import {
   restrictInputToDay,
   rideViaNames,
   runSolve,
+  solveSkippingRefusedLegs,
   servedOf,
   withChildNames,
 } from "../../solverRun";
@@ -353,16 +354,14 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
       });
       if (day) restrictInputToDay(context.input, day);
       const startedAtMs = nowMs();
-      const output = runSolve(context.input);
-      rememberUsedPolicy(policy.policyVersionId);
-      const finishedAtMs = nowMs();
-      const payload = buildApplyPayload({
-        output,
+      // TODO TT3: a ride the database would refuse leaves its requests out instead of rolling back the whole day.
+      const { output, payload, skipped } = solveSkippingRefusedLegs(context.input, context.requestsById, (solved, solvedInput) => buildApplyPayload({
+        output: solved,
         weekStartMs: context.weekStartMs,
         policyVersionId: context.policyVersionId,
         startedAtMs,
-        finishedAtMs,
-        inputHash: hashSolverInput(context.input),
+        finishedAtMs: nowMs(),
+        inputHash: hashSolverInput(solvedInput),
         requestsById: context.requestsById,
         // "remaining" mode (owner bug report #5): every ride currently on
         // the board was already passed to the solver as a `fixedRide`
@@ -370,7 +369,8 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
         // this payload's new rides, never delete anything.
         mode: "remaining",
         stateFingerprint: context.stateFingerprint,
-      });
+      }));
+      rememberUsedPolicy(policy.policyVersionId);
       const summary = await applySolverResultMutation.mutateAsync({
         departmentId,
         weekStart,
@@ -386,6 +386,7 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
           unassigned: String(summary.unassigned_requests.length),
         }),
       );
+      if (skipped.length) toast.warning(tv("sadranBoard.skippedRefusedRoutes", { count: String(skipped.length) }));
       if (summary.skippedSeries?.length) {
         toast(tv("sadranBoard.skippedSeries", { count: String(summary.skippedSeries.length) }));
       }

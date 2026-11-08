@@ -11,7 +11,7 @@ import { parseRideRoute } from "@/lib/rideRoute";
 import { fetchProfilesByIds } from "@/features/sadran/api";
 import * as api from "@/features/sadran/api";
 import {
-  buildApplyPayload, computeFullResolveDiff, gatherSolverContext, hashSolverInput, nowMs, runSolve, servedOf, servedToEditRideLegs, rideViaNames,
+  buildApplyPayload, computeFullResolveDiff, gatherSolverContext, hashSolverInput, nowMs, servedOf, solveSkippingRefusedLegs, servedToEditRideLegs, rideViaNames,
   restrictInputToDay,
 } from "@/features/sadran/applySolve";
 import { publishWithScores } from "@/features/sadran/publish/publishWithScores";
@@ -261,8 +261,11 @@ async function applyOutput(board: Board, mode: "remaining" | "full", args: Args)
   const day = flag(args, "day");
   if (day) restrictInputToDay(context.input, day);
   const startedAtMs = nowMs();
-  const output = runSolve(context.input);
-  const finishedAtMs = nowMs();
+  // TODO TT3: like the board, a ride the database would refuse leaves its requests out instead of failing the apply.
+  const { output, payload, skipped } = solveSkippingRefusedLegs(context.input, context.requestsById, (solved, solvedInput) => buildApplyPayload({
+    output: solved, weekStartMs: context.weekStartMs, policyVersionId: context.policyVersionId, startedAtMs, finishedAtMs: nowMs(),
+    inputHash: hashSolverInput(solvedInput), requestsById: context.requestsById, mode, stateFingerprint: context.stateFingerprint }));
+  if (skipped.length) console.log(`skipped (the database would refuse the route): ${skipped.map(short).join(", ")}`);
   if (mode === "full") {
     const diff = computeFullResolveDiff(context, output);
     console.log(`full re-solve would replace ${diff.changedOrRemovedRides.length} unpinned rides; ${diff.requestsLosingAssignment} requests would lose their assignment`);
@@ -271,8 +274,6 @@ async function applyOutput(board: Board, mode: "remaining" | "full", args: Args)
     console.log(`dry run (nothing applied): solver would serve=${output.stats.served} unmet=${output.stats.unmet} needsDriver=${output.stats.needsDriver} relocations=${output.stats.relocations}`);
     return;
   }
-  const payload = buildApplyPayload({ output, weekStartMs: context.weekStartMs, policyVersionId: context.policyVersionId, startedAtMs, finishedAtMs,
-    inputHash: hashSolverInput(context.input), requestsById: context.requestsById, mode, stateFingerprint: context.stateFingerprint });
   const summary = await api.applySolverResult(board.scope.departmentId, board.scope.weekStart, payload as unknown as Json);
   console.log(`applied (${mode}${day ? ` day ${day}` : ""}): inserted=${summary.inserted} deleted=${summary.deleted} unchanged=${summary.unchanged} unassigned=${summary.unassigned_requests.length}${summary.skippedSeries?.length ? ` skippedSeries=${summary.skippedSeries.length} (${summary.skippedSeries.map((s) => s.reason).join(",")})` : ""}`);
   console.log(`solver: served=${output.stats.served} unmet=${output.stats.unmet} needsDriver=${output.stats.needsDriver} relocations=${output.stats.relocations}${output.stats.budgetExhausted ? " BUDGET-EXHAUSTED" : ""}`);

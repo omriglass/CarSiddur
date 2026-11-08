@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
 
 import type { FixedRide } from "@/solver";
-import { boardRideToFixedRide, buildApplyPayload, computeFullResolveDiff, draftFixedRides, restrictInputToDay, ridesPastDayEnd, selectOpenRequests, servedOf } from "./applySolve";
+import { boardRideToFixedRide, buildApplyPayload, computeFullResolveDiff, draftFixedRides, refusedLegRouteRequests, restrictInputToDay, ridesPastDayEnd, selectOpenRequests, servedOf, solveSkippingRefusedLegs } from "./applySolve";
 import { solve } from "@/solver";
 import { dateKey } from "@/lib/time";
 import { baseInput, makeCar, makeRequest, makeSeriesLegs, slotMs, WEEK_START_MS } from "@/solver/__fixtures__/gen";
 
 import type { RequestRow, BoardRide, ProposalRow } from "./api";
-import type { SolverContext } from "./applySolve";
+import type { ApplyPayload, ApplyPayloadRide, SolverContext } from "./applySolve";
 import type { SolverOutput } from "@/solver";
 
 describe("servedOf (maps v_board_rides.served[].child_names onto childNames)", () => {
@@ -402,5 +402,65 @@ describe("ridesPastDayEnd (REQ §13.140)", () => {
       ride("2026-10-27T06:00:00Z", "2026-10-27T21:59:00Z"), // 08:00–23:59: fine
       ride("2026-10-27T05:00:00Z", "2026-10-27T07:00:00Z"),
     ] })).toBe(1);
+  });
+});
+
+describe("refusedLegRouteRequests (TODO TT3: the browser twin of ride_requests_leg_location)", () => {
+  const ride = (origin: string, destination: string, served: ApplyPayloadRide["served"]): ApplyPayloadRide => ({
+    car_id: "C1", starts_at: "", ends_at: "", origin_id: origin, destination_id: destination, driver_id: null, is_pinned: false, pin_reason: null, served,
+  });
+  const requests = new Map([
+    ["out", { origin_id: "home", destination_id: "binyamina", series_id: null }],
+    ["back", { origin_id: "hurish", destination_id: "home", series_id: null }],
+    ["rt", { origin_id: "home", destination_id: "haifa", series_id: null }],
+    ["series", { origin_id: "home", destination_id: "haifa", series_id: "S" }],
+  ]);
+
+  it("refuses a relay leg whose ride starts where the car stands, not where the member leaves (the Binyamina case)", () => {
+    const rides = [
+      ride("home", "binyamina", [{ request_id: "out", role: "driver", leg: "out", car_mode: "relay" }]),
+      ride("binyamina", "home", [{ request_id: "back", role: "driver", leg: "out", car_mode: "relay" }]),
+    ];
+    expect(refusedLegRouteRequests({ rides }, requests)).toEqual(["back"]);
+  });
+
+  it("accepts matching relay legs, keep rides from and back to the origin, a series keep leg and a missing place", () => {
+    const rides = [
+      ride("home", "binyamina", [{ request_id: "out", role: "driver", leg: "out", car_mode: "relay" }]),
+      ride("home", "home", [{ request_id: "rt", role: "driver", leg: "both", car_mode: "keep" }]),
+      ride("home", "haifa", [{ request_id: "series", role: "driver", leg: "both", car_mode: "keep" }]),
+      ride("home", "home", [{ request_id: "unknown", role: "driver", leg: "both", car_mode: "keep" }]),
+    ];
+    expect(refusedLegRouteRequests({ rides }, requests)).toEqual([]);
+  });
+
+  it("refuses a chauffeur ride that does not end where it starts, with every request on it", () => {
+    const rides = [ride("home", "haifa", [
+      { request_id: "rt", role: "passenger", leg: "both", car_mode: "chauffeur" },
+      { request_id: "out", role: "passenger", leg: "out", car_mode: "relay" },
+    ])];
+    expect(refusedLegRouteRequests({ rides }, requests)).toEqual(["out", "rt"]);
+  });
+});
+
+describe("solveSkippingRefusedLegs (TODO TT3)", () => {
+  it("leaves the refused request out and solves again; the rest is still placed", () => {
+    const input = baseInput({ cars: [makeCar("C1"), makeCar("C2")], requests: [
+      makeRequest({ id: "a", departureMs: slotMs(40), returnMs: slotMs(48) }),
+      makeRequest({ id: "b", departureMs: slotMs(60), returnMs: slotMs(68) }),
+    ] });
+    let builds = 0;
+    const rows = new Map(["a", "b"].map((id) => [id, { id, origin_id: null, destination_id: null, series_id: null } as unknown as RequestRow]));
+    const result = solveSkippingRefusedLegs(input, rows, (output, solved) => {
+      builds += 1;
+      // pretend the database refuses request "a" wherever the solver puts it
+      const rides = output.assignments.map((a) => ({ car_id: a.carId, starts_at: "", ends_at: "", origin_id: "x", destination_id: "y", driver_id: null, is_pinned: false, pin_reason: null,
+        served: a.legs.map((l) => ({ request_id: l.requestId, role: l.role, leg: l.leg, car_mode: l.requestId === "a" ? "chauffeur" : "keep" })) }));
+      expect(solved.requests.some((r) => r.id === "a")).toBe(builds === 1);
+      return { rides } as unknown as ApplyPayload;
+    });
+    expect(result.skipped).toEqual(["a"]);
+    expect(builds).toBe(2);
+    expect(result.output.assignments.flatMap((a) => a.legs.map((l) => l.requestId))).toEqual(["b"]);
   });
 });

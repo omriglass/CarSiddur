@@ -572,6 +572,57 @@ export function runSolve(input: SolverInput): SolverOutput {
 }
 
 /**
+ * TODO TT3: the requests on a payload ride the database would refuse — the browser twin of the
+ * `ride_requests_leg_location()` trigger (keep: the ride goes from and back to the request's origin, series exempt;
+ * chauffeur: the ride starts and ends at one place; relay: out = origin → destination, return = destination → origin).
+ * Like SQL, a missing place on either side never refuses. One refused ride rolls back the whole apply, so auto-fill
+ * leaves these requests out instead of losing the day.
+ */
+export function refusedLegRouteRequests(
+  payload: Pick<ApplyPayload, "rides">,
+  requestsById: Map<string, Pick<RequestRow, "origin_id" | "destination_id" | "series_id">>,
+): string[] {
+  const differs = (a: string | null | undefined, b: string | null | undefined) => !!a && !!b && a !== b;
+  const refused = new Set<string>();
+  for (const ride of payload.rides) {
+    const bad = ride.served.some((leg) => {
+      const q = requestsById.get(leg.request_id);
+      if (!q) return false;
+      if (leg.car_mode === "keep") return !q.series_id && (differs(ride.origin_id, q.origin_id) || differs(ride.destination_id, q.origin_id));
+      if (leg.car_mode === "chauffeur") return differs(ride.origin_id, ride.destination_id);
+      if (leg.car_mode !== "relay") return false;
+      if (leg.leg === "out") return differs(ride.origin_id, q.origin_id) || differs(ride.destination_id, q.destination_id);
+      if (leg.leg === "return") return differs(ride.origin_id, q.destination_id) || differs(ride.destination_id, q.origin_id);
+      return false;
+    });
+    if (bad) for (const leg of ride.served) refused.add(leg.request_id);
+  }
+  return [...refused].sort();
+}
+
+/**
+ * Solves `input` and builds its payload; when a ride would be refused by the database (`refusedLegRouteRequests`),
+ * leaves its requests out and solves again (a few rounds), so the rest of the day stays consistent. `skipped` = the
+ * requests left on the unplaced list for the Sadran.
+ */
+export function solveSkippingRefusedLegs(
+  input: SolverInput,
+  requestsById: Map<string, RequestRow>,
+  build: (output: SolverOutput, input: SolverInput) => ApplyPayload,
+): { output: SolverOutput; payload: ApplyPayload; input: SolverInput; skipped: string[] } {
+  const skipped = new Set<string>();
+  let current = input;
+  for (let round = 0; ; round += 1) {
+    const output = runSolve(current);
+    const payload = build(output, current);
+    const refused = refusedLegRouteRequests(payload, requestsById).filter((id) => !skipped.has(id));
+    if (refused.length === 0 || round === 3) return { output, payload, input: current, skipped: [...skipped].sort() };
+    for (const id of refused) skipped.add(id);
+    current = { ...current, requests: current.requests.filter((r) => !skipped.has(r.id)) };
+  }
+}
+
+/**
  * A small, deterministic (non-cryptographic) signature of the solver's own
  * input — a client-side "did anything change under me" staleness check.
  * DATA_MODEL.md §6 step 16 (`solver_runs` table) describes

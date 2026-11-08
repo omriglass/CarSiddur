@@ -58,6 +58,13 @@ function pairId(a: string, b: string): string {
 
 interface OutAndBackCandidate { first: NormalizedRequest; second: NormalizedRequest; hop: number; needsWaitCheck: boolean }
 
+/**
+ * The nearby-place hop of item 136 (d) — the back leg leaving from a place near where the car stands — is off
+ * (TODO TT3, owner 2026-11-08): SQL has no counterpart (`ride_requests_leg_location()` refuses a relay leg whose
+ * ride starts elsewhere), so one such pair rolled back a whole day's auto-fill. Turn it back on together with SQL.
+ */
+const NEARBY_BACK_PLACE = false;
+
 /** Candidate (out, back) legs of item 136 (d): geometry, free text, day order, the nearby-place hop. */
 function outAndBackCandidates(lone: NormalizedRequest[], input: SolverInput): OutAndBackCandidate[] {
   const candidates: OutAndBackCandidate[] = [];
@@ -73,7 +80,7 @@ function outAndBackCandidates(lone: NormalizedRequest[], input: SolverInput): Ou
       // the back leg starts at the out leg's destination, or (same member only) at a nearby place
       let hop = 0;
       if (la.destinationId !== lb.originId) {
-        if (!sameMember || b.request.originIsFreeText) continue;
+        if (!NEARBY_BACK_PLACE || !sameMember || b.request.originIsFreeText) continue;
         const t = travelBetween(input, la.destinationId, lb.originId);
         if (t.minutes > maxHopMinutes || (t.km !== undefined && t.km > maxHopKm)) continue;
         hop = Math.max(1, Math.ceil(t.minutes / 15));
