@@ -237,6 +237,26 @@ export function buildChecks(opts) {
       order by l.starts_at, l.ride_id`,
     },
     {
+      id: "ride_tow_hitch",
+      level: "error",
+      title: "a ride leg carries a towing request on a car without the tow hitch, or two towing requests share one ride (one hitch per ride; a request waived by hand is not counted, REQ §13.200)",
+      sql: `select l.ride_id::text, format('car %s leg %s carries %s towing request(s)%s', c.name, l.side, l.tow, case when 'tow_hitch' = any(c.features) then '' else ' but has no hitch' end), 1
+      from (
+        select rd.id as ride_id, rd.car_id, legs.side, rd.starts_at, count(*) filter (where q.needs_tow_hitch and q.luggage_waived_at is null)::int as tow
+        from public.rides rd
+        ${inScope("rd")}
+        join public.ride_requests rr on rr.ride_id = rd.id
+        join public.requests q on q.id = rr.request_id
+        cross join lateral (values ('out'), ('return')) as legs(side)
+        where rd.status <> 'cancelled'
+          and ((legs.side = 'out' and rr.covers_out) or (legs.side = 'return' and rr.covers_return))
+        group by rd.id, rd.car_id, rd.starts_at, legs.side
+      ) l
+      join public.cars c on c.id = l.car_id
+      where l.tow > 0 and not public.car_meets_needs(l.car_id, 0, l.tow)
+      order by l.starts_at, l.ride_id`,
+    },
+    {
       id: "ride_on_maintenance_car",
       level: "warn",
       title: "upcoming ride on a car whose status is 'maintenance' (admins may override; move or cancel the ride)",

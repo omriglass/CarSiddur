@@ -2968,6 +2968,7 @@ export type Database = {
           last_materialized_week: string | null
           leave_dest_time: string | null
           needs_car_at_destination: boolean
+          needs_tow_hitch: boolean
           notes: string | null
           one_way_car_mode: Database["public"]["Enums"]["leg_car_mode"] | null
           origin_id: string | null
@@ -3021,6 +3022,7 @@ export type Database = {
           last_materialized_week?: string | null
           leave_dest_time?: string | null
           needs_car_at_destination?: boolean
+          needs_tow_hitch?: boolean
           notes?: string | null
           one_way_car_mode?: Database["public"]["Enums"]["leg_car_mode"] | null
           origin_id?: string | null
@@ -3074,6 +3076,7 @@ export type Database = {
           last_materialized_week?: string | null
           leave_dest_time?: string | null
           needs_car_at_destination?: boolean
+          needs_tow_hitch?: boolean
           notes?: string | null
           one_way_car_mode?: Database["public"]["Enums"]["leg_car_mode"] | null
           origin_id?: string | null
@@ -3192,6 +3195,7 @@ export type Database = {
           manual_boost: number
           manual_boost_reason: string | null
           needs_car_at_destination: boolean
+          needs_tow_hitch: boolean
           notes: string | null
           one_way_car_mode: Database["public"]["Enums"]["leg_car_mode"] | null
           origin_id: string | null
@@ -3253,6 +3257,7 @@ export type Database = {
           manual_boost?: number
           manual_boost_reason?: string | null
           needs_car_at_destination?: boolean
+          needs_tow_hitch?: boolean
           notes?: string | null
           one_way_car_mode?: Database["public"]["Enums"]["leg_car_mode"] | null
           origin_id?: string | null
@@ -3314,6 +3319,7 @@ export type Database = {
           manual_boost?: number
           manual_boost_reason?: string | null
           needs_car_at_destination?: boolean
+          needs_tow_hitch?: boolean
           notes?: string | null
           one_way_car_mode?: Database["public"]["Enums"]["leg_car_mode"] | null
           origin_id?: string | null
@@ -5138,6 +5144,7 @@ export type Database = {
           keep_car_at_destination: boolean | null
           leave_dest_at: string | null
           needs_car_at_destination: boolean | null
+          needs_tow_hitch: boolean | null
           notes: string | null
           one_way_car_mode: Database["public"]["Enums"]["leg_car_mode"] | null
           origin_id: string | null
@@ -5912,6 +5919,10 @@ export type Database = {
         Args: { p_car_id: string; p_request_ids: string[] }
         Returns: string
       }
+      _small_trunk_detail_for: {
+        Args: { p_car_id: string; p_request_ids: string[]; p_ride_id: string }
+        Returns: string
+      }
       _small_trunk_mode: { Args: { p_allow: boolean }; Returns: undefined }
       _small_trunk_probe: { Args: { p_request_id: string }; Returns: string }
       _sync_draft_hold: { Args: { p_request_id: string }; Returns: undefined }
@@ -6146,6 +6157,10 @@ export type Database = {
       car_location_excluding: {
         Args: { _at: string; _car: string; _exclude: string }
         Returns: string
+      }
+      car_meets_needs: {
+        Args: { _car: string; _luggage: number; _tow: number }
+        Returns: boolean
       }
       car_mileage_totals: {
         Args: {
@@ -7070,6 +7085,10 @@ export type Database = {
       request_legs_covered: { Args: { p_request_id: string }; Returns: boolean }
       request_legs_placed: { Args: { p_request_id: string }; Returns: boolean }
       request_needs_large_trunk: {
+        Args: { p_request_id: string }
+        Returns: boolean
+      }
+      request_needs_tow_hitch: {
         Args: { p_request_id: string }
         Returns: boolean
       }

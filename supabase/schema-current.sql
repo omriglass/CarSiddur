@@ -944,6 +944,7 @@ CREATE OR REPLACE FUNCTION "public"."_auto_approve_free_car"("p_request_id" "uui
   where q.id = p_request_id and c.status = 'active' and c.type = 'shared'
     and csc.adults >= q.adults and csc.child_seats >= q.child_seats and csc.boosters >= q.boosters
     and (not (q.has_luggage and q.luggage_waived_at is null) or 'large_trunk' = any(c.features))
+    and (not (q.needs_tow_hitch and q.luggage_waived_at is null) or 'tow_hitch' = any(c.features))   -- REQ §13.200
     and public.car_location_at(c.id, q.depart_at) = q.origin_id
     and not exists (
       select 1 from public.rides r
@@ -1368,12 +1369,12 @@ begin
   if v_diff then
     insert into public.requests (department_id, week_start, requester_id, filed_by, destination_id, destination_text, ride_type_id,
       origin_id, origin_text, trip_type, trip_shape, depart_at, one_way_car_mode, needs_car_at_destination,
-      adults, child_seats, boosters, has_luggage, luggage_waived_at, luggage_waived_by, notes, is_late, submitted_at, status,
+      adults, child_seats, boosters, has_luggage, needs_tow_hitch, luggage_waived_at, luggage_waived_by, notes, is_late, submitted_at, status,
       depart_anchor, return_anchor, served_by_alternative, plan_b_parent_id, ride_description, guest_passenger_names)
     values (q.department_id, q.week_start, q.requester_id, q.filed_by, q.origin_id, q.origin_text, q.ride_type_id,
       a.pickup_place_id, a.pickup_place_text, 'drop_off', 'one_way_to', v_pickup_at,
       (select case when pr.does_not_drive then 'passenger' else 'relay' end::public.leg_car_mode from public.profiles pr where pr.id = q.requester_id),
-      false, q.adults, q.child_seats, q.boosters, q.has_luggage, q.luggage_waived_at, q.luggage_waived_by, q.notes, false, now(), 'submitted',
+      false, q.adults, q.child_seats, q.boosters, q.has_luggage, q.needs_tow_hitch, q.luggage_waived_at, q.luggage_waived_by, q.notes, false, now(), 'submitted',
       'leave', 'arrive', true, q.id, q.ride_description, q.guest_passenger_names)
     returning id into v_sib;
     insert into public.request_companions (request_id, profile_id) select v_sib, profile_id from public.request_companions where request_id = q.id;
@@ -1622,7 +1623,8 @@ begin
     select leg_side,
            sum(q.adults) a, sum(q.child_seats) c, sum(q.boosters) b,
            count(*) filter (where q.has_luggage and q.luggage_waived_at is null) lug,
-           array_agg(distinct q.id) filter (where q.has_luggage and q.luggage_waived_at is null) lug_ids,
+           count(*) filter (where q.needs_tow_hitch and q.luggage_waived_at is null) tow,
+           array_agg(distinct q.id) filter (where (q.has_luggage or q.needs_tow_hitch) and q.luggage_waived_at is null) lug_ids,
            rd.id as ride_id, rd.car_id as old_car_id,
            (case when rd.car_id = p_car_a then p_car_b else p_car_a end) as new_car_id
     from public.ride_requests rr
@@ -1639,10 +1641,10 @@ begin
     if not public.car_fits(r.new_car_id, r.a::int, r.c::int, r.b::int) then
       v_blockers := v_blockers || jsonb_build_array(jsonb_build_object('code', 'seats', 'ride_id', r.ride_id,
         'car_id', r.new_car_id, 'detail', format('ride %s leg %s needs (%s,%s,%s) on car %s', r.ride_id, r.leg_side, r.a, r.c, r.b, r.new_car_id)));
-    elsif not public.car_takes_luggage(r.new_car_id, r.lug::int) then
+    elsif not public.car_meets_needs(r.new_car_id, r.lug::int, r.tow::int) then
       -- REQ §13.111 (a): waivable - the Sadran may accept a car without a large trunk (swap_day_cars allow_small_trunk).
       v_blockers := v_blockers || jsonb_build_array(jsonb_build_object('code', 'luggage', 'waivable', true, 'ride_id', r.ride_id,
-        'car_id', r.new_car_id, 'request_ids', to_jsonb(coalesce(r.lug_ids, '{}'::uuid[])), 'detail', format('ride %s leg %s carries large luggage; car %s has no large trunk', r.ride_id, r.leg_side, r.new_car_id)));
+        'car_id', r.new_car_id, 'request_ids', to_jsonb(coalesce(r.lug_ids, '{}'::uuid[])), 'detail', format('ride %s leg %s carries large luggage or a towing request; car %s lacks the large trunk or the hitch', r.ride_id, r.leg_side, r.new_car_id)));
     end if;
   end loop;
 
@@ -2580,6 +2582,7 @@ declare
   v_add_min int[] := array[0, 0]; v_add_km numeric[] := array[0, 0]; v_ix int;
   v_err text; v_start timestamptz; v_end timestamptz; v_day date; v_unknown boolean;
   v_features text[]; v_luggage boolean; v_guest public.requests%rowtype; v_swap boolean; v_boarding timestamptz; v_anchor timestamptz; v_tol interval; v_overlaps jsonb := '[]'::jsonb; v_conflict boolean := false; v_side text; v_lug_problem boolean := false;
+  v_tow boolean; v_tow_taken boolean; v_needs text[];
   v_time_far boolean := false; v_far_eta timestamptz; v_far_wanted timestamptz; v_soft_far boolean;
   v_other record;
   v_detour_problem boolean := false; v_unknown_hops jsonb := '[]'::jsonb; v_hops jsonb;
@@ -2611,7 +2614,16 @@ begin
   -- REQ §13.111 (a): a waived request does not need it; under `app.small_trunk = 'allow'` (a caller that passed
   -- allow_small_trunk, or merge_preview asking "is luggage the only problem?") the problem is only reported.
   v_luggage := public.request_needs_large_trunk(p_request_id);
-  if v_luggage and not ('large_trunk' = any (coalesce(v_features, '{}'))) then
+  -- REQ §13.200: a towing request needs a car with the hitch, and the hitch is used by one towing request at a time
+  -- (another unwaived towing request already riding this ride holds it). Same waivable verdict as luggage.
+  v_tow := public.request_needs_tow_hitch(p_request_id);
+  v_tow_taken := v_tow and exists (
+    select 1 from public.ride_requests rr join public.requests q on q.id = rr.request_id
+    where rr.ride_id = p_ride_id and rr.request_id <> p_request_id and q.needs_tow_hitch and q.luggage_waived_at is null);
+  v_needs := array_remove(array[
+    case when v_luggage and not ('large_trunk' = any (coalesce(v_features, '{}'))) then 'large_trunk' end,
+    case when v_tow and (not ('tow_hitch' = any (coalesce(v_features, '{}'))) or v_tow_taken) then 'tow_hitch' end], null);
+  if cardinality(v_needs) > 0 then
     if coalesce(current_setting('app.small_trunk', true), '') = 'allow' then
       v_lug_problem := true;
     else
@@ -2800,7 +2812,7 @@ begin
   ) x;
 
   return jsonb_build_object('ok', v_err is null, 'error', v_err, 'code', public._merge_error_code(v_err),
-    'person_overlaps', v_overlaps, 'luggage_problem', v_lug_problem,
+    'person_overlaps', v_overlaps, 'luggage_problem', v_lug_problem, 'needs', to_jsonb(v_needs),
     'time_far', v_time_far, 'time_far_eta', v_far_eta, 'time_far_wanted', v_far_wanted, 'turnaround_conflict', v_conflict, 'turnaround_side', v_side,
     'added_out_minutes', v_add_min[1], 'added_return_minutes', v_add_min[2],
     'added_out_km', round(v_add_km[1], 1), 'added_return_km', round(v_add_km[2], 1),
@@ -3712,6 +3724,7 @@ begin
      or e.child_seats is distinct from coalesce((payload ->> 'child_seats')::smallint, e.child_seats)
      or e.boosters is distinct from coalesce((payload ->> 'boosters')::smallint, e.boosters)
      or e.has_luggage is distinct from coalesce((payload ->> 'has_luggage')::boolean, e.has_luggage)
+     or e.needs_tow_hitch is distinct from coalesce((payload ->> 'needs_tow_hitch')::boolean, e.needs_tow_hitch)
      or e.flex_depart_early is distinct from coalesce(nullif(payload ->> 'flex_depart_early', '')::interval, e.flex_depart_early)
      or e.flex_depart_late is distinct from coalesce(nullif(payload ->> 'flex_depart_late', '')::interval, e.flex_depart_late)
      or e.flex_return_early is distinct from coalesce(nullif(payload ->> 'flex_return_early', '')::interval, e.flex_return_early)
@@ -3978,6 +3991,9 @@ begin
   if (b ->> 'luggage') is distinct from (a ->> 'luggage') then
     v_lines := v_lines || public._frag(case when (a ->> 'luggage')::boolean then 'ride_edit.luggage_on' else 'ride_edit.luggage_off' end);
   end if;
+  if coalesce(b ->> 'tow', 'false') is distinct from coalesce(a ->> 'tow', 'false') then
+    v_lines := v_lines || public._frag(case when (a ->> 'tow')::boolean then 'ride_edit.tow_on' else 'ride_edit.tow_off' end);
+  end if;
   if (b ->> 'ride_type') is distinct from (a ->> 'ride_type') then
     v_lines := v_lines || public._frag('ride_edit.ride_type', jsonb_build_object('new', a ->> 'ride_type', 'old', b ->> 'ride_type'));
   end if;
@@ -4058,6 +4074,7 @@ begin
     'guests', to_jsonb(coalesce(q.guest_passenger_names, '{}'::text[])),
     'seats', coalesce(q.adults, 0) + coalesce(q.child_seats, 0) + coalesce(q.boosters, 0),
     'luggage', coalesce(q.has_luggage, false),
+    'tow', coalesce(q.needs_tow_hitch, false),
     'notes', coalesce(q.notes, ''),
     'description', coalesce(q.ride_description, ''),
     'ride_type', coalesce((select t.name_he from public.ride_types t where t.id = q.ride_type_id), ''),
@@ -4798,13 +4815,19 @@ CREATE OR REPLACE FUNCTION "public"."_small_trunk_check"("p_request_ids" "uuid"[
     LANGUAGE "plpgsql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
-declare v_ids uuid[];
+declare v_ids uuid[]; v_lug int; v_tow int;
 begin
   if coalesce(p_allow, false) or p_car_id is null then return; end if;
-  select array_agg(q.id order by q.id) into v_ids from public.requests q
-  where q.id = any(p_request_ids) and q.has_luggage and q.luggage_waived_at is null;
+  select array_agg(q.id order by q.id),
+         count(*) filter (where q.has_luggage and q.luggage_waived_at is null),
+         count(*) filter (where q.needs_tow_hitch and q.luggage_waived_at is null)
+    into v_ids, v_lug, v_tow
+  from public.requests q
+  where q.id = any(p_request_ids)
+    and ((q.has_luggage or q.needs_tow_hitch) and q.luggage_waived_at is null);
   if v_ids is null then return; end if;
-  if public.car_takes_luggage(p_car_id, cardinality(v_ids)) then return; end if;
+  -- the ids may be several days of a series (different rides): the one-hitch-per-ride cap is the ride check's business
+  if public.car_meets_needs(p_car_id, v_lug, least(v_tow, 1)) then return; end if;
   raise exception 'needs_large_trunk' using errcode = 'P0001', detail = public._small_trunk_detail(v_ids, p_car_id);
 end $$;
 
@@ -4816,16 +4839,47 @@ CREATE OR REPLACE FUNCTION "public"."_small_trunk_detail"("p_request_ids" "uuid"
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
-  select jsonb_build_object(
-    'request_ids', coalesce((select jsonb_agg(q.id order by q.id) from public.requests q where q.id = any(p_request_ids)), '[]'::jsonb),
-    'names', coalesce((select jsonb_agg(p.full_name order by q.id) from public.requests q
-                       join public.profiles p on p.id = q.requester_id where q.id = any(p_request_ids)), '[]'::jsonb),
-    'car_id', p_car_id,
-    'car_name', (select c.name from public.cars c where c.id = p_car_id))::text;
+  select public._small_trunk_detail_for(p_request_ids, p_car_id, null);
 $$;
 
 
 ALTER FUNCTION "public"."_small_trunk_detail"("p_request_ids" "uuid"[], "p_car_id" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."_small_trunk_detail_for"("p_request_ids" "uuid"[], "p_car_id" "uuid", "p_ride_id" "uuid") RETURNS "text"
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  with ids as (
+    select q.* from public.requests q where q.id = any(p_request_ids)
+  ), car as (
+    select c.id, ('tow_hitch' = any(c.features)) as has_hitch from public.cars c where c.id = p_car_id
+  ), holder as (
+    -- the towing request already riding on the ride (not one of the asked ones): it holds the one hitch
+    select q.id, p.full_name from public.ride_requests rr
+      join public.requests q on q.id = rr.request_id
+      join public.profiles p on p.id = q.requester_id
+     where p_ride_id is not null and rr.ride_id = p_ride_id and q.needs_tow_hitch and q.luggage_waived_at is null
+       and q.id <> all (coalesce(p_request_ids, '{}'::uuid[]))
+     order by rr.created_at, q.id limit 1
+  )
+  select jsonb_build_object(
+    'request_ids', coalesce((select jsonb_agg(i.id order by i.id) from ids i), '[]'::jsonb),
+    'names', coalesce((select jsonb_agg(p.full_name order by i.id) from ids i
+                       join public.profiles p on p.id = i.requester_id), '[]'::jsonb),
+    'car_id', p_car_id,
+    'car_name', (select c.name from public.cars c where c.id = p_car_id),
+    'needs', to_jsonb(array_remove(array[
+        case when exists (select 1 from ids i where i.has_luggage and i.luggage_waived_at is null)
+              and not public.car_takes_luggage(p_car_id, 1) then 'large_trunk' end,
+        case when exists (select 1 from ids i where i.needs_tow_hitch and i.luggage_waived_at is null)
+              and (not coalesce((select has_hitch from car), false) or exists (select 1 from holder)) then 'tow_hitch' end
+      ], null)),
+    'tow_taken_by', case when coalesce((select has_hitch from car), false) then (select full_name from holder) end)::text;
+$$;
+
+
+ALTER FUNCTION "public"."_small_trunk_detail_for"("p_request_ids" "uuid"[], "p_car_id" "uuid", "p_ride_id" "uuid") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."_small_trunk_mode"("p_allow" boolean) RETURNS "void"
@@ -6913,13 +6967,14 @@ CREATE OR REPLACE FUNCTION "public"."assert_ride_seats_fit"("v_ride" "uuid") RET
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
-declare r record; v_mode text; v_ids uuid[];
+declare r record; v_mode text; v_ids uuid[]; v_holder uuid; v_hitch boolean; v_lug_ok boolean;
 begin
   v_mode := coalesce(current_setting('app.small_trunk', true), '');
   for r in
     select leg_side,
            sum(q.adults) a, sum(q.child_seats) c, sum(q.boosters) b, rd.car_id,
-           count(*) filter (where q.has_luggage and q.luggage_waived_at is null) lug
+           count(*) filter (where q.has_luggage and q.luggage_waived_at is null) lug,
+           count(*) filter (where q.needs_tow_hitch and q.luggage_waived_at is null) tow
     from public.ride_requests rr
     join public.requests q on q.id = rr.request_id
     join public.rides rd on rd.id = rr.ride_id
@@ -6937,20 +6992,30 @@ begin
       raise exception 'seat_config_violation' using detail =
         format('ride %s leg %s needs (%s,%s,%s)', v_ride, r.leg_side, r.a, r.c, r.b);
     end if;
-    if not public.car_takes_luggage(r.car_id, r.lug::int) then
+    if not public.car_meets_needs(r.car_id, r.lug::int, r.tow::int) then
+      v_lug_ok := public.car_takes_luggage(r.car_id, r.lug::int);
+      v_hitch := exists (select 1 from public.cars c where c.id = r.car_id and 'tow_hitch' = any(c.features));
+      -- the towing request that already holds the one hitch (the oldest on the ride): the others are the ones in question
+      select q.id into v_holder
+      from public.ride_requests rr join public.requests q on q.id = rr.request_id
+      where rr.ride_id = v_ride and q.needs_tow_hitch and q.luggage_waived_at is null
+        and ((r.leg_side = 'out' and rr.covers_out) or (r.leg_side = 'return' and rr.covers_return))
+      order by rr.created_at, q.id limit 1;
       select array_agg(distinct q.id order by q.id) into v_ids
       from public.ride_requests rr join public.requests q on q.id = rr.request_id
-      where rr.ride_id = v_ride and q.has_luggage and q.luggage_waived_at is null
-        and ((r.leg_side = 'out' and rr.covers_out) or (r.leg_side = 'return' and rr.covers_return));
+      where rr.ride_id = v_ride and q.luggage_waived_at is null
+        and ((r.leg_side = 'out' and rr.covers_out) or (r.leg_side = 'return' and rr.covers_return))
+        and ((q.has_luggage and not v_lug_ok)
+             or (q.needs_tow_hitch and (not v_hitch or q.id is distinct from v_holder)));
       if v_mode = 'allow' then
-        -- the person placing by hand accepted a car without a large trunk for these requests
+        -- the person placing by hand accepted a car without what these requests need (large trunk / hitch)
         update public.requests set luggage_waived_at = now(), luggage_waived_by = (select auth.uid())
         where id = any(v_ids) and luggage_waived_at is null;
       elsif v_mode = 'ask' then
-        raise exception 'needs_large_trunk' using errcode = 'P0001', detail = public._small_trunk_detail(v_ids, r.car_id);
+        raise exception 'needs_large_trunk' using errcode = 'P0001', detail = public._small_trunk_detail_for(v_ids, r.car_id, v_ride);
       else
         raise exception 'luggage_capacity_violation' using errcode = 'P0001', detail =
-          format('ride %s leg %s carries %s large-luggage request(s)', v_ride, r.leg_side, r.lug);
+          format('ride %s leg %s carries %s large-luggage and %s towing request(s)', v_ride, r.leg_side, r.lug, r.tow);
       end if;
     end if;
   end loop;
@@ -7832,6 +7897,19 @@ $$;
 
 
 ALTER FUNCTION "public"."car_maintenance_blocks_set_department"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."car_meets_needs"("_car" "uuid", "_luggage" integer, "_tow" integer) RETURNS boolean
+    LANGUAGE "sql" STABLE
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  select public.car_takes_luggage(_car, _luggage)
+     and (coalesce(_tow, 0) <= 0
+          or (_tow <= 1 and exists (select 1 from public.cars c where c.id = _car and 'tow_hitch' = any(c.features))));
+$$;
+
+
+ALTER FUNCTION "public"."car_meets_needs"("_car" "uuid", "_luggage" integer, "_tow" integer) OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."car_mileage_totals"("p_department_id" "uuid", "p_week_start" "date", "p_weeks" integer DEFAULT 4) RETURNS TABLE("car_id" "uuid", "km" numeric, "source" "text")
@@ -8800,7 +8878,7 @@ begin
           -- REQ §13.111 (a): the Sadran's draft refuses a luggage-only problem with the waivable code (a member's
           -- ask-to-join keeps the plain merge refusal - only the Sadran waives).
           if v_check->>'error'='merge_luggage_needs_large_trunk' and p_created_via='sadran' then
-            raise exception 'needs_large_trunk' using errcode='P0001', detail=public._small_trunk_detail(array[v_req.id],host.car_id);
+            raise exception 'needs_large_trunk' using errcode='P0001', detail=public._small_trunk_detail_for(array[v_req.id],host.car_id,host.id);
           end if;
           raise exception '%',v_check->>'error' using errcode='P0001';
         end if;
@@ -10821,7 +10899,7 @@ CREATE OR REPLACE FUNCTION "public"."freed_slot_candidates"("_offer" "uuid") RET
   pool as (
     -- the waiting list, as before (a plan B waiting for its driver is read with its main trip below)
     -- REQ §13.193: a one-leg הקפצה (drop-off only or pickup only) is read as its chauffeur ride at its own time
-    select q.id, q.requester_id, q.adults, q.child_seats, q.boosters, q.has_luggage, q.luggage_waived_at,
+    select q.id, q.requester_id, q.adults, q.child_seats, q.boosters, q.has_luggage, q.needs_tow_hitch, q.luggage_waived_at,
       case when q.trip_type = 'drop_off' and q.depart_at is null
            then q.return_at - make_interval(mins => public.chauffeur_ride_minutes(q.id, 'return'))
            else q.depart_at end as dep,
@@ -10839,7 +10917,7 @@ CREATE OR REPLACE FUNCTION "public"."freed_slot_candidates"("_offer" "uuid") RET
     where not q.freed_slot_opt_out
     union all
     -- REQ §13.168: served by its plan B; its main trip is a round trip
-    select q.id, q.requester_id, q.adults, q.child_seats, q.boosters, q.has_luggage, q.luggage_waived_at,
+    select q.id, q.requester_id, q.adults, q.child_seats, q.boosters, q.has_luggage, q.needs_tow_hitch, q.luggage_waived_at,
       (a.original_main ->> 'depart_at')::timestamptz, (a.original_main ->> 'return_at')::timestamptz,
       q.origin_id, q.origin_text, q.submitted_at
     from o join requests q
@@ -10871,7 +10949,7 @@ CREATE OR REPLACE FUNCTION "public"."freed_slot_candidates"("_offer" "uuid") RET
     -- RC1B3: the people a Sadran cancelled this ride on and kept on the waiting list are not offered its own car
     and p.id <> all(o.excluded_request_ids)
     and public.car_fits(o.car_id, p.adults, p.child_seats, p.boosters)
-    and public.car_takes_luggage(o.car_id, case when p.has_luggage and p.luggage_waived_at is null then 1 else 0 end)
+    and public.car_meets_needs(o.car_id, case when p.has_luggage and p.luggage_waived_at is null then 1 else 0 end, case when p.needs_tow_hitch and p.luggage_waived_at is null then 1 else 0 end)
   order by slack asc, p.submitted_at asc;
 $$;
 
@@ -14210,9 +14288,13 @@ begin
       v_warnings := v_warnings || jsonb_build_object('code', 'turnaround', 'minutes', v_buffer);
     end if;
   end if;
-  if q.has_luggage and q.luggage_waived_at is null and not public.car_takes_luggage(v_car.id, 1)
+  -- REQ §13.200: the same warning (and the same accept key) covers a towing request on a car without a hitch
+  if q.luggage_waived_at is null
+     and not public.car_meets_needs(v_car.id, case when q.has_luggage then 1 else 0 end, case when q.needs_tow_hitch then 1 else 0 end)
      and not 'luggage' = any(v_accept) then
-    v_warnings := v_warnings || jsonb_build_object('code', 'luggage');
+    v_warnings := v_warnings || jsonb_build_object('code', 'luggage', 'needs', to_jsonb(array_remove(array[
+      case when q.has_luggage and not public.car_takes_luggage(v_car.id, 1) then 'large_trunk' end,
+      case when q.needs_tow_hitch and not exists (select 1 from public.cars hc where hc.id = v_car.id and 'tow_hitch' = any(hc.features)) then 'tow_hitch' end], null)));
   end if;
   if jsonb_array_length(v_warnings) > 0 then
     return jsonb_build_object('ok', false, 'warnings', v_warnings);
@@ -14355,6 +14437,7 @@ begin
         'childSeats', r.child_seats,
         'boosters', r.boosters,
         'hasLuggage', r.has_luggage,
+        'needsTowHitch', r.needs_tow_hitch,
         'rideDescription', r.ride_description,
         'guestNames', to_jsonb(r.guest_passenger_names),
         'companionNames', coalesce((select jsonb_agg(p.full_name order by p.full_name) from public.profiles p where p.id = any(r.companion_ids)), '[]'::jsonb),
@@ -16826,7 +16909,7 @@ begin
     select 1 from public.cars c
     where c.department_id = q.department_id and c.status = 'active' and c.type = 'shared'
       and public.car_fits(c.id, q.adults, q.child_seats, q.boosters)
-      and public.car_takes_luggage(c.id, case when q.has_luggage and q.luggage_waived_at is null then 1 else 0 end)
+      and public.car_meets_needs(c.id, case when q.has_luggage and q.luggage_waived_at is null then 1 else 0 end, case when q.needs_tow_hitch and q.luggage_waived_at is null then 1 else 0 end)
       and public.car_location_at(c.id, q.depart_at) = q.origin_id
       and (not p_strict or (
         not exists (select 1 from public.rides r where r.car_id = c.id and r.status <> 'cancelled' and not r.draft_hold and not r.planning_conflict
@@ -17021,6 +17104,17 @@ $$;
 
 
 ALTER FUNCTION "public"."request_needs_large_trunk"("p_request_id" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."request_needs_tow_hitch"("p_request_id" "uuid") RETURNS boolean
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  select coalesce((select q.needs_tow_hitch and q.luggage_waived_at is null from public.requests q where q.id = p_request_id), false);
+$$;
+
+
+ALTER FUNCTION "public"."request_needs_tow_hitch"("p_request_id" "uuid") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."request_notes"("p_request_ids" "uuid"[]) RETURNS TABLE("request_id" "uuid", "notes" "text")
@@ -17330,7 +17424,8 @@ CREATE OR REPLACE FUNCTION "public"."requests_clear_luggage_waiver"() RETURNS "t
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
 begin
-  if new.luggage_waived_at is not null and new.has_luggage is distinct from old.has_luggage then
+  if new.luggage_waived_at is not null
+     and (new.has_luggage is distinct from old.has_luggage or new.needs_tow_hitch is distinct from old.needs_tow_hitch) then
     new.luggage_waived_at := null;
     new.luggage_waived_by := null;
   end if;
@@ -19402,7 +19497,7 @@ begin
       return_anchor = q.return_anchor, leave_dest_time = v_leave_dest_time,
       one_way_car_mode = q.one_way_car_mode, needs_car_at_destination = q.needs_car_at_destination,
       keep_car_at_destination = q.keep_car_at_destination,
-      adults = q.adults, child_seats = q.child_seats, boosters = q.boosters, has_luggage = q.has_luggage,
+      adults = q.adults, child_seats = q.child_seats, boosters = q.boosters, has_luggage = q.has_luggage, needs_tow_hitch = q.needs_tow_hitch,
       flex_depart_early = q.flex_depart_early, flex_depart_late = q.flex_depart_late,
       flex_return_early = q.flex_return_early, flex_return_late = q.flex_return_late, duration_locked = q.duration_locked,
       notes = q.notes, preferred_car_id = q.preferred_car_id,
@@ -19417,7 +19512,7 @@ begin
       ride_type_id, trip_shape,
       depart_dow, depart_time, return_dow, return_time, one_way_car_mode, needs_car_at_destination, keep_car_at_destination,
       depart_anchor, arrive_by_time, return_anchor, leave_dest_time,
-      adults, child_seats, boosters, has_luggage,
+      adults, child_seats, boosters, has_luggage, needs_tow_hitch,
       flex_depart_early, flex_depart_late, flex_return_early, flex_return_late, duration_locked,
       notes, preferred_car_id, ride_description, guest_passenger_names, companion_ids, child_ids, stops,
       source_request_id, repeat_every_weeks, repeat_anchor_week
@@ -19426,7 +19521,7 @@ begin
       q.ride_type_id, q.trip_shape,
       v_depart_dow, v_depart_time, v_return_dow, v_return_time, q.one_way_car_mode, q.needs_car_at_destination, q.keep_car_at_destination,
       q.depart_anchor, v_arrive_by_time, q.return_anchor, v_leave_dest_time,
-      q.adults, q.child_seats, q.boosters, q.has_luggage,
+      q.adults, q.child_seats, q.boosters, q.has_luggage, q.needs_tow_hitch,
       q.flex_depart_early, q.flex_depart_late, q.flex_return_early, q.flex_return_late, q.duration_locked,
       q.notes, q.preferred_car_id, q.ride_description, q.guest_passenger_names, v_companion_ids, v_child_ids, v_stops,
       q.id, coalesce(p_every_weeks, 1), q.week_start
@@ -20830,7 +20925,7 @@ declare
   v_id uuid;
   v_chosen_names text;
   v_day text; v_depart text; v_return text;
-  m record; v_sadran uuid; v_variant text; v_lug int; v_supp text;
+  m record; v_sadran uuid; v_variant text; v_lug int; v_tow int; v_supp text;
 begin
   select * into g from public.waitlist_groups where id = p_group_id for update;
   if g.id is null then raise exception 'waitlist_group_not_found' using errcode = 'P0001'; end if;
@@ -20869,14 +20964,16 @@ begin
     into v_starts, v_ends, v_adults, v_child_seats, v_boosters
   from public.requests q where q.id = any(p_request_ids);
 
-  select count(*) filter (where q.has_luggage and q.luggage_waived_at is null) into v_lug from public.requests q where q.id = any(p_request_ids);
+  select count(*) filter (where q.has_luggage and q.luggage_waived_at is null),
+         count(*) filter (where q.needs_tow_hitch and q.luggage_waived_at is null)   -- REQ §13.200: one hitch, one towing request per ride
+    into v_lug, v_tow from public.requests q where q.id = any(p_request_ids);
 
   -- REQ §13.101 (i): a car freed for this group (held offer) is the first choice.
   select c.* into v_car from public.cars c join public.freed_slot_offers fo on fo.car_id = c.id
   where fo.group_id = g.id and fo.status = 'open'
     and c.status = 'active' and c.type = 'shared'
     and public.car_fits(c.id, v_adults, v_child_seats, v_boosters)
-    and public.car_takes_luggage(c.id, v_lug)
+    and public.car_meets_needs(c.id, v_lug, v_tow)
     and public.car_location_at(c.id, v_starts) = v_home
     and not exists (select 1 from public.rides r where r.car_id = c.id and r.status <> 'cancelled' and not r.draft_hold
       and tstzrange(r.starts_at, r.blocked_until, '[)') && tstzrange(v_starts, v_ends + v_turnaround, '[)'))
@@ -20887,7 +20984,7 @@ begin
     where c.id = v_preferred and c.department_id = g.department_id
       and c.status = 'active' and c.type = 'shared'
       and public.car_fits(c.id, v_adults, v_child_seats, v_boosters)
-      and public.car_takes_luggage(c.id, v_lug)
+      and public.car_meets_needs(c.id, v_lug, v_tow)
       and public.car_location_at(c.id, v_starts) = v_home
       and not exists (select 1 from public.rides r where r.car_id = c.id and r.status <> 'cancelled' and not r.draft_hold
         and tstzrange(r.starts_at, r.blocked_until, '[)') && tstzrange(v_starts, v_ends + v_turnaround, '[)'));
@@ -20896,7 +20993,7 @@ begin
     select c.* into v_car from public.cars c
     where c.department_id = g.department_id and c.status = 'active' and c.type = 'shared'
       and public.car_fits(c.id, v_adults, v_child_seats, v_boosters)
-      and public.car_takes_luggage(c.id, v_lug)
+      and public.car_meets_needs(c.id, v_lug, v_tow)
       and public.car_location_at(c.id, v_starts) = v_home
       and not exists (select 1 from public.rides r where r.car_id = c.id and r.status <> 'cancelled' and not r.draft_hold
         and tstzrange(r.starts_at, r.blocked_until, '[)') && tstzrange(v_starts, v_ends + v_turnaround, '[)'))
@@ -21784,7 +21881,7 @@ begin
       department_id, week_start, requester_id, filed_by, destination_id, destination_text, ride_type_id,
       origin_id, origin_text, trip_type,
       trip_shape, depart_at, return_at, one_way_car_mode, needs_car_at_destination,
-      adults, child_seats, boosters, has_luggage,
+      adults, child_seats, boosters, has_luggage, needs_tow_hitch,
       flex_depart_early, flex_depart_late, flex_return_early, flex_return_late,
       notes, is_late, submitted_at, status, freed_slot_opt_out, join_ride_id, template_id, preferred_car_id,
       series_id, series_index, series_count, kept_return_at,
@@ -21797,6 +21894,7 @@ begin
       v_trip_shape, v_depart_at, v_return_at, v_one_way_mode, v_needs_car,
       coalesce((payload ->> 'adults')::smallint, 1), coalesce((payload ->> 'child_seats')::smallint, 0),
       coalesce((payload ->> 'boosters')::smallint, 0), coalesce((payload ->> 'has_luggage')::boolean, false),
+      coalesce((payload ->> 'needs_tow_hitch')::boolean, false),
       coalesce(nullif(payload ->> 'flex_depart_early', '')::interval, '0'),
       coalesce(nullif(payload ->> 'flex_depart_late', '')::interval, '0'),
       coalesce(nullif(payload ->> 'flex_return_early', '')::interval, '0'),
@@ -21823,6 +21921,7 @@ begin
       child_seats = coalesce((payload ->> 'child_seats')::smallint, child_seats),
       boosters = coalesce((payload ->> 'boosters')::smallint, boosters),
       has_luggage = coalesce((payload ->> 'has_luggage')::boolean, has_luggage),
+      needs_tow_hitch = coalesce((payload ->> 'needs_tow_hitch')::boolean, needs_tow_hitch),
       flex_depart_early = coalesce(nullif(payload ->> 'flex_depart_early', '')::interval, flex_depart_early),
       flex_depart_late = coalesce(nullif(payload ->> 'flex_depart_late', '')::interval, flex_depart_late),
       flex_return_early = coalesce(nullif(payload ->> 'flex_return_early', '')::interval, flex_return_early),
@@ -21963,6 +22062,12 @@ begin
   ) then
     v_warnings := v_warnings || '"NO_CAR_FITS_LUGGAGE"'::jsonb;
   end if;
+  -- REQ §13.200: a towing request needs a car with the hitch.
+  if coalesce((payload ->> 'needs_tow_hitch')::boolean, false) and not exists (
+    select 1 from public.cars c where c.department_id = v_department_id and c.status = 'active' and 'tow_hitch' = any(c.features)
+  ) then
+    v_warnings := v_warnings || '"NO_CAR_FITS_TOW_HITCH"'::jsonb;
+  end if;
 
   -- REQ §13.111 (a): a member's own placement choices may waive their large-trunk requirement: a quick / car-now
   -- request (payload `ask_small_trunk`) and ask-to-join (`join_ride_id`) refuse with needs_large_trunk when a car
@@ -21970,9 +22075,11 @@ begin
   -- Plain submits (no flag) and the automatic placement stay strict.
   v_allow_small := coalesce((payload ->> 'allow_small_trunk')::boolean, false);
   v_ask_small := v_allow_small or coalesce((payload ->> 'ask_small_trunk')::boolean, false) or v_join_ride_id is not null;
-  if v_join_ride_id is not null and public.request_needs_large_trunk(v_request_id) then
+  if v_join_ride_id is not null and (public.request_needs_large_trunk(v_request_id) or public.request_needs_tow_hitch(v_request_id)) then
     select r.car_id into v_join_car from public.rides r where r.id = v_join_ride_id;
-    if v_join_car is not null and not public.car_takes_luggage(v_join_car, 1) then
+    if v_join_car is not null and not public.car_meets_needs(v_join_car,
+         case when public.request_needs_large_trunk(v_request_id) then 1 else 0 end,
+         case when public.request_needs_tow_hitch(v_request_id) then 1 else 0 end) then
       if not v_allow_small then
         raise exception 'needs_large_trunk' using errcode = 'P0001', detail = public._small_trunk_detail(array[v_request_id], v_join_car);
       end if;
@@ -22077,7 +22184,7 @@ begin
     and v_trip_type in ('round_trip', 'one_way') then
     -- REQ §13.111 (a): the strict placement (it already prefers a large-trunk car) is tried first; only when it finds
     -- no car and a car without a large trunk would take the request is the member asked ("לשבץ בכל זאת?").
-    if v_ask_small and public.request_needs_large_trunk(v_request_id) then
+    if v_ask_small and (public.request_needs_large_trunk(v_request_id) or public.request_needs_tow_hitch(v_request_id)) then
       v_small_car := public._small_trunk_probe(v_request_id);
       if v_small_car is not null then
         if not v_allow_small then
@@ -23777,6 +23884,7 @@ CREATE TABLE IF NOT EXISTS "public"."requests" (
     "plan_b_parent_id" "uuid",
     "keep_car_at_destination" boolean DEFAULT false NOT NULL,
     "reserved_at" timestamp with time zone,
+    "needs_tow_hitch" boolean DEFAULT false NOT NULL,
     CONSTRAINT "requests_adults_ck" CHECK (("adults" >= 1)),
     CONSTRAINT "requests_arrive_by_anchor_ck" CHECK ((("arrive_by" IS NULL) OR ("depart_anchor" = 'arrive'::"public"."time_anchor"))),
     CONSTRAINT "requests_arrive_by_qh_ck" CHECK ("public"."is_quarter_hour"("arrive_by")),
@@ -23792,7 +23900,7 @@ CREATE TABLE IF NOT EXISTS "public"."requests" (
     CONSTRAINT "requests_keep_car_at_destination_ck" CHECK (((NOT "keep_car_at_destination") OR (("trip_type" = 'drop_off'::"public"."trip_type") AND ("trip_shape" = 'round_trip'::"public"."trip_shape")))),
     CONSTRAINT "requests_leave_dest_anchor_ck" CHECK ((("leave_dest_at" IS NULL) OR ("return_anchor" = 'leave'::"public"."time_anchor"))),
     CONSTRAINT "requests_leave_dest_qh_ck" CHECK ("public"."is_quarter_hour"("leave_dest_at")),
-    CONSTRAINT "requests_luggage_waiver_ck" CHECK ((("luggage_waived_at" IS NULL) OR "has_luggage")),
+    CONSTRAINT "requests_luggage_waiver_ck" CHECK ((("luggage_waived_at" IS NULL) OR "has_luggage" OR "needs_tow_hitch")),
     CONSTRAINT "requests_manual_boost_ck" CHECK ((("manual_boost" = (0)::numeric) OR ("manual_boost_reason" IS NOT NULL))),
     CONSTRAINT "requests_one_way_mode_ck" CHECK (((("one_way_car_mode" IS NULL) = ("trip_shape" = 'round_trip'::"public"."trip_shape")) AND (("one_way_car_mode" IS NULL) OR ("one_way_car_mode" = ANY (ARRAY['relay'::"public"."leg_car_mode", 'passenger'::"public"."leg_car_mode"]))))),
     CONSTRAINT "requests_origin_ck" CHECK ((("origin_id" IS NOT NULL) OR ("origin_text" IS NOT NULL))),
@@ -23824,6 +23932,10 @@ COMMENT ON COLUMN "public"."requests"."keep_car_at_destination" IS 'REQ §13.126
 
 
 
+COMMENT ON COLUMN "public"."requests"."needs_tow_hitch" IS 'REQ §13.200: the request needs a car with the tow_hitch feature (at most one such request per ride). Waived together with large luggage by luggage_waived_at.';
+
+
+
 CREATE OR REPLACE FUNCTION "public"."waitlist_cause"("r" "public"."requests") RETURNS "text"
     LANGUAGE "plpgsql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -23831,7 +23943,7 @@ CREATE OR REPLACE FUNCTION "public"."waitlist_cause"("r" "public"."requests") RE
 declare
   q public.requests%rowtype;
   v_origin uuid;
-  v_luggage int;
+  v_luggage int; v_tow int;
   v_shared int;
   v_seat_ok int;
   v_fitting int;
@@ -23845,10 +23957,11 @@ begin
   end if;
   v_origin := coalesce(q.origin_id, (select d.home_destination_id from public.departments d where d.id = q.department_id));
   v_luggage := case when q.has_luggage and q.luggage_waived_at is null then 1 else 0 end;
+  v_tow := case when q.needs_tow_hitch and q.luggage_waived_at is null then 1 else 0 end;
 
   select array_agg(c.id) filter (where public.car_fits(c.id, q.adults, q.child_seats, q.boosters)),
          array_agg(c.id) filter (where public.car_fits(c.id, q.adults, q.child_seats, q.boosters)
-                                   and public.car_takes_luggage(c.id, v_luggage)),
+                                   and public.car_meets_needs(c.id, v_luggage, v_tow)),
          count(*)
   into v_seat_ids, v_fit_ids, v_shared
   from public.cars c
@@ -23894,7 +24007,7 @@ begin
       and tstzrange(q.depart_at, q.return_at + v_ta, '[)') && tstzrange(p_from, p_until, '[)')
       and q.origin_id is not null and public.car_location_at(p_car_id, q.depart_at) = q.origin_id
       and public.car_fits(p_car_id, q.adults, q.child_seats, q.boosters)
-      and public.car_takes_luggage(p_car_id, case when q.has_luggage and q.luggage_waived_at is null then 1 else 0 end)
+      and public.car_meets_needs(p_car_id, case when q.has_luggage and q.luggage_waived_at is null then 1 else 0 end, case when q.needs_tow_hitch and q.luggage_waived_at is null then 1 else 0 end)
       and not exists (select 1 from public.rides r where r.car_id = p_car_id and r.status <> 'cancelled' and not r.draft_hold and not r.planning_conflict
                       and tstzrange(r.starts_at, r.blocked_until, '[)') && tstzrange(q.depart_at, q.return_at + v_ta, '[)'))
       -- REQ §13.158: during an edit the editor's own old booking still occupies its car — a car that was not free for
@@ -23932,7 +24045,7 @@ begin
     where g.department_id = p_department_id and g.week_start = p_week_start and g.status = 'open'
       and public.car_location_at(c.id, q.depart_at) = q.origin_id
       and public.car_fits(c.id, q.adults, q.child_seats, q.boosters)
-      and public.car_takes_luggage(c.id, case when q.has_luggage and q.luggage_waived_at is null then 1 else 0 end)
+      and public.car_meets_needs(c.id, case when q.has_luggage and q.luggage_waived_at is null then 1 else 0 end, case when q.needs_tow_hitch and q.luggage_waived_at is null then 1 else 0 end)
       and not exists (select 1 from public.rides r where r.car_id = c.id and r.status <> 'cancelled' and not r.draft_hold and not r.planning_conflict
                       and tstzrange(r.starts_at, r.blocked_until, '[)') && tstzrange(q.depart_at, q.return_at + v_ta, '[)'))
       and not exists (select 1 from public.car_maintenance_blocks b where b.car_id = c.id
@@ -24125,7 +24238,7 @@ CREATE OR REPLACE FUNCTION "public"."week_board_rides_rows"("p_department_id" "u
     select q.id, q.department_id, q.week_start, q.requester_id, q.filed_by, q.destination_id,
            q.destination_text, q.ride_type_id, q.trip_shape, q.depart_at, q.return_at,
            q.one_way_car_mode, q.needs_car_at_destination, q.adults, q.child_seats, q.boosters,
-           q.has_luggage, q.flex_depart_early, q.flex_depart_late, q.flex_return_early,
+           q.has_luggage, q.needs_tow_hitch, q.flex_depart_early, q.flex_depart_late, q.flex_return_early,
            q.flex_return_late, q.is_late, q.submitted_at, q.status, q.status_reason,
            q.changed_since_solve, q.freed_slot_opt_out, q.manual_boost, q.manual_boost_reason,
            q.join_ride_id, q.template_id, q.version, q.created_at, q.updated_at, q.preferred_car_id,
@@ -24230,7 +24343,7 @@ CREATE OR REPLACE FUNCTION "public"."week_board_rides_rows"("p_department_id" "u
              'request_id', q.id, 'role', rr.role, 'leg', rr.leg, 'car_mode', rr.car_mode,
              'requester', p.full_name, 'destination', coalesce(dst.name, q.destination_text),
              'ride_type', rt.code, 'adults', q.adults, 'child_seats', q.child_seats, 'boosters', q.boosters,
-             'luggage', q.has_luggage, 'luggage_waived', (q.luggage_waived_at is not null),
+             'luggage', q.has_luggage, 'tow_hitch', q.needs_tow_hitch, 'luggage_waived', (q.luggage_waived_at is not null),
              'origin_id', q.origin_id, 'origin_text', q.origin_text,
              'origin_name', (select dd.name from vd dd where dd.id = q.origin_id),
              'trip_type', q.trip_type, 'keep_car_at_destination', q.keep_car_at_destination,
@@ -25714,6 +25827,7 @@ CREATE TABLE IF NOT EXISTS "public"."request_templates" (
     "cancelled_at" timestamp with time zone,
     "repeat_every_weeks" smallint DEFAULT 1 NOT NULL,
     "repeat_anchor_week" "date",
+    "needs_tow_hitch" boolean DEFAULT false NOT NULL,
     CONSTRAINT "request_templates_adults_ck" CHECK (("adults" >= 1)),
     CONSTRAINT "request_templates_arrive_by_anchor_ck" CHECK ((("arrive_by_time" IS NULL) OR ("depart_anchor" = 'arrive'::"public"."time_anchor"))),
     CONSTRAINT "request_templates_arrive_by_qh_ck" CHECK ((("arrive_by_time" IS NULL) OR (((EXTRACT(minute FROM "arrive_by_time"))::integer % 15) = 0))),
@@ -26474,7 +26588,8 @@ CREATE OR REPLACE VIEW "public"."v_request_template_suggestions" WITH ("security
     "tpl"."schedule",
     "tpl"."planned_date",
     "tpl"."planned_until",
-    "tpl"."repeat_every_weeks"
+    "tpl"."repeat_every_weeks",
+    "tpl"."needs_tow_hitch"
    FROM (( SELECT "existing_1"."template_id",
             "existing_1"."department_id",
             "existing_1"."week_start",
@@ -28117,7 +28232,7 @@ CREATE OR REPLACE VIEW "public"."v_board_rides" WITH ("security_invoker"='true')
             (NOT (EXISTS ( SELECT 1
              FROM "public"."ride_requests" "x"
             WHERE (("x"."ride_id" = "r_1_1_1_1"."id") AND ("x"."role" = 'driver'::"public"."ride_role"))))) AS "is_chauffeur",
-            COALESCE("jsonb_agg"("jsonb_build_object"('request_id', "q"."id", 'role', "rr"."role", 'leg', "rr"."leg", 'car_mode', "rr"."car_mode", 'requester', "p"."full_name", 'destination', COALESCE("dst"."name", "q"."destination_text"), 'ride_type', "rt"."code", 'adults', "q"."adults", 'child_seats', "q"."child_seats", 'boosters', "q"."boosters", 'luggage', "q"."has_luggage", 'luggage_waived', ("q"."luggage_waived_at" IS NOT NULL), 'origin_id', "q"."origin_id", 'origin_text', "q"."origin_text", 'origin_name', ( SELECT "dd"."name"
+            COALESCE("jsonb_agg"("jsonb_build_object"('request_id', "q"."id", 'role', "rr"."role", 'leg', "rr"."leg", 'car_mode', "rr"."car_mode", 'requester', "p"."full_name", 'destination', COALESCE("dst"."name", "q"."destination_text"), 'ride_type', "rt"."code", 'adults', "q"."adults", 'child_seats', "q"."child_seats", 'boosters', "q"."boosters", 'luggage', "q"."has_luggage", 'tow_hitch', "q"."needs_tow_hitch", 'luggage_waived', ("q"."luggage_waived_at" IS NOT NULL), 'origin_id', "q"."origin_id", 'origin_text', "q"."origin_text", 'origin_name', ( SELECT "dd"."name"
              FROM "public"."destinations" "dd"
             WHERE ("dd"."id" = "q"."origin_id")), 'trip_type', "q"."trip_type", 'keep_car_at_destination', "q"."keep_car_at_destination", 'child_names', COALESCE(( SELECT "array_agg"("c"."full_name" ORDER BY "c"."full_name") AS "array_agg"
              FROM ("public"."request_children" "rc"
@@ -28553,7 +28668,7 @@ CREATE OR REPLACE TRIGGER "requests_awaiting_driver_status" BEFORE UPDATE OF "st
 
 
 
-CREATE OR REPLACE TRIGGER "requests_clear_luggage_waiver" BEFORE UPDATE OF "has_luggage" ON "public"."requests" FOR EACH ROW EXECUTE FUNCTION "public"."requests_clear_luggage_waiver"();
+CREATE OR REPLACE TRIGGER "requests_clear_luggage_waiver" BEFORE UPDATE OF "has_luggage", "needs_tow_hitch" ON "public"."requests" FOR EACH ROW EXECUTE FUNCTION "public"."requests_clear_luggage_waiver"();
 
 
 
@@ -31591,6 +31706,11 @@ GRANT ALL ON FUNCTION "public"."_small_trunk_detail"("p_request_ids" "uuid"[], "
 
 
 
+REVOKE ALL ON FUNCTION "public"."_small_trunk_detail_for"("p_request_ids" "uuid"[], "p_car_id" "uuid", "p_ride_id" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_small_trunk_detail_for"("p_request_ids" "uuid"[], "p_car_id" "uuid", "p_ride_id" "uuid") TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."_small_trunk_mode"("p_allow" boolean) FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."_small_trunk_mode"("p_allow" boolean) TO "service_role";
 
@@ -31942,6 +32062,11 @@ GRANT ALL ON FUNCTION "public"."car_location_excluding"("_car" "uuid", "_at" tim
 REVOKE ALL ON FUNCTION "public"."car_maintenance_blocks_set_department"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."car_maintenance_blocks_set_department"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."car_maintenance_blocks_set_department"() TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."car_meets_needs"("_car" "uuid", "_luggage" integer, "_tow" integer) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."car_meets_needs"("_car" "uuid", "_luggage" integer, "_tow" integer) TO "service_role";
 
 
 
@@ -33134,6 +33259,11 @@ GRANT ALL ON FUNCTION "public"."request_needs_large_trunk"("p_request_id" "uuid"
 
 
 
+REVOKE ALL ON FUNCTION "public"."request_needs_tow_hitch"("p_request_id" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."request_needs_tow_hitch"("p_request_id" "uuid") TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."request_notes"("p_request_ids" "uuid"[]) FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."request_notes"("p_request_ids" "uuid"[]) TO "service_role";
 GRANT ALL ON FUNCTION "public"."request_notes"("p_request_ids" "uuid"[]) TO "authenticated";
@@ -34110,6 +34240,10 @@ GRANT SELECT("keep_car_at_destination") ON TABLE "public"."requests" TO "authent
 
 
 GRANT SELECT("reserved_at") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("needs_tow_hitch") ON TABLE "public"."requests" TO "authenticated";
 
 
 
