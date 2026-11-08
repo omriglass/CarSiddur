@@ -24,15 +24,18 @@ export interface ThemeSeeds {
   foreground?: string;
 }
 
-/** One background motif: an SVG path in a 24×24 box, drawn filled. */
-export interface ThemeMotif {
-  d: string;
-  color: string;
+interface ThemeMotifBase {
   /** Rendered size in px (default 28). */
   size?: number;
   /** Rotation in degrees (default 0). */
   rotate?: number;
 }
+
+/**
+ * One background motif: an SVG path in a 24×24 box, drawn filled — or a square image (`image`, an imported asset
+ * URL; `ThemeBackdrop` inlines it, since an SVG background cannot load files), used for a real logo the owner supplied (the השומר הצעיר emblem).
+ */
+export type ThemeMotif = (ThemeMotifBase & { d: string; color: string }) | (ThemeMotifBase & { image: string });
 
 /** Faint background decoration (REQ §13.196 d): drawn on a fixed layer behind all content, never over it. */
 export interface ThemeDecoration {

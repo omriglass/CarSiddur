@@ -21,7 +21,7 @@ function seededRandom(seed: string): () => number {
 }
 
 /** Builds the 240×240 SVG tile as a data URL. Motifs are placed on a jittered grid so none clump, and wrap at the edges. */
-function buildTileUrl(themeId: string, decoration: ThemeDecoration): string {
+function buildTileUrl(themeId: string, decoration: ThemeDecoration, inlined: ReadonlyMap<string, string>): string {
   const rand = seededRandom(themeId);
   const count = Math.round(clamp(decoration.perTile, 1, 14));
   const cols = Math.ceil(Math.sqrt(count));
@@ -40,13 +40,45 @@ function buildTileUrl(themeId: string, decoration: ThemeDecoration): string {
     const cx = ((cell % cols) + 0.2 + rand() * 0.6) * (TILE / cols);
     const cy = (Math.floor(cell / cols) + 0.2 + rand() * 0.6) * (TILE / rows);
     const rotate = (motif.rotate ?? 0) + (rand() - 0.5) * 30;
-    const scale = size / 24;
-    parts.push(
-      `<path d="${motif.d}" fill="${motif.color}" transform="translate(${cx.toFixed(1)} ${cy.toFixed(1)}) rotate(${rotate.toFixed(0)}) scale(${scale.toFixed(2)}) translate(-12 -12)"/>`,
-    );
+    const place = `translate(${cx.toFixed(1)} ${cy.toFixed(1)}) rotate(${rotate.toFixed(0)})`;
+    if ("image" in motif) {
+      const href = inlined.get(motif.image);
+      if (href) parts.push(`<image href="${href}" width="${size}" height="${size}" transform="${place} translate(${-size / 2} ${-size / 2})"/>`);
+      continue;
+    }
+    parts.push(`<path d="${motif.d}" fill="${motif.color}" transform="${place} scale(${(size / 24).toFixed(2)}) translate(-12 -12)"/>`);
   }
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${TILE}" height="${TILE}" viewBox="0 0 ${TILE} ${TILE}">${parts.join("")}</svg>`;
   return `url("data:image/svg+xml,${encodeURIComponent(svg)}")`;
+}
+
+/** Image motifs as data URLs (fetched once each): the tile is an SVG background image, which cannot load files. */
+function useInlinedImages(decoration: ThemeDecoration | null): ReadonlyMap<string, string> {
+  const [inlined, setInlined] = useState<ReadonlyMap<string, string>>(() => new Map());
+  const urls = useMemo(
+    () => [...new Set((decoration?.motifs ?? []).flatMap((motif) => ("image" in motif ? [motif.image] : [])))],
+    [decoration],
+  );
+  useEffect(() => {
+    const missing = urls.filter((url) => !inlined.has(url));
+    if (!missing.length) return;
+    let cancelled = false;
+    void Promise.all(missing.map(async (url) => {
+      if (url.startsWith("data:")) return [url, url] as const;
+      const blob = await (await fetch(url)).blob();
+      const data = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result));
+        reader.onerror = () => reject(reader.error);
+        reader.readAsDataURL(blob);
+      });
+      return [url, data] as const;
+    })).then((pairs) => {
+      if (!cancelled) setInlined((prev) => new Map([...prev, ...pairs]));
+    }).catch(() => undefined); // decoration only: without the image the tile still draws its shapes
+    return () => { cancelled = true; };
+  }, [urls, inlined]);
+  return inlined;
 }
 
 /**
@@ -64,7 +96,8 @@ export function ThemeBackdrop() {
 
   const decoration = appearance?.decoration ?? null;
   const themeId = appearance?.themeId ?? "";
-  const image = useMemo(() => (decoration ? buildTileUrl(themeId, decoration) : null), [decoration, themeId]);
+  const inlined = useInlinedImages(decoration);
+  const image = useMemo(() => (decoration ? buildTileUrl(themeId, decoration, inlined) : null), [decoration, themeId, inlined]);
   if (!decoration || !image) return null;
 
   return (
