@@ -11,6 +11,7 @@ import { useSetRidePassengersMutation } from "../../hooks";
 import { buildRidePassengerInputs } from "../reservationPeople";
 
 import type { RidePassengerEntry } from "../../applySolve";
+import { useRecordBoardUndo } from "../boardUndo";
 
 /**
  * Editing an existing reservation's named people (F3, 20260914120000_ride_passengers.sql)
@@ -37,15 +38,16 @@ export function RidePassengersEditor({ rideId, expectedVersion, departmentId, we
     enabled: !!departmentId && !!profileId,
   });
   const mutation = useSetRidePassengersMutation();
+  const recordUndo = useRecordBoardUndo();
 
   const memberIds = initialPassengers.filter((p) => p.person_id).map((p) => p.person_id as string);
   const childIds = initialPassengers.filter((p) => p.child_id).map((p) => p.child_id as string);
 
   function save(nextMemberIds: string[], nextChildIds: string[]) {
     const passengers = buildRidePassengerInputs(nextMemberIds, nextChildIds, membersQuery.data ?? [], childrenQuery.data ?? []);
-    mutation.mutate({ rideId, expectedVersion, passengers, departmentId, weekStart }, {
+    void recordUndo(he.sadranBoard.undoLabel.passengers, () => mutation.mutateAsync({ rideId, expectedVersion, passengers, departmentId, weekStart }, {
       onSuccess: () => toast.success(he.sadranBoard.reservationSaved),
-    });
+    })).catch(() => undefined);
   }
 
   return (

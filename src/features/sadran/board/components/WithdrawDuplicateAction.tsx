@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { he, tv } from "@/i18n/he";
 
 import { useWithdrawDuplicateRequestMutation } from "../../hooks";
+import { useRecordBoardUndo } from "../boardUndo";
 
 export interface WithdrawDuplicateActionProps {
   requestId: string;
@@ -28,12 +29,13 @@ export function WithdrawDuplicateAction({ requestId, version, name, departmentId
   const open = controlled ? !!controlledOpen : localOpen;
   const setOpen = controlled ? onOpenChange : setLocalOpen;
   const mutation = useWithdrawDuplicateRequestMutation();
+  const recordUndo = useRecordBoardUndo();
   if (version == null) return null;
   const expectedVersion = version;
   function confirm() {
-    mutation.mutate({ requestId, expectedVersion, departmentId, weekStart }, {
+    void recordUndo(he.sadranBoard.undoLabel.duplicate, () => mutation.mutateAsync({ requestId, expectedVersion, departmentId, weekStart }, {
       onSuccess: () => { setOpen(false); toast.success(tv("withdrawDuplicate.done", { name })); },
-    });
+    })).catch(() => undefined);
   }
   return (
     <>

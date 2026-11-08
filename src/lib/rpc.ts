@@ -100,6 +100,10 @@ export type ErrorCode =
   | "leg_location_mismatch"
   | "relay_requires_destination_id"
   | "car_next_ride_elsewhere"
+  | "undo_stale"
+  | "undo_not_possible"
+  | "undo_already_notified"
+  | "undo_not_found"
   | "car_not_at_leg_place"
   | "shift_car_invalid"
   | "no_eligible_driver"
@@ -268,6 +272,10 @@ const MESSAGE_TO_CODE: Record<string, ErrorCode> = {
   driver_busy: "driver_unavailable",
   relay_requires_destination_id: "relay_requires_destination_id",
   car_next_ride_elsewhere: "car_next_ride_elsewhere",
+  undo_stale: "undo_stale",
+  undo_not_possible: "undo_not_possible",
+  undo_already_notified: "undo_already_notified",
+  undo_not_found: "undo_not_found",
   car_not_at_leg_place: "car_not_at_leg_place",
   shift_car_invalid: "shift_car_invalid",
   no_eligible_driver: "no_eligible_driver",
@@ -437,6 +445,10 @@ const CODE_TO_MESSAGE: Record<ErrorCode, string> = {
   leg_location_mismatch: he.errors.legLocationMismatch,
   relay_requires_destination_id: he.errors.legLocationMismatch,
   car_next_ride_elsewhere: he.errors.carNextRideElsewhere,
+  undo_stale: he.errors.undoStale,
+  undo_not_possible: he.errors.undoNotPossible,
+  undo_already_notified: he.errors.undoAlreadyNotified,
+  undo_not_found: he.errors.undoNotPossible,
   car_not_at_leg_place: he.errors.carNotAtLegPlace,
   shift_car_invalid: he.errors.shiftCarInvalid,
   no_eligible_driver: he.errors.noEligibleDriver,

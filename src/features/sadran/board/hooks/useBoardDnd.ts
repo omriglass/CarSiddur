@@ -80,6 +80,7 @@ import {
 import { useClaimRideDriverMutation, useCancelRideChangeMutation } from "@/features/rides/hooks";
 import { fetchMergePreview, fetchRideVersion } from "../../api";
 import { useUndoStack } from "../useUndoStack";
+import { useBoardUndoRecorder } from "../boardUndo";
 import { servedOf, servedToEditRideLegs } from "../../solverRun";
 
 import type { BoardRide, EditRideInput, ProposalRow, RidePassengerInput, WeekRequestRow } from "../../api";
@@ -169,6 +170,9 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
   const joinLegsMutation = useJoinDropOffLegsMutation();
   const unmergeRequestMutation = useUnmergeRequestMutation();
   const undoStack = useUndoStack<void>();
+  // TODO UN1: every other board action records its own server-side undo (`boardUndo.tsx`).
+  const recordUndo = useBoardUndoRecorder(departmentId, weekStart, undoStack);
+  const U = he.sadranBoard.undoLabel;
   // REQ §13.111 (a): "צריך תא מטען גדול ... לשבץ בכל זאת?" - asked before a hand placement that would put a
   // large-luggage request on a car without a large trunk (the server stays the decider: `needs_large_trunk`;
   // a refusal it still raises is answered by the same dialog in `lib/smallTrunk.ts` `withSmallTrunkRetry`).
@@ -255,7 +259,7 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
     });
     if (!built.ok) { toast.error(he.boardDrafts.cannotDraft); return null; }
     try {
-      const id = await createProposalMutation.mutateAsync({ ...built.input, departmentId, weekStart });
+      const id = await recordUndo(U.draft, () => createProposalMutation.mutateAsync({ ...built.input, departmentId, weekStart }));
       setComposeChoice(null);
       setMergePrefill(null);
       if (!quiet) toast.success(he.boardDrafts.saved);
@@ -347,9 +351,9 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
     const ride = rides.find((r) => r.id === rideId);
     const pending = proposals.find((p) => p.type === "merge" && p.request_id === requestId && p.ride_id === rideId && ["draft", "sent", "accepted"].includes(p.status));
     try {
-      if (pending?.status === "draft") await discardProposalMutation.mutateAsync({ proposalId: pending.id, departmentId, weekStart });
-      else if (pending) await withdrawProposalMutation.mutateAsync({ proposalId: pending.id, departmentId, weekStart });
-      else if (ride?.version != null) await unmergeRequestMutation.mutateAsync({ rideId, requestId, expectedVersion: ride.version, departmentId, weekStart });
+      if (pending?.status === "draft") await recordUndo(U.discardDraft, () => discardProposalMutation.mutateAsync({ proposalId: pending.id, departmentId, weekStart }));
+      else if (pending) await recordUndo(U.withdrawProposal, () => withdrawProposalMutation.mutateAsync({ proposalId: pending.id, departmentId, weekStart }));
+      else if (ride?.version != null) await recordUndo(U.unmerge, () => unmergeRequestMutation.mutateAsync({ rideId, requestId, expectedVersion: ride.version!, departmentId, weekStart }));
       else return false;
       setSelectedRideId(null);
       toast.success(tv("mergedRide.removed", { name }));
@@ -437,18 +441,19 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
     }
     const places = reservationRoutePlaces(values);
     if (!places || !ride.car_id || !ride.starts_at || !ride.ends_at) { toast.error(he.rideRouteEdit.presetOnly); return; }
+    const [carId, startsAt, endsAt] = [ride.car_id, ride.starts_at, ride.ends_at];
     try {
-      await editRideMutation.mutateAsync({
+      await recordUndo(U.routeEdit, () => editRideMutation.mutateAsync({
         input: {
-          id: ride.id, department_id: departmentId, week_start: weekStart, car_id: ride.car_id,
-          starts_at: ride.starts_at, ends_at: ride.ends_at,
+          id: ride.id ?? undefined, department_id: departmentId, week_start: weekStart, car_id: carId,
+          starts_at: startsAt, ends_at: endsAt,
           origin_id: places.originId, destination_id: places.destinationId,
           driver_id: ride.driver_id, needs_driver: !!ride.needs_driver, notes: ride.notes ?? undefined,
           is_pinned: !!ride.is_pinned, pin_reason: ride.pin_reason, allow_conflict: true,
           served: servedToEditRideLegs(served),
         },
         expectedVersion: ride.version ?? undefined, departmentId, weekStart,
-      });
+      }));
       setSelectedRideId(null);
       toast.success(he.rideRouteEdit.saved);
     } catch { /* toast shown by the mutation */ }
@@ -468,7 +473,7 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
 
   async function discardDraft(proposal: ProposalRow) {
     try {
-      await discardProposalMutation.mutateAsync({ proposalId: proposal.id, departmentId, weekStart });
+      await recordUndo(U.discardDraft, () => discardProposalMutation.mutateAsync({ proposalId: proposal.id, departmentId, weekStart }));
       setSelectedProposalId(null);
       toast.success(he.boardDrafts.discarded);
     } catch { /* toast shown by the mutation */ }
@@ -477,7 +482,7 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
   /** REQ §13.138 (b) "סיכמנו": applies the draft with no proposal; a stale draft is withdrawn with its reason. */
   async function agreeProposalById(proposalId: string) {
     try {
-      const result = await agreeOfflineMutation.mutateAsync({ proposalId, departmentId, weekStart });
+      const result = await recordUndo(U.agreed, () => agreeOfflineMutation.mutateAsync({ proposalId, departmentId, weekStart }));
       setSelectedProposalId(null);
       if (result.status === "applied") toast.success(he.boardDrafts.agreedApplied);
       else if (result.status === "waiting") toast.info(tv("boardDrafts.agreedWaiting", { names: waitingNames(result.waitingFor) }));
@@ -500,7 +505,7 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
 
   async function withdrawSent(proposal: ProposalRow) {
     try {
-      await withdrawProposalMutation.mutateAsync({ proposalId: proposal.id, departmentId, weekStart });
+      await recordUndo(U.withdrawProposal, () => withdrawProposalMutation.mutateAsync({ proposalId: proposal.id, departmentId, weekStart }));
       setSelectedProposalId(null);
       toast.success(he.boardDrafts.withdrawn);
     } catch { /* toast shown by the mutation */ }
@@ -555,7 +560,7 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
     if (req.series_id && !droppedOnRideId) {
       if (!(await askSmallTrunk())) return;
       try {
-        await placeSeriesMutation.mutateAsync({ seriesId: req.series_id, carId, allowSmallTrunk: waiver.allowSmallTrunk, departmentId, weekStart });
+        await recordUndo(U.seriesPlaced, () => placeSeriesMutation.mutateAsync({ seriesId: req.series_id!, carId, allowSmallTrunk: waiver.allowSmallTrunk, departmentId, weekStart }));
         toast.success(he.sadranBoard.seriesPlaced);
       } catch { /* The mutation shows the error. */ }
       return;
@@ -707,7 +712,7 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
     const ride = rides.find((r) => r.id === rideId);
     if (!ride?.version) return;
     try {
-      await joinLegsMutation.mutateAsync({ requestId, rideId, expectedVersion: ride.version, departmentId, weekStart });
+      await recordUndo(U.joinLegs, () => joinLegsMutation.mutateAsync({ requestId, rideId, expectedVersion: ride.version!, departmentId, weekStart }));
       toast.success(he.sadranBoard.legsJoinedToast);
     } catch {
       // toast already shown by the mutation
@@ -719,12 +724,9 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
     if (!ride?.version) return;
     const reservation = isReservation(ride);
     try {
-      await unassignRideMutation.mutateAsync({
-        rideId,
-        expectedVersion: ride.version,
-        departmentId,
-        weekStart,
-      });
+      const unassign = () => unassignRideMutation.mutateAsync({ rideId, expectedVersion: ride.version!, departmentId, weekStart });
+      // a reservation keeps its own undo below (REQ §13.194); any other ride's requests come back by the board undo
+      if (reservation) await unassign(); else await recordUndo(U.unassign, unassign);
       if (!reservation) { toast.success(he.sadranBoard.unassignedToast); return; }
       // REQ §13.194: a reservation serves no request - removing it deletes it, so say so and offer the undo at once.
       let version = 0;
@@ -1026,7 +1028,7 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
       const fromPlaceId = atIso ? carLocationAt(dropCtx, reservation.carId, atIso) : null;
       if (start == null || end == null || end <= start || !atIso || !fromPlaceId || !reservation.toPlaceId) { toast.error(he.sadranBoard.invalidWindow); return; }
       try {
-        await markCarMoveMutation.mutateAsync({ carId: reservation.carId, fromPlaceId, toPlaceId: reservation.toPlaceId, at: atIso, minutes: end - start, peopleIds: reservation.memberIds, departmentId, weekStart });
+        await recordUndo(U.carMove, () => markCarMoveMutation.mutateAsync({ carId: reservation.carId, fromPlaceId, toPlaceId: reservation.toPlaceId!, at: atIso, minutes: end - start, peopleIds: reservation.memberIds, departmentId, weekStart }));
         setReservation(null); toast.success(he.sadranBoard.carMoveSaved);
       } catch { /* the mutation shows the error */ }
       return;
@@ -1036,22 +1038,25 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
     // picked children, become named `ride_passengers` once the ride itself exists.
     const { driverId, passengerMemberIds } = splitReservationDriverAndPassengers(reservation.memberIds);
     try {
-      const rideId = await editRideMutation.mutateAsync({ input: { department_id: departmentId, week_start: weekStart, car_id: reservation.carId,
-        starts_at: minutesIso(dropCtx, start), ends_at: minutesIso(dropCtx, end), origin_id: department.home_destination_id, destination_id: department.home_destination_id,
-        driver_id: driverId, served: [], notes: reservation.notes.trim(), is_pinned: true, pin_reason: "SADRAN_MANUAL" }, departmentId, weekStart });
-      if (passengerMemberIds.length || reservation.childIds.length) {
-        const passengers: RidePassengerInput[] = buildRidePassengerInputs(
-          passengerMemberIds, reservation.childIds,
-          reservationMembersQuery.data ?? [], reservationChildrenQuery.data ?? [],
-        );
-        try {
-          // A brand-new ride's version always starts at 1 (`rides.version` default —
-          // edit_ride()'s insert branch never touches it).
-          await setRidePassengersMutation.mutateAsync({ rideId, expectedVersion: 1, passengers, departmentId, weekStart });
-        } catch {
-          toast.error(he.sadranBoard.reservationPeopleSaveFailed);
+      const home = department.home_destination_id;
+      await recordUndo(U.reservation, async () => {
+        const rideId = await editRideMutation.mutateAsync({ input: { department_id: departmentId, week_start: weekStart, car_id: reservation.carId,
+          starts_at: minutesIso(dropCtx, start), ends_at: minutesIso(dropCtx, end), origin_id: home, destination_id: home,
+          driver_id: driverId, served: [], notes: reservation.notes.trim(), is_pinned: true, pin_reason: "SADRAN_MANUAL" }, departmentId, weekStart });
+        if (passengerMemberIds.length || reservation.childIds.length) {
+          const passengers: RidePassengerInput[] = buildRidePassengerInputs(
+            passengerMemberIds, reservation.childIds,
+            reservationMembersQuery.data ?? [], reservationChildrenQuery.data ?? [],
+          );
+          try {
+            // A brand-new ride's version always starts at 1 (`rides.version` default —
+            // edit_ride()'s insert branch never touches it).
+            await setRidePassengersMutation.mutateAsync({ rideId, expectedVersion: 1, passengers, departmentId, weekStart });
+          } catch {
+            toast.error(he.sadranBoard.reservationPeopleSaveFailed);
+          }
         }
-      }
+      });
       setReservation(null); toast.success(he.sadranBoard.reservationSaved);
     } catch { /* Mutation reports errors. */ }
   }
@@ -1263,6 +1268,7 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
     displacementMove,
     displacementPlace,
     handleUndo,
+    recordUndo,
     handleRedo,
     selectedPlanningChange,
     selectedRide,

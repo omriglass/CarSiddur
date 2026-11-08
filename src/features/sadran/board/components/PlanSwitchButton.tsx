@@ -14,6 +14,7 @@ import { canSwitchPlan, type PlanSwitchRequest } from "../planSwitch";
 
 export type { PlanSwitchRequest };
 import { useSwitchRequestPlanMutation, useWeekRow } from "../../hooks";
+import { useRecordBoardUndo } from "../boardUndo";
 
 const PUBLIC_PHASES: ReadonlySet<string> = new Set(["published", "live", "archived"]);
 
@@ -34,6 +35,7 @@ export function PlanSwitchButton({ request, name, departmentId, weekStart, disab
   const open = controlled ? !!controlledOpen : localOpen;
   const setOpen = controlled ? onOpenChange : setLocalOpen;
   const mutation = useSwitchRequestPlanMutation();
+  const recordUndo = useRecordBoardUndo();
   const weekRow = useWeekRow(departmentId, weekStart).data;
   if (!canSwitchPlan(request) || !request.alternative) return null;
   const expectedVersion = request.version as number;
@@ -45,14 +47,14 @@ export function PlanSwitchButton({ request, name, departmentId, weekStart, disab
   const body = `${toAlternative ? tv("planSwitch.toAlternativeBody", { plan }) : he.planSwitch.toMainBody} ${published ? tv("planSwitch.notified", { name }) : he.planSwitch.silent}`;
 
   function confirm() {
-    mutation.mutate({ requestId: request.id, to: toAlternative ? "alternative" : "main", expectedVersion, departmentId, weekStart }, {
+    void recordUndo(he.sadranBoard.undoLabel.plan, () => mutation.mutateAsync({ requestId: request.id, to: toAlternative ? "alternative" : "main", expectedVersion, departmentId, weekStart }, {
       onSuccess: (result) => {
         setOpen(false);
         if (!toAlternative) toast.success(tv("planSwitch.backToMain", { name }));
         else if (result.rideId) toast.success(tv("planSwitch.placed", { name }));
         else toast.success(tv(published ? "planSwitch.waitlisted" : "planSwitch.unplaced", { name }));
       },
-    });
+    })).catch(() => undefined);
   }
 
   return (

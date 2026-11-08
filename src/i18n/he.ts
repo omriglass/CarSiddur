@@ -842,6 +842,10 @@ export const he = {
     requestNotFound: "הבקשה לא נמצאה",
     requestHasRide: "הבקשה כבר משובצת לנסיעה — יש לבטל את הנסיעה במקום למשוך את הבקשה",
     rideNotFound: "הנסיעה לא נמצאה",
+    /** TODO UN1: the board's undo refused. */
+    undoStale: "אי אפשר לבטל — מאז השתנה משהו באותן נסיעות או בקשות",
+    undoNotPossible: "את הפעולה הזו אי אפשר לבטל",
+    undoAlreadyNotified: "אי אפשר לבטל — כבר נשלחה על זה הודעה",
     proposalNotFound: "ההצעה לא נמצאה",
     proposalDayPublished: "היום כבר פורסם — הצעות ליום מפורסם נשלחות לחברים ולא מסכמים בוואטסאפ",
     privateCarOwnerOnly: "רכב פרטי — רק הבעלים מוסיף/ה אליו בקשות (אפשר לבקש להצטרף אל הבעלים)",

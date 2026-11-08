@@ -5,8 +5,8 @@ import { he } from "@/i18n/he";
 
 import { DayEntries, RideDriverPicker } from "./RideDriverPicker";
 
-const mutate = vi.fn();
-vi.mock("../../hooks", () => ({ useSetRideDriverMutation: () => ({ mutate, isPending: false }) }));
+const mutate = vi.fn((..._args: unknown[]) => Promise.resolve());
+vi.mock("../../hooks", () => ({ useSetRideDriverMutation: () => ({ mutate, mutateAsync: mutate, isPending: false }) }));
 
 const base = {
   rideId: "ride-1", version: 3, candidates: [{ id: "a", name: "A" }, { id: "b", name: "B" }],

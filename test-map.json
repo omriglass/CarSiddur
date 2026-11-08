@@ -605,6 +605,8 @@
         "supabase/migrations/**/*ride_edit*",
         "supabase/migrations/**/*day_readiness*",
         "supabase/migrations/**/*car_chain*",
+        "supabase/tests/board_undo.sql",
+        "supabase/migrations/**/*undo*",
         "supabase/tests/todo_board_semantics.sql",
         "supabase/tests/coordinator_planning.sql",
         "supabase/tests/solve_semantics.sql",

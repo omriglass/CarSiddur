@@ -85,6 +85,7 @@ import { ReservationDialog } from "./ReservationDialog";
 import { RideSheet } from "./RideSheet";
 import { UnmetList } from "./UnmetList";
 import { carsFreeForRequest, placementMinutes } from "../placeOnCar";
+import { BoardUndoContext } from "../boardUndo";
 
 interface BoardScreenProps {
   departmentId: string;
@@ -349,6 +350,7 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
     ?? (board.activePolicyQuery.data?.policyVersionId === board.effectivePolicyVersionId ? board.activePolicyQuery.data ?? null : null);
 
   return (
+    <BoardUndoContext.Provider value={dnd.recordUndo}>
     <div ref={boardRef} className="mx-auto w-full max-w-none space-y-3 p-4 pb-24">
       {/* Board header (UX_FLOWS.md §4.2, owner spec 2026-09-10): the title is the
           department/week switcher below `lg` (tap to switch) and the plain
@@ -419,7 +421,7 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
             homeDestinationId={board.department?.home_destination_id ?? null}
             policy={currentPolicyForActions}
             onPolicyUsed={board.rememberUsedPolicy}
-            onAutoSolveRemaining={board.handleAutoSolveRemaining}
+            onAutoSolveRemaining={(day) => dnd.recordUndo(he.sadranBoard.undoLabel.autofill, () => board.handleAutoSolveRemaining(day))}
             autoSolving={board.autoSolving}
             days={board.days}
             selectedDay={board.selectedDay}
@@ -753,6 +755,7 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
           day={board.selectedDay}
           carA={{ id: dnd.carSwapPair.carA, name: board.weekGridCars.find((c) => c.id === dnd.carSwapPair!.carA)?.name ?? "" }}
           carB={{ id: dnd.carSwapPair.carB, name: board.weekGridCars.find((c) => c.id === dnd.carSwapPair!.carB)?.name ?? "" }}
+          recordUndo={(action) => dnd.recordUndo(he.sadranBoard.undoLabel.carSwap, action)}
         />
       ) : null}
       <ReservationDialog
@@ -884,7 +887,9 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
         tightSchedule={!!selectedRide?.id && board.tightRideIds.has(selectedRide.id)}
         onClaimDriver={() => {
           if (!selectedRide?.id || selectedRide.version == null) return;
-          dnd.claimDriverMutation.mutate({ rideId: selectedRide.id, expectedVersion: selectedRide.version }, { onSuccess: () => toast.success(he.boardCoordination.driverClaimed) });
+          const ride = { id: selectedRide.id, version: selectedRide.version };
+          void dnd.recordUndo(he.sadranBoard.undoLabel.claimDriver, () => dnd.claimDriverMutation.mutateAsync({ rideId: ride.id, expectedVersion: ride.version }))
+            .then(() => toast.success(he.boardCoordination.driverClaimed)).catch(() => undefined);
         }}
         onSave={(input) => {
           if (!selectedRide?.id || !selectedRide.origin_id || !selectedRide.destination_id) return;
@@ -973,8 +978,9 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
           if (!selectedRide?.id || selectedRide.version == null) return;
           // REQ §13.162 (a): one call - the ride goes (or, O29-2 (3), stays for the requests that continue), each other
           // request waits or is closed, one notice per member.
-          void dnd.cancelRideMutation
-            .mutateAsync({ rideId: selectedRide.id, reason, expectedVersion: selectedRide.version, closeRequestIds, continueRequestIds, departmentId, weekStart })
+          const ride = { id: selectedRide.id, version: selectedRide.version };
+          void dnd.recordUndo(he.sadranBoard.undoLabel.cancelRide, () => dnd.cancelRideMutation
+            .mutateAsync({ rideId: ride.id, reason, expectedVersion: ride.version, closeRequestIds, continueRequestIds, departmentId, weekStart }))
             .then(() => dnd.setSelectedRideId(null))
             .catch(() => {
               // Toast already shown by the mutation's onError; same reasoning as `onSave` above.
@@ -990,5 +996,6 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
         }}
       />
     </div>
+    </BoardUndoContext.Provider>
   );
 }

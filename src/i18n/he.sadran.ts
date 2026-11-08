@@ -219,6 +219,34 @@ export const heSadran = {
     /** REQ §13.194: removing a reservation deletes it; the toast carries "ביטול". */
     reservationRemovedToast: "שמירת הזמן נמחקה",
     reservationRemovedLabel: "מחיקת שמירת הזמן",
+    /** TODO UN1 (owner 2026-11-08): sending is final — the send toasts say so. */
+    sentIsFinal: "שליחה אי אפשר לבטל; אם צריך, אפשר למשוך את ההצעה",
+    /** TODO UN1: the action named in "בוטלה הפעולה: …" / "בוצע שוב: …". */
+    undoLabel: {
+      unassign: "הסרת השיבוץ",
+      cancelRide: "ביטול הנסיעה",
+      joinLegs: "חיבור שני הקטעים",
+      draft: "שמירת הטיוטה",
+      discardDraft: "מחיקת הטיוטה",
+      agreed: "ההצעה שסוכמה",
+      withdrawProposal: "משיכת ההצעה",
+      unmerge: "הוצאת הנוסע/ת מהנסיעה",
+      seriesPlaced: "שיבוץ הבקשה הרב-יומית",
+      carMove: "העברת הרכב",
+      reservation: "שמירת הזמן",
+      claimDriver: "לקיחת הנהיגה",
+      driver: "שינוי הנהג/ת",
+      passengers: "שינוי הנוסעים",
+      tripType: "שינוי סוג הנסיעה",
+      plan: "החלפת התוכנית",
+      closeRequest: "סגירת הבקשה",
+      duplicate: "הסרת הבקשה הכפולה",
+      closeTime: "שינוי שעת הסגירה",
+      carSwap: "החלפת הרכבים",
+      autofill: "השיבוץ האוטומטי",
+      routeEdit: "שינוי המסלול",
+      notes: "שינוי התיאור",
+    },
     legsJoinedToast: "ההקפצה והאיסוף חוברו לנסיעה אחת",
     /**
      * Mobile-friendly board header (2026-09-10): the eye/kebab icon menus that

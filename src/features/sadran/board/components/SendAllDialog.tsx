@@ -79,7 +79,7 @@ export function SendAllDialog({ open, onOpenChange, departmentId, weekStart, dra
       setSentDrafts(byId);
       setResults(sent);
       const okCount = sent.filter((row) => row.ok).length;
-      if (okCount || delivered) toast.success(tv("sendAll.sent", { count: String(okCount), updates: String(delivered) }));
+      if (okCount || delivered) toast.success(tv("sendAll.sent", { count: String(okCount), updates: String(delivered) }), { description: he.sadranBoard.sentIsFinal });
     } catch { /* toast shown by the mutation */ }
   }
 

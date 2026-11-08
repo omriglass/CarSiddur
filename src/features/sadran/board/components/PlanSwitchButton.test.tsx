@@ -5,10 +5,10 @@ import { he } from "@/i18n/he";
 
 import { PlanSwitchButton, type PlanSwitchRequest } from "./PlanSwitchButton";
 
-const mutate = vi.fn();
+const mutate = vi.fn((..._args: unknown[]) => Promise.resolve());
 let weekRow: { phase: string; published_days: string[] } = { phase: "open", published_days: [] };
 vi.mock("../../hooks", () => ({
-  useSwitchRequestPlanMutation: () => ({ mutate, isPending: false }),
+  useSwitchRequestPlanMutation: () => ({ mutate, mutateAsync: mutate, isPending: false }),
   useWeekRow: () => ({ data: weekRow }),
 }));
 

@@ -24,6 +24,8 @@ interface CarSwapDialogProps {
   day: string;
   carA: { id: string; name: string };
   carB: { id: string; name: string };
+  /** The board records the swap for its undo (TODO UN1); the siddur has none. */
+  recordUndo?: <T>(action: () => Promise<T>) => Promise<T>;
 }
 
 /**
@@ -36,7 +38,7 @@ interface CarSwapDialogProps {
  * non-archived for a Sadran, REQ §13.92 "Who") — this dialog only previews
  * and confirms whatever pair of cars/day it is given.
  */
-export function CarSwapDialog({ open, onOpenChange, departmentId, weekStart, day, carA, carB }: CarSwapDialogProps) {
+export function CarSwapDialog({ open, onOpenChange, departmentId, weekStart, day, carA, carB, recordUndo = (action) => action() }: CarSwapDialogProps) {
   const [seriesMode, setSeriesMode] = useState<CarSwapSeriesMode>("whole");
   // REQ §13.180: swap only the rides starting at or after this hour (`HH:mm`); null = the whole day.
   const [from, setFrom] = useState<string | null>(null);
@@ -72,14 +74,14 @@ export function CarSwapDialog({ open, onOpenChange, departmentId, weekStart, day
   async function handleConfirm() {
     if (!preview) return;
     try {
-      const result = await mutation.mutateAsync({
+      const result = await recordUndo(() => mutation.mutateAsync({
         departmentId, weekStart, day, carA: carA.id, carB: carB.id,
         expectedFingerprint: preview.fingerprint,
         seriesMode: effectiveMode,
         from,
         skipSeats: staying.length > 0,
         allowShortTurnaround: preview.needs_short_turnaround === true,
-      });
+      }));
       toast.success(he.carSwap.successToast);
       if (result.notified > 0) toast(tv("carSwap.notifiedToast", { count: String(result.notified) }));
       for (const notice of result.notices) {

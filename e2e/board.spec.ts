@@ -676,4 +676,55 @@ test.describe.serial("board (bug-fix pass regression, fake-week data)", { tag: [
     expect(restored?.notes).toBe("Board regression reservation");
   });
 
+  test("every board action can be undone: ↶ takes a saved reservation back, ↷ brings it back (REQ §13.195)", async ({ page }) => {
+    await signIn(page);
+    const weekUrl = await goToOpenWeek(page);
+    const weekStart = weekUrl.match(/(\d{4}-\d{2}-\d{2})$/)?.[1] ?? "";
+    const admin = serviceRoleClient();
+    const notes = "Board undo reservation";
+    await admin.from("rides").delete().eq("department_id", NEVO_DEPARTMENT_ID).eq("week_start", weekStart).eq("notes", notes);
+    await page.goto(`${weekUrl}/board`);
+    await page.getByRole("radio").first().click();
+    await page.getByRole("button", { name: he.sadranBoard.displayMenu, exact: true }).click();
+    await page.getByRole("menuitemcheckbox", { name: he.board.showEarlyHours, exact: true }).click();
+    await page.keyboard.press("Escape");
+    const column = page.locator('[data-car-col-id]:not([data-car-col-id^="phantom:"]):visible').first();
+    await column.evaluate((element) => {
+      let scroller: HTMLElement | null = element.parentElement;
+      while (scroller && !(/(auto|scroll)/.test(getComputedStyle(scroller).overflowY) && scroller.scrollHeight > scroller.clientHeight)) {
+        scroller = scroller.parentElement;
+      }
+      if (scroller) scroller.scrollTop = 0;
+      else window.scrollTo(0, 0);
+    });
+    const columnBox = await column.boundingBox();
+    if (!columnBox) throw new Error("car column not found");
+    await column.dblclick({ position: { x: columnBox.width / 2, y: 150 / 1440 * columnBox.height } });
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toBeVisible();
+    await dialog.getByLabel("יציאה", { exact: true }).fill("02:30");
+    await dialog.getByLabel("חזרה", { exact: true }).fill("03:30");
+    await dialog.getByLabel("תיאור השמירה — יוצג בלוח").fill(notes);
+    await dialog.getByRole("button", { name: "שמירה", exact: true }).click();
+    await expect(dialog).toBeHidden();
+    const { data: saved } = await admin.from("rides").select("id").eq("week_start", weekStart).eq("notes", notes).single();
+    const block = page.locator(`button[data-ride-id="${saved!.id}"]:visible`);
+    await expect(block).toHaveCount(1);
+
+    await page.getByRole("button", { name: he.action.undo, exact: true }).click();
+    await expect(page.locator("[data-sonner-toast]").filter({ hasText: he.sadranBoard.undoLabel.reservation })).toBeVisible();
+    await expect(block).toHaveCount(0);
+    await expect(async () => {
+      const { data } = await admin.from("rides").select("id").eq("id", saved!.id);
+      expect(data ?? []).toHaveLength(0);
+    }).toPass();
+
+    await page.getByRole("button", { name: he.sadranBoard.redo, exact: true }).click();
+    await expect(block).toHaveCount(1);
+    const { data: back } = await admin.from("rides").select("status, notes").eq("id", saved!.id).single();
+    expect(back?.status).not.toBe("cancelled");
+    expect(back?.notes).toBe(notes);
+    await admin.from("rides").delete().eq("id", saved!.id);
+  });
+
 });

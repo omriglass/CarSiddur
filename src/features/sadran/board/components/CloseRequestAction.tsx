@@ -9,6 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { he, tv } from "@/i18n/he";
 
 import { useCloseRequestMutation } from "../../hooks";
+import { useRecordBoardUndo } from "../boardUndo";
 
 export interface CloseRequestActionProps {
   requestId: string;
@@ -25,6 +26,7 @@ export interface CloseRequestActionProps {
 export function CloseRequestAction({ requestId, version, name, departmentId, weekStart, series, open, onOpenChange }: CloseRequestActionProps) {
   const [reason, setReason] = useState("");
   const mutation = useCloseRequestMutation();
+  const recordUndo = useRecordBoardUndo();
   if (version == null) return null;
   const expectedVersion = version;
   function change(next: boolean) {
@@ -32,9 +34,9 @@ export function CloseRequestAction({ requestId, version, name, departmentId, wee
     onOpenChange(next);
   }
   function confirm() {
-    mutation.mutate({ requestId, expectedVersion, reason: reason.trim(), departmentId, weekStart }, {
+    void recordUndo(he.sadranBoard.undoLabel.closeRequest, () => mutation.mutateAsync({ requestId, expectedVersion, reason: reason.trim(), departmentId, weekStart }, {
       onSuccess: () => { change(false); toast.success(tv("closeRequest.done", { name })); },
-    });
+    })).catch(() => undefined);
   }
   return (
     <ConfirmDialog

@@ -13,6 +13,7 @@ import { formatTime } from "@/lib/time";
 import type { TripType } from "@/lib/enums";
 
 import { useSetRequestTripTypeMutation } from "../../hooks";
+import { useRecordBoardUndo } from "../boardUndo";
 
 const TRIP_TYPE_LABEL: Record<TripType, string> = {
   round_trip: he.request.tripTypeRoundTrip,
@@ -46,6 +47,7 @@ const CHOICES: TripChoice[] = ["round_trip", KEEP_CAR, "one_way", "drop_off"];
 
 export function TripTypeChange({ requestId, version, tripType, keepCarAtDestination, destination, name, departmentId, weekStart, disabled, wasUnplaced, open: menuOpen, onOpenChange: onMenuOpenChange }: TripTypeChangeProps) {
   const mutation = useSetRequestTripTypeMutation();
+  const recordUndo = useRecordBoardUndo();
   // R2U2: choosing a type asks first; the select then shows the chosen type until the refetched row agrees.
   const [pending, setPending] = useState<TripChoice | null>(null);
   const [applied, setApplied] = useState<TripChoice | null>(null);
@@ -60,7 +62,7 @@ export function TripTypeChange({ requestId, version, tripType, keepCarAtDestinat
   function apply(chosen: TripChoice) {
     if (version == null) return;
     setPending(null);
-    mutation.mutate(
+    void recordUndo(he.sadranBoard.undoLabel.tripType, () => mutation.mutateAsync(
       { requestId, tripType: chosen === KEEP_CAR ? "drop_off" : chosen, keepCar: chosen === KEEP_CAR, expectedVersion: version, departmentId, weekStart },
       {
         onSuccess: (result) => {
@@ -75,7 +77,7 @@ export function TripTypeChange({ requestId, version, tripType, keepCarAtDestinat
           toast.success(detail ? `${base} · ${detail}` : base);
         },
       },
-    );
+    )).catch(() => undefined);
   }
   const controlled = onMenuOpenChange !== undefined;
   const shown: TripChoice = applied && applied !== current && mutation.isSuccess ? applied : current;

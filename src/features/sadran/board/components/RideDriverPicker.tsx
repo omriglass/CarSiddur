@@ -16,6 +16,7 @@ import { cn } from "@/lib/utils";
 
 import { useSetRideDriverMutation } from "../../hooks";
 import { filterDriverCandidates, sortFreeFirst, type PersonDayEntry } from "../driverBusy";
+import { useRecordBoardUndo } from "../boardUndo";
 
 export interface DriverCandidate {
   id: string;
@@ -65,6 +66,7 @@ export function RideDriverPicker({ rideId, version, needsDriver, volunteerName, 
     setDriverId("");
   }
   const mutation = useSetRideDriverMutation();
+  const recordUndo = useRecordBoardUndo();
   const drivers = sortFreeFirst(candidates.filter((candidate) => !candidate.doesNotDrive && candidate.id !== volunteerId), busyIds ?? new Set<string>());
 
   // The chosen person stays in the list even when the filter would hide them.
@@ -77,14 +79,14 @@ export function RideDriverPicker({ rideId, version, needsDriver, volunteerName, 
     setConfirming(false);
     const chosen = drivers.find((candidate) => candidate.id === driverId);
     if (!chosen) return;
-    mutation.mutate({ rideId, driverId: chosen.id, expectedVersion: version, departmentId, weekStart }, {
+    void recordUndo(he.sadranBoard.undoLabel.driver, () => mutation.mutateAsync({ rideId, driverId: chosen.id, expectedVersion: version, departmentId, weekStart }, {
       onSuccess: () => { setDriverId(""); toast.success(tv(published ? (volunteerName ? "rideDriver.replaced" : "rideDriver.assigned") : "rideDriver.assignedUnpublished", { name: chosen.name })); onDone?.(); },
-    });
+    })).catch(() => undefined);
   }
   function unassign() {
-    mutation.mutate({ rideId, driverId: null, expectedVersion: version, departmentId, weekStart }, {
+    void recordUndo(he.sadranBoard.undoLabel.driver, () => mutation.mutateAsync({ rideId, driverId: null, expectedVersion: version, departmentId, weekStart }, {
       onSuccess: () => { toast.success(he.rideDriver.unassigned); onDone?.(); },
-    });
+    })).catch(() => undefined);
   }
 
   return (

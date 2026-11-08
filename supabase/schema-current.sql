@@ -922,6 +922,17 @@ $$;
 ALTER FUNCTION "public"."_assert_shift_places"("p_request_id" "uuid", "p_department_id" "uuid", "p_payload" "jsonb") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."_audit_txid"() RETURNS bigint
+    LANGUAGE "sql"
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  select coalesce(nullif(current_setting('app.audit_txid', true), '')::bigint, txid_current());
+$$;
+
+
+ALTER FUNCTION "public"."_audit_txid"() OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."_auto_approve_free_car"("p_request_id" "uuid", "p_end" timestamp with time zone, "p_after" interval, "p_turnaround" interval, "p_pref" "uuid", "p_is_one_way" boolean) RETURNS "uuid"
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -4987,6 +4998,142 @@ end $$;
 ALTER FUNCTION "public"."_time_change_line"("_old_start" timestamp with time zone, "_old_end" timestamp with time zone, "_new_start" timestamp with time zone, "_new_end" timestamp with time zone, "_day_level" boolean) OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."_undo_board_txid"("p_department_id" "uuid", "p_txid" bigint) RETURNS "void"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $_$
+declare
+  v_actor uuid := (select auth.uid());
+  v_prev_sys text := coalesce(current_setting('app.system_status_transition', true), 'off');
+  v_at timestamptz; v_bad text; v_row record; v_cur jsonb; v_where text; v_cols text;
+begin
+  select min(a.at) into v_at from public.audit_log a where a.txid = p_txid;
+  if v_at is null then raise exception 'undo_not_found' using errcode = 'P0001'; end if;
+  -- only the caller's own change, on this department and week
+  if exists (select 1 from public.audit_log a where a.txid = p_txid and a.actor_id is distinct from v_actor) then
+    raise exception 'not_authorized' using errcode = 'P0001';
+  end if;
+  select a.table_name into v_bad from public.audit_log a
+   where a.txid = p_txid and a.table_name <> all(public._undo_tables()) limit 1;
+  if v_bad is not null then
+    raise exception 'undo_not_possible' using errcode = 'P0001', detail = v_bad;
+  end if;
+  if exists (select 1 from public.audit_log a where a.txid = p_txid
+             and public._undo_row_department(a.table_name, coalesce(a.after, a.before)) is distinct from p_department_id) then
+    raise exception 'not_authorized' using errcode = 'P0001';
+  end if;
+  -- sending is final (owner 2026-11-08): a change that already told someone (a notice written at once, not held
+  -- by the board) about one of its rides, requests or proposals is not undone
+  if exists (select 1 from public.notifications n
+              where n.created_at = v_at and n.department_id = p_department_id
+                and exists (select 1 from public.audit_log a where a.txid = p_txid and a.table_name in ('rides', 'requests', 'proposals')
+                              and a.row_id in (n.data ->> 'ride_id', n.data ->> 'request_id', n.data ->> 'proposal_id'))) then
+    raise exception 'undo_already_notified' using errcode = 'P0001';
+  end if;
+  -- every row must still be as the change left it
+  for v_row in
+    select distinct on (a.table_name, a.row_id) a.table_name, a.after, a.before
+      from public.audit_log a where a.txid = p_txid order by a.table_name, a.row_id, a.id desc
+  loop
+    v_where := public._undo_row_where(v_row.table_name);
+    execute format('select to_jsonb(t) from public.%I t where %s', v_row.table_name, v_where)
+      into v_cur using coalesce(v_row.after, v_row.before);
+    if v_row.after is null then
+      if v_cur is not null then raise exception 'undo_stale' using errcode = 'P0001'; end if;
+    elsif v_cur is null or (v_cur - 'updated_at' - 'phone') is distinct from (v_row.after - 'updated_at') then
+      raise exception 'undo_stale' using errcode = 'P0001';
+    end if;
+  end loop;
+
+  perform set_config('app.audit_reason', 'undo_board_change', true);
+  perform set_config('app.system_status_transition', 'on', true);
+  -- Rows come back one at a time, so two rides that traded cars (a swap, a drag) pass through a moment where both
+  -- sit on one car: like `swap_day_cars`, the neighbour checks wait for the final state, checked right after.
+  set constraints public.rides_no_overlap_per_car deferred;
+  perform set_config('app.day_car_swap', 'on', true);
+  for v_row in select a.* from public.audit_log a where a.txid = p_txid order by a.id desc loop
+    v_where := public._undo_row_where(v_row.table_name);
+    if v_row.action = 'insert' then
+      execute format('delete from public.%I where %s', v_row.table_name, v_where) using v_row.after;
+    else
+      select string_agg(quote_ident(att.attname), ', ' order by att.attnum) into v_cols
+        from pg_attribute att
+       where att.attrelid = format('public.%I', v_row.table_name)::regclass
+         and att.attnum > 0 and not att.attisdropped and att.attgenerated = '' and att.attidentity = ''
+         and v_row.before ? att.attname;
+      if v_row.action = 'delete' then
+        execute format('insert into public.%I (%s) select %s from jsonb_populate_record(null::public.%I, $1)',
+          v_row.table_name, v_cols, v_cols, v_row.table_name) using v_row.before;
+      else
+        execute format('update public.%I set (%s) = (select %s from jsonb_populate_record(null::public.%I, $1)) where %s',
+          v_row.table_name, v_cols, v_cols, v_row.table_name, v_where) using v_row.before;
+      end if;
+    end if;
+  end loop;
+  perform set_config('app.day_car_swap', 'off', true);
+  perform set_config('app.system_status_transition', v_prev_sys, true);
+  -- the restored rides against everything else on their cars now (a car given to someone else meanwhile)
+  if exists (
+    select 1 from public.rides r1
+    join public.rides r2 on r2.car_id = r1.car_id and r2.id <> r1.id
+    where r1.id in (select a.row_id::uuid from public.audit_log a where a.txid = p_txid and a.table_name = 'rides')
+      and r1.status <> 'cancelled' and not r1.draft_hold and r2.status <> 'cancelled' and not r2.draft_hold
+      and not r1.planning_conflict and not r2.planning_conflict
+      and not (r1.series_id is not null and r1.series_id = r2.series_id)
+      and tstzrange(r1.starts_at, r1.blocked_until, '[)') && tstzrange(r2.starts_at, r2.blocked_until, '[)')
+  ) then
+    raise exception 'ride_time_overlap' using errcode = 'P0001';
+  end if;
+  set constraints public.rides_no_overlap_per_car immediate;
+end $_$;
+
+
+ALTER FUNCTION "public"."_undo_board_txid"("p_department_id" "uuid", "p_txid" bigint) OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."_undo_row_department"("p_table" "text", "p_row" "jsonb") RETURNS "uuid"
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  select coalesce(
+    nullif(p_row ->> 'department_id', '')::uuid,
+    case p_table
+      when 'ride_requests' then (select r.department_id from public.rides r where r.id = (p_row ->> 'ride_id')::uuid)
+      when 'proposal_parties' then (select p.department_id from public.proposals p where p.id = (p_row ->> 'proposal_id')::uuid)
+      when 'freed_slot_claims' then (select o.department_id from public.freed_slot_offers o where o.id = (p_row ->> 'offer_id')::uuid)
+    end);
+$$;
+
+
+ALTER FUNCTION "public"."_undo_row_department"("p_table" "text", "p_row" "jsonb") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."_undo_row_where"("p_table" "text") RETURNS "text"
+    LANGUAGE "sql" IMMUTABLE
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $_$
+  select case p_table
+    when 'ride_requests' then 'ride_id = ($1->>''ride_id'')::uuid and request_id = ($1->>''request_id'')::uuid and leg = ($1->>''leg'')::public.ride_leg'
+    when 'weeks' then 'department_id = ($1->>''department_id'')::uuid and week_start = ($1->>''week_start'')::date'
+    else 'id = ($1->>''id'')::uuid' end;
+$_$;
+
+
+ALTER FUNCTION "public"."_undo_row_where"("p_table" "text") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."_undo_tables"() RETURNS "text"[]
+    LANGUAGE "sql" IMMUTABLE
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  select array['rides', 'ride_requests', 'requests', 'ride_passengers', 'proposals', 'proposal_parties',
+               'waitlist_groups', 'waitlist_group_members', 'freed_slot_offers', 'freed_slot_claims', 'weeks'];
+$$;
+
+
+ALTER FUNCTION "public"."_undo_tables"() OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."_validate_alternative_payload"("p_request_id" "uuid", "p_payload" "jsonb") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -6912,11 +7059,12 @@ begin
   end if;
 
   insert into public.audit_log (actor_id, actor_role, table_name, row_id, action, department_id, week_start,
-    subject_profile_id, before, after, changed_columns, reason)
+    subject_profile_id, before, after, changed_columns, reason, txid)
   values (
     (select auth.uid()), v_actor_role, tg_table_name, v_row_id, lower(tg_op)::public.audit_action,
     v_dept, v_week, v_subject, v_before, v_after, v_changed,
-    coalesce(nullif(current_setting('app.audit_reason', true), ''), v_row ->> 'status_reason')
+    coalesce(nullif(current_setting('app.audit_reason', true), ''), v_row ->> 'status_reason'),
+    public._audit_txid()
   );
 
   return coalesce(new, old);
@@ -6990,6 +7138,30 @@ end $$;
 
 
 ALTER FUNCTION "public"."award_freed_option"("p_offer_id" "uuid", "p_request_ids" "uuid"[]) OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."board_changes_since"("p_department_id" "uuid", "p_week_start" "date", "p_after" bigint DEFAULT NULL::bigint) RETURNS "jsonb"
+    LANGUAGE "plpgsql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+begin
+  if not public.can_manage_week(p_department_id, p_week_start) then
+    raise exception 'not_authorized' using errcode = 'P0001';
+  end if;
+  return jsonb_build_object(
+    'marker', coalesce((select max(a.id) from public.audit_log a
+                         where a.actor_id = (select auth.uid()) and a.txid is not null
+                           and a.department_id = p_department_id and a.week_start = p_week_start), 0),
+    'txids', coalesce((select jsonb_agg(x.txid order by x.first_id) from (
+                         select a.txid, min(a.id) as first_id from public.audit_log a
+                          where p_after is not null and a.id > p_after
+                            and a.actor_id = (select auth.uid()) and a.txid is not null
+                            and a.department_id = p_department_id and a.week_start = p_week_start
+                          group by a.txid) x), '[]'::jsonb));
+end $$;
+
+
+ALTER FUNCTION "public"."board_changes_since"("p_department_id" "uuid", "p_week_start" "date", "p_after" bigint) OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."bump_version"() RETURNS "trigger"
@@ -23246,6 +23418,29 @@ end $$;
 ALTER FUNCTION "public"."unassign_ride"("p_ride_id" "uuid", "p_expected_version" integer) OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."undo_board_change"("p_department_id" "uuid", "p_week_start" "date", "p_txids" bigint[]) RETURNS bigint
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare i int;
+begin
+  if not public.can_manage_week(p_department_id, p_week_start) then
+    raise exception 'not_authorized' using errcode = 'P0001';
+  end if;
+  if exists (select 1 from public.weeks where department_id = p_department_id and week_start = p_week_start and phase = 'archived') then
+    raise exception 'week_archived' using errcode = 'P0001';
+  end if;
+  if coalesce(cardinality(p_txids), 0) = 0 then raise exception 'undo_not_found' using errcode = 'P0001'; end if;
+  for i in reverse cardinality(p_txids)..1 loop
+    perform public._undo_board_txid(p_department_id, p_txids[i]);
+  end loop;
+  return public._audit_txid();
+end $$;
+
+
+ALTER FUNCTION "public"."undo_board_change"("p_department_id" "uuid", "p_week_start" "date", "p_txids" bigint[]) OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."unmerge_request"("p_ride_id" "uuid", "p_request_id" "uuid", "p_expected_version" integer) RETURNS "void"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -24612,7 +24807,8 @@ CREATE TABLE IF NOT EXISTS "public"."audit_log" (
     "before" "jsonb",
     "after" "jsonb",
     "changed_columns" "text"[],
-    "reason" "text"
+    "reason" "text",
+    "txid" bigint
 );
 
 ALTER TABLE ONLY "public"."audit_log" FORCE ROW LEVEL SECURITY;
@@ -27187,6 +27383,10 @@ ALTER TABLE ONLY "public"."weeks"
 
 
 
+CREATE INDEX "audit_log_actor_txid_idx" ON "public"."audit_log" USING "btree" ("actor_id", "id" DESC) WHERE ("txid" IS NOT NULL);
+
+
+
 CREATE INDEX "audit_log_dept_week_idx" ON "public"."audit_log" USING "btree" ("department_id", "week_start", "at" DESC);
 
 
@@ -27196,6 +27396,10 @@ CREATE INDEX "audit_log_subject_idx" ON "public"."audit_log" USING "btree" ("sub
 
 
 CREATE INDEX "audit_log_table_row_idx" ON "public"."audit_log" USING "btree" ("table_name", "row_id");
+
+
+
+CREATE INDEX "audit_log_txid_idx" ON "public"."audit_log" USING "btree" ("txid") WHERE ("txid" IS NOT NULL);
 
 
 
@@ -30813,6 +31017,11 @@ GRANT ALL ON FUNCTION "public"."_assert_shift_places"("p_request_id" "uuid", "p_
 
 
 
+REVOKE ALL ON FUNCTION "public"."_audit_txid"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_audit_txid"() TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."_auto_approve_free_car"("p_request_id" "uuid", "p_end" timestamp with time zone, "p_after" interval, "p_turnaround" interval, "p_pref" "uuid", "p_is_one_way" boolean) FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."_auto_approve_free_car"("p_request_id" "uuid", "p_end" timestamp with time zone, "p_after" interval, "p_turnaround" interval, "p_pref" "uuid", "p_is_one_way" boolean) TO "service_role";
 
@@ -31401,6 +31610,26 @@ GRANT ALL ON FUNCTION "public"."_time_change_line"("_old_start" timestamp with t
 
 
 
+REVOKE ALL ON FUNCTION "public"."_undo_board_txid"("p_department_id" "uuid", "p_txid" bigint) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_undo_board_txid"("p_department_id" "uuid", "p_txid" bigint) TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."_undo_row_department"("p_table" "text", "p_row" "jsonb") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_undo_row_department"("p_table" "text", "p_row" "jsonb") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."_undo_row_where"("p_table" "text") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_undo_row_where"("p_table" "text") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."_undo_tables"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_undo_tables"() TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."_validate_alternative_payload"("p_request_id" "uuid", "p_payload" "jsonb") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."_validate_alternative_payload"("p_request_id" "uuid", "p_payload" "jsonb") TO "service_role";
 
@@ -31571,6 +31800,12 @@ GRANT ALL ON FUNCTION "public"."audit_row"() TO "service_role";
 REVOKE ALL ON FUNCTION "public"."award_freed_option"("p_offer_id" "uuid", "p_request_ids" "uuid"[]) FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."award_freed_option"("p_offer_id" "uuid", "p_request_ids" "uuid"[]) TO "service_role";
 GRANT ALL ON FUNCTION "public"."award_freed_option"("p_offer_id" "uuid", "p_request_ids" "uuid"[]) TO "authenticated";
+
+
+
+REVOKE ALL ON FUNCTION "public"."board_changes_since"("p_department_id" "uuid", "p_week_start" "date", "p_after" bigint) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."board_changes_since"("p_department_id" "uuid", "p_week_start" "date", "p_after" bigint) TO "service_role";
+GRANT ALL ON FUNCTION "public"."board_changes_since"("p_department_id" "uuid", "p_week_start" "date", "p_after" bigint) TO "authenticated";
 
 
 
@@ -33591,6 +33826,12 @@ GRANT ALL ON FUNCTION "public"."typical_usage"("p_department_id" "uuid") TO "aut
 REVOKE ALL ON FUNCTION "public"."unassign_ride"("p_ride_id" "uuid", "p_expected_version" integer) FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."unassign_ride"("p_ride_id" "uuid", "p_expected_version" integer) TO "authenticated";
 GRANT ALL ON FUNCTION "public"."unassign_ride"("p_ride_id" "uuid", "p_expected_version" integer) TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."undo_board_change"("p_department_id" "uuid", "p_week_start" "date", "p_txids" bigint[]) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."undo_board_change"("p_department_id" "uuid", "p_week_start" "date", "p_txids" bigint[]) TO "service_role";
+GRANT ALL ON FUNCTION "public"."undo_board_change"("p_department_id" "uuid", "p_week_start" "date", "p_txids" bigint[]) TO "authenticated";
 
 
 

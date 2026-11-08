@@ -113,6 +113,7 @@ export type Database = {
           row_id: string
           subject_profile_id: string | null
           table_name: string
+          txid: number | null
           week_start: string | null
         }
         Insert: {
@@ -129,6 +130,7 @@ export type Database = {
           row_id: string
           subject_profile_id?: string | null
           table_name: string
+          txid?: number | null
           week_start?: string | null
         }
         Update: {
@@ -145,6 +147,7 @@ export type Database = {
           row_id?: string
           subject_profile_id?: string | null
           table_name?: string
+          txid?: number | null
           week_start?: string | null
         }
         Relationships: [
@@ -5369,6 +5372,7 @@ export type Database = {
         Args: { p_department_id: string; p_payload: Json; p_request_id: string }
         Returns: undefined
       }
+      _audit_txid: { Args: never; Returns: number }
       _auto_approve_free_car: {
         Args: {
           p_after: string
@@ -5921,6 +5925,16 @@ export type Database = {
         }
         Returns: string
       }
+      _undo_board_txid: {
+        Args: { p_department_id: string; p_txid: number }
+        Returns: undefined
+      }
+      _undo_row_department: {
+        Args: { p_row: Json; p_table: string }
+        Returns: string
+      }
+      _undo_row_where: { Args: { p_table: string }; Returns: string }
+      _undo_tables: { Args: never; Returns: string[] }
       _validate_alternative_payload: {
         Args: { p_payload: Json; p_request_id: string }
         Returns: Json
@@ -6046,6 +6060,14 @@ export type Database = {
       }
       award_freed_option: {
         Args: { p_offer_id: string; p_request_ids: string[] }
+        Returns: Json
+      }
+      board_changes_since: {
+        Args: {
+          p_after?: number
+          p_department_id: string
+          p_week_start: string
+        }
         Returns: Json
       }
       can_define_car_checklist: {
@@ -7465,6 +7487,14 @@ export type Database = {
       unassign_ride: {
         Args: { p_expected_version: number; p_ride_id: string }
         Returns: undefined
+      }
+      undo_board_change: {
+        Args: {
+          p_department_id: string
+          p_txids: number[]
+          p_week_start: string
+        }
+        Returns: number
       }
       unmerge_request: {
         Args: {

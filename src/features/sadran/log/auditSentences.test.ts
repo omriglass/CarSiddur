@@ -6,7 +6,7 @@ import { requestHistory } from "./auditSentences";
 
 const row = (id: number, table_name: string, row_id: string, extra: Partial<AuditLogRow> = {}): AuditLogRow => ({
   id, table_name, row_id, action: "update", actor_role: "sadran", at: `2040-01-01T10:0${id}:00Z`, after: null, before: null,
-  changed_columns: [], department_id: "d", reason: null, subject_profile_id: null, week_start: "2040-01-01", actor_id: null, ...extra,
+  changed_columns: [], department_id: "d", reason: null, subject_profile_id: null, week_start: "2040-01-01", actor_id: null, txid: null, ...extra,
 });
 
 describe("requestHistory", () => {

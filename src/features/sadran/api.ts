@@ -599,6 +599,18 @@ export async function unassignRide(rideId: string, expectedVersion: number): Pro
 }
 
 /** REQ §13.194: undo of removing a reservation - the same ride comes back; returns its new version. */
+/** TODO UN1: the caller's audit marker on the week, and the transactions after `after` (oldest first). */
+export async function boardChangesSince(departmentId: string, weekStart: string, after?: number): Promise<{ marker: number; txids: number[] }> {
+  const data = await rpc("board_changes_since", { p_department_id: departmentId, p_week_start: weekStart, ...(after !== undefined ? { p_after: after } : {}) });
+  const value = (data ?? {}) as { marker?: number; txids?: number[] };
+  return { marker: Number(value.marker ?? 0), txids: (value.txids ?? []).map(Number) };
+}
+
+/** TODO UN1: reverses an action's transactions (newest first, atomically); returns the undo's own transaction (undoing that is the redo). */
+export async function undoBoardChange(departmentId: string, weekStart: string, txids: readonly number[]): Promise<number> {
+  return Number(await rpc("undo_board_change", { p_department_id: departmentId, p_week_start: weekStart, p_txids: [...txids] }));
+}
+
 export async function restoreRemovedReservation(rideId: string): Promise<number> {
   return rpc("restore_removed_reservation", { p_ride_id: rideId });
 }

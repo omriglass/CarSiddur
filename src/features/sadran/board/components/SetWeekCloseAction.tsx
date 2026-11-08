@@ -11,6 +11,7 @@ import { he, tv } from "@/i18n/he";
 import { dateKey, formatTime, TZ } from "@/lib/time";
 
 import { useDepartmentSettings, useSetWeekCloseAtMutation, useWeekRow } from "../../hooks";
+import { useRecordBoardUndo } from "../boardUndo";
 
 interface SetWeekCloseActionProps {
   departmentId: string;
@@ -32,6 +33,7 @@ export function SetWeekCloseAction({ departmentId, weekStart, renderTrigger }: S
   const weekQuery = useWeekRow(departmentId, weekStart);
   const settingsQuery = useDepartmentSettings(departmentId);
   const mutation = useSetWeekCloseAtMutation();
+  const recordUndo = useRecordBoardUndo();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [day, setDay] = useState<string | null>(null);
   const [time, setTime] = useState<string | null>(null);
@@ -50,10 +52,10 @@ export function SetWeekCloseAction({ departmentId, weekStart, renderTrigger }: S
   function handleSubmit() {
     if (!day || !time) return;
     const closeAt = fromZonedTime(`${day}T${time}:00`, TZ).toISOString();
-    mutation.mutate(
+    void recordUndo(he.sadranBoard.undoLabel.closeTime, () => mutation.mutateAsync(
       { departmentId, weekStart, closeAt },
       { onSuccess: () => { setDialogOpen(false); toast.success(he.weekClose.saved); } },
-    );
+    )).catch(() => undefined);
   }
 
   const openDay = dateKey(week.open_at);

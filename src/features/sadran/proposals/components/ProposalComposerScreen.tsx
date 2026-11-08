@@ -356,6 +356,7 @@ export function ProposalComposerScreen({ departmentId, weekStart }: ProposalComp
       navigate(returnTo, { replace: true });
       toast.success(he.sadranProposal.sentMark, {
         duration: 12000,
+        description: he.sadranBoard.sentIsFinal,
         action: {
           label: he.sadranProposal.openSentProposal,
           onClick: () => navigate(location.pathname, { state: {
