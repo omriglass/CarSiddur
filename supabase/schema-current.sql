@@ -5030,7 +5030,8 @@ begin
                               and a.row_id in (n.data ->> 'ride_id', n.data ->> 'request_id', n.data ->> 'proposal_id'))) then
     raise exception 'undo_already_notified' using errcode = 'P0001';
   end if;
-  -- every row must still be as the change left it
+  -- every row must still be as the change left it (the version counter aside: an undo of a later action on the same
+  -- row restores its columns but bumps the version, and must not make the earlier action stale)
   for v_row in
     select distinct on (a.table_name, a.row_id) a.table_name, a.after, a.before
       from public.audit_log a where a.txid = p_txid order by a.table_name, a.row_id, a.id desc
@@ -5040,7 +5041,7 @@ begin
       into v_cur using coalesce(v_row.after, v_row.before);
     if v_row.after is null then
       if v_cur is not null then raise exception 'undo_stale' using errcode = 'P0001'; end if;
-    elsif v_cur is null or (v_cur - 'updated_at' - 'phone') is distinct from (v_row.after - 'updated_at') then
+    elsif v_cur is null or (v_cur - 'updated_at' - 'phone' - 'version') is distinct from (v_row.after - 'updated_at' - 'version') then
       raise exception 'undo_stale' using errcode = 'P0001';
     end if;
   end loop;

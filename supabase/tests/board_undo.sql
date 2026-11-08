@@ -2,6 +2,33 @@
 -- audit rows in reverse. Each simulated board request gets its own `app.audit_txid` (the suite is one transaction).
 begin;
 
+-- The week's board as the undo restores it (the version counter and the update time move on, everything else comes
+-- back exactly).
+create function pg_temp.board_state(dept uuid, w date) returns jsonb language sql stable as $f$
+  select jsonb_build_object(
+    'rides', (select jsonb_agg(to_jsonb(r) - 'updated_at' - 'version' order by r.id) from public.rides r
+               where r.department_id = dept and r.week_start = w),
+    'links', (select jsonb_agg(to_jsonb(rr) - 'updated_at' order by rr.ride_id, rr.request_id, rr.leg)
+                from public.ride_requests rr join public.rides r on r.id = rr.ride_id
+               where r.department_id = dept and r.week_start = w),
+    'requests', (select jsonb_agg(to_jsonb(q) - 'updated_at' - 'version' order by q.id) from public.requests q
+                  where q.department_id = dept and q.week_start = w),
+    'passengers', (select jsonb_agg(to_jsonb(p) - 'updated_at' order by p.id) from public.ride_passengers p
+                    where p.department_id = dept and p.week_start = w),
+    'proposals', (select jsonb_agg(to_jsonb(p) - 'updated_at' - 'version' order by p.id) from public.proposals p
+                   where p.department_id = dept and p.week_start = w));
+$f$;
+
+-- `edit_ride`'s payload for a ride as it is now, with `changes` on top.
+create function pg_temp.ride_edit(rid uuid, changes jsonb) returns jsonb language sql stable as $f$
+  select jsonb_build_object('id', r.id, 'department_id', r.department_id, 'week_start', r.week_start, 'car_id', r.car_id,
+    'origin_id', r.origin_id, 'destination_id', r.destination_id, 'driver_id', r.driver_id,
+    'starts_at', r.starts_at, 'ends_at', r.ends_at,
+    'served', (select jsonb_agg(jsonb_build_object('request_id', rr.request_id, 'role', rr.role, 'leg', rr.leg, 'car_mode', rr.car_mode))
+                 from public.ride_requests rr where rr.ride_id = r.id)) || changes
+  from public.rides r where r.id = rid;
+$f$;
+
 do $$
 declare
   dept uuid := '00000000-0000-0000-0000-000000000001';
@@ -190,6 +217,106 @@ begin
     assert (select status from public.rides where id = r4) = 'confirmed', 'cancelled ride not restored';
     assert (select status from public.requests where id = q4) = 'assigned', 'closed request not reopened';
     assert exists (select 1 from public.ride_requests where ride_id = r4 and request_id = q4), 'request link not restored';
+  end;
+
+  -- (9) a long chain (owner 2026-11-08): six kinds of board action, each twice and in a different order the second
+  --     time, then undone one by one from the last; after each undo the week is exactly as it was before that action.
+  declare
+    a uuid := '00000000-0000-0000-0000-000000000040'; b uuid := '00000000-0000-0000-0000-000000000041';
+    dd date := w + 4; hh int[] := array[7, 11, 16];
+    cr uuid[] := '{}'; cq uuid[] := '{}'; x uuid; z uuid; k int; j int;
+    snaps jsonb[] := '{}'; txs bigint[] := '{}'; kinds text[] := '{}'; pv jsonb; base bigint := 9000000100;
+  begin
+    perform set_config('app.audit_txid', (base - 1)::text, true);
+    for k in 1..6 loop
+      insert into public.requests(department_id, week_start, requester_id, filed_by, destination_id, ride_type_id, depart_at, return_at, status)
+        values (dept, w, case when k <= 3 then member else member2 end, case when k <= 3 then member else member2 end,
+                '00000000-0000-0000-0000-000000000011', '00000000-0000-0000-0000-000000000021',
+                (dd + make_time(hh[(k - 1) % 3 + 1], 0, 0)) at time zone 'Asia/Jerusalem',
+                (dd + make_time(hh[(k - 1) % 3 + 1] + 2, 0, 0)) at time zone 'Asia/Jerusalem', 'submitted')
+        returning id into x;
+      insert into public.rides(department_id, week_start, car_id, starts_at, ends_at, origin_id, destination_id, driver_id, status, created_by)
+        values (dept, w, case when k <= 3 then a else b end,
+                (dd + make_time(hh[(k - 1) % 3 + 1], 0, 0)) at time zone 'Asia/Jerusalem',
+                (dd + make_time(hh[(k - 1) % 3 + 1] + 2, 0, 0)) at time zone 'Asia/Jerusalem',
+                home, home, case when k <= 3 then member else member2 end, 'confirmed', manager)
+        returning id into z;
+      insert into public.ride_requests(ride_id, request_id, role, leg, car_mode) values (z, x, 'driver', 'both', 'keep');
+      cq := cq || x; cr := cr || z;
+    end loop;
+    -- cr[1..3] = car A at 07, 11, 16; cr[4..6] = car B at the same hours
+    perform set_config('app.system_status_transition', 'on', true);
+    update public.requests set status = 'assigned' where id = any(cq);
+    perform set_config('app.system_status_transition', 'off', true);
+    perform set_config('app.in_publish', 'on', true);
+    update public.weeks set published_days = published_days || dd where department_id = dept and week_start = w;
+    perform set_config('app.in_publish', 'off', true);
+    -- the chain starts on a fresh board request: the setup above is not part of what is held
+    perform set_config('app.held_audit_floor', (select max(id) from public.audit_log)::text, true);
+
+    for k in 1..12 loop
+      snaps := snaps || pg_temp.board_state(dept, w);
+      perform set_config('app.audit_txid', (base + k)::text, true);
+      marker := (public.board_changes_since(dept, w) ->> 'marker')::bigint;
+      case k
+        -- round 1: driver, passengers, time, swap, unassign, cancel
+        when 1 then kinds := kinds || 'driver'::text;
+          perform public.set_ride_driver(cr[1], member2, (select version from public.rides where id = cr[1]), true);
+        when 2 then kinds := kinds || 'passengers'::text;
+          perform public.set_ride_passengers(cr[4], (select version from public.rides where id = cr[4]),
+            jsonb_build_array(jsonb_build_object('person_id', member, 'display_name', 'x', 'seat_kind', 'adult')));
+        when 3 then kinds := kinds || 'time'::text;
+          perform public.edit_ride(pg_temp.ride_edit(cr[2], jsonb_build_object('ends_at', (dd + time '14:00') at time zone 'Asia/Jerusalem')),
+            (select version from public.rides where id = cr[2]));
+        when 4 then kinds := kinds || 'swap'::text;
+          pv := public.preview_day_car_swap(dept, w, dd, a, b, null);
+          perform public.swap_day_cars(dept, w, dd, a, b, pv ->> 'fingerprint');
+        when 5 then kinds := kinds || 'unassign'::text;
+          perform public.unassign_ride(cr[3], (select version from public.rides where id = cr[3]));
+        when 6 then kinds := kinds || 'cancel'::text;
+          perform public.sadran_cancel_ride(cr[6], 'chain', (select version from public.rides where id = cr[6]), array[cq[6]]);
+        -- round 2, another order: swap, passengers, driver, time, unassign, cancel — on rides round 1 already changed
+        when 7 then kinds := kinds || 'swap'::text;
+          pv := public.preview_day_car_swap(dept, w, dd, a, b, null);
+          perform public.swap_day_cars(dept, w, dd, a, b, pv ->> 'fingerprint');
+        when 8 then kinds := kinds || 'passengers'::text;
+          perform public.set_ride_passengers(cr[2], (select version from public.rides where id = cr[2]),
+            jsonb_build_array(jsonb_build_object('person_id', member2, 'display_name', 'y', 'seat_kind', 'adult')));
+        when 9 then kinds := kinds || 'driver'::text;
+          perform public.set_ride_driver(cr[4], member, (select version from public.rides where id = cr[4]), true);
+        when 10 then kinds := kinds || 'time'::text;
+          perform public.edit_ride(pg_temp.ride_edit(cr[1], jsonb_build_object('starts_at', (dd + time '06:00') at time zone 'Asia/Jerusalem')),
+            (select version from public.rides where id = cr[1]));
+        when 11 then kinds := kinds || 'unassign'::text;
+          perform public.unassign_ride(cr[2], (select version from public.rides where id = cr[2]));
+        when 12 then kinds := kinds || 'cancel'::text;
+          perform public.sadran_cancel_ride(cr[4], 'chain', (select version from public.rides where id = cr[4]), array[cq[4]]);
+      end case;
+      txs := txs || array(select jsonb_array_elements_text(public.board_changes_since(dept, w, marker) -> 'txids')::bigint);
+      assert cardinality(txs) = k, format('action %s (%s) should be one transaction, got %s', k, kinds[k], txs);
+      assert pg_temp.board_state(dept, w) is distinct from snaps[k], format('action %s (%s) changed nothing', k, kinds[k]);
+    end loop;
+    -- the chain did what it says: both swaps cancel out, round 2's changes are on the rides
+    assert (select car_id from public.rides where id = cr[1]) = a and (select car_id from public.rides where id = cr[4]) = b, 'two swaps';
+    assert (select status from public.rides where id = cr[2]) = 'cancelled' and (select status from public.rides where id = cr[4]) = 'cancelled'
+      and (select status from public.rides where id = cr[3]) = 'cancelled' and (select status from public.rides where id = cr[6]) = 'cancelled',
+      'unassigned and cancelled rides';
+
+    for j in reverse 12..1 loop
+      perform set_config('app.audit_txid', (base + 100 + j)::text, true);
+      begin
+        perform public.undo_board_change(dept, w, array[txs[j]]::bigint[]);
+      exception when others then
+        get stacked diagnostics msg = message_text;
+        raise exception 'undo of action % (%) failed: %', j, kinds[j], msg;
+      end;
+      assert pg_temp.board_state(dept, w) = snaps[j],
+        format('after undoing action %s (%s) the week is not as it was before it', j, kinds[j]);
+    end loop;
+    assert (select count(*) from public.rides where id = any(cr) and status = 'confirmed') = 6, 'every ride back';
+    assert (select count(*) from public.requests where id = any(cq) and status = 'assigned') = 6, 'every request back';
+    res := public.flush_held_notices(dept, w, array[dd]);
+    assert res = 0, format('the chain and its undo sent %s notices', res);
   end;
   perform set_config('app.audit_txid', '', true);
   raise notice 'board_undo.sql: all assertions passed';
