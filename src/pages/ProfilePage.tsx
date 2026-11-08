@@ -1,7 +1,7 @@
 import { toast } from "sonner";
 import { useActiveDepartment } from "@/features/auth/useActiveDepartment";
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 
 import { paths } from "@/app/routes";
 
@@ -19,9 +19,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useIsSadranAnywhere } from "@/features/auth/useIsSadran";
+import { isProfileTab, PROFILE_TABS, type ProfileTab } from "@/features/member/profileTabs";
+import { ParentOfCard } from "@/features/member/components/ParentOfCard";
 import { ThemePicker } from "@/features/member/components/ThemePicker";
 import { useTheme, type ThemePreference } from "@/hooks/useTheme";
 import { useNoAutoDialogs } from "@/features/member/useNoAutoDialogs";
@@ -63,6 +66,20 @@ export function ProfilePage() {
   const experimental = useExperimentalFeatures();
   const reduceMotion = useReduceMotion();
   const noAutoDialogs = useNoAutoDialogs();
+
+  // REQ §13.198: the open tab lives in `?tab=`; an unknown value opens the first tab.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tabParam = searchParams.get("tab");
+  const activeTab: ProfileTab = isProfileTab(tabParam) ? tabParam : "details";
+  function changeTab(next: string) {
+    setSearchParams(next === "details" ? {} : { tab: next }, { replace: true });
+  }
+  const tabLabels: Record<ProfileTab, string> = {
+    details: he.profileExtra.tabDetails,
+    prefs: he.profileExtra.tabPrefs,
+    look: he.profileExtra.tabLook,
+    notifications: he.profileExtra.tabNotifications,
+  };
 
   // REQ §13.93: "נקודת יציאה קבועה" for the active department — `department_members.default_origin_id`.
   const originDestinationsQuery = useDestinations(active.departmentId);
@@ -143,341 +160,366 @@ export function ProfilePage() {
     <div className="mx-auto max-w-2xl space-y-4 p-4 pb-24">
       <h1 className="text-xl font-semibold">{he.screen.profile.title}</h1>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">{he.profileExtra.detailsTitle}</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="space-y-1">
-            <Label>{he.field.fullName}</Label>
-            <Input value={profileQuery.data?.full_name ?? ""} readOnly />
-          </div>
-          <div className="space-y-1">
-            <Label htmlFor="profile-display-name">{he.profileExtra.displayName}</Label>
-            <Input
-              id="profile-display-name"
-              key={profileQuery.data?.display_name ?? ""}
-              defaultValue={profileQuery.data?.display_name ?? ""}
-              placeholder={profileQuery.data?.google_name ?? profileQuery.data?.full_name ?? ""}
-              onBlur={(e) => {
-                // Owner 2026-10-11: say so once the name really changed (the field saves on leaving it).
-                const next = e.target.value.trim();
-                if (next === (profileQuery.data?.display_name ?? "").trim()) return;
-                updateProfileMutation.mutate({ display_name: e.target.value }, {
-                  onSuccess: () => toast.success(next ? he.profileExtra.displayNameSaved : he.profileExtra.displayNameCleared),
-                });
-              }}
-            />
-            <p className="text-xs text-muted-foreground">{he.profileExtra.displayNameHelp}</p>
-          </div>
-          <div className="space-y-1">
-            <Label>{he.profileExtra.email}</Label>
-            <Input dir="ltr" value={profileQuery.data?.email ?? ""} readOnly />
-          </div>
-          <div className="space-y-1">
-            <Label>{he.field.phone}</Label>
-            <Input
-              dir="ltr"
-              defaultValue={profileQuery.data?.phone ?? ""}
-              onBlur={(e) => updateProfileMutation.mutate({ phone: e.target.value })}
-            />
-          </div>
-          <div className="flex items-center justify-between border-t pt-3">
-            <div className="space-y-0.5">
-              <Label htmlFor="profile-does-not-drive">{he.profileExtra.doesNotDriveLabel}</Label>
-              <p className="text-xs text-muted-foreground">{he.profileExtra.doesNotDriveHelp}</p>
-            </div>
-            <Switch
-              id="profile-does-not-drive"
-              checked={profileQuery.data?.does_not_drive ?? false}
-              onCheckedChange={(checked) => updateProfileMutation.mutate({ does_not_drive: checked })}
-            />
-          </div>
-          {/* REQ §13.110 (e): the old field-by-field request form instead of the sentence layout. */}
-          <div className="flex items-center justify-between border-t pt-3">
-            <div className="space-y-0.5">
-              <Label htmlFor="profile-classic-request-form">{he.profileExtra.classicRequestFormLabel}</Label>
-              <p className="text-xs text-muted-foreground">{he.profileExtra.classicRequestFormHelp}</p>
-            </div>
-            <Switch
-              id="profile-classic-request-form"
-              checked={profileQuery.data?.classic_request_form ?? false}
-              onCheckedChange={(checked) => updateProfileMutation.mutate({ classic_request_form: checked })}
-            />
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">{he.profileExtra.departmentsTitle}</CardTitle>
-        </CardHeader>
-        <CardContent className="flex flex-wrap gap-2">
-          {(departmentsQuery.data ?? []).map((d) => (
-            <span
-              key={d.department_id}
-              className="rounded-full border px-3 py-1 text-sm"
-            >
-              {d.department.name}
-              {profileQuery.data?.default_department_id === d.department_id ? ` · ${he.profileExtra.defaultBadge}` : ""}
-            </span>
+      <Tabs value={activeTab} onValueChange={changeTab}>
+        <TabsList className="grid h-auto w-full grid-cols-4" aria-label={he.profileExtra.tabsLabel} data-testid="profile-tabs">
+          {PROFILE_TABS.map((id) => (
+            <TabsTrigger key={id} value={id} className="min-h-11 whitespace-normal px-1 text-xs sm:text-sm" data-testid={`profile-tab-${id}`}>
+              {tabLabels[id]}
+            </TabsTrigger>
           ))}
-        </CardContent>
-      </Card>
+        </TabsList>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">{he.profileExtra.defaultOriginTitle}</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-2">
-          {active.departmentId ? (
-            <>
-              <Label htmlFor="profile-default-origin">{he.profileExtra.defaultOriginLabel}</Label>
-              <Select
-                value={activeMembership?.default_origin_id ?? ""}
-                onValueChange={(next) =>
-                  setDefaultOriginMutation.mutate({ departmentId: active.departmentId as string, originId: next || null })
-                }
-              >
-                <SelectTrigger id="profile-default-origin">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="">{he.profileExtra.defaultOriginHome}</SelectItem>
-                  {(originDestinationsQuery.data ?? []).map((destination) => (
-                    <SelectItem key={destination.id} value={destination.id}>
-                      {destination.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-muted-foreground">{he.profileExtra.defaultOriginHelp}</p>
-            </>
-          ) : (
-            <p className="text-sm text-muted-foreground">{he.profileExtra.defaultOriginNoDepartment}</p>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">{he.profileExtra.homeWeekTitle}</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-2">
-          <Label>{he.profileExtra.homeWeekLabel}</Label>
-          <Select
-            value={profileQuery.data?.home_week_preference ?? "auto"}
-            onValueChange={(next) => updateProfileMutation.mutate({ home_week_preference: next as HomeWeekPreference })}
-          >
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="auto">{he.profileExtra.homeWeekAuto}</SelectItem>
-              <SelectItem value="live">{he.profileExtra.homeWeekLive}</SelectItem>
-              <SelectItem value="open">{he.profileExtra.homeWeekOpen}</SelectItem>
-            </SelectContent>
-          </Select>
-          <p className="text-xs text-muted-foreground">{he.profileExtra.homeWeekHelper}</p>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">{he.profileExtra.themeTitle}</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-2">
-          <Label>{he.themes.modeLabel}</Label>
-          <ToggleGroup
-            type="single"
-            value={themePreference}
-            onValueChange={(next) => next && setThemePreference(next as ThemePreference)}
-            className="justify-start"
-          >
-            <ToggleGroupItem value="light" className="h-11 px-3 text-sm">
-              {he.profileExtra.themeLight}
-            </ToggleGroupItem>
-            <ToggleGroupItem value="dark" className="h-11 px-3 text-sm">
-              {he.profileExtra.themeDark}
-            </ToggleGroupItem>
-            <ToggleGroupItem value="system" className="h-11 px-3 text-sm">
-              {he.profileExtra.themeSystem}
-            </ToggleGroupItem>
-          </ToggleGroup>
-          </div>
-          <div className="space-y-2">
-            <Label>{he.themes.themeLabel}</Label>
-            <ThemePicker />
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Owner 2026-11-07 (REQ §13.185 h): per-device, stops every animation and transition. */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">{he.profileExtra.accessibilityTitle}</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="flex items-center justify-between gap-3">
-            <div className="space-y-0.5">
-              <Label htmlFor="profile-reduce-motion">{he.profileExtra.reduceMotionLabel}</Label>
-              <p className="text-xs text-muted-foreground">{he.profileExtra.reduceMotionHelp}</p>
+        <TabsContent value="details" className="space-y-4">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">{he.profileExtra.detailsTitle}</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="space-y-1">
+              <Label>{he.field.fullName}</Label>
+              <Input value={profileQuery.data?.full_name ?? ""} readOnly />
             </div>
-            <Switch id="profile-reduce-motion" checked={reduceMotion.enabled} onCheckedChange={reduceMotion.setEnabled} data-testid="profile-reduce-motion" />
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Owner 2026-10-12: per-device opt-in (localStorage, no account data) for features still being tried out. */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">{he.profileExtra.experimentalTitle}</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="flex items-center justify-between gap-3">
-            <div className="space-y-0.5">
-              <Label htmlFor="profile-experimental">{he.profileExtra.experimentalLabel}</Label>
-              <p className="text-xs text-muted-foreground">{he.profileExtra.experimentalHelp}</p>
+            <div className="space-y-1">
+              <Label htmlFor="profile-display-name">{he.profileExtra.displayName}</Label>
+              <Input
+                id="profile-display-name"
+                key={profileQuery.data?.display_name ?? ""}
+                defaultValue={profileQuery.data?.display_name ?? ""}
+                placeholder={profileQuery.data?.google_name ?? profileQuery.data?.full_name ?? ""}
+                onBlur={(e) => {
+                  // Owner 2026-10-11: say so once the name really changed (the field saves on leaving it).
+                  const next = e.target.value.trim();
+                  if (next === (profileQuery.data?.display_name ?? "").trim()) return;
+                  updateProfileMutation.mutate({ display_name: e.target.value }, {
+                    onSuccess: () => toast.success(next ? he.profileExtra.displayNameSaved : he.profileExtra.displayNameCleared),
+                  });
+                }}
+              />
+              <p className="text-xs text-muted-foreground">{he.profileExtra.displayNameHelp}</p>
             </div>
-            <Switch id="profile-experimental" checked={experimental.enabled} onCheckedChange={experimental.setEnabled} data-testid="profile-experimental" />
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Owner 2026-10-16: per-device, turns the new-request guided start off. */}
-      <Card>
-        <CardContent className="pt-6">
-          <div className="flex items-center justify-between gap-3">
-            <div className="space-y-0.5">
-              <Label htmlFor="profile-no-auto-dialogs">{he.profileExtra.noAutoDialogsLabel}</Label>
-              <p className="text-xs text-muted-foreground">{he.profileExtra.noAutoDialogsHelp}</p>
+            <div className="space-y-1">
+              <Label>{he.profileExtra.email}</Label>
+              <Input dir="ltr" value={profileQuery.data?.email ?? ""} readOnly />
             </div>
-            <Switch id="profile-no-auto-dialogs" checked={noAutoDialogs.enabled} onCheckedChange={noAutoDialogs.setEnabled} data-testid="profile-no-auto-dialogs" />
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">{he.profileExtra.notificationsTitle}</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          {needsIosInstall ? (
-            <InstallHint />
-          ) : isPushSupported() ? (
-            <div className="flex items-center justify-between">
-              <span className="text-sm">
-                {pushStatus.isSubscribed ? he.profileExtra.pushEnabled : he.profileExtra.pushDisabled}
-              </span>
-              <Switch
-                checked={pushStatus.isSubscribed}
-                disabled={pushBusy || pushStatus.isLoading}
-                onCheckedChange={togglePush}
+            <div className="space-y-1">
+              <Label>{he.field.phone}</Label>
+              <Input
+                dir="ltr"
+                defaultValue={profileQuery.data?.phone ?? ""}
+                onBlur={(e) => updateProfileMutation.mutate({ phone: e.target.value })}
               />
             </div>
-          ) : null}
-          <Button type="button" variant="outline" size="sm" className="w-full" disabled={testBusy} onClick={() => void sendTest()} data-testid="test-notification">
-            {he.profileExtra.testNotification}
-          </Button>
+            <div className="flex items-center justify-between border-t pt-3">
+              <div className="space-y-0.5">
+                <Label htmlFor="profile-does-not-drive">{he.profileExtra.doesNotDriveLabel}</Label>
+                <p className="text-xs text-muted-foreground">{he.profileExtra.doesNotDriveHelp}</p>
+              </div>
+              <Switch
+                id="profile-does-not-drive"
+                checked={profileQuery.data?.does_not_drive ?? false}
+                onCheckedChange={(checked) => updateProfileMutation.mutate({ does_not_drive: checked })}
+              />
+            </div>
+          </CardContent>
+        </Card>
 
-          <div className="space-y-2 border-t pt-3">
-            {MUTE_CATEGORIES.map((category) => (
-              <div key={category.key} className="flex items-center justify-between">
-                <span className="text-sm">{category.label}</span>
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">{he.profileExtra.departmentsTitle}</CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-wrap gap-2">
+            {(departmentsQuery.data ?? []).map((d) => (
+              <span
+                key={d.department_id}
+                className="rounded-full border px-3 py-1 text-sm"
+              >
+                {d.department.name}
+                {profileQuery.data?.default_department_id === d.department_id ? ` · ${he.profileExtra.defaultBadge}` : ""}
+              </span>
+            ))}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">{he.profileExtra.defaultOriginTitle}</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {active.departmentId ? (
+              <>
+                <Label htmlFor="profile-default-origin">{he.profileExtra.defaultOriginLabel}</Label>
+                <Select
+                  value={activeMembership?.default_origin_id ?? ""}
+                  onValueChange={(next) =>
+                    setDefaultOriginMutation.mutate({ departmentId: active.departmentId as string, originId: next || null })
+                  }
+                >
+                  <SelectTrigger id="profile-default-origin">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">{he.profileExtra.defaultOriginHome}</SelectItem>
+                    {(originDestinationsQuery.data ?? []).map((destination) => (
+                      <SelectItem key={destination.id} value={destination.id}>
+                        {destination.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">{he.profileExtra.defaultOriginHelp}</p>
+              </>
+            ) : (
+              <p className="text-sm text-muted-foreground">{he.profileExtra.defaultOriginNoDepartment}</p>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">{he.profileExtra.tempCarTitle}</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {!hasCars ? (
+              <p className="text-sm text-muted-foreground">{he.profileExtra.tempCarNone}</p>
+            ) : (
+              <ul className="space-y-1 text-sm">
+                {(temporaryCarsQuery.data ?? []).map((car) => (
+                  <li key={car.id} className="flex min-h-11 items-center justify-between gap-2">
+                    <Link
+                      to={paths.car(car.id)}
+                      className="flex min-h-11 flex-wrap items-center gap-1 rounded-md border px-3 py-2 hover:bg-muted"
+                      data-testid="my-private-car"
+                    >
+                      <span>{car.name}</span>
+                      {car.license_plate ? (
+                        <>
+                          <span aria-hidden>·</span>
+                          <span dir="ltr">{car.license_plate}</span>
+                        </>
+                      ) : null}
+                    </Link>
+                    {car.status === "retired" ? (
+                      <span className="text-xs text-muted-foreground">{he.profileExtra.tempCarRevoked}</span>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            )}
+            {hasCars && !addingCar ? (
+              <Button size="sm" variant="outline" onClick={() => setAddingCar(true)}>
+                {he.profileExtra.tempCarAddAnother}
+              </Button>
+            ) : null}
+            {!hasCars || addingCar ? (
+              <div className="space-y-2 border-t pt-3">
+                <div className="space-y-1">
+                  <Label htmlFor="temporary-car-name">{he.profileExtra.tempCarNickname}</Label>
+                  <Input id="temporary-car-name" value={carName} onChange={(e) => setCarName(e.target.value)} />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="temporary-car-plate">{he.profileExtra.tempCarPlate}</Label>
+                  <Input id="temporary-car-plate" dir="ltr" value={carPlate} onChange={(e) => setCarPlate(e.target.value)} />
+                </div>
+                <Label>{he.profileExtra.tempCarSeats}</Label>
+                <PassengerStepper value={carSeats} onChange={setCarSeats} />
+                <Button
+                  size="sm"
+                  disabled={!active.canSubmit || !carName || !carPlate || registerCarMutation.isPending}
+                  onClick={handleRegisterCar}
+                >
+                  {he.action.registerTempCar}
+                </Button>
+              </div>
+            ) : null}
+          </CardContent>
+        </Card>
+
+        <ParentOfCard />
+        </TabsContent>
+
+        <TabsContent value="prefs" className="space-y-4">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">{he.profileExtra.homeWeekTitle}</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            <Label>{he.profileExtra.homeWeekLabel}</Label>
+            <Select
+              value={profileQuery.data?.home_week_preference ?? "auto"}
+              onValueChange={(next) => updateProfileMutation.mutate({ home_week_preference: next as HomeWeekPreference })}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="auto">{he.profileExtra.homeWeekAuto}</SelectItem>
+                <SelectItem value="live">{he.profileExtra.homeWeekLive}</SelectItem>
+                <SelectItem value="open">{he.profileExtra.homeWeekOpen}</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">{he.profileExtra.homeWeekHelper}</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="pt-6">
+            {/* REQ §13.110 (e): the old field-by-field request form instead of the sentence layout. */}
+            <div className="flex items-center justify-between gap-3">
+              <div className="space-y-0.5">
+                <Label htmlFor="profile-classic-request-form">{he.profileExtra.classicRequestFormLabel}</Label>
+                <p className="text-xs text-muted-foreground">{he.profileExtra.classicRequestFormHelp}</p>
+              </div>
+              <Switch
+                id="profile-classic-request-form"
+                checked={profileQuery.data?.classic_request_form ?? false}
+                onCheckedChange={(checked) => updateProfileMutation.mutate({ classic_request_form: checked })}
+              />
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Owner 2026-10-16: per-device, turns the new-request guided start off. */}
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center justify-between gap-3">
+              <div className="space-y-0.5">
+                <Label htmlFor="profile-no-auto-dialogs">{he.profileExtra.noAutoDialogsLabel}</Label>
+                <p className="text-xs text-muted-foreground">{he.profileExtra.noAutoDialogsHelp}</p>
+              </div>
+              <Switch id="profile-no-auto-dialogs" checked={noAutoDialogs.enabled} onCheckedChange={noAutoDialogs.setEnabled} data-testid="profile-no-auto-dialogs" />
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Owner 2026-10-12: per-device opt-in (localStorage, no account data) for features still being tried out. */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">{he.profileExtra.experimentalTitle}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center justify-between gap-3">
+              <div className="space-y-0.5">
+                <Label htmlFor="profile-experimental">{he.profileExtra.experimentalLabel}</Label>
+                <p className="text-xs text-muted-foreground">{he.profileExtra.experimentalHelp}</p>
+              </div>
+              <Switch id="profile-experimental" checked={experimental.enabled} onCheckedChange={experimental.setEnabled} data-testid="profile-experimental" />
+            </div>
+          </CardContent>
+        </Card>
+        </TabsContent>
+
+        <TabsContent value="look" className="space-y-4">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">{he.profileExtra.themeTitle}</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+            <Label>{he.themes.modeLabel}</Label>
+            <ToggleGroup
+              type="single"
+              value={themePreference}
+              onValueChange={(next) => next && setThemePreference(next as ThemePreference)}
+              className="justify-start"
+            >
+              <ToggleGroupItem value="light" className="h-11 px-3 text-sm">
+                {he.profileExtra.themeLight}
+              </ToggleGroupItem>
+              <ToggleGroupItem value="dark" className="h-11 px-3 text-sm">
+                {he.profileExtra.themeDark}
+              </ToggleGroupItem>
+              <ToggleGroupItem value="system" className="h-11 px-3 text-sm">
+                {he.profileExtra.themeSystem}
+              </ToggleGroupItem>
+            </ToggleGroup>
+            </div>
+            <div className="space-y-2">
+              <Label>{he.themes.themeLabel}</Label>
+              <ThemePicker />
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Owner 2026-11-07 (REQ §13.185 h): per-device, stops every animation and transition. */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">{he.profileExtra.accessibilityTitle}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center justify-between gap-3">
+              <div className="space-y-0.5">
+                <Label htmlFor="profile-reduce-motion">{he.profileExtra.reduceMotionLabel}</Label>
+                <p className="text-xs text-muted-foreground">{he.profileExtra.reduceMotionHelp}</p>
+              </div>
+              <Switch id="profile-reduce-motion" checked={reduceMotion.enabled} onCheckedChange={reduceMotion.setEnabled} data-testid="profile-reduce-motion" />
+            </div>
+          </CardContent>
+        </Card>
+        </TabsContent>
+
+        <TabsContent value="notifications" className="space-y-4">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">{he.profileExtra.notificationsTitle}</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {needsIosInstall ? (
+              <InstallHint />
+            ) : isPushSupported() ? (
+              <div className="flex items-center justify-between">
+                <span className="text-sm">
+                  {pushStatus.isSubscribed ? he.profileExtra.pushEnabled : he.profileExtra.pushDisabled}
+                </span>
                 <Switch
-                  checked={!category.events.some((e) => mutedEvents.has(e))}
-                  onCheckedChange={(checked) => toggleCategory(category.events, checked)}
+                  checked={pushStatus.isSubscribed}
+                  disabled={pushBusy || pushStatus.isLoading}
+                  onCheckedChange={togglePush}
                 />
               </div>
-            ))}
-            {/* REQ §13.169 (e): the inbox entry always comes; this decides the phone push. */}
-            <div className="flex items-center justify-between">
-              <Label htmlFor="profile-push-ride-edits" className="text-sm font-normal">{he.profileExtra.pushRideEditsLabel}</Label>
-              <Switch
-                id="profile-push-ride-edits"
-                checked={profileQuery.data?.push_on_ride_edits ?? true}
-                onCheckedChange={(checked) => updateProfileMutation.mutate({ push_on_ride_edits: checked })}
-                data-testid="profile-push-ride-edits"
-              />
-            </div>
-            {/* REQ §13.191: "צא/י בעוד 30 דקות" before a ride I drive for someone else; null = not asked yet = on. */}
-            <div className="flex items-center justify-between">
-              <Label htmlFor="profile-driver-reminder" className="text-sm font-normal">{he.profileExtra.driverReminderLabel}</Label>
-              <Switch
-                id="profile-driver-reminder"
-                checked={profileQuery.data?.driver_reminder ?? true}
-                onCheckedChange={(checked) => updateProfileMutation.mutate({ driver_reminder: checked })}
-                data-testid="profile-driver-reminder"
-              />
-            </div>
-            <div className="flex items-center justify-between opacity-60">
-              <span className="text-sm">{he.nav.sadran}</span>
-              <span className="text-xs text-muted-foreground">{he.profileExtra.sadranEventsNote}</span>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">{he.profileExtra.tempCarTitle}</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          {!hasCars ? (
-            <p className="text-sm text-muted-foreground">{he.profileExtra.tempCarNone}</p>
-          ) : (
-            <ul className="space-y-1 text-sm">
-              {(temporaryCarsQuery.data ?? []).map((car) => (
-                <li key={car.id} className="flex min-h-11 items-center justify-between gap-2">
-                  <Link
-                    to={paths.car(car.id)}
-                    className="flex min-h-11 flex-wrap items-center gap-1 rounded-md border px-3 py-2 hover:bg-muted"
-                    data-testid="my-private-car"
-                  >
-                    <span>{car.name}</span>
-                    {car.license_plate ? (
-                      <>
-                        <span aria-hidden>·</span>
-                        <span dir="ltr">{car.license_plate}</span>
-                      </>
-                    ) : null}
-                  </Link>
-                  {car.status === "retired" ? (
-                    <span className="text-xs text-muted-foreground">{he.profileExtra.tempCarRevoked}</span>
-                  ) : null}
-                </li>
-              ))}
-            </ul>
-          )}
-          {hasCars && !addingCar ? (
-            <Button size="sm" variant="outline" onClick={() => setAddingCar(true)}>
-              {he.profileExtra.tempCarAddAnother}
+            ) : null}
+            <Button type="button" variant="outline" size="sm" className="w-full" disabled={testBusy} onClick={() => void sendTest()} data-testid="test-notification">
+              {he.profileExtra.testNotification}
             </Button>
-          ) : null}
-          {!hasCars || addingCar ? (
+
             <div className="space-y-2 border-t pt-3">
-              <div className="space-y-1">
-                <Label htmlFor="temporary-car-name">{he.profileExtra.tempCarNickname}</Label>
-                <Input id="temporary-car-name" value={carName} onChange={(e) => setCarName(e.target.value)} />
+              {MUTE_CATEGORIES.map((category) => (
+                <div key={category.key} className="flex items-center justify-between">
+                  <span className="text-sm">{category.label}</span>
+                  <Switch
+                    checked={!category.events.some((e) => mutedEvents.has(e))}
+                    onCheckedChange={(checked) => toggleCategory(category.events, checked)}
+                  />
+                </div>
+              ))}
+              {/* REQ §13.169 (e): the inbox entry always comes; this decides the phone push. */}
+              <div className="flex items-center justify-between">
+                <Label htmlFor="profile-push-ride-edits" className="text-sm font-normal">{he.profileExtra.pushRideEditsLabel}</Label>
+                <Switch
+                  id="profile-push-ride-edits"
+                  checked={profileQuery.data?.push_on_ride_edits ?? true}
+                  onCheckedChange={(checked) => updateProfileMutation.mutate({ push_on_ride_edits: checked })}
+                  data-testid="profile-push-ride-edits"
+                />
               </div>
-              <div className="space-y-1">
-                <Label htmlFor="temporary-car-plate">{he.profileExtra.tempCarPlate}</Label>
-                <Input id="temporary-car-plate" dir="ltr" value={carPlate} onChange={(e) => setCarPlate(e.target.value)} />
+              {/* REQ §13.191: "צא/י בעוד 30 דקות" before a ride I drive for someone else; null = not asked yet = on. */}
+              <div className="flex items-center justify-between">
+                <Label htmlFor="profile-driver-reminder" className="text-sm font-normal">{he.profileExtra.driverReminderLabel}</Label>
+                <Switch
+                  id="profile-driver-reminder"
+                  checked={profileQuery.data?.driver_reminder ?? true}
+                  onCheckedChange={(checked) => updateProfileMutation.mutate({ driver_reminder: checked })}
+                  data-testid="profile-driver-reminder"
+                />
               </div>
-              <Label>{he.profileExtra.tempCarSeats}</Label>
-              <PassengerStepper value={carSeats} onChange={setCarSeats} />
-              <Button
-                size="sm"
-                disabled={!active.canSubmit || !carName || !carPlate || registerCarMutation.isPending}
-                onClick={handleRegisterCar}
-              >
-                {he.action.registerTempCar}
-              </Button>
+              <div className="flex items-center justify-between opacity-60">
+                <span className="text-sm">{he.nav.sadran}</span>
+                <span className="text-xs text-muted-foreground">{he.profileExtra.sadranEventsNote}</span>
+              </div>
             </div>
-          ) : null}
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+        </TabsContent>
+      </Tabs>
 
       <div className="flex flex-col gap-2">
         {isSadran ? (

@@ -629,6 +629,7 @@ export const heMember = {
       primary: "צבע ראשי",
       adjusted: "הותאם לקריאוּת",
       effectiveAria: "הצבע שבשימוש בפועל",
+      swatchAria: "בחירת צבע {hex}",
       reset: "איפוס לרגיל",
       previewHeading: "כותרת לדוגמה",
       previewBody: "טקסט רגיל של האפליקציה",
@@ -639,6 +640,14 @@ export const heMember = {
   },
   profileExtra: {
     detailsTitle: "פרטים",
+    /** REQ §13.198: the four profile tabs (short labels for a phone) and the read-only "parent of" card. */
+    tabDetails: "פרטים אישיים",
+    tabPrefs: "העדפות",
+    tabLook: "מראה",
+    tabNotifications: "התראות",
+    tabsLabel: "אזורי הפרופיל",
+    parentOfTitle: "הורה של",
+    childWithAge: "{{name}} (גיל: {{age}} שנים)",
     email: "אימייל",
     displayName: "שם לתצוגה (כינוי / שם בעברית)",
     displayNameHelp: "השם יופיע באפליקציה. השאירו ריק כדי להשתמש בשם מחשבון Google.",

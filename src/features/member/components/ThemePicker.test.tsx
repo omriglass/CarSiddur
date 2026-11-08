@@ -22,8 +22,21 @@ describe("ThemePicker", () => {
     fireEvent.click(screen.getByTestId("theme-option-custom"));
     expect(screen.getByTestId("custom-theme-editor")).toBeInTheDocument();
     expect(screen.queryByText(he.themes.custom.adjusted)).toBeNull();
+    fireEvent.click(screen.getByTestId("custom-theme-light-role-primary"));
+    fireEvent.click(screen.getByTestId("custom-theme-light-role-background"));
     fireEvent.change(screen.getByTestId("custom-theme-light-background"), { target: { value: "#ffffff" } });
+    fireEvent.click(screen.getByTestId("custom-theme-light-role-primary"));
     fireEvent.change(screen.getByTestId("custom-theme-light-primary"), { target: { value: "#ffff00" } });
     expect(screen.getByTestId("custom-theme-light-primary-adjusted")).toHaveTextContent(he.themes.custom.adjusted);
+  });
+
+  it("a role chip plus a swatch changes only that seed and stores it", () => {
+    render(<ThemePicker />);
+    fireEvent.click(screen.getByTestId("theme-option-custom"));
+    fireEvent.click(screen.getByTestId("custom-theme-light-role-card"));
+    fireEvent.click(screen.getByTestId("custom-theme-light-card-swatch-dbeafe"));
+    const stored = JSON.parse(localStorage.getItem("nevo-theme-custom.v1") ?? "{}");
+    expect(stored.light.card).toBe("#dbeafe");
+    expect(stored.light.primary).not.toBe("#dbeafe");
   });
 });

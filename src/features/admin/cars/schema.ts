@@ -3,7 +3,8 @@ import { z } from "zod";
 import { he } from "@/i18n/he";
 import { carStatusSchema } from "@/lib/enums";
 
-export const CAR_FEATURES = ["roof_rack", "large_trunk", "automatic", "awd"] as const;
+// REQ §13.199: "manual" replaced "automatic" (most cars are automatic — mark the exception); "tow_hitch" = רכב גורר.
+export const CAR_FEATURES = ["roof_rack", "large_trunk", "manual", "awd", "tow_hitch"] as const;
 export type CarFeature = (typeof CAR_FEATURES)[number];
 
 export const carSchema = z.object({

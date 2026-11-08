@@ -300,7 +300,7 @@ Unique index `(department_id, profile_id, coalesce(week_start, '1970-01-04'))`. 
 | type | car_type | NN | 'shared' | |
 | status | car_status | NN | 'active' | |
 | owner_id | uuid | | | FK profiles; CHECK `(type = 'temporary') = (owner_id is not null)` |
-| features | text[] | NN | '{}' | 'roof_rack','large_trunk','automatic','4x4',... (app-side vocabulary) |
+| features | text[] | NN | '{}' | 'roof_rack','large_trunk','manual','awd','tow_hitch' (app-side vocabulary, `CAR_FEATURES`; `manual` replaced `automatic` 2026-11-08, REQ §13.199) |
 | notes | text | | | key location, quirks |
 | built_in_child_seats | smallint | NN | 0 | §6.2 "unless the car lists built-in seats" |
 | built_in_boosters | smallint | NN | 0 | |

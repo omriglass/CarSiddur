@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 import { he, tv } from "../src/i18n/he";
+import { paths } from "../src/app/routes";
 import { SEEDED_USERS, serviceRoleClient, signIn, submitRequestForm } from "./helpers";
 import { dismissGuide } from "./request-form";
 
@@ -144,7 +145,7 @@ test.describe("request sentence layout", { tag: ["@request-form"] }, () => {
     await dismissGuide(page);
     await expect(page.getByTestId("request-sentence")).toBeVisible();
 
-    await page.goto("/profile");
+    await page.goto(paths.profile("prefs"));
     await page.getByLabel(he.profileExtra.classicRequestFormLabel).click();
     await expect(page.getByLabel(he.profileExtra.classicRequestFormLabel)).toBeChecked();
 

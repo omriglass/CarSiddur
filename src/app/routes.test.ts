@@ -10,6 +10,7 @@ import { paths } from "./routes";
  * runtime as a 404.
  */
 const ROUTE_PATTERNS = [
+  "/profile",
   "/sadran",
   "/sadran/:dept/:week",
   "/sadran/:dept/:week/board",
@@ -178,6 +179,14 @@ describe("paths.ride", () => {
 describe("paths.proposalToken", () => {
   it("matches /p/:token", () => {
     expectRoutable(paths.proposalToken("secret-token"));
+  });
+});
+
+describe("paths.profile", () => {
+  it("matches /profile with and without ?tab=", () => {
+    expectRoutable(paths.profile());
+    expectRoutable(paths.profile("look"));
+    expect(paths.profile("look")).toBe("/profile?tab=look");
   });
 });
 

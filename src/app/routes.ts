@@ -129,6 +129,9 @@ export const paths = {
     errors: (): string => "/admin/errors",
   },
 
+  /** `/profile`; `?tab=details|prefs|look|notifications` opens a tab (REQ §13.198). */
+  profile: (tab?: string): string => withQuery("/profile", { tab }),
+
   /** `/changelog` — every "מה חדש" entry, newest first (REQ §13.139 c). */
   changelog: (): string => "/changelog",
 
