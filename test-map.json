@@ -1429,6 +1429,39 @@
       ]
     },
     {
+      "id": "themes",
+      "title": "Themes (Profile → מראה) and the neutral grid scope",
+      "paths": [
+        "src/themes/**",
+        "src/hooks/useTheme.ts",
+        "src/components/ThemeBackdrop.tsx",
+        "src/features/member/components/ThemePicker*",
+        "src/features/member/components/CustomThemeEditor*",
+        "src/index.css",
+        "src/main.tsx",
+        "tailwind.config.ts",
+        "e2e/themes.spec.ts"
+      ],
+      "vitest": [
+        "src/themes",
+        "src/features/member"
+      ],
+      "sql": [],
+      "playwrightTags": [
+        "@themes"
+      ],
+      "reqRefs": [
+        "13.196"
+      ],
+      "qaChecklist": [
+        "Profile → מראה: pick each preset in light and dark; text, buttons, badges and the request form stay readable (REQ §13.196 b)",
+        "Light-only presets (השומר הצעיר, כיף, רגוע) in dark mode look exactly like the neutral dark (REQ §13.196 a)",
+        "Siddur and Sadran board grids look identical under every theme (REQ §13.196 c)",
+        "Custom theme: pick yellow primary on white — the editor says הותאם לקריאוּת and the app stays readable",
+        "Decoration only in the page background, never over text or the grid; it stops moving under כבה אנימציות (REQ §13.196 d)"
+      ]
+    },
+    {
       "id": "rls-security",
       "title": "RLS / security",
       "paths": [

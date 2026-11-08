@@ -671,6 +671,23 @@ migrations matching `*maintenance*`; `supabase/tests/scheduled_maintenance.sql`;
 
 **REQ**: item 149.
 
+### themes — Themes (Profile → מראה) and the neutral grid scope
+
+**Paths**: `src/themes/**` (`color.ts`, `derive.ts` readability floor, `apply.ts` storage/apply, `registry.ts`, `presets/*`), `src/hooks/useTheme.ts`, `src/components/ThemeBackdrop.tsx`, the Profile picker (`src/features/member/components/ThemePicker*`, `CustomThemeEditor*`), `src/index.css` (neutral tokens, `.theme-grid-neutral`, `html[data-theme=…]` rules), `src/main.tsx`, `e2e/themes.spec.ts`.
+
+**Automated**:
+- Vitest: `src/themes/themes.test.ts` — neutral tokens mirror `index.css`; every preset (light + dark) and ten deliberately bad custom picks pass the readability check after derivation (text 4.5:1 / high visibility 7:1, fills 4.5:1, marks 3:1, borders); light-only presets resolve to neutral dark; the picker's component tests.
+- Playwright: `@themes` (`e2e/themes.spec.ts`) — screenshots of siddur, board, /my and the request form under every theme in light and dark.
+
+**QA script**:
+1. Profile → מראה: pick each preset in light and dark; text, buttons, badges and the request form stay readable.
+2. השומר הצעיר / כיף / רגוע in dark mode look exactly like the neutral dark, without decoration.
+3. The siddur and the board grids look identical under every theme.
+4. Custom: yellow primary on white → "הותאם לקריאוּת", the app stays readable; reset returns to neutral colours.
+5. Decoration only in the background; it stops moving under "כבה אנימציות".
+
+**REQ**: item 196.
+
 ### rls-security — RLS / security
 
 **Paths**: `src/integrations/supabase/types.ts`, `src/lib/rpc.ts`, `src/lib/enums.ts`(+test), `scripts/test-db.mjs`; migrations matching `*rls*`, `*helpers*`, `*secure*`, `*grant*`, `*protect*`, `*guard*`,

@@ -628,7 +628,8 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
           // overflow-auto` side-by-side (UX_FLOWS.md §20) — without this the panel grows with
           // the page, forcing a page-level scroll to reach lower unmet cards that also pushes
           // the grid itself off-screen.
-          className={!showUnmetPanel ? "hidden" : tableView ? "min-w-0" : "hidden min-w-0 lg:sticky lg:top-0 lg:block lg:max-h-[100dvh] lg:self-start lg:overflow-auto"}
+          // `theme-grid-neutral`: the unplaced list reads like the grid in every theme (REQ §13.196 c).
+          className={cn("theme-grid-neutral bg-background", !showUnmetPanel ? "hidden" : tableView ? "min-w-0" : "hidden min-w-0 lg:sticky lg:top-0 lg:block lg:max-h-[100dvh] lg:self-start lg:overflow-auto")}
           {...{ [UNMET_DROP_ZONE_ATTR]: "true" }}
         >
           <div className="mb-2 flex items-center justify-between gap-2">

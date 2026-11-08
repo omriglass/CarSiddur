@@ -90,6 +90,7 @@ src/
     <feature>/api.ts           only place feature calls supabase.from() / .rpc() (lint-enforced; `src/lib/rpc.ts` is the typed wrapper)
     <feature>/schema.ts        zod schemas + inferred form types
     <feature>/keys.ts          TanStack Query key definitions
+  themes/                      REQ §13.196: per-device looks — `presets/<id>.ts` + `registry.ts` (one list), `derive.ts` (seeds → tokens, readability floor enforced), `apply.ts` (localStorage, inline vars + `data-theme` on <html>), `neutralTokens.ts` (mirror of index.css); grids stay neutral via `.theme-grid-neutral`; `/add-theme`
   solver/                      PURE TypeScript (no React, Supabase, i18n imports)
     index.ts                   solve(), matchFreedSlot(), tryAutoApprove()
     types.ts                   SolverInput, Request, Car, Policy, Suggestion, Assignment, UnmetRequest
@@ -222,7 +223,7 @@ scripts/
   check-migrations.mjs         `node scripts/check-migrations.mjs <base-ref>` — flags a new migration that drops/renames without a matching `supabase/rollback/<ts>_down.sql`
   impact.test.mjs              Vitest: the glob matcher, migrationContentRules, and test-map.json/docs/TEST_MAP.md area-id consistency
 .claude/
-  skills/                      15 playbooks with exact steps and file paths (incl. `/qa-week`, `/qa-concurrent` (two Sadrans at once), the QA simulation — docs/QA_SIMULATION.md; `/write-changelog`, the release's "מה חדש")
+  skills/                      16 playbooks with exact steps and file paths (incl. `/qa-week`, `/qa-concurrent` (two Sadrans at once), the QA simulation — docs/QA_SIMULATION.md; `/write-changelog`, the release's "מה חדש")
   agents/                      5 specialized agents: solver-dev, db-migrator, ui-dev, docs-keeper, e2e-tester
 ```
 
@@ -300,6 +301,7 @@ scripts/
 | Small bug report / regression | `/bugfixer` | none (or a cheap model) |
 | Playwright coverage | — | e2e-tester |
 | Mock week / end-to-end QA with role-played members | `/qa-week` (docs/QA_SIMULATION.md) | QA Sadran (opus) + QA user (sonnet) |
+| New look in Profile → מראה (festive/seasonal theme, preset colours, background decoration) | `/add-theme` (src/themes/, REQ §13.196) | none |
 | Two Sadrans editing one week at once (concurrency QA, synchronized races) | `/qa-concurrent` (docs/QA_SIMULATION.md "Two Sadrans at once", `scripts/qa/race.mjs`) | two QA Sadrans + QA user (all sonnet) |
 | "מה חדש" for the next announced release (minor releases have none), WhatsApp what's-new text | `/write-changelog` (src/i18n/he.changelog.ts, REQ §13.139) | none |
 | Reproduce a production problem on a local copy of production, root cause, fix risk, fix (trivial) or report | `/replicate-prod-issue` (`npm run debug`, scripts/debug/README.md) | none |

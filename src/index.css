@@ -16,7 +16,10 @@ html {
  * matches without touching component code.
  */
 @layer base {
-  :root {
+  /* `.theme-grid-neutral` (REQ §13.196 c): the siddur/board grids keep these neutral colours in every theme —
+     a theme's tokens are inline variables on <html>, which this descendant rule overrides for the grid. */
+  :root,
+  .theme-grid-neutral {
     --background: 214 32% 96%;
     --foreground: 215 27% 12%;
 
@@ -104,7 +107,8 @@ html {
  * naturally win the cascade over anything in `@layer base` regardless of
  * source order, which is exactly the priority dark-mode overrides need.
  */
-.dark {
+.dark,
+.dark .theme-grid-neutral {
   --background: 222 47% 8%;
   --foreground: 210 40% 98%;
 
@@ -209,4 +213,35 @@ html[data-reduce-motion] *::after {
   animation: none !important;
   transition: none !important;
   scroll-behavior: auto !important;
+}
+
+/* Theme decoration drift (REQ §13.196 d): one slow background-position loop on the fixed backdrop layer. Off under the
+   device's reduced-motion setting; `html[data-reduce-motion]` already kills every animation above. */
+@keyframes theme-backdrop-drift {
+  from { background-position: 0 0; }
+  to { background-position: 240px 240px; }
+}
+.theme-backdrop-drift {
+  animation: theme-backdrop-drift 75s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .theme-backdrop-drift { animation: none; }
+}
+
+/* High visibility (REQ §13.196): strong focus ring, 2px outlines on fields and cards, a little larger tap targets.
+   The siddur/board grids stay identical in every theme, so they are excluded. */
+html[data-theme="highVis"] :is(a, button, input, textarea, select, summary, [role="button"], [role="tab"], [role="checkbox"], [role="switch"], [role="combobox"], [role="menuitem"], [tabindex]):focus-visible {
+  outline: 3px solid hsl(var(--ring));
+  outline-offset: 2px;
+}
+html[data-theme="highVis"] :is(input:not([type="checkbox"]):not([type="radio"]), textarea, select, button[role="combobox"], [role="checkbox"], [role="switch"]):not(.theme-grid-neutral *) {
+  border-width: 2px;
+  border-color: hsl(var(--foreground));
+}
+html[data-theme="highVis"] .rounded-lg.border:not(.theme-grid-neutral *):not(.theme-grid-neutral) {
+  border-width: 2px;
+  border-color: hsl(var(--foreground) / 0.7);
+}
+html[data-theme="highVis"] button:is(.h-9, .h-10):not(.w-10):not(.theme-grid-neutral *) {
+  min-height: 2.75rem;
 }

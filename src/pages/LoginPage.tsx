@@ -68,7 +68,7 @@ export function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-dvh flex-col items-center justify-center gap-6 bg-background p-4">
+    <div className="flex min-h-dvh flex-col items-center justify-center gap-6 p-4">
       <div className="w-full max-w-sm overflow-hidden rounded-xl shadow-elegant">
         <div className="flex flex-col items-center gap-3 bg-gradient-hero px-6 py-10 text-center text-primary-foreground">
           <span className="flex size-14 items-center justify-center rounded-2xl bg-white/15">

@@ -11,23 +11,23 @@ import { RideMoveAgreementHost } from "@/components/RideMoveAgreementHost";
 import { DriverReminderHost } from "@/components/DriverReminderHost";
 import { ShortTurnaroundHost } from "@/components/ShortTurnaroundHost";
 import { SmallTrunkHost } from "@/components/SmallTrunkHost";
+import { ThemeBackdrop } from "@/components/ThemeBackdrop";
 import { Toaster } from "@/components/ui/sonner";
 import { SessionProvider } from "@/features/auth/SessionProvider";
 import { errorToReport, reportClientError } from "@/features/diagnostics/reportClientError";
-import { applyTheme, getStoredPreference } from "@/hooks/useTheme";
 import { he } from "@/i18n/he";
 import { captureInstallPrompt } from "@/lib/installPrompt";
 import { installKeyboardInset } from "@/lib/keyboardInset";
 import { installReduceMotion } from "@/features/member/useReduceMotion";
 import { createQueryClient } from "@/lib/queryPolicy";
 import { AppError, showErrorToast } from "@/lib/rpc";
+import { installAppearance } from "@/themes/apply";
 
 import "@/index.css";
 
 // Applied synchronously before the first paint so there's no flash of the
-// wrong theme (the `useTheme()` hook re-applies this once Profile mounts,
-// and keeps it in sync with OS changes while on "system").
-applyTheme(getStoredPreference());
+// wrong theme; keeps following the OS dark setting while the mode is "system".
+installAppearance();
 captureInstallPrompt();
 
 // Last-resort net for a promise rejection nothing else caught (CLAUDE.md hard
@@ -119,6 +119,7 @@ createRoot(rootElement).render(
         <SessionProvider>
           <RouterProvider router={router} />
           <Toaster position="top-center" />
+          <ThemeBackdrop />
           <SmallTrunkHost />
           <ShortTurnaroundHost />
           <DriverReminderHost />

@@ -22,6 +22,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useIsSadranAnywhere } from "@/features/auth/useIsSadran";
+import { ThemePicker } from "@/features/member/components/ThemePicker";
 import { useTheme, type ThemePreference } from "@/hooks/useTheme";
 import { useNoAutoDialogs } from "@/features/member/useNoAutoDialogs";
 import { useExperimentalFeatures } from "@/features/member/useExperimentalFeatures";
@@ -285,8 +286,9 @@ export function ProfilePage() {
         <CardHeader>
           <CardTitle className="text-base">{he.profileExtra.themeTitle}</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-2">
-          <Label>{he.profileExtra.themeLabel}</Label>
+        <CardContent className="space-y-4">
+          <div className="space-y-2">
+          <Label>{he.themes.modeLabel}</Label>
           <ToggleGroup
             type="single"
             value={themePreference}
@@ -303,6 +305,11 @@ export function ProfilePage() {
               {he.profileExtra.themeSystem}
             </ToggleGroupItem>
           </ToggleGroup>
+          </div>
+          <div className="space-y-2">
+            <Label>{he.themes.themeLabel}</Label>
+            <ThemePicker />
+          </div>
         </CardContent>
       </Card>
 

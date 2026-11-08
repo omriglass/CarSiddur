@@ -667,7 +667,7 @@ export function SiddurPage() {
               onShowEarlyHoursChange={setShowEarlyHours}
             />
           </div>
-          <div className={tableView ? "hidden" : "lg:hidden"}>
+          <div className={cn("theme-grid-neutral bg-background", tableView ? "hidden" : "lg:hidden")}>
             <WeekStrip weekStart={weekStart as string} counts={dayCounts} selected={activeDay ?? ""} onSelect={selectDay} />
             {/* Owner 2026-10-26: an unpublished day is stamped all over, not a banner one can scroll past. */}
             <div className={cn("relative mt-3 space-y-2", stampUnpublished && "min-h-[60vh]")}>

@@ -41,7 +41,7 @@ export function LegalPage({ doc }: { doc: "privacy" | "terms" }) {
   }
 
   return (
-    <div className="min-h-dvh bg-background px-4 py-6">
+    <div className="min-h-dvh px-4 py-6">
       <div className="mx-auto max-w-2xl space-y-6">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <Link to={session ? "/" : "/login"} className="text-sm text-primary underline-offset-2 hover:underline">{he.legal.backToApp}</Link>

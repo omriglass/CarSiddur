@@ -1699,7 +1699,7 @@ export function WeekGrid({
   const peekRide = notesPeek ? rides.find((r) => r.id === notesPeek.rideId) : undefined;
 
   return (
-    <div className="min-w-0">
+    <div className="theme-grid-neutral min-w-0 bg-background text-foreground">
     {notesPeek && peekRide ? (
       <Popover open onOpenChange={(open) => { if (!open) setNotesPeek(null); }}>
         <PopoverAnchor virtualRef={{ current: notesPeek.el }} />

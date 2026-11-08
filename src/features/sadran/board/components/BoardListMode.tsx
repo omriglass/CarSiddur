@@ -46,7 +46,7 @@ export function BoardListMode({ rides, pendingRides = [], draftRideIds, shadowed
   const [segment, setSegment] = useState<Segment>("cars");
 
   return (
-    <div className="space-y-3">
+    <div className="theme-grid-neutral space-y-3">
       <div className="flex gap-1 rounded-md border p-1" role="tablist">
         {(
           [
