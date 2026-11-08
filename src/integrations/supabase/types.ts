@@ -7150,6 +7150,10 @@ export type Database = {
         Args: { p_request_id: string }
         Returns: Json
       }
+      restore_removed_reservation: {
+        Args: { p_ride_id: string }
+        Returns: number
+      }
       resume_request_template: {
         Args: { p_template_id: string }
         Returns: undefined

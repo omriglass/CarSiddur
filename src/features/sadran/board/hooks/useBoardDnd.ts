@@ -73,6 +73,7 @@ import {
   useSetRidePassengersMutation,
   useJoinDropOffLegsMutation,
   useUnassignRideMutation,
+  useRestoreRemovedReservationMutation,
   useUnmergeRequestMutation,
   useCancelRideMutation,
 } from "../../hooks";
@@ -164,6 +165,7 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
   const cancelRideChangeMutation = useCancelRideChangeMutation();
   const cancelRideMutation = useCancelRideMutation();
   const unassignRideMutation = useUnassignRideMutation();
+  const restoreReservationMutation = useRestoreRemovedReservationMutation();
   const joinLegsMutation = useJoinDropOffLegsMutation();
   const unmergeRequestMutation = useUnmergeRequestMutation();
   const undoStack = useUndoStack<void>();
@@ -715,6 +717,7 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
   async function handleUnassignRide(rideId: string) {
     const ride = rides.find((r) => r.id === rideId);
     if (!ride?.version) return;
+    const reservation = isReservation(ride);
     try {
       await unassignRideMutation.mutateAsync({
         rideId,
@@ -722,7 +725,18 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
         departmentId,
         weekStart,
       });
-      toast.success(he.sadranBoard.unassignedToast);
+      if (!reservation) { toast.success(he.sadranBoard.unassignedToast); return; }
+      // REQ §13.194: a reservation serves no request - removing it deletes it, so say so and offer the undo at once.
+      let version = 0;
+      const undoEntry = {
+        label: he.sadranBoard.reservationRemovedLabel,
+        run: async () => { version = await restoreReservationMutation.mutateAsync({ rideId, departmentId, weekStart }); },
+        redo: async () => { await unassignRideMutation.mutateAsync({ rideId, expectedVersion: version, departmentId, weekStart }); },
+      };
+      undoStack.push(undoEntry);
+      toast.success(he.sadranBoard.reservationRemovedToast, {
+        action: { label: he.common.cancel, onClick: () => { void undoStack.undoEntry(undoEntry).then((result) => { if (result) toast.success(tv("sadranBoard.undoToast", { label: result.label })); }).catch(() => undefined); } },
+      });
     } catch {
       // toast already shown by the mutation
     }
@@ -778,7 +792,7 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
   async function handleDropUnassign(rideId: string) {
     const ride = rides.find((r) => r.id === rideId);
     const name = ride ? (servedOf(ride).find((entry) => entry.role === "driver")?.requester ?? servedOf(ride)[0]?.requester ?? ride.driver_name ?? "") : "";
-    const answer = await askDrop({ kind: "unplace", name });
+    const answer = await askDrop({ kind: "unplace", name, reservation: !!ride && isReservation(ride) });
     if (answer === "yes") await handleUnassignRide(rideId);
   }
 

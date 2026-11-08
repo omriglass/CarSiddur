@@ -83,9 +83,9 @@ export function DropAskDialog({ ask, onAnswer }: DropAskDialogProps) {
         <ConfirmDialog
           open
           onOpenChange={close}
-          title={tv("dropAsk.unplace.title", { name: ask.name })}
-          description={he.dropAsk.unplace.body}
-          confirmLabel={he.dropAsk.unplace.confirm}
+          title={ask.reservation ? (ask.name ? tv("dropAsk.unplace.reservationTitle", { name: ask.name }) : he.dropAsk.unplace.reservationTitleNoName) : tv("dropAsk.unplace.title", { name: ask.name })}
+          description={ask.reservation ? he.dropAsk.unplace.reservationBody : he.dropAsk.unplace.body}
+          confirmLabel={ask.reservation ? he.dropAsk.unplace.reservationConfirm : he.dropAsk.unplace.confirm}
           destructive
           onConfirm={() => onAnswer("yes")}
         />

@@ -598,6 +598,11 @@ export async function unassignRide(rideId: string, expectedVersion: number): Pro
   await rpc("unassign_ride", { p_ride_id: rideId, p_expected_version: expectedVersion });
 }
 
+/** REQ §13.194: undo of removing a reservation - the same ride comes back; returns its new version. */
+export async function restoreRemovedReservation(rideId: string): Promise<number> {
+  return rpc("restore_removed_reservation", { p_ride_id: rideId });
+}
+
 /**
  * REQ §13.105 c: join a הקפצה's drop-off ride and pickup ride (the request's two single-request chauffeur
  * rides) into one ride, by hand (`join_drop_off_legs`). `rideId`/`expectedVersion` are the ride the Sadran

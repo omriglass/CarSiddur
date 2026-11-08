@@ -665,8 +665,14 @@ test.describe.serial("board (bug-fix pass regression, fake-week data)", { tag: [
     }).toPass();
     await expect(block).toContainText("00:30–01:45");
     await openRideDetails(page, block);
-    await page.getByRole("button", { name: "הסר שיבוץ" }).click();
+    // REQ §13.194: a reservation is deleted (it has no request to go back to) - and the toast undoes it.
+    await page.getByRole("button", { name: "מחיקת שמירת הזמן" }).click();
     await expect(block).toHaveCount(0);
+    await page.locator("[data-sonner-toast]").filter({ hasText: "שמירת הזמן נמחקה" }).getByRole("button", { name: "ביטול" }).click();
+    await expect(block).toContainText("00:30–01:45");
+    const { data: restored } = await admin.from("rides").select("status, notes").eq("id", reserved!.id).single();
+    expect(restored?.status).not.toBe("cancelled");
+    expect(restored?.notes).toBe("Board regression reservation");
   });
 
 });

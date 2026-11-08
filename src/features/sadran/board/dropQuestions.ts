@@ -48,7 +48,7 @@ export type DropAskSpec =
   | { kind: "merge"; guest: string; host: string; car: string }
   | { kind: "split"; guest: string; host: string; outcome: SplitOutcome | null }
   | { kind: "transfer"; guest: string; host: string; from: string; car: string }
-  | { kind: "unplace"; name: string };
+  | { kind: "unplace"; name: string; /** REQ §13.194: a reservation is deleted, not returned to the list. */ reservation?: boolean };
 export type DropAsk = DropAskSpec & { resolve: (answer: DropAnswer) => void };
 
 /** A guest chip dropped on a ride other than its own asks to move it; anywhere else it asks to split. */

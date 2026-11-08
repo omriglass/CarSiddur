@@ -216,6 +216,9 @@ export const heSadran = {
     chainBreakBody: "{{car}} יישאר ב{{place}}, אבל הנסיעה הבאה שלו ב־{{time}} יוצאת מ{{nextPlace}}. צריך לדאוג שהרכב יגיע לשם.",
     chainBreakConfirm: "לשבץ בכל זאת",
     unassignedToast: "השיבוץ הוסר — הבקשות חזרו ללא שיבוץ",
+    /** REQ §13.194: removing a reservation deletes it; the toast carries "ביטול". */
+    reservationRemovedToast: "שמירת הזמן נמחקה",
+    reservationRemovedLabel: "מחיקת שמירת הזמן",
     legsJoinedToast: "ההקפצה והאיסוף חוברו לנסיעה אחת",
     /**
      * Mobile-friendly board header (2026-09-10): the eye/kebab icon menus that
@@ -290,6 +293,8 @@ export const heSadran = {
     version: "גרסה {{version}}",
     cancelled: "הנסיעה בוטלה",
     removeAssignment: "הסר שיבוץ",
+    /** REQ §13.194: a reservation is deleted (undo from the toast / ↶). */
+    removeReservation: "מחיקת שמירת הזמן",
     /** REQ §13.105 c: join a הקפצה's drop-off and pickup rides into one ride. */
     joinLegs: "חבר הלוך ואיסוף לנסיעה אחת",
     removeAssignmentReason: "הוסר שיבוץ מהלוח (נגרר לרשימת הלא-משובצים)",
@@ -926,6 +931,11 @@ export const heSadran = {
       title: "להוציא את הנסיעה של {{name}} מהשיבוץ?",
       body: "הבקשה תחזור לרשימת \"לא שובצו\".",
       confirm: "הוצא משיבוץ",
+      /** REQ §13.194: a reservation has no request to go back to - it is deleted (undo right after). */
+      reservationTitle: "למחוק את שמירת הזמן של {{name}}?",
+      reservationTitleNoName: "למחוק את שמירת הזמן?",
+      reservationBody: "שמירת זמן היא לא בקשה, ולכן היא לא תחזור לרשימת \"לא שובצו\" — היא תימחק מהלוח. אפשר לבטל מיד אחרי זה (↶).",
+      reservationConfirm: "מחק/י",
     },
   },
   /** REQ §13.95 (H3): the Sadran changes a request's trip type from the ride sheet / unmet card. */

@@ -524,4 +524,91 @@ begin
   ), 'the removed requester was not notified';
 end $$;
 
+-- ---------------------------------------------------------------------------
+-- REQ §13.194: removing a reservation deletes it (nothing returns to the waiting list) and can be undone -
+-- restore_removed_reservation puts the same ride back; on the board a removal plus its undo tells nobody anything.
+-- ---------------------------------------------------------------------------
+do $$
+declare
+  dept uuid := '00000000-0000-0000-0000-000000000001';
+  sadran uuid := '00000000-0000-0000-0000-000000000102';
+  member1 uuid := '00000000-0000-0000-0000-000000000103';
+  member2 uuid := '00000000-0000-0000-0000-000000000104';
+  home uuid := '00000000-0000-0000-0000-000000000010';
+  car uuid := '00000000-0000-0000-0000-000000000040';
+  w date := public.current_week_start() + 140;
+  d date; t timestamptz; pub uuid;
+  rA uuid; rB uuid; rMove uuid; blocker uuid; ver int; n int; res int; msg text;
+begin
+  d := w + 1; t := (d + time '08:00') at time zone 'Asia/Jerusalem';
+  insert into public.weeks(department_id, week_start, phase, open_at, close_at, publish_at)
+    values (dept, w, 'open', now() - interval '2 days', now() + interval '1 day', now() + interval '2 days');
+  insert into public.rides(department_id, week_start, car_id, starts_at, ends_at, origin_id, destination_id, driver_id, status, created_by, notes)
+    values (dept, w, car, t, t + interval '2 hours', home, home, member1, 'confirmed', sadran, 'removed and restored') returning id into rA;
+  insert into public.rides(department_id, week_start, car_id, starts_at, ends_at, origin_id, destination_id, driver_id, status, created_by)
+    values (dept, w, car, t + interval '6 hours', t + interval '7 hours', home, home, member1, 'confirmed', sadran) returning id into rB;
+  insert into public.siddur_versions(department_id, week_start, snapshot, published_by) values (dept, w, '{}', sadran) returning id into pub;
+  perform set_config('app.in_publish', 'on', true);
+  update public.weeks set phase = 'published', published_version_id = pub, published_at = now(), published_days = array[d]
+    where department_id = dept and week_start = w;
+  perform set_config('app.in_publish', 'off', true);
+
+  perform set_config('request.jwt.claims', jsonb_build_object('sub', sadran, 'role', 'authenticated')::text, true);
+  perform public.set_ride_passengers(rA, (select version from public.rides where id = rA),
+    jsonb_build_array(jsonb_build_object('person_id', member2, 'display_name', 'חברה שנייה', 'seat_kind', 'adult')));
+  perform public.set_ride_passengers(rB, (select version from public.rides where id = rB),
+    jsonb_build_array(jsonb_build_object('person_id', member2, 'display_name', 'חברה שנייה', 'seat_kind', 'adult')));
+
+  -- (1) outside the board: removed (marked as a removed reservation), the named person told; restored, told again.
+  select count(*) into n from public.notifications where recipient_id = member2 and data->>'ride_id' = rA::text;
+  perform public.unassign_ride(rA, (select version from public.rides where id = rA));
+  assert (select status = 'cancelled' and cancel_reason = 'RESERVATION_REMOVED' from public.rides where id = rA),
+    'a removed reservation must be cancelled as RESERVATION_REMOVED';
+  ver := public.restore_removed_reservation(rA);
+  assert (select status = 'confirmed' and cancelled_at is null and cancelled_by is null and cancel_reason is null
+            and version = ver and notes = 'removed and restored' from public.rides where id = rA),
+    'the restored reservation must be the same ride, back in its old status';
+  assert (select count(*) from public.ride_passengers where ride_id = rA) = 1, 'the restored reservation lost its people';
+  assert (select count(*) from public.notifications where recipient_id = member2 and data->>'ride_id' = rA::text) = n + 2,
+    'outside the board the named person hears of the removal and of the restore';
+
+  -- (2) only a removed reservation, once
+  begin
+    perform public.restore_removed_reservation(rA);
+    raise exception 'restored a ride that is not removed';
+  exception when raise_exception then
+    get stacked diagnostics msg = message_text;
+    assert msg = 'ride_not_found', format('got %s', msg);
+  end;
+  insert into public.rides(department_id, week_start, car_id, starts_at, ends_at, origin_id, destination_id, driver_id, status, created_by,
+    auto_relocation, pin_reason)
+    values (dept, w, car, t + interval '3 hours', t + interval '4 hours', home, home, sadran, 'confirmed', sadran, true, 'CAR_MOVE') returning id into rMove;
+  perform public.unassign_ride(rMove, (select version from public.rides where id = rMove));
+  assert (select cancel_reason from public.rides where id = rMove) = 'SADRAN_UNASSIGNED', 'a car move is not a reservation';
+
+  -- (3) the car was given to someone else meanwhile: refused
+  perform public.unassign_ride(rA, ver);
+  insert into public.rides(department_id, week_start, car_id, starts_at, ends_at, origin_id, destination_id, driver_id, status, created_by)
+    values (dept, w, car, t + interval '1 hour', t + interval '2 hours', home, home, sadran, 'confirmed', sadran) returning id into blocker;
+  begin
+    perform public.restore_removed_reservation(rA);
+    raise exception 'restored over another ride';
+  exception when raise_exception then
+    get stacked diagnostics msg = message_text;
+    assert msg = 'ride_time_overlap', format('got %s', msg);
+  end;
+
+  -- (4) on the board: removal + undo is held, then nets out to nothing
+  select count(*) into n from public.notifications where recipient_id = member2;
+  perform set_config('request.headers', '{"x-app-surface":"board"}', true);
+  perform set_config('app.held_audit_floor', (select max(id) from public.audit_log)::text, true);
+  perform public.unassign_ride(rB, (select version from public.rides where id = rB));
+  perform public.restore_removed_reservation(rB);
+  assert (select status from public.rides where id = rB) = 'confirmed', 'the board undo did not restore the reservation';
+  res := public.flush_held_notices(dept, w, null);
+  assert res = 0, format('a removal undone on the board sent %s notices', res);
+  assert (select count(*) from public.notifications where recipient_id = member2) = n, 'a removal undone on the board reached the person';
+  perform set_config('request.headers', '', true);
+end $$;
+
 rollback;

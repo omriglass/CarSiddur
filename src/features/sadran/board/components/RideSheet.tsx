@@ -417,7 +417,7 @@ export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenCha
                     {he.sadranRideSheet.joinLegs}
                   </Button>
                 ) : null}
-                {onUnassign && !isPlanning && !ride.series_id ? (
+                {onUnassign && !isPlanning && !ride.series_id && !reservation ? (
                   <Button variant="outline" className="flex-1" onClick={onUnassign} disabled={saving}>
                     {he.sadranRideSheet.removeAssignment}
                   </Button>
@@ -427,7 +427,12 @@ export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenCha
                 <p className="text-xs text-muted-foreground">{he.sadranBoard.seriesUnassignHint}</p>
               ) : null}
 
-              {isPlanning ? <Button variant="outline" onClick={() => onCancel("", [])} disabled={saving}>{he.boardCoordination.cancelPlanning}</Button> : (
+              {/* REQ §13.194: a reservation has one way out - deleting it, undoable from the toast / ↶ (unassign_ride). */}
+              {isPlanning ? <Button variant="outline" onClick={() => onCancel("", [])} disabled={saving}>{he.boardCoordination.cancelPlanning}</Button> : reservation && onUnassign ? (
+                <Button variant="destructive" className="w-full" onClick={onUnassign} disabled={saving} data-testid="ride-sheet-remove-reservation">
+                  {he.sadranRideSheet.removeReservation}
+                </Button>
+              ) : (
                 <>
                   <Button variant="destructive" className="w-full" onClick={() => setShowCancelDialog(true)} data-testid="ride-sheet-cancel">
                     {t("action.cancelRide")}

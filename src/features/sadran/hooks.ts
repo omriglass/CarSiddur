@@ -298,6 +298,16 @@ export function useUnassignRideMutation() {
   });
 }
 
+/** REQ §13.194: the board's undo of removing a reservation (`restore_removed_reservation`). */
+export function useRestoreRemovedReservationMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ rideId }: { rideId: string; departmentId: string; weekStart: string }) => api.restoreRemovedReservation(rideId),
+    onSuccess: (_data, { departmentId, weekStart, rideId }) => invalidateBoard(queryClient, departmentId, weekStart, [rideId]),
+    onError: showErrorToast,
+  });
+}
+
 /** REQ §13.105 c: "חבר לנסיעה אחת" - a הקפצה's drop-off and pickup rides become one ride (`join_drop_off_legs`). */
 export function useJoinDropOffLegsMutation() {
   const queryClient = useQueryClient();
