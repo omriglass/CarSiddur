@@ -1,7 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { expect, test } from "@playwright/test";
 import { he } from "../src/i18n/he";
-import { NEVO_DEPARTMENT_ID, newSignedInPage, SEEDED_USERS, serviceRoleClient, SUPABASE_ANON_KEY, SUPABASE_URL } from "./helpers";
+import { answerDriverReminderIfAsked, NEVO_DEPARTMENT_ID, newSignedInPage, SEEDED_USERS, serviceRoleClient, SUPABASE_ANON_KEY, SUPABASE_URL } from "./helpers";
 import { publishedFixtureWeek } from "./published-week";
 
 test.use({ actionTimeout: 15_000 });
@@ -140,6 +140,7 @@ test("combined one-way consent preserves an orphaned passenger and lets a member
     await passenger.page.goto(`/siddur/${NEVO_DEPARTMENT_ID}/${week}`);
     await passenger.page.getByRole("button").filter({ hasText: he.rideCoordination.missingDriver }).click();
     await passenger.page.getByRole("dialog").getByRole("button", { name: he.rideCoordination.volunteer, exact: true }).click();
+    await answerDriverReminderIfAsked(passenger.page);
     await expect(passenger.page.getByRole("dialog")).not.toBeVisible();
     await expect(passenger.page.getByText(he.rideCoordination.missingDriver)).toHaveCount(0);
     const { data: claimed } = await service.from("rides").select("needs_driver,driver_id").eq("id", rideId).single();

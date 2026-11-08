@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { he, tv } from "../src/i18n/he";
-import { NEVO_DEPARTMENT_ID, newSignedInPage, SEEDED_USERS, serviceRoleClient, scrollGridColumnTo, openRideDetails } from "./helpers";
+import { answerDriverReminderIfAsked, NEVO_DEPARTMENT_ID, newSignedInPage, SEEDED_USERS, serviceRoleClient, scrollGridColumnTo, openRideDetails } from "./helpers";
 import { publishedFixtureWeek } from "./published-week";
 
 test.use({ actionTimeout: 15_000 });
@@ -147,6 +147,7 @@ for (const [index, shape] of (["drop_off", "pickup"] as const).entries()) {
       await volunteer.page.getByRole("button").filter({ hasText: description }).click();
       await expect(mainDialog(volunteer.page)).toContainText(guestNames[1]!);
       await mainDialog(volunteer.page).getByRole("button", { name: he.rideCoordination.volunteer, exact: true }).click();
+      await answerDriverReminderIfAsked(volunteer.page);
       await expect(mainDialog(volunteer.page)).not.toBeVisible();
       const { data: claimed } = await fixture.service.from("rides").select("driver_id,needs_driver").eq("id", ride!.id).single();
       expect(claimed).toEqual({ driver_id: "00000000-0000-0000-0000-000000000104", needs_driver: false });

@@ -223,6 +223,21 @@ export async function ensureEditMode(page: Page): Promise<void> {
   await expect(pencil).toHaveAttribute("data-on", "true");
 }
 
+/**
+ * REQ §13.191: after "אני אקח" / "אני אנהג" a member who never answered is asked once "להזכיר לך 30 דקות לפני
+ * היציאה?" — answers "לא צריך" when it shows (a seeded member may have been asked earlier in the run).
+ */
+export async function answerDriverReminderIfAsked(page: Page): Promise<void> {
+  const ask = page.getByRole("dialog", { name: t("driverReminder.askTitle") });
+  try {
+    await ask.waitFor({ state: "visible", timeout: 3_000 });
+  } catch {
+    return;
+  }
+  await ask.getByRole("button", { name: t("driverReminder.askNo") }).click();
+  await expect(ask).toBeHidden();
+}
+
 export async function openRideDetails(page: Page, ride: Locator): Promise<void> {
   await ride.click();
   await page.getByTestId("ride-peek-open").click();

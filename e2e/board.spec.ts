@@ -264,10 +264,11 @@ test.describe.serial("board (bug-fix pass regression, fake-week data)", { tag: [
     const firstRide = page.locator('button[data-ride-id]:not([data-ride-id^="request:"]):not([data-needs-driver="true"]):visible').first();
     await expect(firstRide).toBeVisible({ timeout: 10_000 });
 
-    // bug #3: the label is "<driver first name> ל/מ<destination>", never the department's own name.
+    // bug #3: the label is "<driver first name> ל/מ<destination>", never the department's own name
+    // (a ride with more riders names them all: "הדר ורון לעפולה" - the fake week is random).
     const label = await firstRide.getAttribute("aria-label");
     expect(label).toBeTruthy();
-    expect(label).toMatch(/^\S+ [למ]\S/);
+    expect(label).toMatch(/^\S+(,? ו?\S+)* [למ]\S/);
     expect(label).not.toBe("נבו");
 
     const unmetAfterHeading = page.locator("h2:visible").filter({ hasText: /לא שובצו \(\d+\)/ }).first();
