@@ -1,8 +1,10 @@
 // A member moving / resizing their own ride on a grid — one implementation for the siddur table and the "my rides"
 // week view (owner 2026-10-11: dragging must behave the same in both). REQ: members move their own future rides to a
-// free slot on the same local day; a collision asks the other drivers instead (`request_ride_change`) - except a ride
-// that only ends less than the turnaround before the car's next one, which asks the mover (REQ §13.190).
+// free slot on the same local day; a collision offers another free car or - only after talking to them - asks the drivers
+// in the way to make room (REQ §13.203, `useMakeRoom`) - except a ride that only ends less than the turnaround before the
+// car's next one, which asks the mover (REQ §13.190).
 import { useQueryClient } from "@tanstack/react-query";
+import { fromZonedTime } from "date-fns-tz";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -14,16 +16,17 @@ import { siddurKeys } from "@/features/siddur/queryKeys";
 import { conflictingRides, moveOnRideDay, shortTurnaroundNextRide } from "@/features/siddur/rideEditing";
 import { he, tv } from "@/i18n/he";
 import { askShortTurnaround } from "@/lib/shortTurnaround";
-import { dateKey, formatTime } from "@/lib/time";
+import { dateKey, formatTime, TZ } from "@/lib/time";
 import { effectiveWeekSettings } from "@/lib/weekSettings";
 
 import type { RideMove } from "./api";
-import { useRequestRideChangeMutation, useRideChanges } from "./hooks";
+import { useRideChanges } from "./hooks";
 import { canMoveOntoMyCar, rideDayPublished } from "./ownCarMove";
 import { isRideRelated, rideMovableByMember } from "./relatedRide";
 import { isRideDayEditable } from "./rideDayEditable";
 import { servedOf } from "./servedOf";
 import { memberMergeTarget } from "./memberMerge";
+import { useMakeRoom } from "./useMakeRoom";
 import { useMemberMerge } from "./useMemberMerge";
 import { useOwnCarMove } from "./useOwnCarMove";
 
@@ -51,8 +54,7 @@ export function useMemberRideMoves({ departmentId, weekStart, week, profileId, m
   const seatsQuery = useCarSeatConfigs(departmentId);
   const settingsQuery = useDepartmentSettings(departmentId);
   const editMutation = useEditRideMutation();
-  const changeMutation = useRequestRideChangeMutation();
-  const [collisionMove, setCollisionMove] = useState<(RideMove & { departmentId: string; weekStart: string }) | null>(null);
+  const makeRoom = useMakeRoom({ onDone });
   // REQ §13.129 (a): a drag of someone else's ride onto my private car waits for the owner's confirmation.
   const [ownCarMove, setOwnCarMove] = useState<RideMove | null>(null);
   const { myCars } = useOwnCarMove(profileId);
@@ -123,7 +125,7 @@ export function useMemberRideMoves({ departmentId, weekStart, week, profileId, m
         if (next.driver_id !== profileId && !(await askShortTurnaround({ at: formatTime(new Date(next.starts_at as string)), name }))) return;
         allowShortTurnaround = true;
       } else if (conflicts.length) {
-        setCollisionMove({ ...move, departmentId, weekStart });
+        void makeRoom.startMove({ departmentId, weekStart }, move, freeCarFor(move));
         return;
       }
     }
@@ -172,21 +174,16 @@ export function useMemberRideMoves({ departmentId, weekStart, week, profileId, m
     return (seatsQuery.data ?? []).some((config) => config.car_id === carId && config.adults >= Math.max(1, need.adults) && config.child_seats >= need.child && config.boosters >= need.boosters);
   }
 
-  /** Props for the collision `ConfirmDialog` ("ask the other drivers"). */
-  const collisionDialog = {
-    open: !!collisionMove,
-    onOpenChange: (open: boolean) => { if (!open) setCollisionMove(null); },
-    title: he.rideEditing.collisionTitle,
-    description: he.rideEditing.collisionBody,
-    confirmLabel: he.rideEditing.acknowledge,
-    loading: changeMutation.isPending,
-    onConfirm: () => {
-      if (!collisionMove) return;
-      changeMutation.mutate(collisionMove, { onSuccess: () => {
-        setCollisionMove(null); onDone?.(); toast.success(he.rideEditing.requested);
-      } });
-    },
-  };
+  /** REQ §13.203 (a): another shared car free for the same hours (the first by name), offered before asking anyone. */
+  function freeCarFor(move: RideMove): { name: string; use: () => void } | null {
+    const dayStart = Date.parse(fromZonedTime(`${dateKey(move.startsAt)}T00:00:00`, TZ).toISOString());
+    const startMinutes = Math.round((Date.parse(move.startsAt) - dayStart) / 60_000);
+    const endMinutes = Math.round((Date.parse(move.endsAt) - dayStart) / 60_000);
+    const car = (carsQuery.data ?? []).filter((c) => c.type === "shared" && c.id !== move.carId)
+      .sort((a, b) => a.name.localeCompare(b.name, "he"))
+      .find((c) => isValidTarget(move.rideId, c.id, startMinutes, endMinutes));
+    return car ? { name: car.name, use: () => void persistMove({ ...move, carId: car.id }) } : null;
+  }
 
   const ownCarMoveRide = ownCarMove ? rides.find((r) => r.id === ownCarMove.rideId) : undefined;
   const ownCarName = myCars.find((car) => car.id === ownCarMove?.carId)?.name ?? "";
@@ -213,11 +210,12 @@ export function useMemberRideMoves({ departmentId, weekStart, week, profileId, m
     saveMove,
     moveRide,
     isValidTarget,
-    collisionDialog,
-    /** REQ §13.175 (d): the "take them along" dialogs — render once next to the collision dialog. */
+    /** REQ §13.203: the "car is taken" dialog (free car / make room) — render once. */
+    makeRoomElement: makeRoom.element,
+    /** REQ §13.175 (d): the "take them along" dialogs — render once next to the make-room dialog. */
     memberMergeElement: memberMerge.element,
     pendingChanges,
     turnaroundMinutes,
-    saving: editMutation.isPending || changeMutation.isPending,
+    saving: editMutation.isPending || makeRoom.pending,
   };
 }

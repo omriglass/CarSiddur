@@ -823,7 +823,7 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
     const originalRideId = rideId;
     const planningChange = (board.rideChangesQuery.data ?? []).find((change) => change.is_planning && `change:${change.id}` === rideId);
     if (planningChange) {
-      if (carId.startsWith("phantom:")) { await cancelRideChangeMutation.mutateAsync(planningChange.id); return; }
+      if (carId.startsWith("phantom:") || !planningChange.ride_id) { await cancelRideChangeMutation.mutateAsync(planningChange.id); return; }
       rideId = planningChange.ride_id;
       resizedEndMinutes ??= startMinutes + (Date.parse(planningChange.ends_at) - Date.parse(planningChange.starts_at)) / 60_000;
     }

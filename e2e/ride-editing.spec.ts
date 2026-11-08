@@ -1,11 +1,11 @@
 import { expect, test, type Locator } from "@playwright/test";
 import { publishedFixtureWeek } from "./published-week";
-import { he } from "../src/i18n/he";
+import { he, tv } from "../src/i18n/he";
 import { NEVO_DEPARTMENT_ID, newSignedInPage, SEEDED_USERS, serviceRoleClient, openRideDetails } from "./helpers";
 
 test.use({ actionTimeout: 15_000 });
 
-test("members resize owned rides and resolve a shadow collision through explicit driver consent", { tag: ["@siddur", "@board"] }, async ({ browser }) => {
+test("members resize owned rides; a taken slot offers a free car or, after talking, asks the other driver to leave later (REQ §13.203)", { tag: ["@siddur", "@board"] }, async ({ browser }) => {
   const service = serviceRoleClient();
   const week = "2041-01-06";
   const members = ["00000000-0000-0000-0000-000000000103", "00000000-0000-0000-0000-000000000104"];
@@ -18,7 +18,7 @@ test("members resize owned rides and resolve a shadow collision through explicit
   try {
     for (const [index, member] of members.entries()) {
       const start = index ? "12" : "10";
-      const end = index ? "14" : "11";
+      const end = index ? "17" : "11";
       const { data: request, error: requestError } = await service.from("requests").insert({
         department_id: NEVO_DEPARTMENT_ID, week_start: week, requester_id: member, filed_by: member,
         ride_type_id: "00000000-0000-0000-0000-000000000021", destination_text: `E2E shadow ${index}`,
@@ -71,9 +71,13 @@ test("members resize owned rides and resolve a shadow collision through explicit
     await expect.poll(async () => new Date((await service.from("rides").select("ends_at").eq("id", rideIds[0]).single()).data!.ends_at).toISOString())
       .toBe("2041-01-06T09:30:00.000Z");
 
+    // 104 drives 12:00–17:00 on this car: the dialog offers a free car, or — only after talking — asks 104 to leave at 14:00.
     await dragUntil(own, "12:00–13:30");
     await expect(page.getByRole("heading", { name: he.rideEditing.collisionTitle })).toBeVisible();
-    await page.getByRole("button", { name: he.rideEditing.acknowledge }).click();
+    await expect(page.getByTestId("make-room-free-car")).toBeVisible();
+    const leaveLater = tv("rideEditing.makeRoom.leaveLater", { time: "14:00", minutes: "120" });
+    await expect(page.getByTestId("make-room-party").getByLabel(leaveLater)).toBeChecked();
+    await page.getByRole("button", { name: tv("rideEditing.makeRoom.send", { names: "חברה שנייה" }) }).click();
     await expect(page.locator('[data-ride-id^="change:"]')).toBeVisible();
     await expect(other).toHaveClass(/opacity-50/);
     const { data: before } = await service.from("rides").select("id,status,starts_at").in("id", rideIds);
@@ -86,11 +90,15 @@ test("members resize owned rides and resolve a shadow collision through explicit
     const member2 = await newSignedInPage(browser, SEEDED_USERS.member2);
     contexts.push(member2.context);
     await member2.page.goto("/inbox");
-    await member2.page.getByRole("button", { name: he.rideEditing.accept }).click();
-    await expect(member2.page.getByRole("button", { name: he.rideEditing.accept })).toHaveCount(0);
+    const acceptLabel = tv("rideEditing.acceptStart", { newTime: "14:00", minutes: "120" });
+    await member2.page.getByRole("button", { name: acceptLabel }).click();
+    await expect(member2.page.getByRole("button", { name: acceptLabel })).toHaveCount(0);
     const { data: after } = await service.from("rides").select("id,status,starts_at").in("id", rideIds);
-    expect(after!.find((r) => r.id === rideIds[1])!.status).toBe("cancelled");
+    expect(after!.find((r) => r.id === rideIds[1])!.status).toBe("confirmed");
+    expect(new Date(after!.find((r) => r.id === rideIds[1])!.starts_at).toISOString()).toBe("2041-01-06T12:00:00.000Z");
     expect(new Date(after!.find((r) => r.id === rideIds[0])!.starts_at).toISOString()).toBe("2041-01-06T10:00:00.000Z");
+    const { data: told } = await service.from("notifications").select("data").eq("recipient_id", members[0]).eq("week_start", week);
+    expect(told!.some((n) => (n.data as { variant?: string }).variant === "ride_shorten_accepted")).toBe(true);
   } finally {
     for (const context of contexts) await context.close().catch(() => undefined);
     await service.from("ride_change_requests").delete().eq("department_id", NEVO_DEPARTMENT_ID).eq("week_start", week);

@@ -6,7 +6,6 @@ import { toast } from "sonner";
 import { useRequestLinkProps } from "@/app/overlayState";
 import { paths } from "@/app/routes";
 import { todayInJerusalem } from "@/components/dateFieldDates";
-import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { ErrorState } from "@/components/ErrorState";
 import { Button } from "@/components/ui/button";
 import { formatMinutes, MAX_MINUTES } from "@/components/timeField15Format";
@@ -332,7 +331,7 @@ export function MyWeekView({ departmentId, homeDestinationId, profileId, request
           renderCarName={(column) => <span>{column.name}</span>}
         />
       </div>
-      <ConfirmDialog {...rideMoves.collisionDialog} />
+      {rideMoves.makeRoomElement}
       {rideMoves.memberMergeElement}
       {calendar.available ? <CalendarDialog open={calendarOpen} onOpenChange={setCalendarOpen} /> : null}
     </div>

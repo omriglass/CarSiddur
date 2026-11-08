@@ -3489,8 +3489,11 @@ export type Database = {
           accepted: boolean | null
           change_id: string
           created_at: string
+          cut: string | null
           expected_version: number
           id: string
+          new_ends_at: string | null
+          new_starts_at: string | null
           profile_id: string
           responded_at: string | null
           ride_id: string
@@ -3501,8 +3504,11 @@ export type Database = {
           accepted?: boolean | null
           change_id: string
           created_at?: string
+          cut?: string | null
           expected_version: number
           id?: string
+          new_ends_at?: string | null
+          new_starts_at?: string | null
           profile_id: string
           responded_at?: string | null
           ride_id: string
@@ -3513,8 +3519,11 @@ export type Database = {
           accepted?: boolean | null
           change_id?: string
           created_at?: string
+          cut?: string | null
           expected_version?: number
           id?: string
+          new_ends_at?: string | null
+          new_starts_at?: string | null
           profile_id?: string
           responded_at?: string | null
           ride_id?: string
@@ -3598,10 +3607,12 @@ export type Database = {
           expected_version: number
           id: string
           is_planning: boolean
+          request_id: string | null
           requester_id: string
-          ride_id: string
+          ride_id: string | null
           starts_at: string
           status: string
+          talked: boolean
           updated_at: string
           version: number
           week_start: string
@@ -3616,10 +3627,12 @@ export type Database = {
           expected_version: number
           id?: string
           is_planning?: boolean
+          request_id?: string | null
           requester_id: string
-          ride_id: string
+          ride_id?: string | null
           starts_at: string
           status?: string
+          talked?: boolean
           updated_at?: string
           version?: number
           week_start: string
@@ -3634,10 +3647,12 @@ export type Database = {
           expected_version?: number
           id?: string
           is_planning?: boolean
+          request_id?: string | null
           requester_id?: string
-          ride_id?: string
+          ride_id?: string | null
           starts_at?: string
           status?: string
+          talked?: boolean
           updated_at?: string
           version?: number
           week_start?: string
@@ -3663,6 +3678,20 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "weeks"
             referencedColumns: ["department_id", "week_start"]
+          },
+          {
+            foreignKeyName: "ride_change_requests_request_id_fkey"
+            columns: ["request_id"]
+            isOneToOne: false
+            referencedRelation: "requests"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ride_change_requests_request_id_fkey"
+            columns: ["request_id"]
+            isOneToOne: false
+            referencedRelation: "v_my_requests"
+            referencedColumns: ["request_id"]
           },
           {
             foreignKeyName: "ride_change_requests_requester_id_fkey"
@@ -5860,6 +5889,123 @@ export type Database = {
           request_id: string
         }[]
       }
+      _ride_shorten_car_fits: {
+        Args: { p_car_id: string; p_request_id: string }
+        Returns: boolean
+      }
+      _ride_shorten_parties_json: {
+        Args: {
+          p_car_id: string
+          p_department_id: string
+          p_ends_at: string
+          p_exclude_ride: string
+          p_requester: string
+          p_starts_at: string
+          p_week_start: string
+        }
+        Returns: Json
+      }
+      _ride_shorten_plan: {
+        Args: {
+          p_car_id: string
+          p_department_id: string
+          p_ends_at: string
+          p_exclude_ride: string
+          p_requester: string
+          p_starts_at: string
+          p_week_start: string
+        }
+        Returns: {
+          askable: boolean
+          driver_id: string
+          driver_name: string
+          end_option: string
+          ends_at: string
+          ride_id: string
+          ride_version: number
+          start_option: string
+          starts_at: string
+        }[]
+      }
+      _ride_shorten_request: {
+        Args: { p_request_id: string }
+        Returns: {
+          adults: number
+          arrive_by: string | null
+          boosters: number
+          changed_since_solve: boolean
+          child_seats: number
+          created_at: string
+          depart_anchor: Database["public"]["Enums"]["time_anchor"]
+          depart_at: string | null
+          department_id: string
+          destination_id: string | null
+          destination_text: string | null
+          duration_locked: boolean
+          fallback: Database["public"]["Enums"]["request_fallback"]
+          filed_by: string
+          flex_depart_early: string
+          flex_depart_late: string
+          flex_return_early: string
+          flex_return_late: string
+          freed_slot_opt_out: boolean
+          guest_passenger_names: string[]
+          has_luggage: boolean
+          id: string
+          is_late: boolean
+          join_ride_id: string | null
+          keep_car_at_destination: boolean
+          kept_return_at: string | null
+          leave_dest_at: string | null
+          luggage_waived_at: string | null
+          luggage_waived_by: string | null
+          manual_boost: number
+          manual_boost_reason: string | null
+          needs_car_at_destination: boolean
+          needs_tow_hitch: boolean
+          notes: string | null
+          one_way_car_mode: Database["public"]["Enums"]["leg_car_mode"] | null
+          origin_id: string | null
+          origin_text: string | null
+          original_depart_at: string | null
+          original_return_at: string | null
+          plan_b_parent_id: string | null
+          preferred_car_id: string | null
+          requester_id: string
+          reserved_at: string | null
+          return_anchor: Database["public"]["Enums"]["time_anchor"]
+          return_at: string | null
+          ride_description: string | null
+          ride_type_id: string
+          series_count: number | null
+          series_id: string | null
+          series_index: number | null
+          served_by_alternative: boolean
+          status: Database["public"]["Enums"]["request_status"]
+          status_reason: string | null
+          submitted_at: string | null
+          template_id: string | null
+          trip_shape: Database["public"]["Enums"]["trip_shape"]
+          trip_type: Database["public"]["Enums"]["trip_type"]
+          updated_at: string
+          version: number
+          week_start: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "requests"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      _ride_shorten_tell_requester: {
+        Args: {
+          ch: Database["public"]["Tables"]["ride_change_requests"]["Row"]
+          p_party_name: string
+          p_variant: string
+        }
+        Returns: undefined
+      }
       _ride_task_people: { Args: { p_ride_id: string }; Returns: string[] }
       _round_up_ride_end: {
         Args: { p_end: string; p_start: string }
@@ -7114,6 +7260,20 @@ export type Database = {
         }
         Returns: string
       }
+      request_ride_shorten: {
+        Args: {
+          p_allow_small_trunk?: boolean
+          p_car_id: string
+          p_cuts: Json
+          p_ends_at: string
+          p_expected_version: number
+          p_request_id: string
+          p_ride_id: string
+          p_starts_at: string
+          p_talked: boolean
+        }
+        Returns: string
+      }
       request_route_label: { Args: { p_request_id: string }; Returns: string }
       request_served_by_public_ride: {
         Args: { _request_id: string }
@@ -7238,6 +7398,19 @@ export type Database = {
           ride_id: string
           route: Json
         }[]
+      }
+      ride_shorten_options: {
+        Args: {
+          p_car_id: string
+          p_ends_at: string
+          p_ride_id: string
+          p_starts_at: string
+        }
+        Returns: Json
+      }
+      ride_shorten_options_for_request: {
+        Args: { p_request_id: string }
+        Returns: Json
       }
       route_label: {
         Args: {

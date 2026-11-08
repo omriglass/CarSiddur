@@ -18,11 +18,12 @@ import {
   handOverOwnRide,
   releaseRideDriver,
   removeRidePerson,
-  requestRideChange,
+  requestMakeRoom,
   respondRideChange,
   takeOverRideDriver,
   updateRidePublicNotes,
-  type RideMove,
+  type MakeRoomCut,
+  type MakeRoomTarget,
   type RidePassengerInput,
 } from "./api";
 import { mapCarNeighbours, type CarNeighbours } from "./carHandover";
@@ -165,11 +166,12 @@ export function useRideChanges(departmentId?: string, weekStart?: string, option
   });
 }
 
-/** `departmentId`/`weekStart` scope the invalidation only — `requestRideChange` itself only needs the `RideMove` fields. */
-export function useRequestRideChangeMutation() {
+/** REQ §13.203: "דיברתי עם X" — asks the drivers in the way to make room. `departmentId`/`weekStart` scope the invalidation only. */
+export function useRequestMakeRoomMutation() {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: (move: RideMove & { departmentId: string; weekStart: string }) => requestRideChange(move),
+    mutationFn: ({ target, cuts }: { target: MakeRoomTarget; cuts: { rideId: string; cut: MakeRoomCut }[]; departmentId: string; weekStart: string }) =>
+      requestMakeRoom(target, cuts),
     onSuccess: (_data, { departmentId, weekStart }) => {
       void invalidateWeekData(client, departmentId, weekStart);
     },

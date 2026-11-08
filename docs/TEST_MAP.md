@@ -189,6 +189,7 @@ gap is closed.
 `src/features/rides/carHandover*`, `components/CarHandoverNotice.tsx`, `components/RideCarHandover.tsx`, `src/features/requests/rowHandover*`,
 migrations `*ride_car_neighbours*`, `supabase/tests/car_handover_notes.sql` ("be back on time" note, REQ §13.108 f).
 Migrations `*ride_move_settles_ride_change*`, `supabase/tests/ride_change_settles.sql` (REQ §13.166, O31-1: moving the requester's or a party's ride settles a pending member ride-change request — accepted when the ride reaches the asked car and hours, else cancelled `ride_moved` and re-accepted by a later matching move; the party's notice is removed).
+Migrations `*ride_shorten*`, `*ride_change_shorten*`, `supabase/tests/ride_shorten.sql` (REQ §13.203: asking another member to make room only after talking — return earlier / leave later / give up, for a moved ride and a new waiting-list round trip; accept applies in one step, decline and a request leaving the waiting list change nothing; a ride with a companion cannot be asked).
 Migrations `*draft_release_keeps_host_ride*`, `*cancelled_ride_closes_planning_shadows*`, `*archive_ended_unpublished_weeks*`, `supabase/tests/production_fixes_2026_11_01.sql` (REQ §13.173, production 2026-11-01: withdrawing a guest keeps the host's draft ride; a cancelled ride closes its planning shadows; an ended unpublished week is archived).
 
 **Automated**:

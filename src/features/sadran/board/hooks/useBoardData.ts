@@ -744,7 +744,7 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
   // switcher excludes it), but a direct URL could still land here, so this still gates the drag.
   const boardCanSwapCars = weekRowQuery.data ? weekRowQuery.data.phase !== "archived" : false;
 
-  const shadowedRideIds = new Set((rideChangesQuery.data ?? []).filter((change) => !change.is_planning).flatMap((change) => [change.ride_id, ...change.parties.map((party) => party.ride_id)]));
+  const shadowedRideIds = new Set((rideChangesQuery.data ?? []).filter((change) => !change.is_planning).flatMap((change) => [...(change.ride_id ? [change.ride_id] : []), ...change.parties.map((party) => party.ride_id)]));
   const connectedRideIds = connectedPairRideIds(rides);
   const weekGridRides: WeekGridRide[] = activeDayRidesAll
     .filter((r) => r.id && r.car_id && r.starts_at && r.ends_at)

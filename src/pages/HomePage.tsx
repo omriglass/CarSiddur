@@ -55,7 +55,8 @@ import { buildTripWeeks, ridesByRequestRow } from "@/features/requests/myTrips";
 import { isTodayOrLater } from "@/features/requests/upcoming";
 import { useCollapsedWeeks } from "@/features/requests/useCollapsedWeeks";
 import { useBoardRides, useWeeks, useMyUpcomingRides, useMyChildrenQuery, useMyChildrenRidesQuery, useMyCoGuardiansQuery } from "@/features/siddur/hooks";
-import { useCarNeighboursQuery, useRideChanges, useRemoveRidePassengerMutation, useRequestRideChangeMutation } from "@/features/rides/hooks";
+import { useCarNeighboursQuery, useRideChanges, useRemoveRidePassengerMutation } from "@/features/rides/hooks";
+import { useMakeRoom } from "@/features/rides/useMakeRoom";
 import { isRideDayEditable } from "@/features/rides/rideDayEditable";
 import { useRideSheetCarActions } from "@/features/rides/useRideSheetCarActions";
 import { myRidePersonKey } from "@/features/rides/ridePeople";
@@ -166,7 +167,6 @@ export function HomePage() {
   const now = new Date();
   const [selectedMyRide, setSelectedMyRide] = useState<BoardRide | null>(null);
   const collapsedWeeks = useCollapsedWeeks();
-  const [collisionMove, setCollisionMove] = useState<(RideMove & { departmentId: string; weekStart: string }) | null>(null);
   const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null);
   const [shortenRow, setShortenRow] = useState<DisplayRow | null>(null);
   // "My rides" week view (owner 2026-10-11): a tapped request / suggestion block opens its own sheet; a ride block
@@ -177,7 +177,8 @@ export function HomePage() {
   const cancelRideMutation = useCancelRideMutation();
   const removeMeMutation = useRemoveRidePassengerMutation();
   const editMutation = useEditRideMutation();
-  const changeMutation = useRequestRideChangeMutation();
+  // REQ §13.203: the car is taken at the new hours — ask the drivers in the way to make room, only after talking.
+  const makeRoom = useMakeRoom({ onDone: () => setSelectedMyRide(null) });
   const placeOnOwnCarMutation = usePlaceOnOwnCarMutation();
   const restoreDuplicateMutation = useRestoreDuplicateMutation();
   const ownCarsQuery = useMyTemporaryCars(profileQuery.data?.id);
@@ -387,7 +388,7 @@ export function HomePage() {
   async function saveMyRideMove(move: RideMove) {
     if (!editableRide || !ownsEditableRide || !editableRide.department_id || !editableRide.week_start || !editableRide.origin_id || !editableRide.destination_id) return;
     if (conflictingRides(move, selectedRideWeekQuery.data ?? [], effectiveWeekSettings(settingsQuery.data, editableWeek).turnaroundMinutes).length) {
-      setCollisionMove({ ...move, departmentId: editableRide.department_id, weekStart: editableRide.week_start });
+      void makeRoom.startMove({ departmentId: editableRide.department_id, weekStart: editableRide.week_start }, move, null);
       return;
     }
     try {
@@ -438,7 +439,7 @@ export function HomePage() {
       ride={editableRide}
       cars={carsQuery.data ?? []}
       viewerId={profileQuery.data?.id}
-      saving={editMutation.isPending || changeMutation.isPending}
+      saving={editMutation.isPending || makeRoom.pending}
       onSave={(move) => void saveMyRideMove(move)}
     />
   ) : null;
@@ -785,22 +786,7 @@ export function HomePage() {
         ) : null}
       </MyWeekItemSheet>
       <ShortenSeriesDialog row={shortenRow} onOpenChange={(open) => { if (!open) setShortenRow(null); }} />
-      <ConfirmDialog
-        open={!!collisionMove}
-        onOpenChange={(open) => !open && setCollisionMove(null)}
-        title={he.rideEditing.collisionTitle}
-        description={he.rideEditing.collisionBody}
-        confirmLabel={he.rideEditing.acknowledge}
-        loading={changeMutation.isPending}
-        onConfirm={() => {
-          if (!collisionMove) return;
-          changeMutation.mutate(collisionMove, { onSuccess: () => {
-            setCollisionMove(null);
-            setSelectedMyRide(null);
-            toast.success(he.rideEditing.requested);
-          } });
-        }}
-      />
+      {makeRoom.element}
       <ConfirmDialog
         open={!!confirmAction}
         onOpenChange={(open) => !open && setConfirmAction(null)}

@@ -2,7 +2,7 @@
 --   * every manual path refuses with `needs_large_trunk` (detail = JSON request ids/names + car) without
 --     `allow_small_trunk`, and with it places and stamps requests.luggage_waived_at/by
 --       edit_ride (move a ride / new ride with served), place_on_own_car, create_proposal (shift, merge) ->
---       send_proposal -> apply_proposal, swap_day_cars (+ preview), request_ride_change, place_series_on_car
+--       send_proposal -> apply_proposal, swap_day_cars (+ preview), request_ride_shorten, place_series_on_car
 --   * merge_preview reports a luggage-only problem as ok=false, code 'luggage', waivable=true
 --   * a waived request moves/merges/swaps later without the flag, and every automatic path treats it as
 --     "no large luggage" - while a NON-waived one is still refused by them (try_auto_approve, apply_solver_result)
@@ -243,7 +243,7 @@ begin
   assert (select car_id from public.rides where id=rid)=car41, 'swapped back without the flag';
   delete from public.ride_requests where ride_id in (rid,rid2); delete from public.rides where id in (rid,rid2); delete from public.requests where id in (q1,q2);
 
-  -- ======== (8) request_ride_change: the driver may accept a small car for their own luggage request ========
+  -- ======== (8) request_ride_shorten: the driver may accept a small car for their own luggage request ========
   dt:=((w+4)+time '09:00') at time zone 'Asia/Jerusalem';
   insert into public.requests(department_id,week_start,requester_id,filed_by,destination_id,ride_type_id,depart_at,return_at,trip_shape,status,origin_id,has_luggage)
     values(dept,w,m2,m2,dest,typ,dt,dt+interval '3 hours','round_trip','assigned',home,true) returning id into q1;
@@ -252,10 +252,10 @@ begin
   insert into public.ride_requests(ride_id,request_id,role,leg,car_mode) values(rid,q1,'driver','both','keep');
   select version into ver from public.rides where id=rid;
   perform pg_temp.as_user(m2);
-  perform pg_temp.expect_err(format($q$select public.request_ride_change(%L,%L,%L,%L,%s)$q$, rid, car42, dt+interval '1 hour', dt+interval '4 hours', ver),'needs_large_trunk');
+  perform pg_temp.expect_err(format($q$select public.request_ride_shorten(%L,null,%L,%L,%L,%s,'[]',true)$q$, rid, car42, dt+interval '1 hour', dt+interval '4 hours', ver),'needs_large_trunk');
   -- with the flag the call passes the large-trunk gate (and stops at the next rule: no conflicting ride to ask)
   perform pg_temp.as_user(m2);
-  perform pg_temp.expect_err(format($q$select public.request_ride_change(%L,%L,%L,%L,%s,true)$q$, rid, car42, dt+interval '1 hour', dt+interval '4 hours', ver),'no_conflicting_ride');
+  perform pg_temp.expect_err(format($q$select public.request_ride_shorten(%L,null,%L,%L,%L,%s,'[]',true,true)$q$, rid, car42, dt+interval '1 hour', dt+interval '4 hours', ver),'no_conflicting_ride');
   delete from public.ride_requests where ride_id=rid; delete from public.rides where id=rid; delete from public.requests where id=q1;
 
   -- ======== (9) automatic paths stay strict ========
