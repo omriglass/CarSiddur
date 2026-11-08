@@ -34,6 +34,8 @@ export interface SwapDayCarsArgs extends CarSwapArgs {
   seriesMode: CarSwapSeriesMode;
   /** REQ §13.180: the rides the other car has too few seats for stay on their car (the dialog asked). */
   skipSeats?: boolean;
+  /** REQ §13.186 (2026-11-08): the dialog showed that two rides come closer than the turnaround; confirming accepts it. */
+  allowShortTurnaround?: boolean;
 }
 
 export async function swapDayCars(args: SwapDayCarsArgs): Promise<CarSwapResult> {
@@ -48,6 +50,7 @@ export async function swapDayCars(args: SwapDayCarsArgs): Promise<CarSwapResult>
     p_series_mode: args.seriesMode,
     p_allow_small_trunk: allowSmallTrunk,
     ...(args.from ? { p_from: args.from, p_skip_seats: !!args.skipSeats } : {}),
+    ...(args.allowShortTurnaround ? { p_allow_short_turnaround: true } : {}),
   }));
   return carSwapResultSchema.parse(data);
 }

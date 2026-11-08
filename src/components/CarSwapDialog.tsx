@@ -78,6 +78,7 @@ export function CarSwapDialog({ open, onOpenChange, departmentId, weekStart, day
         seriesMode: effectiveMode,
         from,
         skipSeats: staying.length > 0,
+        allowShortTurnaround: preview.needs_short_turnaround === true,
       });
       toast.success(he.carSwap.successToast);
       if (result.notified > 0) toast(tv("carSwap.notifiedToast", { count: String(result.notified) }));
@@ -90,7 +91,9 @@ export function CarSwapDialog({ open, onOpenChange, departmentId, weekStart, day
     }
   }
 
-  const hardBlockers = preview?.blockers.filter((blocker) => !blocker.waivable && !blocker.whole_only) ?? [];
+  const hardBlockers = preview?.blockers.filter((blocker) => !blocker.waivable && !blocker.whole_only && !blocker.short_turnaround) ?? [];
+  // REQ §13.186 (2026-11-08): rides coming closer than the turnaround — shown, and confirming the swap accepts them.
+  const shortTurnarounds = preview?.blockers.filter((blocker) => blocker.short_turnaround) ?? [];
   const wholeOnlyBlockers = preview?.blockers.filter((blocker) => blocker.whole_only) ?? [];
   const waivableBlockers = preview?.blockers.filter((blocker) => blocker.waivable) ?? [];
 
@@ -214,6 +217,17 @@ export function CarSwapDialog({ open, onOpenChange, departmentId, weekStart, day
                 <p className="font-medium">{he.smallTrunk.confirmTitle}</p>
                 <ul className="space-y-1 text-xs">
                   {waivableBlockers.map((blocker, index) => (
+                    <li key={index}>{carSwapBlockerMessage(blocker, labelRides, carNameById)}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+
+            {shortTurnarounds.length > 0 ? (
+              <div className="space-y-1 rounded-md border border-amber-500/50 bg-amber-500/5 p-2" data-testid="car-swap-short-turnaround">
+                <p className="font-medium">{he.carSwap.shortTurnaroundTitle}</p>
+                <ul className="space-y-1 text-xs">
+                  {shortTurnarounds.map((blocker, index) => (
                     <li key={index}>{carSwapBlockerMessage(blocker, labelRides, carNameById)}</li>
                   ))}
                 </ul>

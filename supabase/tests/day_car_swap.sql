@@ -717,6 +717,73 @@ end $$;
 
 do $$ begin raise notice 'day_car_swap.sql: all assertions passed'; end $$;
 
+-- ---------------------------------------------------------------------------
+-- (SW3, REQ §13.186, owner 2026-11-08) Two rides that only come closer than the turnaround (no real overlap) ask
+-- instead of refusing. Production Monday 2026-11-09: Aviv's Monday 00:00 ride moved next to his own Sunday
+-- 18:00-23:59 ride on the other car. The preview can swap and asks; without the flag the swap is refused with
+-- swap_short_turnaround; with it the swap goes ahead and the earlier ride keeps the real gap as its turnaround.
+-- ---------------------------------------------------------------------------
+do $$
+declare
+  dept uuid := '00000000-0000-0000-0000-000000000001';
+  home uuid := '00000000-0000-0000-0000-000000000010';
+  dest uuid := '00000000-0000-0000-0000-000000000011';
+  ride_type uuid := '00000000-0000-0000-0000-000000000021';
+  sadran uuid := '00000000-0000-0000-0000-000000000102';
+  member1 uuid := '00000000-0000-0000-0000-000000000103';
+  car_a uuid := '00000000-0000-0000-0000-000000000040';
+  car_b uuid := '00000000-0000-0000-0000-000000000041';
+  w date := public.current_week_start() + 567;
+  day date := w + 2;
+  q1 uuid; q2 uuid; r_mon uuid; r_sun uuid; preview jsonb; refused boolean := false;
+begin
+  insert into public.weeks(department_id, week_start, phase, open_at, close_at, publish_at)
+    values (dept, w, 'open', now() - interval '1 day', now() + interval '1 day', now() + interval '2 days');
+  insert into public.requests(department_id, week_start, requester_id, filed_by, destination_id, ride_type_id,
+    trip_shape, depart_at, return_at, adults, submitted_at, status)
+  values (dept, w, member1, member1, dest, ride_type, 'round_trip',
+    ((day - 1) + time '18:00') at time zone 'Asia/Jerusalem', ((day - 1) + time '23:59') at time zone 'Asia/Jerusalem', 1, now(), 'assigned')
+  returning id into q1;
+  insert into public.rides(department_id, week_start, car_id, starts_at, ends_at, origin_id, destination_id, driver_id, status, created_by)
+  values (dept, w, car_b, ((day - 1) + time '18:00') at time zone 'Asia/Jerusalem', ((day - 1) + time '23:59') at time zone 'Asia/Jerusalem',
+    home, home, member1, 'draft', sadran) returning id into r_sun;
+  insert into public.ride_requests(ride_id, request_id, role, leg, car_mode) values (r_sun, q1, 'driver', 'both', 'keep');
+  insert into public.requests(department_id, week_start, requester_id, filed_by, destination_id, ride_type_id,
+    trip_shape, depart_at, return_at, adults, submitted_at, status)
+  values (dept, w, member1, member1, dest, ride_type, 'round_trip',
+    (day + time '00:00') at time zone 'Asia/Jerusalem', (day + time '16:30') at time zone 'Asia/Jerusalem', 1, now(), 'assigned')
+  returning id into q2;
+  insert into public.rides(department_id, week_start, car_id, starts_at, ends_at, origin_id, destination_id, driver_id, status, created_by)
+  values (dept, w, car_a, (day + time '00:00') at time zone 'Asia/Jerusalem', (day + time '16:30') at time zone 'Asia/Jerusalem',
+    home, home, member1, 'draft', sadran) returning id into r_mon;
+  insert into public.ride_requests(ride_id, request_id, role, leg, car_mode) values (r_mon, q2, 'driver', 'both', 'keep');
+
+  set constraints all immediate;
+  set constraints all deferred;
+  perform set_config('request.jwt.claims', jsonb_build_object('sub', sadran, 'role', 'authenticated')::text, true);
+  preview := public.preview_day_car_swap(dept, w, day, car_a, car_b);
+  assert (preview ->> 'can_swap')::boolean, format('(SW3) a turnaround shortfall must not refuse the swap, got %s', preview);
+  assert (preview ->> 'needs_short_turnaround')::boolean, '(SW3) the preview must ask about the short turnaround';
+  assert exists (select 1 from jsonb_array_elements(preview -> 'blockers') b
+                 where b ->> 'code' = 'turnaround' and (b ->> 'gap_minutes')::int = 1 and b ->> 'other_ride_id' = r_sun::text),
+    format('(SW3) the turnaround blocker must name the other ride and the 1-minute gap, got %s', preview -> 'blockers');
+
+  begin
+    perform public.swap_day_cars(dept, w, day, car_a, car_b, preview ->> 'fingerprint');
+  exception when others then
+    if sqlerrm = 'swap_short_turnaround' then refused := true; else raise; end if;
+  end;
+  assert refused, '(SW3) without the flag the swap must be refused with swap_short_turnaround';
+  assert (select car_id from public.rides where id = r_mon) = car_a, '(SW3) a refused swap moves nothing';
+
+  perform public.swap_day_cars(dept, w, day, car_a, car_b, preview ->> 'fingerprint', p_allow_short_turnaround => true);
+  assert (select car_id from public.rides where id = r_mon) = car_b, '(SW3) the confirmed swap moves the Monday ride';
+  assert (select turnaround_override_minutes from public.rides where id = r_sun) = 1,
+    '(SW3) the earlier ride keeps the real 1-minute gap as its turnaround';
+  set constraints all immediate;
+  set constraints all deferred;
+end $$;
+
 -- Flush deferred constraint triggers here, exactly where a committing request would hit
 -- them; this suite never commits.
 set constraints all immediate;

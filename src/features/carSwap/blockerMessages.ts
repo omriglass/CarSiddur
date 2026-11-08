@@ -50,6 +50,12 @@ export function carSwapBlockerMessage(
         ride: rideLabel, car: carName,
         time: blocker.starts_at && blocker.ends_at ? `${formatTime(new Date(blocker.starts_at))}–${formatTime(new Date(blocker.ends_at))}` : "",
       });
+    case "turnaround":
+      return tv("carSwap.blockerShortTurnaround", {
+        ride: rideLabel, car: carName, person: blocker.person_name ?? he.carSwap.unknownRide,
+        time: blocker.starts_at && blocker.ends_at ? `${formatTime(new Date(blocker.starts_at))}–${formatTime(new Date(blocker.ends_at))}` : "",
+        minutes: String(blocker.gap_minutes ?? 0),
+      });
     case "private_car":
       return he.carSwap.blockerPrivateCar;
     case "swap_too_large":

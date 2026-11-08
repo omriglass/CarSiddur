@@ -1526,9 +1526,23 @@ CREATE OR REPLACE FUNCTION "public"."_day_car_swap_overlap_blockers"("p_ride_ids
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
-  select coalesce(jsonb_agg(jsonb_build_object('code', 'overlap', 'ride_id', m.id, 'car_id', s.car_id,
-      'starts_at', s.starts_at, 'ends_at', s.ends_at,
-      'detail', format('ride %s would overlap ride %s staying on car %s', m.id, s.id, s.car_id)) order by m.starts_at, m.id), '[]'::jsonb)
+  -- REQ §13.186 (owner 2026-11-08): rides that only come closer than the turnaround (no real overlap) are code
+  -- 'turnaround' with short_turnaround = true: the dialog asks, swap_day_cars(p_allow_short_turnaround) applies the gap.
+  select coalesce(jsonb_agg(case
+      when tstzrange(m.starts_at, m.ends_at, '[)') && tstzrange(s.starts_at, s.ends_at, '[)') then
+        jsonb_build_object('code', 'overlap', 'ride_id', m.id, 'car_id', s.car_id,
+          'starts_at', s.starts_at, 'ends_at', s.ends_at,
+          'detail', format('ride %s would overlap ride %s staying on car %s', m.id, s.id, s.car_id))
+      else
+        jsonb_build_object('code', 'turnaround', 'short_turnaround', true, 'ride_id', m.id, 'car_id', s.car_id,
+          'other_ride_id', s.id, 'starts_at', s.starts_at, 'ends_at', s.ends_at,
+          'gap_minutes', greatest(0, floor(extract(epoch from case when m.starts_at < s.starts_at
+                                                  then s.starts_at - m.ends_at else m.starts_at - s.ends_at end) / 60))::int,
+          'person_name', coalesce((select p.full_name from public.profiles p where p.id = s.driver_id),
+                                  (select pe ->> 'name' from public.v_board_rides v, jsonb_array_elements(v.people) pe
+                                    where v.id = s.id limit 1)),
+          'detail', format('ride %s would come closer than the turnaround to ride %s on car %s', m.id, s.id, s.car_id))
+      end order by m.starts_at, m.id), '[]'::jsonb)
   from public.rides m
   join public.rides s on s.car_id = (case when m.car_id = p_car_a then p_car_b else p_car_a end)
   where m.id = any(p_ride_ids) and m.status <> 'cancelled' and m.car_id in (p_car_a, p_car_b)
@@ -14275,7 +14289,8 @@ begin
   -- REQ §13.111 (a): a luggage-only blocker is waivable, so the swap can still go ahead (with allow_small_trunk).
   -- REQ §13.92 (2026-10-16): a whole_only blocker refuses only the 'whole' series mode; 'day' mode stays available.
   v_can_swap := not exists (select 1 from jsonb_array_elements(v_blockers) b
-    where not coalesce((b ->> 'waivable')::boolean, false) and not coalesce((b ->> 'whole_only')::boolean, false));
+    where not coalesce((b ->> 'waivable')::boolean, false) and not coalesce((b ->> 'whole_only')::boolean, false)
+      and not coalesce((b ->> 'short_turnaround')::boolean, false));
 
   return jsonb_build_object(
     'fingerprint', public._day_car_swap_fingerprint(v_fp_ids),
@@ -14292,6 +14307,8 @@ begin
     'can_swap', v_can_swap,
     'whole_blocked', exists (select 1 from jsonb_array_elements(v_blockers) b where coalesce((b ->> 'whole_only')::boolean, false)),
     'needs_small_trunk', exists (select 1 from jsonb_array_elements(v_blockers) b where coalesce((b ->> 'waivable')::boolean, false)),
+    -- REQ §13.186 (owner 2026-11-08): rides coming closer than the turnaround — asked, not refused
+    'needs_short_turnaround', exists (select 1 from jsonb_array_elements(v_blockers) b where coalesce((b ->> 'short_turnaround')::boolean, false)),
     'notify', v_notify
   );
 end $$;
@@ -21942,7 +21959,7 @@ end $$;
 ALTER FUNCTION "public"."suggest_destination"("p_department_id" "uuid", "p_name" "text", "p_zone" "text") OWNER TO "postgres";
 
 
-CREATE OR REPLACE FUNCTION "public"."swap_day_cars"("p_department_id" "uuid", "p_week_start" "date", "p_day" "date", "p_car_a" "uuid", "p_car_b" "uuid", "p_expected_fingerprint" "text", "p_series_mode" "text" DEFAULT 'whole'::"text", "p_allow_small_trunk" boolean DEFAULT false, "p_from" time without time zone DEFAULT NULL::time without time zone, "p_skip_seats" boolean DEFAULT false) RETURNS "jsonb"
+CREATE OR REPLACE FUNCTION "public"."swap_day_cars"("p_department_id" "uuid", "p_week_start" "date", "p_day" "date", "p_car_a" "uuid", "p_car_b" "uuid", "p_expected_fingerprint" "text", "p_series_mode" "text" DEFAULT 'whole'::"text", "p_allow_small_trunk" boolean DEFAULT false, "p_from" time without time zone DEFAULT NULL::time without time zone, "p_skip_seats" boolean DEFAULT false, "p_allow_short_turnaround" boolean DEFAULT false) RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
@@ -21962,7 +21979,7 @@ declare
   v_notified int := 0;
   v_moved int := 0;
   v_person record;
-  v_hard jsonb; v_soft jsonb;
+  v_hard jsonb; v_soft jsonb; v_short jsonb;
   v_all_ids uuid[]; v_skip uuid[] := '{}';
 begin
   perform public._small_trunk_mode(p_allow_small_trunk);
@@ -22004,16 +22021,22 @@ begin
       || public._day_car_swap_closure_blockers(v_moving)
       || public._day_car_swap_series_day_blockers(v_moving, p_day, p_car_a, p_car_b)
       || public._day_car_swap_overlap_blockers(v_moving, p_car_a, p_car_b);
-  elsif p_from is not null then
+  else
+    -- REQ §13.186 (2026-11-08): also in 'day' mode, so a turnaround shortfall is named (and asked) before the update
     v_phys_blockers := v_phys_blockers || public._day_car_swap_overlap_blockers(v_moving, p_car_a, p_car_b);
   end if;
   -- REQ §13.111 (a): a luggage blocker is waivable; everything else still refuses.
   select coalesce(jsonb_agg(b), '[]'::jsonb) into v_hard from jsonb_array_elements(v_phys_blockers) b
-  where not coalesce((b ->> 'waivable')::boolean, false);
+  where not coalesce((b ->> 'waivable')::boolean, false) and not coalesce((b ->> 'short_turnaround')::boolean, false);
+  select coalesce(jsonb_agg(b), '[]'::jsonb) into v_short from jsonb_array_elements(v_phys_blockers) b
+  where coalesce((b ->> 'short_turnaround')::boolean, false);
   select coalesce(jsonb_agg(b), '[]'::jsonb) into v_soft from jsonb_array_elements(v_phys_blockers) b
   where coalesce((b ->> 'waivable')::boolean, false);
   if jsonb_array_length(v_hard) > 0 then
     raise exception 'day_car_swap_blocked' using errcode = 'P0001', detail = (v_hard -> 0)::text;
+  end if;
+  if jsonb_array_length(v_short) > 0 and not coalesce(p_allow_short_turnaround, false) then
+    raise exception 'swap_short_turnaround' using errcode = 'P0001', detail = (v_short -> 0)::text;
   end if;
   if jsonb_array_length(v_soft) > 0 and not coalesce(p_allow_small_trunk, false) then
     raise exception 'needs_large_trunk' using errcode = 'P0001', detail = public._small_trunk_detail(
@@ -22050,6 +22073,23 @@ begin
   update public.rides
   set car_id = case when car_id = p_car_a then p_car_b else p_car_a end
   where id = any(v_moving) and car_id in (p_car_a, p_car_b);
+  -- REQ §13.186 (2026-11-08): after "yes", the earlier of two rides that now sit closer than the turnaround keeps
+  -- the real gap as its turnaround (the "!" be-back-on-time mark, as for TG1)
+  if coalesce(p_allow_short_turnaround, false) then
+    update public.rides e
+    set turnaround_override_minutes = sub.gap
+    from (
+      select e2.id, min(greatest(0, floor(extract(epoch from l.starts_at - e2.ends_at) / 60)))::smallint as gap
+      from public.rides e2
+      join public.rides l on l.car_id = e2.car_id and l.id <> e2.id
+      where e2.car_id in (p_car_a, p_car_b) and (e2.id = any(v_moving) or l.id = any(v_moving))
+        and e2.status <> 'cancelled' and l.status <> 'cancelled' and not e2.draft_hold and not l.draft_hold
+        and not e2.planning_conflict and not l.planning_conflict
+        and l.starts_at >= e2.ends_at and l.starts_at < e2.blocked_until
+      group by e2.id
+    ) sub
+    where e.id = sub.id;
+  end if;
   perform set_config('app.day_car_swap', 'off', true);
   if exists (
     select 1
@@ -22104,7 +22144,7 @@ begin
 end $$;
 
 
-ALTER FUNCTION "public"."swap_day_cars"("p_department_id" "uuid", "p_week_start" "date", "p_day" "date", "p_car_a" "uuid", "p_car_b" "uuid", "p_expected_fingerprint" "text", "p_series_mode" "text", "p_allow_small_trunk" boolean, "p_from" time without time zone, "p_skip_seats" boolean) OWNER TO "postgres";
+ALTER FUNCTION "public"."swap_day_cars"("p_department_id" "uuid", "p_week_start" "date", "p_day" "date", "p_car_a" "uuid", "p_car_b" "uuid", "p_expected_fingerprint" "text", "p_series_mode" "text", "p_allow_small_trunk" boolean, "p_from" time without time zone, "p_skip_seats" boolean, "p_allow_short_turnaround" boolean) OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."switch_request_plan"("p_request_id" "uuid", "p_to" "text", "p_expected_version" integer) RETURNS "jsonb"
@@ -33122,9 +33162,9 @@ GRANT ALL ON FUNCTION "public"."suggest_destination"("p_department_id" "uuid", "
 
 
 
-REVOKE ALL ON FUNCTION "public"."swap_day_cars"("p_department_id" "uuid", "p_week_start" "date", "p_day" "date", "p_car_a" "uuid", "p_car_b" "uuid", "p_expected_fingerprint" "text", "p_series_mode" "text", "p_allow_small_trunk" boolean, "p_from" time without time zone, "p_skip_seats" boolean) FROM PUBLIC;
-GRANT ALL ON FUNCTION "public"."swap_day_cars"("p_department_id" "uuid", "p_week_start" "date", "p_day" "date", "p_car_a" "uuid", "p_car_b" "uuid", "p_expected_fingerprint" "text", "p_series_mode" "text", "p_allow_small_trunk" boolean, "p_from" time without time zone, "p_skip_seats" boolean) TO "service_role";
-GRANT ALL ON FUNCTION "public"."swap_day_cars"("p_department_id" "uuid", "p_week_start" "date", "p_day" "date", "p_car_a" "uuid", "p_car_b" "uuid", "p_expected_fingerprint" "text", "p_series_mode" "text", "p_allow_small_trunk" boolean, "p_from" time without time zone, "p_skip_seats" boolean) TO "authenticated";
+REVOKE ALL ON FUNCTION "public"."swap_day_cars"("p_department_id" "uuid", "p_week_start" "date", "p_day" "date", "p_car_a" "uuid", "p_car_b" "uuid", "p_expected_fingerprint" "text", "p_series_mode" "text", "p_allow_small_trunk" boolean, "p_from" time without time zone, "p_skip_seats" boolean, "p_allow_short_turnaround" boolean) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."swap_day_cars"("p_department_id" "uuid", "p_week_start" "date", "p_day" "date", "p_car_a" "uuid", "p_car_b" "uuid", "p_expected_fingerprint" "text", "p_series_mode" "text", "p_allow_small_trunk" boolean, "p_from" time without time zone, "p_skip_seats" boolean, "p_allow_short_turnaround" boolean) TO "service_role";
+GRANT ALL ON FUNCTION "public"."swap_day_cars"("p_department_id" "uuid", "p_week_start" "date", "p_day" "date", "p_car_a" "uuid", "p_car_b" "uuid", "p_expected_fingerprint" "text", "p_series_mode" "text", "p_allow_small_trunk" boolean, "p_from" time without time zone, "p_skip_seats" boolean, "p_allow_short_turnaround" boolean) TO "authenticated";
 
 
 

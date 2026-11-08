@@ -7413,6 +7413,7 @@ export type Database = {
       }
       swap_day_cars: {
         Args: {
+          p_allow_short_turnaround?: boolean
           p_allow_small_trunk?: boolean
           p_car_a: string
           p_car_b: string

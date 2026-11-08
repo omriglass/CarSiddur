@@ -340,6 +340,8 @@ const MESSAGE_TO_CODE: Record<string, ErrorCode> = {
   driver_not_member: "driver_not_member",
   luggage_capacity_violation: "luggage_capacity_violation",
   needs_large_trunk: "needs_large_trunk",
+  // REQ §13.186 (2026-11-08): the swap changed under the dialog and now brings two rides closer than the turnaround
+  swap_short_turnaround: "ride_turnaround",
   person_busy: "person_busy",
   ride_move_needs_agreement: "ride_move_needs_agreement",
   car_fields_locked: "car_fields_locked",

@@ -168,6 +168,8 @@ export const he = {
     blockerSeriesOtherDayBusy: "{{car}} תפוס ביום {{day}} {{time}} — אפשר להחליף רק את היום הזה",
     blockerPrivateCar: "רכב פרטי — רק הבעלים יכול/ה להחליף",
     blockerOverlap: "הנסיעה {{ride}} תתנגש בנסיעה שנשארת ב{{car}} ({{time}})",
+    blockerShortTurnaround: "הנסיעה {{ride}} תהיה {{minutes}} דקות מהנסיעה של {{person}} ב{{car}} ({{time}}) — פחות מזמן ההמתנה הרגיל בין נסיעות",
+    shortTurnaroundTitle: "תיאמתם? המרווח בין הנסיעות יהיה קצר מהרגיל. אישור ההחלפה מקבל אותו:",
     /** REQ §13.180: swap only from an hour on. */
     fromLabel: "מאיזו שעה להחליף?",
     fromWholeDay: "כל היום",

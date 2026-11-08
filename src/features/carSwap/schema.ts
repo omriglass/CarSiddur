@@ -36,7 +36,7 @@ export const carSwapSeriesSchema = z.object({
 export type CarSwapSeries = z.infer<typeof carSwapSeriesSchema>;
 
 /** A4: refused on `seats`/`maintenance`/`private_car`/`not_allowed`; `past` covers a day already archived-by-time. */
-export const CAR_SWAP_BLOCKER_CODES = ["seats", "maintenance", "private_car", "not_allowed", "past", "luggage", "series_other_day_busy", "overlap", "swap_too_large", "archived"] as const;
+export const CAR_SWAP_BLOCKER_CODES = ["seats", "maintenance", "private_car", "not_allowed", "past", "luggage", "series_other_day_busy", "overlap", "swap_too_large", "archived", "turnaround"] as const;
 export type CarSwapBlockerCode = (typeof CAR_SWAP_BLOCKER_CODES)[number];
 export const carSwapBlockerSchema = z.object({
   code: z.enum(CAR_SWAP_BLOCKER_CODES),
@@ -53,6 +53,10 @@ export const carSwapBlockerSchema = z.object({
   day: z.string().optional(),
   starts_at: z.string().optional(),
   ends_at: z.string().optional(),
+  /** `turnaround` (REQ §13.186, 2026-11-08): two rides would come closer than the turnaround — asked, not refused. */
+  short_turnaround: z.boolean().optional(),
+  gap_minutes: z.number().optional(),
+  person_name: z.string().nullish(),
   /** `swap_too_large` (REQ §13.186): the closed set's size. */
   rides: z.number().optional(),
   days: z.number().optional(),
@@ -86,6 +90,8 @@ export const carSwapPreviewSchema = z.object({
   whole_blocked: z.boolean().optional(),
   /** REQ §13.111 (a): the swap can go ahead, but a large-luggage request would land on a car without a large trunk. */
   needs_small_trunk: z.boolean().optional(),
+  /** REQ §13.186 (2026-11-08): the swap can go ahead, but two rides would come closer than the turnaround (asked). */
+  needs_short_turnaround: z.boolean().optional(),
   notify: z.boolean(),
 });
 export type CarSwapPreview = z.infer<typeof carSwapPreviewSchema>;

@@ -105,6 +105,19 @@ describe("overlap blocker (REQ §13.180)", () => {
   });
 });
 
+describe("short-turnaround blocker (REQ §13.186, 2026-11-08)", () => {
+  it("names the person of the other ride, the car, its time and the gap", () => {
+    const message = carSwapBlockerMessage(
+      { code: "turnaround", short_turnaround: true, ride_id: "ride-1", car_id: "car-b", person_name: "אביב", gap_minutes: 1,
+        starts_at: "2026-09-24T15:00:00Z", ends_at: "2026-09-24T20:59:00Z" },
+      [ride()], { "car-b": "ואן" });
+    expect(message).toContain("אביב");
+    expect(message).toContain("ואן");
+    expect(message).toContain("1 דקות");
+    expect(message).toContain("18:00–23:59");
+  });
+});
+
 describe("carSwapBlockerMessage — REQ §13.186 closed set", () => {
   it("names the size of a swap that is too large", () => {
     expect(carSwapBlockerMessage(blocker({ code: "swap_too_large", ride_id: null, rides: 61, days: 9 }), [], {})).toBe(
