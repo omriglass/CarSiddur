@@ -14,7 +14,7 @@
 // shift within its own flexibility so the guest's time fits. Hosts with no
 // driverRequestId (an unassigned chauffeur ride) are skipped.
 
-import { fits, luggageFits, sum } from './seatFit';
+import { fits, needsFit, sum } from './seatFit';
 import type { NormalizedRequest } from './slots';
 import { slotsToMinutes } from './slots';
 import type { CarTimeline } from './timeline';
@@ -40,6 +40,8 @@ export interface HostRide {
   requestDestinationId: string;
   passengers: Passengers;
   luggageCount: number;
+  /** REQ §13.200: towing requests already on the ride (the hitch holds one). */
+  towCount: number;
   guestCount: number;
   isFixed: boolean;
   isTemporary: boolean;
@@ -80,6 +82,7 @@ export function buildHostRides(assignments: Assignment[], cars: Map<string, Car>
       requestDestinationId: requestDestinationOfLeg(driverLeg),
       passengers: a.passengers,
       luggageCount: a.luggageCount,
+      towCount: a.towCount ?? 0,
       guestCount: a.legs.filter((l) => l.role === 'passenger').length,
       isFixed: a.source === 'fixed',
       isTemporary: car?.type === 'temporary',
@@ -268,7 +271,8 @@ export function findMergeHosts(params: MergeSearchParams): MergeCandidate[] {
 
     const combinedPassengers = sum(host.passengers, guest.passengers);
     const combinedLuggage = host.luggageCount + (guest.luggage ? 1 : 0);
-    if (!fits(car, combinedPassengers) || !luggageFits(car, combinedLuggage)) continue;
+    const combinedTow = host.towCount + (guest.tow ? 1 : 0);
+    if (!fits(car, combinedPassengers) || !needsFit(car, combinedLuggage, combinedTow)) continue;
 
     const hostNr = params.hostDriverRequests.get(host.rideId);
     if (hostNr?.request.destinationIsFreeText) continue;

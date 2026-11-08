@@ -26,7 +26,7 @@ import { memberName, placeName } from './names';
 import type { NormalizedRequest } from './slots';
 import type { RelayPair } from './relay';
 import { byId, dayBoundsForSlot, eligibleDriverMemberId, formatSlotTime, withinRequestDay } from './slots';
-import { fits, luggageFits } from './seatFit';
+import { fits, needsFit, towCountField } from './seatFit';
 import type { CarTimeline } from './timeline';
 import type { Assignment, Car, SolverInput, Window } from './types';
 
@@ -147,8 +147,8 @@ export function pairComplementaryOneWays(
       if (wa.end > wbCar.start) continue;
       if (!withinRequestDay(first, wa) || !withinRequestDay(second, wbCar)) continue;
       for (const car of sharedCars) {
-        if (!fits(car, first.passengers) || !luggageFits(car, first.luggage ? 1 : 0)) continue;
-        if (!fits(car, second.passengers) || !luggageFits(car, second.luggage ? 1 : 0)) continue;
+        if (!fits(car, first.passengers) || !needsFit(car, first.luggage ? 1 : 0, first.tow ? 1 : 0)) continue;
+        if (!fits(car, second.passengers) || !needsFit(car, second.luggage ? 1 : 0, second.tow ? 1 : 0)) continue;
         const tl = timelines.get(car.id);
         if (!tl || !tl.isFree(wa, la.originId)) continue;
         tl.add({ rideId: `ride:${first.id}`, window: wa, startLocationId: la.originId, endLocationId: la.destinationId, overnightAck: false, relayPairId: pid });
@@ -206,6 +206,7 @@ export function pairComplementaryOneWays(
         servedRequestIds: [nr.id],
         passengers: nr.passengers,
         luggageCount: nr.luggage ? 1 : 0,
+        ...towCountField(nr.tow ? 1 : 0),
         shift: { departureMin: (legStart - nr.window.start) * 15, returnMin: 0 },
         pairedRideId,
         source: 'solver',
@@ -235,7 +236,7 @@ export function oneWayUnmetCause(
 ): { strands: boolean; atOrigin: boolean; awayAtWeekEnd: boolean } {
   const leg = nr.legs[0];
   if (!leg) return { strands: false, atOrigin: false, awayAtWeekEnd: false };
-  const fitting = input.cars.filter((c) => c.type === 'shared' && fits(c, nr.passengers) && luggageFits(c, nr.luggage ? 1 : 0));
+  const fitting = input.cars.filter((c) => c.type === 'shared' && fits(c, nr.passengers) && needsFit(c, nr.luggage ? 1 : 0, nr.tow ? 1 : 0));
   let strands = false;
   let awayAtWeekEnd = false;
   let atOrigin = false;

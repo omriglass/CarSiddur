@@ -354,6 +354,25 @@ describe("buildSolverInput", () => {
     expect(luggage(solverInput([requestRow({ has_luggage: false })]))).toEqual([false]);
   });
 
+  it("maps a towing request to towHitch:true, a waived one to no towHitch, and a tow_hitch car to towHitch (REQ §13.200)", () => {
+    const build = (requests: RequestRow[], features: string[] = []) => buildSolverInput({
+      weekStart: WEEK_START,
+      homeDestinationId: HOME,
+      departmentSettings: DEFAULT_SETTINGS,
+      requests,
+      rideTypeCodesById: { "rt-work": "work" },
+      cars: [carRow({ features })],
+      seatConfigsByCarId: {},
+      destinations: [destRow(), destRow({ id: HOME, name: "נבו", zone: "home", distance_km: null, travel_minutes: null, public_transport_score: null })],
+      policy: { id: "p1", version: 1, rules: [] },
+    });
+    expect(build([requestRow({ needs_tow_hitch: true })]).requests.map((request) => request.towHitch)).toEqual([true]);
+    expect(build([requestRow({ needs_tow_hitch: true, luggage_waived_at: "2026-11-08T08:00:00Z" })]).requests.map((request) => request.towHitch)).toEqual([undefined]);
+    expect(build([requestRow({})]).requests.map((request) => request.towHitch)).toEqual([undefined]);
+    expect(build([], ["tow_hitch"]).cars[0]!.towHitch).toBe(true);
+    expect(build([], []).cars[0]!.towHitch).toBeUndefined();
+  });
+
   it("marks cars (luggageCapacity > 0, no count cap) with the large_trunk feature", () => {
     const input = buildSolverInput({
       weekStart: WEEK_START,

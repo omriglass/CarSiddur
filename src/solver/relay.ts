@@ -26,7 +26,7 @@ import type { NormalizedRequest } from './slots';
 import { byId, dayBoundsForSlot, eligibleDriverMemberId, formatSlotTime, minutesToSlots, travelSlotsFor, withinRequestDay } from './slots';
 import type { CarTimeline } from './timeline';
 import type { Assignment, Car, SolverInput, Window } from './types';
-import { chauffeurLoad, fits, luggageFits } from './seatFit';
+import { chauffeurLoad, fits, needsFit, towCountField } from './seatFit';
 import { chauffeurCandidates, chauffeurTotalSlots, resolveStopMinutes, type ChauffeurCandidate } from './travel';
 
 export interface RelayPair {
@@ -267,9 +267,10 @@ export function pickupFromCarAtX(
     const day = dayBoundsForSlot(input.week.days, leg.window.start);
     if (leg.window.start < day.startSlot || leg.window.end > day.endSlot) continue;
     const luggageCount = nr.luggage ? 1 : 0;
+    const towCount = nr.tow ? 1 : 0;
     // the driver sits in the car: seats = passengers (their own seat is already counted in `adults`)
     const car = sharedCars.find((c) => {
-      if (!fits(c, nr.passengers) || !luggageFits(c, luggageCount)) return false;
+      if (!fits(c, nr.passengers) || !needsFit(c, luggageCount, towCount)) return false;
       const tl = timelines.get(c.id);
       return !!tl && tl.isFree(leg.window, leg.originId, undefined, leg.destinationId, { baseAtWeekEnd: true });
     });
@@ -300,6 +301,7 @@ export function pickupFromCarAtX(
       servedRequestIds: [nr.id],
       passengers: nr.passengers,
       luggageCount,
+      ...towCountField(towCount),
       shift: { departureMin: 0, returnMin: 0 },
       source: 'solver',
       reasonCode: 'PLACED_PICKUP_FROM_CAR_AT_X',
@@ -374,6 +376,7 @@ export function chauffeurUnpairedRelayLegs(
     const day = dayBoundsForSlot(input.week.days, point);
     const load = chauffeurLoad(nr.passengers);
     const luggageCount = nr.luggage ? 1 : 0;
+    const towCount = nr.tow ? 1 : 0;
     // REQUIREMENTS §13.93 (owner follow-up 2026-10-04, ORIGINS_PLAN §3): an
     // `out` leg A -> B tries the car at A (drop-off) and at B (pickup, e.g.
     // "pick me up from Harish") in that order; a `return` leg keeps the
@@ -393,7 +396,7 @@ export function chauffeurUnpairedRelayLegs(
     for (const candidate of candidates) {
       if (candidate.window.start < day.startSlot || candidate.window.end > day.endSlot) continue;
       for (const car of sharedCars) {
-        if (!fits(car, load) || !luggageFits(car, luggageCount)) continue;
+        if (!fits(car, load) || !needsFit(car, luggageCount, towCount)) continue;
         const tl = timelines.get(car.id);
         if (!tl || !tl.isFree(candidate.window, candidate.carOriginId)) continue;
         carId = car.id;
@@ -406,7 +409,7 @@ export function chauffeurUnpairedRelayLegs(
     // pickup place) still serves an `out` leg: the ride starts early by the empty drive to the pickup.
     if (!carId && side === 'out') {
       for (const car of sharedCars) {
-        if (!fits(car, load) || !luggageFits(car, luggageCount)) continue;
+        if (!fits(car, load) || !needsFit(car, luggageCount, towCount)) continue;
         const tl = timelines.get(car.id);
         if (!tl) continue;
         const at = tl.locationAt(point);
@@ -463,6 +466,7 @@ export function chauffeurUnpairedRelayLegs(
       servedRequestIds: [nr.id],
       passengers: nr.passengers,
       luggageCount,
+      ...towCountField(towCount),
       shift: { departureMin: 0, returnMin: 0 },
       source: 'solver',
       reasonCode,
@@ -516,9 +520,10 @@ export function chauffeurShortDropOffs(
     if (window.start < day.startSlot || window.end > day.endSlot) continue;
     const load = chauffeurLoad(out.passengers);
     const luggageCount = out.luggage || ret.luggage ? 1 : 0;
+    const towCount = out.tow || ret.tow ? 1 : 0;
     const car = sharedCars.find((c) => {
       const tl = timelines.get(c.id);
-      return fits(c, load) && luggageFits(c, luggageCount) && !!tl && tl.isFree(window, out.originId);
+      return fits(c, load) && needsFit(c, luggageCount, towCount) && !!tl && tl.isFree(window, out.originId);
     });
     if (!car) continue;
     const tl = timelines.get(car.id);
@@ -540,6 +545,7 @@ export function chauffeurShortDropOffs(
       servedRequestIds: [out.id, ret.id],
       passengers: out.passengers,
       luggageCount,
+      ...towCountField(towCount),
       shift: { departureMin: 0, returnMin: 0 },
       source: 'solver',
       reasonCode: 'PLACED_NEEDS_DRIVER',

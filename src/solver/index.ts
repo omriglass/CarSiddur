@@ -13,7 +13,7 @@ import { runPooling, runRideAlong, seatAsGuest } from './pooling';
 import { evictDriverlessForDrivers } from './driverFirst';
 import { runPreferenceSwaps } from './preferenceSwaps';
 import { assertInvariants } from './invariants';
-import { fits, luggageFits } from './seatFit';
+import { fits, needsFit } from './seatFit';
 import { buildHostRides, findMergeHosts } from './merge';
 import { scoreRequests } from './policy/engine';
 import { oneWayUnmetCause, pairComplementaryOneWays, pairSameMemberOutAndBack } from './oneWayPairs';
@@ -29,7 +29,7 @@ import { minutesToSlots } from './slots';
 import type { Assignment, Car, SolverInput, SolverOutput, UnmetRequest } from './types';
 
 export * from './types';
-export { fits, dominates, slack, sum, luggageFits, chauffeurLoad } from './seatFit';
+export { fits, dominates, slack, sum, luggageFits, towFits, needsFit, chauffeurLoad } from './seatFit';
 export { ruleRegistry, type RuleType } from './rules/index';
 export { alternativeServedWeightOf, DEFAULT_ALTERNATIVE_SERVED_WEIGHT } from './rules/fairness';
 export { freedSlotOptions, matchFreedSlot } from './live';
@@ -53,7 +53,7 @@ function computeBlockers(nr: NormalizedRequest, timelines: Map<string, CarTimeli
   for (const car of cars.filter((c) => c.type === 'shared').sort((a, b) => (a.id < b.id ? -1 : 1))) {
     const tl = timelines.get(car.id);
     if (!tl) continue;
-    if (!fits(car, nr.passengers) || !luggageFits(car, nr.luggage ? 1 : 0)) {
+    if (!fits(car, nr.passengers) || !needsFit(car, nr.luggage ? 1 : 0, nr.tow ? 1 : 0)) {
       blockers.push({ carId: car.id, rideIds: [] });
       continue;
     }
@@ -94,7 +94,7 @@ function seatCount(nr: NormalizedRequest): number {
 /** The shared cars that seat the request and take its luggage, by name (R13B17: the busy ones the reason names). */
 function seatCarNames(input: SolverInput, nr: NormalizedRequest): string {
   return input.cars
-    .filter((c) => c.type === 'shared' && fits(c, nr.passengers) && luggageFits(c, nr.luggage ? 1 : 0))
+    .filter((c) => c.type === 'shared' && fits(c, nr.passengers) && needsFit(c, nr.luggage ? 1 : 0, nr.tow ? 1 : 0))
     .map((c) => carName(input.cars, c.id))
     .filter(Boolean)
     .join(', ');
@@ -103,7 +103,7 @@ function seatCarNames(input: SolverInput, nr: NormalizedRequest): string {
 /** Some shared car that seats the request and takes its luggage is free for it, wherever it stands. */
 function fittingCarFree(input: SolverInput, nr: NormalizedRequest, timelines: Map<string, CarTimeline>): boolean {
   return input.cars.some(
-    (c) => c.type === 'shared' && fits(c, nr.passengers) && luggageFits(c, nr.luggage ? 1 : 0) && carFreeForRequest(timelines.get(c.id), nr, true),
+    (c) => c.type === 'shared' && fits(c, nr.passengers) && needsFit(c, nr.luggage ? 1 : 0, nr.tow ? 1 : 0) && carFreeForRequest(timelines.get(c.id), nr, true),
   );
 }
 
@@ -122,8 +122,12 @@ function noCarReason(
   if (shared.length === 0) return { code: 'UNMET_NO_CAR_NONE', text: reason('UNMET_NO_CAR_NONE') };
   const seatOk = shared.filter((c) => fits(c, nr.passengers));
   if (seatOk.length === 0) return { code: 'UNMET_NO_CAR_SEATS', text: reason('UNMET_NO_CAR_SEATS') };
-  const fitting = seatOk.filter((c) => luggageFits(c, nr.luggage ? 1 : 0));
-  if (fitting.length === 0) return { code: 'UNMET_NO_CAR_LUGGAGE', text: reason('UNMET_NO_CAR_LUGGAGE') };
+  const fitting = seatOk.filter((c) => needsFit(c, nr.luggage ? 1 : 0, nr.tow ? 1 : 0));
+  if (fitting.length === 0) {
+    // REQ §13.200: a towing request that only lacks the hitch says so; large luggage keeps its own wording
+    if (nr.tow && !nr.luggage) return { code: 'UNMET_NEEDS_TOW_HITCH', text: reason('UNMET_NEEDS_TOW_HITCH') };
+    return { code: 'UNMET_NO_CAR_LUGGAGE', text: reason('UNMET_NO_CAR_LUGGAGE') };
+  }
   const where = { origin: requestOriginName(input, nr.request, nr.originId), dest: requestDestName(input, nr.request) };
   if (!fitting.some((c) => carFreeForRequest(timelines.get(c.id), nr, false))) {
     const spanStart = Math.min(nr.flexDep[0], nr.window.start);
@@ -139,6 +143,7 @@ function noCarReason(
       return { code, text: reason(code, { cars: seatCarNames(input, nr), count: seatCount(nr) }) };
     }
     if (fitting.length < seatOk.length) {
+      if (nr.tow && !nr.luggage) return { code: 'UNMET_TOW_HITCH_BUSY', text: reason('UNMET_TOW_HITCH_BUSY', { cars: seatCarNames(input, nr) }) };
       return { code: 'UNMET_LARGE_TRUNK_BUSY', text: reason('UNMET_LARGE_TRUNK_BUSY', { cars: seatCarNames(input, nr) }) };
     }
   }
@@ -190,7 +195,7 @@ function solveExpanded(input: SolverInput): SolverOutput {
     // R16B8: a fixed ride is the database's truth; one already over its car's seats (e.g. two stacked merge
     // drafts) is reported, never a crash — the solver itself never adds anyone to it.
     const fixedCar = carsMap.get(fr.carId);
-    if (fixedCar && (!fits(fixedCar, fr.passengers) || !luggageFits(fixedCar, fr.luggageCount))) {
+    if (fixedCar && (!fits(fixedCar, fr.passengers) || !needsFit(fixedCar, fr.luggageCount, fr.towCount ?? 0))) {
       warnings.push({ code: 'FIXED_RIDE_OVER_CAPACITY', message: reason('WARN_FIXED_RIDE_OVER_CAPACITY'), requestId: fr.id });
     }
     fixedAssignments.push({
@@ -205,6 +210,7 @@ function solveExpanded(input: SolverInput): SolverOutput {
       servedRequestIds: fr.servedRequestIds,
       passengers: fr.passengers,
       luggageCount: fr.luggageCount,
+      ...(fr.towCount ? { towCount: fr.towCount } : {}),
       shift: { departureMin: 0, returnMin: 0 },
       source: 'fixed',
       ...(fr.seriesId ? { seriesId: fr.seriesId } : {}),
@@ -428,6 +434,8 @@ function solveExpanded(input: SolverInput): SolverOutput {
       );
       const needsLargeTrunk =
         nr.luggage && !input.cars.some((c) => c.type === 'shared' && c.luggageCapacity >= 1);
+      // REQ §13.200: the same for a towing request when no shared car has a hitch at all
+      const needsTowHitch = !!nr.tow && !input.cars.some((c) => c.type === 'shared' && c.towHitch === true);
       // REQ §13.104c: a child's leg that only lacks a child-seat car says so, not "no relay partner".
       const leg0 = nr.legs[0];
       const seatsBusy =
@@ -448,6 +456,8 @@ function solveExpanded(input: SolverInput): SolverOutput {
         ? { code: 'UNMET_CAR_TO_DRIVER', text: reason('UNMET_CAR_TO_DRIVER', { member: memberName(input, byRequestId.get(takenBy)?.request.memberId), dest }) }
         : needsLargeTrunk
         ? { code: 'UNMET_NEEDS_LARGE_TRUNK', text: reason('UNMET_NEEDS_LARGE_TRUNK') }
+        : needsTowHitch
+        ? { code: 'UNMET_NEEDS_TOW_HITCH', text: reason('UNMET_NEEDS_TOW_HITCH') }
         : seatsBusy
         ? { code: 'UNMET_NO_CAR_SEATS_BUSY', text: reason('UNMET_NO_CAR_SEATS_BUSY', { cars: seatCarNames(input, nr), count: seatCount(nr) }) }
         : stillPassengerOnly.includes(nr)

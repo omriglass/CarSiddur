@@ -17,7 +17,7 @@
 import { carsByPreference } from './carPreference';
 import { bestPlacementWithinFlex } from './flexibility';
 import { compareUnitsByPriority, type PlacedSingle, type Unit } from './greedy';
-import { fits, luggageFits } from './seatFit';
+import { fits, needsFit } from './seatFit';
 import { reason } from './reasons';
 import type { Block, CarTimeline } from './timeline';
 import type { Car, Relocation, SolverConfig, SolverInput, Suggestion } from './types';
@@ -79,7 +79,7 @@ export function runImprove(
 
     for (const car of carsByPreference(sharedCars, nr.request.preferredCarId)) {
       if (solved || budgetState.exhausted || perReq <= 0) break;
-      if (!fits(car, nr.passengers) || !luggageFits(car, nr.luggage ? 1 : 0)) continue;
+      if (!fits(car, nr.passengers) || !needsFit(car, nr.luggage ? 1 : 0, nr.tow ? 1 : 0)) continue;
       const tl = timelines.get(car.id);
       if (!tl) continue;
 
@@ -275,7 +275,7 @@ function tryRelocateSetAndPlace(
       if (budgetState.budget <= 0) break;
       budgetState.budget--;
       spend();
-      if (!fits(target, b.nr.passengers) || !luggageFits(target, b.nr.luggage ? 1 : 0)) continue;
+      if (!fits(target, b.nr.passengers) || !needsFit(target, b.nr.luggage ? 1 : 0, b.nr.tow ? 1 : 0)) continue;
       const targetTl = timelines.get(target.id);
       if (!targetTl) continue;
       const placement = bestPlacementWithinFlex(targetTl, b.nr);

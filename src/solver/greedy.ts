@@ -27,7 +27,7 @@ import {
   type SeriesLeg,
   type SeriesUnit,
 } from './slots';
-import { fits, luggageFits, slack, sum } from './seatFit';
+import { fits, slack, sum, needsFit, towCountField } from './seatFit';
 import { CarTimeline } from './timeline';
 import type { Assignment, Car, SolverInput, Window } from './types';
 
@@ -453,7 +453,7 @@ export function runGreedy(
 
       // Phase 1: preferred time on every car.
       for (const car of sharedCars) {
-        if (!fits(car, nr.passengers) || !luggageFits(car, nr.luggage ? 1 : 0)) continue;
+        if (!fits(car, nr.passengers) || !needsFit(car, nr.luggage ? 1 : 0, nr.tow ? 1 : 0)) continue;
         const tl = timelines.get(car.id);
         if (!tl) continue;
         if (withinRequestDay(nr, nr.window) && tl.isFree(nr.window, leg.originId, undefined, leg.destinationId, { baseAtWeekEnd: true })) {
@@ -478,7 +478,7 @@ export function runGreedy(
       // Phase 2: flexibility search per car.
       if (!best) {
         for (const car of sharedCars) {
-          if (!fits(car, nr.passengers) || !luggageFits(car, nr.luggage ? 1 : 0)) continue;
+          if (!fits(car, nr.passengers) || !needsFit(car, nr.luggage ? 1 : 0, nr.tow ? 1 : 0)) continue;
           const tl = timelines.get(car.id);
           if (!tl) continue;
           const placement = bestPlacementWithinFlex(tl, nr);
@@ -539,7 +539,7 @@ export function runGreedy(
       let best: { car: Car; key: CarKey } | null = null;
       for (const car of sharedCars) {
         if (!fits(car, outNr.passengers) || !fits(car, retNr.passengers)) continue;
-        if (!luggageFits(car, outNr.luggage ? 1 : 0) || !luggageFits(car, retNr.luggage ? 1 : 0)) continue;
+        if (!needsFit(car, outNr.luggage ? 1 : 0, outNr.tow ? 1 : 0) || !needsFit(car, retNr.luggage ? 1 : 0, retNr.tow ? 1 : 0)) continue;
         const tl = timelines.get(car.id);
         if (!tl) continue;
         if (pair.outWindow.end > pair.returnWindow.start) continue;
@@ -615,7 +615,7 @@ export function runGreedy(
       const legs = su.legs;
       let best: { car: Car; placement: ReturnType<typeof trySeriesOnCar>; key: CarKey } | null = null;
       for (const car of sharedCars) {
-        if (!legs.every((leg) => fits(car, leg.passengers) && luggageFits(car, leg.luggage ? 1 : 0))) continue;
+        if (!legs.every((leg) => fits(car, leg.passengers) && needsFit(car, leg.luggage ? 1 : 0, leg.tow ? 1 : 0))) continue;
         const tl = timelines.get(car.id);
         if (!tl) continue;
         const placement = trySeriesOnCar(tl, legs, su.seriesCount);
@@ -751,6 +751,7 @@ export function toAssignments(placed: Placed[], input: SolverInput, carsById: Ma
         servedRequestIds: [nr.id, ...guests.map((g) => g.id)],
         passengers: sum(nr.passengers, ...guests.map((g) => g.passengers)),
         luggageCount: (nr.luggage ? 1 : 0) + guests.filter((g) => g.luggage).length,
+        ...towCountField((nr.tow ? 1 : 0) + guests.filter((g) => g.tow).length),
         shift,
         source: 'solver',
         reasonCode: code,
@@ -804,6 +805,7 @@ export function toAssignments(placed: Placed[], input: SolverInput, carsById: Ma
         servedRequestIds: [outNr.id],
         passengers: outNr.passengers,
         luggageCount: outNr.luggage ? 1 : 0,
+        ...towCountField(outNr.tow ? 1 : 0),
         shift: outShift,
         pairedRideId: retRideId,
         turnaroundAfterMinutes: shortRelayGapMinutes(pair.outWindow, pair.returnWindow, input.config.bufferMinutes),
@@ -832,6 +834,7 @@ export function toAssignments(placed: Placed[], input: SolverInput, carsById: Ma
         servedRequestIds: [retNr.id],
         passengers: retNr.passengers,
         luggageCount: retNr.luggage ? 1 : 0,
+        ...towCountField(retNr.tow ? 1 : 0),
         shift: retShift,
         pairedRideId: outRideId,
         source: 'solver',
@@ -871,6 +874,7 @@ export function toAssignments(placed: Placed[], input: SolverInput, carsById: Ma
           servedRequestIds: [leg.requestId],
           passengers: leg.passengers,
           luggageCount: leg.luggage ? 1 : 0,
+          ...towCountField(leg.tow ? 1 : 0),
           shift,
           seriesId: series.seriesId,
           source: 'solver',

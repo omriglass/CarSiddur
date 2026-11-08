@@ -173,6 +173,8 @@ export interface Request {
   passengers: Passengers;
   coRiderMemberIds: string[];
   luggage: boolean;
+  /** REQ §13.200: needs a towing car (hitch); at most one such request per ride. Absent = false. */
+  towHitch?: boolean;
   /** round trips only */
   needsCarAtDestination: boolean;
   submittedAtMs: number;
@@ -240,6 +242,8 @@ export interface Car {
   features: string[];
   /** > 0 = the car has a large trunk (takes any number of large-luggage requests); 0 = none. Not a count cap. */
   luggageCapacity: number;
+  /** REQ §13.200: the car has a tow hitch (one towing request per ride). Absent = false. */
+  towHitch?: boolean;
   maintenance: Window[];
   /** where the car is at week start; default = home */
   startLocationId?: string;
@@ -285,6 +289,8 @@ export interface FixedRide {
   servedRequestIds: string[];
   passengers: Passengers;
   luggageCount: number;
+  /** REQ §13.200: towing requests on the ride (0/absent = none; the hitch holds one). */
+  towCount?: number;
   /** Sadran acknowledged the car is not home at day end */
   overnightAck: boolean;
   /** Coordinator-approved buffer after this existing booking; never authorizes a new solver placement. */
@@ -395,6 +401,8 @@ export interface Assignment {
   servedRequestIds: string[];
   passengers: Passengers;
   luggageCount: number;
+  /** REQ §13.200: towing requests on the ride. */
+  towCount?: number;
   /** signed, 0 if at preferred */
   shift: { departureMin: number; returnMin: number };
   /** The other leg of a relay pair — a solo (unpaired) relay leg is never placed as
