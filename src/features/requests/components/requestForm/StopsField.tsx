@@ -1,84 +1,66 @@
-// REQUIREMENTS §13.93 "Multi-stop rides": compact, collapsed-by-default stop chips — nothing
-// extra is visible until the member taps "+ עצירה"/"+ עצירה בחזור". Opens the same
-// `DestinationCombobox` the origin/destination fields use (list + free text) inline, right
-// where the link was, and closes itself the moment a place is picked (owner, 2026-10-04:
-// "the form is a bit unwieldy as it is" — stops must stay out of the way until used).
-import { useState } from "react";
-import { Controller, useFieldArray, type Control } from "react-hook-form";
-import { X } from "lucide-react";
+// REQUIREMENTS §13.93 "Multi-stop rides", TODO ST1: the classic form's stops control — one
+// "+ עוד מקום בדרך" link (asks which leg only when the trip has a return) plus the live route
+// line. Opens the same `DestinationCombobox` the origin/destination fields use (list + free
+// text) inline, and closes itself the moment a place is picked. Shared behaviour: `StopsRoute`.
+import { useWatch, type UseFormReturn } from "react-hook-form";
 
 import { DestinationCombobox, type DestinationPreset, type DestinationValue } from "@/components/DestinationCombobox";
 import { t } from "@/i18n/he";
 
 import type { RequestFormValues } from "../../schema";
-
-const MAX_STOPS = 10;
+import type { StopLeg } from "./routeLine";
+import { placeName } from "./routeLine";
+import { MAX_STOPS, StopsRoute } from "./StopsRoute";
 
 export interface StopsFieldProps {
-  control: Control<RequestFormValues>;
-  name: "outStops" | "returnStops";
+  form: UseFormReturn<RequestFormValues>;
   destinations: readonly DestinationPreset[];
-  addLabel: string;
-  removeAriaLabel: string;
+  /** The trip has a return leg (round trip, or הקפצה with a pickup). */
+  hasReturn: boolean;
   /** First validation message of any stop (R3B21: stop equals origin/destination). */
   error?: string;
 }
 
-function stopName(value: DestinationValue, destinations: readonly DestinationPreset[]): string {
-  if ("presetId" in value) return destinations.find((d) => d.id === value.presetId)?.name ?? value.name;
-  return value.freeText;
-}
+const FIELD = { out: "outStops", return: "returnStops" } as const;
 
-/** Out- or return-stop chips (REQUIREMENTS §13.93 "Multi-stop rides") — one `StopsField` per leg. */
-export function StopsField({ control, name, destinations, addLabel, removeAriaLabel, error }: StopsFieldProps) {
-  const { fields, append, remove } = useFieldArray({ control, name });
-  const [adding, setAdding] = useState(false);
+export function StopsField({ form, destinations, hasReturn, error }: StopsFieldProps) {
+  const [origin, destination, outStops, returnStops] = useWatch({
+    control: form.control,
+    name: ["origin", "destination", "outStops", "returnStops"],
+  }) as [DestinationValue | null, DestinationValue | null, DestinationValue[] | undefined, DestinationValue[] | undefined];
+  const out = outStops ?? [];
+  const back = returnStops ?? [];
+
+  function add(leg: StopLeg, value: DestinationValue) {
+    const current = (form.getValues(FIELD[leg]) ?? []) as DestinationValue[];
+    if (current.length < MAX_STOPS) form.setValue(FIELD[leg], [...current, value], { shouldDirty: true, shouldValidate: true });
+  }
+
+  function remove(leg: StopLeg, index: number) {
+    const current = (form.getValues(FIELD[leg]) ?? []) as DestinationValue[];
+    form.setValue(FIELD[leg], current.filter((_, i) => i !== index), { shouldDirty: true, shouldValidate: true });
+  }
 
   return (
-    <div className="flex flex-wrap items-center gap-1.5" data-field={name}>
-      {fields.map((field, index) => (
-        <Controller
-          key={field.id}
-          control={control}
-          name={`${name}.${index}` as const}
-          render={({ field: itemField }) => (
-            <span className="inline-flex max-w-full items-center gap-1 rounded-full border bg-muted px-2 py-1 text-xs">
-              <span className="truncate">{stopName(itemField.value, destinations)}</span>
-              <button
-                type="button"
-                aria-label={removeAriaLabel}
-                className="shrink-0 text-muted-foreground hover:text-foreground"
-                onClick={() => remove(index)}
-              >
-                <X className="size-3" aria-hidden="true" />
-              </button>
-            </span>
-          )}
-        />
-      ))}
-      {adding ? (
-        <div className="w-full max-w-xs">
+    <StopsRoute
+      origin={placeName(origin, destinations)}
+      destination={placeName(destination, destinations)}
+      outStops={out.map((stop) => placeName(stop, destinations))}
+      returnStops={back.map((stop) => placeName(stop, destinations))}
+      hasReturn={hasReturn}
+      onRemove={remove}
+      error={error}
+      renderPicker={(done, leg) => (
+        <div className="max-w-xs">
           <DestinationCombobox
             destinations={destinations}
             value={null}
-            onChange={(next) => {
-              if (fields.length < MAX_STOPS) append(next);
-              setAdding(false);
-            }}
+            onChange={(next) => { add(leg, next); done(); }}
             placeholder={t("request.stopPlaceholder")}
             autoFocus
           />
         </div>
-      ) : fields.length < MAX_STOPS ? (
-        <button
-          type="button"
-          className="text-xs text-muted-foreground underline-offset-2 hover:underline"
-          onClick={() => setAdding(true)}
-        >
-          {addLabel}
-        </button>
-      ) : null}
-      {error ? <p role="alert" className="w-full text-sm font-medium text-destructive">{error}</p> : null}
-    </div>
+      )}
+    />
   );
 }

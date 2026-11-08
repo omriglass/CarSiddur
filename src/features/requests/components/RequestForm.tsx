@@ -1431,16 +1431,14 @@ export function RequestForm({
         </div>
 
         {/* REQ §13.93 "Multi-stop rides": compact chips between the origin line and the
-            destination field, behind one "+ עצירה" link — not shown for carNow (fixed home
+            destination field, behind one "+ עוד מקום בדרך" link — not shown for carNow (fixed home
             round trip, no room/need for stops). */}
         {variant !== "carNow" ? (
           <StopsField
-            control={form.control}
-            name="outStops"
-            error={stopsError(form.formState.errors.outStops)}
+            form={form}
+            hasReturn={needsReturn}
+            error={stopsError(form.formState.errors.outStops) ?? stopsError(form.formState.errors.returnStops)}
             destinations={destinationsWithoutOrigin}
-            addLabel={he.request.addStop}
-            removeAriaLabel={he.request.removeStop}
           />
         ) : null}
 
@@ -1497,19 +1495,6 @@ export function RequestForm({
           departTimeError={form.formState.errors.departTime?.message}
           returnTimeError={form.formState.errors.returnTime?.message}
         />
-
-        {/* REQ §13.93 "Multi-stop rides": return-stop chips, next to the return time, only when
-            the trip actually has a return leg — behind one "+ עצירה בחזור" link. */}
-        {variant !== "carNow" && needsReturn ? (
-          <StopsField
-            control={form.control}
-            name="returnStops"
-            error={stopsError(form.formState.errors.returnStops)}
-            destinations={destinationsWithoutOrigin}
-            addLabel={he.request.addReturnStop}
-            removeAriaLabel={he.request.removeStop}
-          />
-        ) : null}
 
         {/* REQ §13.112 (e): the classic layout's own plan-B section (the sentence layout has the "אם אין רכב" line). */}
         {variant === "weekly" && !isReservation ? <PlanBFields form={form} errors={form.formState.errors} destinations={destinationsWithoutOrigin} /> : null}

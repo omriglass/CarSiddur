@@ -1,7 +1,6 @@
 // UX_FLOWS §3.4a "Time sheet": the anchor toggle (out: לצאת ב־ / להגיע עד, return: להיות בבית
 // עד / לצאת משם ב־, a הקפצה pickup: איסוף משם ב־), the 15-minute time field, the derived
 // estimate line and the flexibility row. Rendered inside a `FieldSheet`.
-import { X } from "lucide-react";
 import { useState } from "react";
 import { useWatch, type UseFormReturn } from "react-hook-form";
 
@@ -19,11 +18,9 @@ import {
   switchOutAnchor,
   switchReturnAnchor,
 } from "../../../timeAnchors";
-import { FieldError } from "../FieldError";
 import { AnchorTimePicker } from "./AnchorTimePicker";
 import { FlexibilityRow } from "./FlexibilityRow";
 import { LtrText } from "./LtrText";
-import { PillChip } from "./PillChip";
 
 interface TimeAnchorSheetProps {
   form: UseFormReturn<RequestFormValues>;
@@ -38,14 +35,7 @@ interface TimeAnchorSheetProps {
   anchorsEnabled: boolean;
   /** The flexibility row of this end (weekly, single-day). */
   flexEnabled: boolean;
-  /** "+ עצירה בחזור" under the return time (every variant but car-now). */
-  stopsEnabled: boolean;
-  /** Names of the return stops, in order (the sentence sheet adds/removes them — R9B4). */
-  returnStops: readonly string[];
-  onAddReturnStop?: () => void;
-  onRemoveReturnStop?: (index: number) => void;
   timeError?: string;
-  stopsError?: string;
 }
 
 export function TimeAnchorSheet({
@@ -56,12 +46,7 @@ export function TimeAnchorSheet({
   rush,
   anchorsEnabled,
   flexEnabled,
-  stopsEnabled,
-  returnStops,
-  onAddReturnStop,
-  onRemoveReturnStop,
   timeError,
-  stopsError,
 }: TimeAnchorSheetProps) {
   const values = useWatch({ control: form.control });
   // R9U1: the return follows the departure; say so when it actually moved.
@@ -162,22 +147,6 @@ export function TimeAnchorSheet({
         )
       ) : null}
 
-      {end === "return" && stopsEnabled ? (
-        <div className="space-y-1.5" data-field="returnStops">
-          <div className="flex flex-wrap gap-1.5">
-            {returnStops.map((name, index) => (
-              <PillChip key={`${index}:${name}`} pressed aria-label={`${he.request.removeStop}: ${name}`} onClick={() => onRemoveReturnStop?.(index)} data-testid="return-stop-pill">
-                {name}
-                <X className="size-3" aria-hidden="true" />
-              </PillChip>
-            ))}
-            {onAddReturnStop ? (
-              <PillChip dashed onClick={onAddReturnStop} data-testid="add-return-stop">{he.request.addReturnStop}</PillChip>
-            ) : null}
-          </div>
-          <FieldError message={stopsError} />
-        </div>
-      ) : null}
     </div>
   );
 }

@@ -2,13 +2,14 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { useForm } from "react-hook-form";
 import { describe, expect, it, vi } from "vitest";
 
+import { he } from "@/i18n/he";
+
 import { StopsField } from "./StopsField";
 
 import type { RequestFormValues } from "../../schema";
 
-// Same mocking idiom `QuickRequestSheet.test.tsx` uses: swap the real popover/combobox for a
-// plain button that commits a fixed value, so this stays a focused unit test of the chips
-// themselves (add/remove/collapse) rather than the destination picker.
+// Swap the real popover/combobox for a plain button that commits a fixed value, so this stays a
+// focused unit test of the add flow / route line rather than the destination picker.
 vi.mock("@/components/DestinationCombobox", () => ({
   DestinationCombobox: ({ onChange }: { onChange: (value: { presetId: string; name: string }) => void }) => (
     <button type="button" onClick={() => onChange({ presetId: "binyamina-dest", name: "בנימינה" })}>
@@ -17,48 +18,62 @@ vi.mock("@/components/DestinationCombobox", () => ({
   ),
 }));
 
-function Harness({ initial = [] as RequestFormValues["outStops"] }: { initial?: RequestFormValues["outStops"] }) {
-  const form = useForm<Pick<RequestFormValues, "outStops">>({ defaultValues: { outStops: initial } });
-  return (
-    <StopsField
-      control={form.control as never}
-      name="outStops"
-      destinations={[]}
-      addLabel="+ עצירה"
-      removeAriaLabel="הסרת עצירה"
-    />
-  );
+function Harness({ hasReturn, outStops = [], returnStops = [] }: { hasReturn: boolean; outStops?: RequestFormValues["outStops"]; returnStops?: RequestFormValues["returnStops"] }) {
+  const form = useForm<RequestFormValues>({
+    defaultValues: {
+      origin: { presetId: "nevo", name: "נבו" },
+      destination: { presetId: "haifa", name: "חיפה" },
+      outStops,
+      returnStops,
+    } as never,
+  });
+  return <StopsField form={form} destinations={[]} hasReturn={hasReturn} />;
 }
 
-describe("StopsField (REQUIREMENTS §13.93 'Multi-stop rides')", () => {
-  it("shows only the add link when there are no stops yet", () => {
-    render(<Harness />);
-    expect(screen.getByText("+ עצירה")).toBeInTheDocument();
+describe("StopsField (REQUIREMENTS §13.93 'Multi-stop rides', TODO ST1)", () => {
+  it("shows only the add link, no route line, when there are no stops", () => {
+    render(<Harness hasReturn={false} />);
+    expect(screen.getByText(he.request.addStopAny)).toBeInTheDocument();
+    expect(screen.queryByTestId("route-line")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "pick" })).not.toBeInTheDocument();
   });
 
-  it("opens the picker on tap, adds a chip, and closes itself again", () => {
-    render(<Harness />);
-    fireEvent.click(screen.getByText("+ עצירה"));
-    expect(screen.getByRole("button", { name: "pick" })).toBeInTheDocument();
-
+  it("without a return leg opens the picker at once and adds an out-stop to the route line", () => {
+    render(<Harness hasReturn={false} />);
+    fireEvent.click(screen.getByText(he.request.addStopAny));
+    expect(screen.queryByText(he.request.stopLegQuestion)).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "pick" }));
-    expect(screen.getByText("בנימינה")).toBeInTheDocument();
-    // Closes back to the collapsed "+ עצירה" link — nothing extra stays visible until used again.
-    expect(screen.queryByRole("button", { name: "pick" })).not.toBeInTheDocument();
-    expect(screen.getByText("+ עצירה")).toBeInTheDocument();
+    expect(screen.getByTestId("route-line")).toHaveTextContent("נבו");
+    expect(screen.getByTestId("route-stop-out")).toHaveTextContent("בנימינה");
+    expect(screen.getByTestId("stops-hint")).toHaveTextContent(he.request.stopMinutesHint);
+    expect(screen.queryByTestId("add-stop-panel")).not.toBeInTheDocument();
   });
 
-  it("removes a chip via its × button", () => {
-    render(<Harness initial={[{ presetId: "binyamina-dest", name: "בנימינה" }]} />);
-    expect(screen.getByText("בנימינה")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "הסרת עצירה" }));
-    expect(screen.queryByText("בנימינה")).not.toBeInTheDocument();
+  it("with a return leg asks which leg first, then the picker", () => {
+    render(<Harness hasReturn />);
+    fireEvent.click(screen.getByText(he.request.addStopAny));
+    expect(screen.getByText(he.request.stopLegQuestion)).toBeInTheDocument();
+    expect(screen.getByTestId("stop-leg-out")).toHaveTextContent("בדרך לחיפה");
+    fireEvent.click(screen.getByTestId("stop-leg-return"));
+    fireEvent.click(screen.getByRole("button", { name: "pick" }));
+    expect(screen.getByTestId("route-stop-return")).toHaveTextContent("בנימינה");
+    expect(screen.getByTestId("route-line")).toHaveTextContent(he.request.routeReturn);
   });
 
-  it("hides the add link once 10 stops are already chipped", () => {
-    const initial = Array.from({ length: 10 }, (_, i) => ({ presetId: `dest-${i}`, name: `יעד ${i}` }));
-    render(<Harness initial={initial} />);
-    expect(screen.queryByText("+ עצירה")).not.toBeInTheDocument();
+  it("removes a stop via its × chip", () => {
+    render(<Harness hasReturn={false} outStops={[{ presetId: "binyamina-dest", name: "בנימינה" }]} />);
+    fireEvent.click(screen.getByRole("button", { name: `${he.request.removeStop}: בנימינה` }));
+    expect(screen.queryByTestId("route-line")).not.toBeInTheDocument();
+  });
+
+  it("keeps hidden return stops out of the line when there is no return", () => {
+    render(<Harness hasReturn={false} returnStops={[{ presetId: "binyamina-dest", name: "בנימינה" }]} />);
+    expect(screen.queryByTestId("route-line")).not.toBeInTheDocument();
+  });
+
+  it("hides the add affordances once 10 out stops exist and there is no return", () => {
+    const outStops = Array.from({ length: 10 }, (_, i) => ({ presetId: `d${i}`, name: `יעד ${i}` }));
+    render(<Harness hasReturn={false} outStops={outStops} />);
+    expect(screen.queryByRole("button", { name: he.request.addStopAny })).not.toBeInTheDocument();
   });
 });

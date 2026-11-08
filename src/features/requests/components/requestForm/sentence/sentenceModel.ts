@@ -77,8 +77,7 @@ export function invalidTargetOf(field: string): InvalidTarget | null {
     case "altPickupAt": return { kind: "sheet", sheet: "planBPickup" };
     case "altPickupPlace": return { kind: "sheet", sheet: "planBPickupPlace" };
     case "returnTime":
-    case "leaveDestTime":
-    case "returnStops": return { kind: "sheet", sheet: "return" };
+    case "leaveDestTime": return { kind: "sheet", sheet: "return" };
     case "companions":
     case "children":
     case "extraAdults":

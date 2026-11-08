@@ -145,11 +145,20 @@ export const heMember = {
     tripTypeDropOff: "הקפצה",
     /** Origin line above the destination field, tap to change (REQ §13.93). */
     fromOrigin: "מ{{place}} אל",
-    /** "+ עצירה" — opens the out-stop picker inline (REQ §13.93 "Multi-stop rides"). */
-    addStop: "+ עצירה",
     stopPlaceholder: "איפה עוצרים?",
-    /** "+ עצירה בחזור" — same, for the return leg, shown only when the trip has a return. */
-    addReturnStop: "+ עצירה בחזור",
+    /** TODO ST1: the one link that replaces "+ עצירה" / "+ עצירה בחזור"; asks which leg only when there is a return. */
+    addStopAny: "+ עוד מקום בדרך",
+    stopSheetTitle: "מקום נוסף שהרכב עוצר בו בדרך (לאסוף או להוריד מישהו, לסדר משהו)",
+    stopLegQuestion: "בדרך לשם או בדרך חזרה?",
+    stopLegOut: "בדרך ל{{place}}",
+    stopLegOutPlain: "בדרך לשם",
+    stopLegReturn: "בדרך חזרה ל{{place}}",
+    stopLegReturnPlain: "בדרך חזרה",
+    routeLine: "המסלול:",
+    routeReturn: "חזרה:",
+    /** Information only (owner 2026-11-08): never blocks, never prompts, never changes the member's times. */
+    stopMinutesHint: "כל עצירה מאריכה מעט את הנסיעה; שעות ההגעה בדרך משוערות",
+    stopCancelPick: "ביטול",
     /** Remove-stop chip button `aria-label`. */
     removeStop: "הסרת עצירה",
     /** "הקפצה" optional pickup leg toggle. */
@@ -880,8 +889,6 @@ export const heMember = {
       trip: "סוג הנסיעה",
       origin: "מאיפה?",
       destination: "לאן?",
-      stop: "עצירה בדרך",
-      returnStop: "עצירה בדרך חזרה",
       day: "באיזה יום?",
       outTime: "מתי יוצאים?",
       returnTime: "מתי חוזרים?",

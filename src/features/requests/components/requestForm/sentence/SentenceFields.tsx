@@ -55,6 +55,7 @@ import { SentenceChip } from "./SentenceChip";
 import { StageTwo } from "./StageTwo";
 import { estimateLine } from "./estimateLine";
 import { TimeAnchorSheet } from "./TimeAnchorSheet";
+import { MAX_STOPS, StopsRoute } from "../StopsRoute";
 import { TimeField15 } from "@/components/TimeField15";
 import { WhoSheet } from "./WhoSheet";
 import { flexBriefText } from "../../../flexText";
@@ -62,7 +63,6 @@ import { flexBrief, guideSteps, invalidTargetOf, nextGuideStep, type GuideStep, 
 
 const HINT_STORAGE_KEY = "carshare.requestSentenceHintDismissed";
 const CAR_NOW_QUICK_HOURS = [1, 2, 3, 4, 6] as const;
-const MAX_STOPS = 10;
 
 function readHintDismissed(): boolean {
   try {
@@ -80,7 +80,7 @@ function dismissHint() {
   }
 }
 
-type SheetKey = SentenceSheet | "stop" | "returnStop" | "duration";
+type SheetKey = SentenceSheet | "duration";
 
 export interface SentenceFieldsProps {
   form: UseFormReturn<RequestFormValues>;
@@ -333,10 +333,10 @@ export function SentenceFields(props: SentenceFieldsProps) {
     setSheet(null);
   }
 
-  function addStop(value: DestinationValue) {
-    const current = (form.getValues("outStops") ?? []) as DestinationValue[];
-    if (current.length < MAX_STOPS) form.setValue("outStops", [...current, value], { shouldDirty: true, shouldValidate: true });
-    setSheet(null);
+  function addStopTo(leg: "out" | "return", value: DestinationValue) {
+    const field = leg === "out" ? "outStops" : "returnStops";
+    const current = (form.getValues(field) ?? []) as DestinationValue[];
+    if (current.length < MAX_STOPS) form.setValue(field, [...current, value], { shouldDirty: true, shouldValidate: true });
   }
 
   function removeStop(index: number) {
@@ -345,12 +345,6 @@ export function SentenceFields(props: SentenceFieldsProps) {
   }
 
   const returnStops = (values.returnStops ?? []) as DestinationValue[];
-
-  function addReturnStop(value: DestinationValue) {
-    const current = (form.getValues("returnStops") ?? []) as DestinationValue[];
-    if (current.length < MAX_STOPS) form.setValue("returnStops", [...current, value], { shouldDirty: true, shouldValidate: true });
-    setSheet(null);
-  }
 
   function removeReturnStop(index: number) {
     const current = (form.getValues("returnStops") ?? []) as DestinationValue[];
@@ -574,28 +568,23 @@ export function SentenceFields(props: SentenceFieldsProps) {
       ) : null}
 
       {errorMessages.map((message) => <FieldError key={message} message={message} />)}
-      <FieldError message={typeof errors.outStops?.message === "string" ? errors.outStops.message : undefined} />
+      {variant !== "carNow" ? (
+        <StopsRoute
+          origin={originName}
+          destination={hasDestination ? destinationName : ""}
+          outStops={outStops.map((stop) => placeLabel(stop, destinations))}
+          returnStops={returnStops.map((stop) => placeLabel(stop, destinations))}
+          hasReturn={hasReturn}
+          onRemove={(leg, index) => (leg === "out" ? removeStop(index) : removeReturnStop(index))}
+          error={(typeof errors.outStops?.message === "string" ? errors.outStops.message : undefined) ?? (typeof errors.returnStops?.message === "string" ? errors.returnStops.message : undefined)}
+          renderPicker={(done, leg) => (
+            <PlacePicker places={placesWithoutOrigin} value={null} onPick={(next) => { addStopTo(leg, next); done(); }} placeholder={he.requestSentence.placeSearch} />
+          )}
+        />
+      ) : null}
 
       {variant !== "carNow" ? (
         <div className="flex items-center gap-3">
-          <button
-            type="button"
-            className="relative shrink-0 text-sm text-primary before:absolute before:-inset-2 before:content-[''] hover:underline"
-            onClick={() => setSheet("stop")}
-            data-testid="add-stop"
-          >
-            {he.request.addStop}
-          </button>
-          {windowOn ? (
-            <button
-              type="button"
-              className="relative shrink-0 text-sm text-primary before:absolute before:-inset-2 before:content-[''] hover:underline"
-              onClick={() => setSheet("returnStop")}
-              data-testid="add-return-stop-link"
-            >
-              {he.request.addReturnStop}
-            </button>
-          ) : null}
           {canWindow ? (
             <button
               type="button"
@@ -753,14 +742,6 @@ export function SentenceFields(props: SentenceFieldsProps) {
         />
       </FieldSheet>
 
-      <FieldSheet open={sheet === "stop"} onOpenChange={(open) => !open && setSheet(null)} title={he.requestSentence.sheet.stop} hideFooter>
-        <PlacePicker places={placesWithoutOrigin} value={null} onPick={addStop} placeholder={he.requestSentence.placeSearch} />
-      </FieldSheet>
-
-      <FieldSheet open={sheet === "returnStop"} onOpenChange={(open) => !open && setSheet(null)} title={he.requestSentence.sheet.returnStop} hideFooter>
-        <PlacePicker places={placesWithoutOrigin} value={null} onPick={addReturnStop} placeholder={he.requestSentence.placeSearch} />
-      </FieldSheet>
-
       <FieldSheet open={sheet === "day"} onOpenChange={(open) => !open && closeSheet()} onDone={() => advanceGuide("day")} title={he.requestSentence.sheet.day}>
         <DayAndTripShapeFields
           control={control}
@@ -796,8 +777,6 @@ export function SentenceFields(props: SentenceFieldsProps) {
           rush={rush}
           anchorsEnabled={anchorsEnabled}
           flexEnabled={flexEnabled}
-          stopsEnabled={false}
-          returnStops={[]}
           timeError={errors.departTime?.message}
         />
       </FieldSheet>
@@ -816,12 +795,7 @@ export function SentenceFields(props: SentenceFieldsProps) {
           rush={rush}
           anchorsEnabled={anchorsEnabled}
           flexEnabled={flexEnabled}
-          stopsEnabled={variant !== "carNow"}
-          returnStops={returnStops.map((stop) => placeLabel(stop, destinations))}
-          onAddReturnStop={() => setSheet("returnStop")}
-          onRemoveReturnStop={removeReturnStop}
           timeError={errors.returnTime?.message}
-          stopsError={typeof errors.returnStops?.message === "string" ? errors.returnStops.message : undefined}
         />
       </FieldSheet>
 
