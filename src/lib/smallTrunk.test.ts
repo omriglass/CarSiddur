@@ -3,17 +3,17 @@ import { describe, expect, it, vi } from "vitest";
 import { he } from "@/i18n/he";
 
 import { AppError } from "./rpc";
-import { isNeedsLargeTrunk, parseSmallTrunkDetail, smallTrunkConfirmBody, withSmallTrunkConfirm } from "./smallTrunk";
+import { isNeedsLargeTrunk, parseSmallTrunkDetail, smallTrunkConfirmBody, smallTrunkConfirmTitle, withSmallTrunkConfirm } from "./smallTrunk";
 
 const DETAIL = JSON.stringify({ request_ids: ["r1"], names: ["דנה"], car_id: "c1", car_name: "יונדאי 1" });
 const refusal = () => new AppError("needs_large_trunk", he.errors.needsLargeTrunk, undefined, DETAIL);
 
 describe("parseSmallTrunkDetail", () => {
   it("reads the server's JSON detail", () => {
-    expect(parseSmallTrunkDetail(DETAIL)).toEqual({ requestIds: ["r1"], names: ["דנה"], carId: "c1", carName: "יונדאי 1" });
+    expect(parseSmallTrunkDetail(DETAIL)).toEqual({ requestIds: ["r1"], names: ["דנה"], carId: "c1", carName: "יונדאי 1", needs: [], towTakenBy: null });
   });
   it("falls back to an empty info for missing or broken detail", () => {
-    const empty = { requestIds: [], names: [], carId: null, carName: null };
+    const empty = { requestIds: [], names: [], carId: null, carName: null, needs: [], towTakenBy: null };
     expect(parseSmallTrunkDetail(undefined)).toEqual(empty);
     expect(parseSmallTrunkDetail("not json")).toEqual(empty);
     expect(parseSmallTrunkDetail('{"request_ids": 3}')).toEqual(empty);
@@ -31,6 +31,29 @@ describe("smallTrunkConfirmBody", () => {
   });
 });
 
+describe("REQ §13.200: the towing wording follows the missing needs", () => {
+  const detail = (extra: object) => parseSmallTrunkDetail(JSON.stringify({ request_ids: ["r1"], names: ["דנה"], car_id: "c1", car_name: "יונדאי 1", ...extra }));
+  it("towing only: its own title and body", () => {
+    const info = detail({ needs: ["tow_hitch"] });
+    expect(smallTrunkConfirmTitle(info)).toBe("צריך רכב גורר");
+    expect(smallTrunkConfirmBody(info)).toBe("הבקשה של דנה צריכה רכב גורר, וליונדאי 1 אין. לשבץ בכל זאת?");
+  });
+  it("both needs: one question naming both", () => {
+    const info = detail({ needs: ["large_trunk", "tow_hitch"] });
+    expect(smallTrunkConfirmTitle(info)).toBe("צריך תא מטען גדול ורכב גורר");
+    expect(smallTrunkConfirmBody(info)).toBe("הבקשה של דנה צריכה תא מטען גדול ורכב גורר, וליונדאי 1 אין. לשבץ בכל זאת?");
+  });
+  it("the hitch is taken: says for whom", () => {
+    const info = detail({ needs: ["tow_hitch"], tow_taken_by: "רן" });
+    expect(smallTrunkConfirmBody(info)).toBe("הבקשה של דנה צריכה רכב גורר, ויונדאי 1 כבר גורר עבור רן. לשבץ בכל זאת?");
+  });
+  it("large trunk only keeps the original copy", () => {
+    const info = detail({ needs: ["large_trunk"] });
+    expect(smallTrunkConfirmTitle(info)).toBe(he.smallTrunk.confirmTitle);
+    expect(smallTrunkConfirmBody(info)).toBe("הבקשה של דנה צריכה תא מטען גדול, וליונדאי 1 אין. לשבץ בכל זאת?");
+  });
+});
+
 describe("withSmallTrunkConfirm", () => {
   it("returns the first result when nothing is refused (no dialog)", async () => {
     const call = vi.fn().mockResolvedValue("ok");
@@ -45,7 +68,7 @@ describe("withSmallTrunkConfirm", () => {
     const confirm = vi.fn().mockResolvedValue(true);
     expect(await withSmallTrunkConfirm(call, confirm)).toBe("placed");
     expect(call.mock.calls).toEqual([[false], [true]]);
-    expect(confirm).toHaveBeenCalledWith({ requestIds: ["r1"], names: ["דנה"], carId: "c1", carName: "יונדאי 1" });
+    expect(confirm).toHaveBeenCalledWith({ requestIds: ["r1"], names: ["דנה"], carId: "c1", carName: "יונדאי 1", needs: [], towTakenBy: null });
   });
   it("does nothing more after a no", async () => {
     const call = vi.fn().mockRejectedValue(refusal());

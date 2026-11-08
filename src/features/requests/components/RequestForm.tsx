@@ -251,6 +251,7 @@ function emptyValues(
     children: [],
     legacyChildSeats: 0,
     luggage: false,
+    towHitch: false,
     flexDepartEarly: 0,
     flexDepartLate: 0,
     flexReturnEarly: 0,
@@ -1527,6 +1528,27 @@ export function RequestForm({
                   {t("request.luggageLabel")}
                 </label>
                 <p className="text-xs text-muted-foreground">{t("request.luggageHint")}</p>
+              </div>
+            )}
+          />
+        ) : null}
+        {variant === "weekly" ? (
+          <Controller
+            control={form.control}
+            name="towHitch"
+            render={({ field }) => (
+              <div className="space-y-1" data-field="towHitch">
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={field.value}
+                    onChange={(e) => field.onChange(e.target.checked)}
+                    className="size-4"
+                    data-testid="tow-hitch-checkbox"
+                  />
+                  {t("request.towLabel")}
+                </label>
+                <p className="text-xs text-muted-foreground">{t("request.towHint")}</p>
               </div>
             )}
           />

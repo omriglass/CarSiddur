@@ -53,6 +53,18 @@ export function CarChoiceField({ form, control, preferredCars, initialPreferredC
         ))}
       </div>
       {choice === "luggage" ? <p className="text-xs text-muted-foreground">{t("request.luggageHint")}</p> : null}
+      {/* REQ §13.200: towing is its own need, asked beside the car choice (a request may need both luggage and towing) */}
+      <label className="flex items-center gap-2 text-sm">
+        <input
+          type="checkbox"
+          checked={values.towHitch ?? false}
+          onChange={(e) => form.setValue("towHitch", e.target.checked, { shouldDirty: true })}
+          className="size-4"
+          data-testid="tow-hitch-checkbox"
+        />
+        {t("request.towLabel")}
+      </label>
+      {values.towHitch ? <p className="text-xs text-muted-foreground">{t("request.towHint")}</p> : null}
       {choice === "specific" ? (
         <div className="space-y-1">
           {hasCarAndLuggage(current) ? <p className="text-xs font-medium">{he.requestSentence.carAlsoLuggage}</p> : null}

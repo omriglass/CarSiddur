@@ -53,6 +53,7 @@ function ReservationDetails({ reservation, departmentId, onCancelled }: { reserv
       {reservation.hasLuggage ? (
         <p className="flex items-center gap-1 text-sm"><Luggage className="size-4" aria-hidden="true" />{he.planning.details.luggage}</p>
       ) : null}
+      {reservation.needsTowHitch ? <p className="text-sm">{he.planning.details.tow}</p> : null}
       {reservation.mine ? (
         <div className="flex flex-wrap gap-2">
           <Button asChild variant="outline" className="min-h-11">

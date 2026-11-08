@@ -89,5 +89,7 @@ export const placeWaitingResultSchema = z.object({
     code: z.enum(["location", "turnaround", "luggage"]),
     place: z.string().nullable().optional(),
     minutes: z.number().optional(),
+    /** REQ §13.200: which car needs the car lacks (`luggage` warnings only). */
+    needs: z.array(z.enum(["large_trunk", "tow_hitch"])).optional(),
   })).optional(),
 });

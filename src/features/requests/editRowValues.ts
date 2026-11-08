@@ -73,6 +73,7 @@ export function editRowToFormValues(row: RequestEditRow, weekStart: string, comp
     companions,
     children,
     luggage: row.hasLuggage,
+    towHitch: row.needsTowHitch ?? false,
     flexDepartEarly: intervalToFlexValue(row.flexDepartEarly),
     flexDepartLate: intervalToFlexValue(row.flexDepartLate),
     flexReturnEarly: intervalToFlexValue(row.flexReturnEarly),

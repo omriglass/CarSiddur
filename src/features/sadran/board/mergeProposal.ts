@@ -179,6 +179,8 @@ export interface ServerMergePreview {
   waivable?: boolean;
   /** REQ §13.111 (a): a missing large trunk the Sadran may accept ("לשבץ בכל זאת", payload `allow_small_trunk`). */
   luggageWaivable?: boolean;
+  /** REQ §13.200: which car needs the car lacks (`large_trunk` / `tow_hitch`) - words the "לשבץ בכל זאת?" question. */
+  needs?: ("large_trunk" | "tow_hitch")[];
   /** REQ §13.175 (a): the detour is over the department's limit - the Sadran may accept it (payload `allow_long_detour`). */
   longDetour?: LongDetour | null;
   /**
@@ -208,6 +210,7 @@ export function parseServerMergePreview(raw: unknown): ServerMergePreview | null
     waivable: r.waivable === true,
     // an older server sent `waivable` for a large trunk only
     luggageWaivable: r.luggage_waivable === true || (r.waivable === true && r.luggage_waivable === undefined && r.code === "luggage"),
+    needs: Array.isArray(r.needs) ? r.needs.filter((n): n is "large_trunk" | "tow_hitch" => n === "large_trunk" || n === "tow_hitch") : undefined,
     longDetour: parseLongDetour(r),
     waitWindow: isoOrNull(r.wait_ends_at) || isoOrNull(r.wait_starts_at)
       ? { startsAt: isoOrNull(r.wait_starts_at), endsAt: isoOrNull(r.wait_ends_at) } : null,
@@ -285,7 +288,7 @@ export type MergeVerdict =
    * `waivable`: allowed, but only after the Sadran accepts a car without a large trunk for a large-luggage request (REQ §13.111 a);
    * `longDetour`: allowed after the Sadran accepts the long detour (REQ §13.175 a).
    */
-  | { status: "ok"; waivable?: boolean; longDetour?: LongDetour; timeFar?: { eta: string; wanted: string } }
+  | { status: "ok"; waivable?: boolean; needs?: ("large_trunk" | "tow_hitch")[]; longDetour?: LongDetour; timeFar?: { eta: string; wanted: string } }
   | { status: "refused"; message: string; code: string | null; source: "server" | "twin" };
 
 /** What `useQuery` says about one `merge_preview` call (a subset, so tests need no React). */
@@ -302,13 +305,14 @@ export interface MergePreviewState {
 export function mergeVerdict(states: readonly MergePreviewState[], twinInvalid: MergeInvalid | null): MergeVerdict {
   let loading = false;
   let waivable = false;
+  const needs = new Set<"large_trunk" | "tow_hitch">();
   let longDetour: LongDetour | undefined;
   let timeFar: { eta: string; wanted: string } | undefined;
   for (const state of states) {
     if (state.data) {
       if (state.data.timeFar && (state.data.ok || state.data.waivable)) timeFar ??= state.data.timeFar;
       if (!state.data.ok && state.data.waivable) {
-        if (state.data.luggageWaivable ?? !state.data.longDetour) waivable = true;
+        if (state.data.luggageWaivable ?? !state.data.longDetour) { waivable = true; for (const need of state.data.needs ?? []) needs.add(need); }
         if (state.data.longDetour) longDetour ??= state.data.longDetour;
       } else if (!state.data.ok) return { status: "refused", message: mergeRefusalText(state.data.code, state.data.turnaroundSide), code: state.data.code, source: "server" };
     } else if (state.isError || state.data === null) {
@@ -318,7 +322,7 @@ export function mergeVerdict(states: readonly MergePreviewState[], twinInvalid: 
     }
   }
   if (loading) return { status: "loading" };
-  return { status: "ok", ...(waivable ? { waivable: true } : {}), ...(longDetour ? { longDetour } : {}), ...(timeFar ? { timeFar } : {}) };
+  return { status: "ok", ...(waivable ? { waivable: true, ...(needs.size > 0 ? { needs: [...needs] } : {}) } : {}), ...(longDetour ? { longDetour } : {}), ...(timeFar ? { timeFar } : {}) };
 }
 
 /**

@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { he } from "@/i18n/he";
-import { smallTrunkConfirmBody } from "@/lib/smallTrunk";
+import { smallTrunkConfirmBody, smallTrunkConfirmTitle } from "@/lib/smallTrunk";
 import type { SmallTrunkInfo } from "@/lib/smallTrunk";
 
 interface Pending {
@@ -30,7 +30,7 @@ export function useSmallTrunkConfirm(): { ask: (info: SmallTrunkInfo) => Promise
     <ConfirmDialog
       open
       onOpenChange={(open) => { if (!open) settle(false); }}
-      title={he.smallTrunk.confirmTitle}
+      title={smallTrunkConfirmTitle(pending.info)}
       description={smallTrunkConfirmBody(pending.info)}
       confirmLabel={he.smallTrunk.confirmAction}
       onConfirm={() => settle(true)}

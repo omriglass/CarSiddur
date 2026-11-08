@@ -331,6 +331,7 @@ export function UnmetList({ items, onAction, onOpenProposal, onDecision, dayStar
               <p className="whitespace-pre-wrap break-words">
                 {ridePassengerSummary([{ ...item.request, requester: item.request.requester_full_name }])}
                 {item.request.has_luggage ? <span className="ms-1 font-medium" data-testid="unmet-luggage">{` · ${item.request.luggage_waived_at ? he.smallTrunk.waivedLabel : he.request.luggageChip}`}</span> : null}
+                {item.request.needs_tow_hitch ? <span className="ms-1 font-medium" data-testid="unmet-tow">{` · ${item.request.luggage_waived_at ? he.smallTrunk.towWaivedLabel : he.request.towChip}`}</span> : null}
               </p>
               {item.request.preferred_car_name ? <p>{tv("sadranBoard.preferredCar", { car: item.request.preferred_car_name })}</p> : null}
               {item.request.ride_description ? <p className="whitespace-pre-wrap break-words">{item.request.ride_description}</p> : null}

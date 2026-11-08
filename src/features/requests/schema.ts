@@ -198,6 +198,8 @@ export const requestFormSchema = z
     /** Pre-registry requests can have unnamed child seats; preserve them on edit. */
     legacyChildSeats: z.number().int().min(0).max(8),
     luggage: z.boolean(),
+    /** REQ §13.200: needs a towing car (hitch); a separate need beside large luggage. */
+    towHitch: z.boolean(),
     flexDepartEarly: flexValueSchema,
     flexDepartLate: flexValueSchema,
     flexReturnEarly: flexValueSchema,
@@ -372,6 +374,7 @@ export const REQUEST_FORM_DEFAULTS: Omit<RequestFormValues, "departmentId" | "we
   children: [],
   legacyChildSeats: 0,
   luggage: false,
+  towHitch: false,
   flexDepartEarly: 0,
   flexDepartLate: 0,
   flexReturnEarly: 0,
@@ -442,6 +445,7 @@ export const templateSuggestionRowSchema = z.object({
   child_ids: z.array(z.string()),
   companion_ids: z.array(z.string()),
   has_luggage: z.boolean().nullable(),
+  needs_tow_hitch: z.boolean().nullish(),
   flex_depart_early: z.string(),
   flex_depart_late: z.string(),
   flex_return_early: z.string(),

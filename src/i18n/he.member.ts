@@ -84,6 +84,10 @@ export const heMember = {
     luggageHint: "למשל קניות גדולות, ציוד, ריהוט (איקאה). נבחר לך רכב עם תא מטען גדול.",
     acceptedWaitingOthers: "אישרת — ממתין לאחרים",
     luggageChip: "ציוד גדול",
+    // REQ §13.200: the second car need, a towing car (רכב גורר)
+    towLabel: "צריך רכב גורר",
+    towHint: "נבחר לך רכב עם וו גרירה. רכב גורר אחד בלבד בכל נסיעה.",
+    towChip: "רכב גורר",
     overlapTitle: "כבר יש לך נסיעה או בקשה בשעות האלה",
     overlapBody: "אפשר לבטל את הקודמת ולהגיש את החדשה, להשאיר את שתיהן, או לחזור לעריכה.",
     overlapCancelOther: "בטל/י את הקודמת והגש/י",
@@ -1013,6 +1017,7 @@ export const heMember = {
     car: "רכב",
     carAny: "לא משנה",
     carLuggage: "צריך/ה תא מטען גדול",
+    carTow: "צריך/ה רכב גורר",
     carSpecific: "רכב מסוים",
     carPick: "בחר/י רכב",
     carRequired: "יש לבחור רכב",
@@ -1251,6 +1256,8 @@ export const heMember = {
       location: "הרכב נמצא ב{{place}} — הנסיעה תצא משם.",
       turnaround: "פחות מ־{{minutes}} דקות בין הנסיעה הזו לנסיעה אחרת ברכב.",
       luggage: "לרכב הזה אין תא מטען גדול.",
+      tow: "לרכב הזה אין רכב גורר.",
+      luggageAndTow: "לרכב הזה אין תא מטען גדול ורכב גורר.",
     },
     dropBlocked: {
       not_draggable: "את הבקשה הזו אי אפשר לגרור — אפשר לערוך אותה בטופס.",

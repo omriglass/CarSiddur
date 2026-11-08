@@ -10,7 +10,7 @@ import { useSearchParams } from "react-router-dom";
 
 import { datesOfWeek, todayInJerusalem } from "@/components/dateFieldDates";
 import { t, tv } from "@/i18n/he";
-import { luggageMarker } from "@/lib/luggageWaiver";
+import { luggageMarker, towMarker } from "@/lib/luggageWaiver";
 import { TZ, dateKey, formatTime } from "@/lib/time";
 import { ridePublicDetails } from "@/lib/ridePublicDetails";
 import { ridePassengerSummary } from "@/lib/ridePassengerSummary";
@@ -810,6 +810,8 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
       needsDriver: !!r.needs_driver,
       luggage: servedOf(r).some((entry) => entry.luggage),
       luggageWaived: luggageMarker(servedOf(r)) === "waived",
+      tow: servedOf(r).some((entry) => entry.tow_hitch),
+      towWaived: towMarker(servedOf(r)) === "waived",
       tightSchedule: tightRideIds.has(r.id as string),
       shadowed: shadowedRideIds.has(r.id as string),
       conflict: conflictRideIds.has(r.id as string),

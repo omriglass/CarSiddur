@@ -55,6 +55,7 @@ export const hePlanning = {
       people: "מי נוסע/ת",
       seats: "{{adults}} מבוגרים · {{kids}} מושבי ילדים",
       luggage: "ציוד רב",
+      tow: "רכב גורר",
       description: "מידע נוסף",
       from: "מ־{{place}}",
     },

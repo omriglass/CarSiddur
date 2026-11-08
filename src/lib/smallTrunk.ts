@@ -15,6 +15,10 @@ const detailSchema = z.object({
   names: z.array(z.string().nullable()).optional(),
   car_id: z.string().nullable().optional(),
   car_name: z.string().nullable().optional(),
+  /** REQ §13.200: which car needs are missing (`large_trunk` / `tow_hitch`); absent in older refusals = large trunk. */
+  needs: z.array(z.string()).optional(),
+  /** REQ §13.200: the member whose towing request already uses the car's one hitch on the ride. */
+  tow_taken_by: z.string().nullable().optional(),
 });
 
 export interface SmallTrunkInfo {
@@ -23,11 +27,15 @@ export interface SmallTrunkInfo {
   names: string[];
   carId: string | null;
   carName: string | null;
+  /** The missing car needs; empty = the (older) large-trunk-only refusal. */
+  needs: ("large_trunk" | "tow_hitch")[];
+  /** Name of the member whose towing request already holds the car's hitch on the ride, if any. */
+  towTakenBy: string | null;
 }
 
 /** Parses the refusal's `details` JSON; anything unreadable yields an empty info (the dialog then uses generic words). */
 export function parseSmallTrunkDetail(detail: string | undefined | null): SmallTrunkInfo {
-  const empty: SmallTrunkInfo = { requestIds: [], names: [], carId: null, carName: null };
+  const empty: SmallTrunkInfo = { requestIds: [], names: [], carId: null, carName: null, needs: [], towTakenBy: null };
   if (!detail) return empty;
   try {
     const parsed = detailSchema.safeParse(JSON.parse(detail));
@@ -37,6 +45,8 @@ export function parseSmallTrunkDetail(detail: string | undefined | null): SmallT
       names: (parsed.data.names ?? []).map((name) => name ?? ""),
       carId: parsed.data.car_id ?? null,
       carName: parsed.data.car_name ?? null,
+      needs: (parsed.data.needs ?? []).filter((n): n is "large_trunk" | "tow_hitch" => n === "large_trunk" || n === "tow_hitch"),
+      towTakenBy: parsed.data.tow_taken_by ?? null,
     };
   } catch {
     return empty;
@@ -47,14 +57,34 @@ export function isNeedsLargeTrunk(error: unknown): error is AppError {
   return error instanceof AppError && error.code === "needs_large_trunk";
 }
 
-/** The confirmation's body: "<name>'s request needs a large trunk, and <car> has none. Place it anyway?" */
+/** The confirmation's title: the missing need (large trunk keeps its own title; towing / both say so). */
+export function smallTrunkConfirmTitle(info: SmallTrunkInfo): string {
+  const tow = info.needs.includes("tow_hitch");
+  const trunk = info.needs.includes("large_trunk") || info.needs.length === 0;
+  if (tow && trunk) return he.smallTrunk.bothTitle;
+  return tow ? he.smallTrunk.towTitle : he.smallTrunk.confirmTitle;
+}
+
+/**
+ * The confirmation's body: "<name>'s request needs a large trunk / a towing car, and <car> has none. Place it
+ * anyway?" - worded from the missing needs; a hitch already used by another towing request says whose.
+ */
 export function smallTrunkConfirmBody(info: SmallTrunkInfo): string {
   const names = [...new Set(info.names.filter((name) => name.length > 0))];
   const many = info.requestIds.length > 1 || names.length > 1;
-  return tv(many ? "smallTrunk.confirmBodyMany" : "smallTrunk.confirmBody", {
+  const vars = {
     name: names.length > 0 ? names.join(", ") : he.smallTrunk.unknownName,
     car: info.carName ?? he.smallTrunk.unknownCar,
-  });
+    other: info.towTakenBy ?? he.smallTrunk.unknownName,
+  };
+  const tow = info.needs.includes("tow_hitch");
+  const trunk = info.needs.includes("large_trunk") || info.needs.length === 0;
+  if (tow && trunk) return tv(many ? "smallTrunk.bothBodyMany" : "smallTrunk.bothBody", vars);
+  if (tow) {
+    if (info.towTakenBy) return tv("smallTrunk.towTakenBody", vars);
+    return tv(many ? "smallTrunk.towBodyMany" : "smallTrunk.towBody", vars);
+  }
+  return tv(many ? "smallTrunk.confirmBodyMany" : "smallTrunk.confirmBody", vars);
 }
 
 /**

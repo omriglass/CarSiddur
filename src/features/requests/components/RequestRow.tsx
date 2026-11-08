@@ -189,6 +189,7 @@ export function RequestRow({
         <p className="text-xs text-muted-foreground" data-testid="keep-car-note">{keepCarTripLabel(row.destination)}</p>
       ) : row.tripType !== "round_trip" ? <p className="text-xs text-muted-foreground">{TRIP_TYPE_LABEL[row.tripType]}</p> : null}
       {row.hasLuggage ? <Badge variant="outline" className="w-fit" data-testid={row.luggageWaived ? "luggage-waived" : undefined}>{row.luggageWaived ? he.smallTrunk.waivedLabel : he.request.luggageChip}</Badge> : null}
+      {row.needsTowHitch ? <Badge variant="outline" className="w-fit" data-testid={row.towWaived ? "tow-waived" : "tow-chip"}>{row.towWaived ? he.smallTrunk.towWaivedLabel : he.request.towChip}</Badge> : null}
       {row.preferredCarName ? <p className="text-xs text-muted-foreground">{he.request.preferredCar}: {row.preferredCarName}</p> : null}
       {filedLine ? <p className="text-xs text-muted-foreground" data-testid="request-filed-line"><bdi>{filedLine}</bdi></p> : null}
       {row.companionOf ? <p className="text-xs text-muted-foreground" data-testid="request-companion-line"><bdi>{tv("request.companionAddedBy", { name: row.companionOf })}</bdi></p> : null}

@@ -112,6 +112,9 @@ export interface WeekGridRide {
   luggage?: boolean;
   /** REQ §13.111 (a): all of the ride's large luggage was waived by hand - the chip reads `he.smallTrunk.waivedLabel`. */
   luggageWaived?: boolean;
+  /** REQ §13.200: a served request needs a towing car ("רכב גורר" chip); `towWaived` = waived by hand ("רכב גורר — ויתור"). */
+  tow?: boolean;
+  towWaived?: boolean;
   isMine?: boolean;
   /** Owner 2026-10-16: a read-only ride of my child / their other guardian on "my rides" — drawn faded, never "mine". */
   muted?: boolean;
@@ -1497,7 +1500,7 @@ export function WeekGrid({
                   absolutely positioned outside the wrapper. */}
               <div className="sticky z-[1] flex min-h-0 w-full flex-col" style={{ top: HEADER_ROW_HEIGHT_PX }}>
               {ride.guests?.length ? <GuestChips guests={ride.guests} passClick={!!ride.draft} enabled={dragEnabled && !!onGuestDrop} resolveTarget={guestTargetAt} onHover={onGuestHover} onDrop={onGuestDrop} /> : null}
-              {(ride.kind || ride.isMine || ride.needsDriver || ride.tightSchedule || ride.chainBrokenWarning || ride.driverOverlapWarning || ride.handoverLines?.length || ride.draft || ride.sentDraft || ride.merged || ride.connected || ride.luggage) ? <span className="flex w-full flex-wrap gap-1 px-1.5 pt-1 text-[10px] leading-tight">
+              {(ride.kind || ride.isMine || ride.needsDriver || ride.tightSchedule || ride.chainBrokenWarning || ride.driverOverlapWarning || ride.handoverLines?.length || ride.draft || ride.sentDraft || ride.merged || ride.connected || ride.luggage || ride.tow) ? <span className="flex w-full flex-wrap gap-1 px-1.5 pt-1 text-[10px] leading-tight">
                 {ride.kind ? (
                   <span
                     className={cn("rounded-sm px-1 font-bold uppercase", ride.kind === "suggestion" ? "border border-dotted border-muted-foreground/70" : ride.kind === "proposal" ? "bg-amber-500 text-white" : "bg-foreground/10")}
@@ -1510,6 +1513,7 @@ export function WeekGrid({
                 {ride.sentDraft ? <span className="rounded-sm bg-primary/80 px-1 font-semibold text-primary-foreground" data-testid="sent-tag">{he.boardDrafts.sentTag}</span> : null}
                 {ride.merged ? <span className="rounded-sm bg-foreground/10 px-1 font-medium" data-testid="merged-marker">{he.mergedRide.marker}</span> : null}
                 {ride.luggage ? <span className="rounded-sm bg-foreground/10 px-1 font-medium" data-testid="luggage-marker" data-waived={ride.luggageWaived ? "true" : undefined}>{ride.luggageWaived ? he.smallTrunk.waivedLabel : he.request.luggageChip}</span> : null}
+                {ride.tow ? <span className="rounded-sm bg-foreground/10 px-1 font-medium" data-testid="tow-marker" data-waived={ride.towWaived ? "true" : undefined}>{ride.towWaived ? he.smallTrunk.towWaivedLabel : he.smallTrunk.towLabel}</span> : null}
                 {ride.connected ? <span className="rounded-sm bg-foreground/10 px-1 font-medium" data-testid="connected-marker">{he.connectedPair.marker}</span> : null}
                 {ride.isMine ? <span className={cn("flex items-center gap-1 font-bold", ride.needsDriver ? "text-destructive" : "text-foreground")}><Star className="size-3 shrink-0 fill-current" aria-hidden="true" />{he.siddur.myRide}</span> : null}
                 {ride.needsDriver ? <span className="flex items-center gap-1 font-semibold text-destructive"><UserRoundX className="size-3 shrink-0" aria-hidden="true" />{he.boardCoordination.needsDriver}</span> : null}
