@@ -30,11 +30,16 @@ export interface RequestRouteInput {
   stops?: readonly string[];
 }
 
-/** "מ<origin> ל<destination> · <trip type>" (the trip-type part is omitted when unknown). */
-export function requestRouteLine(input: RequestRouteInput, homeDestinationId: string | null | undefined): string {
+/** "מ<origin> ל<destination>" without the trip type (origin only when it is not the department home). */
+export function requestRouteText(input: RequestRouteInput, homeDestinationId: string | null | undefined): string {
   const origin = input.originName ?? input.originText ?? "";
   const originIsHome = !!input.originId && !!homeDestinationId && input.originId === homeDestinationId;
-  const route = routeLabel({ destination: input.destination, origin, originIsHome: originIsHome || !origin, stops: input.stops });
+  return routeLabel({ destination: input.destination, origin, originIsHome: originIsHome || !origin, stops: input.stops });
+}
+
+/** "מ<origin> ל<destination> · <trip type>" (the trip-type part is omitted when unknown). */
+export function requestRouteLine(input: RequestRouteInput, homeDestinationId: string | null | undefined): string {
+  const route = requestRouteText(input, homeDestinationId);
   const type = input.tripType === "drop_off" && input.keepCarAtDestination ? keepCarTripLabel(input.destination) : tripTypeLabel(input.tripType);
   return type ? `${route} · ${type}` : route;
 }

@@ -3,7 +3,7 @@ import { execSync } from "node:child_process";
 import { formatInTimeZone } from "date-fns-tz";
 import { expect, test, type Page } from "@playwright/test";
 
-import { NEVO_DEPARTMENT_ID, serviceRoleClient, primeLanding, confirmAutoFillWholeWeek, scrollGridColumnTo, openRideDetails, ensureEditMode } from "./helpers";
+import { NEVO_DEPARTMENT_ID, serviceRoleClient, primeLanding, confirmAutoFillWholeWeek, scrollGridColumnTo, openRideDetails, ensureEditMode, openRideSheetTab } from "./helpers";
 import resetDatabase from "./global-setup";
 import { he } from "../src/i18n/he";
 
@@ -666,6 +666,7 @@ test.describe.serial("board (bug-fix pass regression, fake-week data)", { tag: [
     }).toPass();
     await expect(block).toContainText("00:30–01:45");
     await openRideDetails(page, block);
+    await openRideSheetTab(page, "actions");
     // REQ §13.194: a reservation is deleted (it has no request to go back to) - and the toast undoes it.
     await page.getByRole("button", { name: "מחיקת שמירת הזמן" }).click();
     await expect(block).toHaveCount(0);

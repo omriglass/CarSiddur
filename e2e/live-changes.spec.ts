@@ -2,7 +2,7 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { expect, test } from "@playwright/test";
 
 import { he } from "../src/i18n/he";
-import { NEVO_DEPARTMENT_ID, newSignedInPage, SEEDED_USERS, SUPABASE_ANON_KEY, SUPABASE_URL, serviceRoleClient, openRideDetails } from "./helpers";
+import { NEVO_DEPARTMENT_ID, newSignedInPage, SEEDED_USERS, SUPABASE_ANON_KEY, SUPABASE_URL, serviceRoleClient, openRideDetails, openRideSheetTab } from "./helpers";
 
 /**
  * Pilot fix round P4 (REQ §13.118; docs/TODO.md R8U1, R8U2). NOT RUN by the author (written, not executed).
@@ -127,10 +127,10 @@ test("the ride sheet replaces a volunteer driver in one step (R8U1)", { tag: ["@
 
     const pick = async (index: number, button: string) => {
       await openRideDetails(page, page.locator(`button[data-ride-id="${ride.id}"]:visible`));
+      await openRideSheetTab(page, "people");
       const picker = page.getByTestId("ride-driver-picker");
       await expect(picker).toBeVisible();
-      await picker.getByTestId("ride-driver-select").click();
-      await page.getByRole("option").nth(index).click();
+      await picker.getByTestId("ride-driver-option").nth(index).click();
       await picker.getByTestId(button).click();
     };
     await pick(0, "ride-driver-assign");
@@ -139,6 +139,7 @@ test("the ride sheet replaces a volunteer driver in one step (R8U1)", { tag: ["@
 
     // volunteer assigned: the sheet offers "remove" AND a replacement picker; replacing needs no remove first
     await openRideDetails(page, page.locator(`button[data-ride-id="${ride.id}"]:visible`));
+    await openRideSheetTab(page, "people");
     await expect(page.getByTestId("ride-driver-unassign")).toBeVisible();
     await expect(page.getByText(he.rideDriver.replaceLabel)).toBeVisible();
     await page.keyboard.press("Escape");
