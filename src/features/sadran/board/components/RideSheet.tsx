@@ -483,6 +483,7 @@ export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenCha
                           departmentId={departmentId}
                           weekStart={weekStart}
                           disabled={saving}
+                          className="w-full"
                         />
                         <p className="text-xs text-muted-foreground">{he.sadranRideSheet.helpDuplicate}</p>
                       </div>

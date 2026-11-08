@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Button } from "@/components/ui/button";
 import { he, tv } from "@/i18n/he";
+import { cn } from "@/lib/utils";
 
 import { useWithdrawDuplicateRequestMutation } from "../../hooks";
 import { useRecordBoardUndo } from "../boardUndo";
@@ -18,12 +19,14 @@ export interface WithdrawDuplicateActionProps {
   departmentId: string;
   weekStart: string;
   disabled?: boolean;
+  /** The inline trigger's extra classes (the ride sheet's actions tab makes it full width like its neighbours). */
+  className?: string;
   /** Controlled mode (the unmet card's "⋮" menu opens it): no inline trigger button is rendered. */
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
 }
 
-export function WithdrawDuplicateAction({ requestId, version, name, departmentId, weekStart, disabled, open: controlledOpen, onOpenChange }: WithdrawDuplicateActionProps) {
+export function WithdrawDuplicateAction({ requestId, version, name, departmentId, weekStart, disabled, className, open: controlledOpen, onOpenChange }: WithdrawDuplicateActionProps) {
   const [localOpen, setLocalOpen] = useState(false);
   const controlled = onOpenChange !== undefined;
   const open = controlled ? !!controlledOpen : localOpen;
@@ -40,7 +43,7 @@ export function WithdrawDuplicateAction({ requestId, version, name, departmentId
   return (
     <>
       {controlled ? null : (
-        <Button type="button" size="sm" variant="outline" className="min-h-11" disabled={disabled || mutation.isPending} onClick={() => setOpen(true)}
+        <Button type="button" size="sm" variant="outline" className={cn("min-h-11", className)} disabled={disabled || mutation.isPending} onClick={() => setOpen(true)}
           data-testid="withdraw-duplicate" data-duplicate-request-id={requestId}>
           {he.withdrawDuplicate.action}
         </Button>
