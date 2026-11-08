@@ -82,12 +82,59 @@ export async function fetchRideChanges(departmentId?: string, weekStart?: string
   return (data ?? []) as RideChange[];
 }
 
-export async function requestRideChange(move: RideMove): Promise<string> {
+/** REQ §13.203 (b): one ride in the way of a move / a new request, and what its driver could give up. */
+export interface MakeRoomParty {
+  ride_id: string;
+  driver_id: string;
+  name: string;
+  phone: string | null;
+  starts_at: string;
+  ends_at: string;
+  /** The ride's new end if the driver returns earlier; null when that leaves no ride. */
+  end_option: string | null;
+  /** The ride's new start if the driver leaves later; null when that leaves no ride. */
+  start_option: string | null;
+  askable: boolean;
+}
+export type MakeRoomCut = "end" | "start" | "cancel";
+export interface MakeRoomCar { car_id: string; car_name: string; parties: MakeRoomParty[] }
+
+/** Moving my ride onto a taken slot: the rides in the way; `askable` = every one may be asked (REQ §13.203 b). */
+export async function fetchMakeRoomOptions(move: Pick<RideMove, "rideId" | "carId" | "startsAt" | "endsAt">): Promise<{ askable: boolean; parties: MakeRoomParty[] }> {
+  const data = await rpc("ride_shorten_options", { p_ride_id: move.rideId, p_car_id: move.carId, p_starts_at: move.startsAt, p_ends_at: move.endsAt });
+  return data as unknown as { askable: boolean; parties: MakeRoomParty[] };
+}
+
+/** My new waiting-list round trip: up to three cars it could take if the rides in the way made room. */
+export async function fetchMakeRoomOptionsForRequest(requestId: string): Promise<MakeRoomCar[]> {
+  const data = await rpc("ride_shorten_options_for_request", { p_request_id: requestId });
+  return (data ?? []) as unknown as MakeRoomCar[];
+}
+
+export type MakeRoomTarget =
+  | { kind: "move"; move: RideMove }
+  | { kind: "request"; requestId: string; carId: string };
+
+/**
+ * REQ §13.203 (a): asks the drivers in the way to make room, as agreed with them (`talked` is always true: the only
+ * way here is "דיברתי עם X").
+ */
+export async function requestMakeRoom(target: MakeRoomTarget, cuts: { rideId: string; cut: MakeRoomCut }[]): Promise<string> {
+  const p_cuts = cuts.map((entry) => ({ ride_id: entry.rideId, cut: entry.cut })) as unknown as Json;
+  // Either a ride or a request: PostgREST wants every argument, so the unused ones go as SQL null.
+  const none = null as unknown as string;
+  if (target.kind === "request") {
+    return rpc("request_ride_shorten", {
+      p_ride_id: none, p_request_id: target.requestId, p_car_id: target.carId,
+      p_starts_at: none, p_ends_at: none, p_expected_version: null as unknown as number, p_cuts, p_talked: true,
+    });
+  }
+  const { move } = target;
   // REQ §13.111 (a): the driver accepts a car without a large trunk for their own large-luggage request ("לשבץ בכל זאת?").
-  return withSmallTrunkRetry((allowSmallTrunk) => rpc("request_ride_change", {
-    p_ride_id: move.rideId, p_car_id: move.carId,
+  return withSmallTrunkRetry((allowSmallTrunk) => rpc("request_ride_shorten", {
+    p_ride_id: move.rideId, p_request_id: none, p_car_id: move.carId,
     p_starts_at: move.startsAt, p_ends_at: move.endsAt, p_expected_version: move.expectedVersion,
-    p_allow_small_trunk: allowSmallTrunk,
+    p_cuts, p_talked: true, p_allow_small_trunk: allowSmallTrunk,
   }));
 }
 

@@ -908,7 +908,7 @@ export function SiddurPage() {
         myRequests={myRequestsQuery.data ?? []}
       />
 
-      <ConfirmDialog {...rideMoves.collisionDialog} />
+      {rideMoves.makeRoomElement}
       <ConfirmDialog {...rideMoves.ownCarDialog} />
       {rideMoves.memberMergeElement}
 

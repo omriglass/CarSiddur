@@ -34,7 +34,7 @@ vi.mock("@/components/dateFieldDates", async (importOriginal) => ({
 vi.mock("@/features/rides/useMemberRideMoves", () => ({
   useMemberRideMoves: () => ({
     ownsEditableRide: mocks.owns, moveRide: mocks.moveRide, isValidTarget: mocks.isValidTarget, saving: false,
-    collisionDialog: { open: false, onOpenChange: vi.fn(), title: "", description: "", confirmLabel: "", loading: false, onConfirm: vi.fn() },
+    makeRoomElement: null,
   }),
 }));
 

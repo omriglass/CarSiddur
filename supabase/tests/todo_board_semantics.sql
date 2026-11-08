@@ -49,10 +49,10 @@ begin
   begin
     perform public.edit_ride(to_jsonb(other),other.version); raise exception 'other member edit allowed';
   exception when raise_exception then if sqlerrm<>'not_authorized' then raise; end if; end;
-  ch:=public.request_ride_change(r.id,other.car_id,other.starts_at,other.ends_at,r.version);
+  ch:=public.request_ride_shorten(r.id,null,other.car_id,other.starts_at,other.ends_at,r.version,(select jsonb_agg(jsonb_build_object('ride_id',p->>'ride_id','cut','cancel')) from jsonb_array_elements(public.ride_shorten_options(r.id,other.car_id,other.starts_at,other.ends_at)->'parties') p),true);
   perform public.cancel_ride_change(ch);
   assert (select status='cancelled' from public.ride_change_requests where id=ch),'owner cannot withdraw pending change';
-  ch:=public.request_ride_change(r.id,other.car_id,other.starts_at,other.ends_at,r.version);
+  ch:=public.request_ride_shorten(r.id,null,other.car_id,other.starts_at,other.ends_at,r.version,(select jsonb_agg(jsonb_build_object('ride_id',p->>'ride_id','cut','cancel')) from jsonb_array_elements(public.ride_shorten_options(r.id,other.car_id,other.starts_at,other.ends_at)->'parties') p),true);
   insert into todo_ids values('change',ch);
   assert (select status='confirmed' from public.rides where id=other.id),'shadow cancelled before consent';
   assert exists(select 1 from public.ride_change_parties where change_id=ch and profile_id=other.driver_id and accepted is null),'missing consent party';

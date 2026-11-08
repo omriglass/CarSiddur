@@ -17,7 +17,7 @@ vi.mock("../hooks", () => ({ useTemplateSuggestionsQuery: () => ({ data: [] }), 
 vi.mock("@/features/rides/useMemberRideMoves", () => ({
   useMemberRideMoves: () => ({
     ownsEditableRide: () => true, moveRide: vi.fn(), isValidTarget: () => true, saving: false,
-    collisionDialog: { open: false, onOpenChange: vi.fn(), title: "", description: "", confirmLabel: "", loading: false, onConfirm: vi.fn() },
+    makeRoomElement: null,
   }),
 }));
 vi.mock("@/components/dateFieldDates", async (importOriginal) => ({

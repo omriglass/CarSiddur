@@ -93,6 +93,7 @@ import { suggestionToFormValues } from "../templatePrefill";
 import { canSwapPlaces, swapRequestPlaces } from "../dropOffMode";
 import { canUseDrivingTripTypes, tripTypeToLegacyFields } from "../tripType";
 import { JoinableRidesDialog } from "./JoinableRidesDialog";
+import { useMakeRoom } from "@/features/rides/useMakeRoom";
 import { CarPreferenceFields } from "./requestForm/CarPreferenceFields";
 import { DayAndTripShapeFields } from "./requestForm/DayAndTripShapeFields";
 import { DestinationRideTypeFields } from "./requestForm/DestinationRideTypeFields";
@@ -335,6 +336,9 @@ export function RequestForm({
   // chosen ride directly via `add_ride_passengers()` with the just-filed request's own people,
   // then withdraws that now-redundant waitlisted request — see `performSubmit`/`joinNow` below.
   const addRidePassengersMutation = useAddRidePassengersMutation();
+  // REQ §13.203: "make room" after a waitlisted round trip; `afterMakeRoomRef` resumes the normal outcome on close.
+  const afterMakeRoomRef = useRef<() => void>(() => {});
+  const makeRoom = useMakeRoom({ onClose: () => { const next = afterMakeRoomRef.current; afterMakeRoomRef.current = () => {}; next(); } });
   const withdrawMutation = useWithdrawRequestMutation();
   const cancelRideMutation = useCancelRideMutation();
 
@@ -1218,6 +1222,14 @@ export function RequestForm({
         } catch { /* non-fatal — fall through to the normal outcome */ }
       }
 
+      // REQ §13.203: no free car for my round trip — offer (only after talking to them) to ask the drivers in the way to
+      // make room; the normal outcome continues when the dialog closes.
+      if (shouldOfferJoinableRides(result) && requestId && formValues.tripType === "round_trip" && departmentId && weekStart) {
+        afterMakeRoomRef.current = proceed;
+        if (await makeRoom.startRequest({ departmentId, weekStart }, requestId)) return;
+        afterMakeRoomRef.current = () => {};
+      }
+
       proceed();
     } catch {
       // The request itself may already be filed (a follow-up call failed): show what is there.
@@ -1766,6 +1778,7 @@ export function RequestForm({
       {offeredGroup ? <p className="text-sm font-medium"><GroupSummary members={offeredGroup.members} /></p> : null}
       <p className="text-sm text-muted-foreground">{he.waitlist.offerChance}</p>
     </ConfirmDialog>
+    {makeRoom.element}
     <JoinableRidesDialog
       open={!!joinableRides}
       onOpenChange={(open) => { if (!open) { setJoinableRides(null); setJoinRequestContext(null); afterJoinableDialog(); } }}

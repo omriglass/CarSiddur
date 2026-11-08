@@ -4,7 +4,9 @@ import { useSession } from "@/features/auth/useSession";
 import { he, tv } from "@/i18n/he";
 import { formatDayDate } from "@/lib/dayLabels";
 import { dateKey, formatTime, weekStartFor } from "@/lib/time";
+import { askedOf, type AskedRide } from "@/features/rides/makeRoom";
 import { useRideChanges, useRespondRideChangeMutation, useCancelRideChangeMutation } from "@/features/rides/hooks";
+import { useMyUpcomingRides } from "../hooks";
 
 export function RideChangeAnswers({ departmentId, weekStart, canManage = false }: { departmentId?: string; weekStart?: string; canManage?: boolean }) {
   const { session } = useSession();
@@ -14,20 +16,35 @@ export function RideChangeAnswers({ departmentId, weekStart, canManage = false }
   const changes = useRideChanges(departmentId, weekStart, { scoped, fromWeek: scoped ? undefined : dateKey(weekStartFor(new Date())) });
   const answer = useRespondRideChangeMutation();
   const cancel = useCancelRideChangeMutation();
+  const ridesById = useAskedRides();
   const mine = (changes.data ?? []).filter((change) => change.parties.some((p) => p.profile_id === session?.user.id && p.accepted === null));
   const outgoing = (changes.data ?? []).filter((change) => canManage || change.requester_id === session?.user.id);
   if (!mine.length && !outgoing.length) return null;
   return <section className="space-y-2" aria-label={he.rideEditing.answerTitle}>
-    {mine.map((change) => <div key={change.id} className="space-y-3 rounded-md border border-primary/40 p-3" id={`change-${change.id}`}>
-      <h2 className="font-medium">{he.rideEditing.answerTitle}</h2>
-      <p className="text-sm">{tv("rideEditing.answerBody", { name: change.requester?.full_name ?? "", time: `${formatDayDate(change.starts_at)} \u2066${formatTime(new Date(change.starts_at))}–${formatTime(new Date(change.ends_at))}\u2069` })}</p>
-      <div className="flex flex-wrap gap-2">{[true, false].map((accept) => <Button key={String(accept)} variant={accept ? "default" : "outline"} disabled={answer.isPending} onClick={() => answer.mutate({ changeId: change.id, accept }, { onSuccess: () => toast.success(he.rideEditing.answered) })}>
-        {accept ? he.rideEditing.accept : he.rideEditing.decline}
-      </Button>)}</div>
-    </div>)}
+    {mine.map((change) => {
+      // REQ §13.203 (c): what I am asked — return earlier, leave later, or give my ride up (older requests: give up).
+      const party = change.parties.find((p) => p.profile_id === session?.user.id && p.accepted === null);
+      const wanted = `${formatDayDate(change.starts_at)} \u2066${formatTime(new Date(change.starts_at))}–${formatTime(new Date(change.ends_at))}\u2069`;
+      const asked = askedOf(party, ridesById.get(party?.ride_id ?? ""));
+      const vars = { name: change.requester?.full_name ?? "", time: wanted, ...asked.vars };
+      return <div key={change.id} className="space-y-3 rounded-md border border-primary/40 p-3" id={`change-${change.id}`}>
+        <h2 className="font-medium">{he.rideEditing.answerTitle}</h2>
+        <p className="text-sm">{tv(asked.body, vars)}</p>
+        <div className="flex flex-wrap gap-2">{[true, false].map((accept) => <Button key={String(accept)} variant={accept ? "default" : "outline"} disabled={answer.isPending} onClick={() => answer.mutate({ changeId: change.id, accept }, { onSuccess: () => toast.success(he.rideEditing.answered) })}>
+          {accept ? tv(asked.accept, vars) : he.rideEditing.decline}
+        </Button>)}</div>
+      </div>;
+    })}
     {outgoing.map((change) => <div key={`outgoing-${change.id}`} className="flex flex-wrap items-center justify-between gap-2 rounded-md border p-3 text-sm">
       <span>{change.requester?.full_name} · {he.rideEditing.pending} · {formatDayDate(change.starts_at)} <span dir="ltr">{formatTime(new Date(change.starts_at))}–{formatTime(new Date(change.ends_at))}</span></span>
       <Button variant="outline" disabled={cancel.isPending} onClick={() => cancel.mutate(change.id)}>{he.rideEditing.cancelRequest}</Button>
     </div>)}
   </section>;
 }
+
+/** My rides the pending requests ask about (their current hours, for "instead of …"). */
+function useAskedRides(): Map<string, AskedRide> {
+  const rides = useMyUpcomingRides();
+  return new Map((rides.data ?? []).filter((ride) => ride.id).map((ride) => [ride.id as string, ride]));
+}
+

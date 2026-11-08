@@ -4396,6 +4396,287 @@ $$;
 ALTER FUNCTION "public"."_ride_route_with"("p_ride_id" "uuid", "p_extra_request" "uuid", "p_extra_leg" "public"."ride_leg") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."_ride_shorten_car_fits"("p_request_id" "uuid", "p_car_id" "uuid") RETURNS boolean
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  select exists (
+    select 1
+    from public.requests q
+    join public.cars c on c.id = p_car_id and c.department_id = q.department_id
+    join public.car_seat_configs csc on csc.car_id = c.id
+    cross join lateral (select make_interval(mins => coalesce(public.required_turnaround_minutes(q.department_id, q.week_start), 30)) as buf) b
+    where q.id = p_request_id and c.status = 'active' and c.type = 'shared'
+      and csc.adults >= q.adults and csc.child_seats >= q.child_seats and csc.boosters >= q.boosters
+      and (not (q.has_luggage and q.luggage_waived_at is null) or 'large_trunk' = any(c.features))
+      and public.car_location_at(c.id, q.depart_at) = q.origin_id
+      and coalesce(public.car_next_ride_origin(c.id, q.return_at), q.origin_id) = q.origin_id
+      and not public._draft_hold_conflict(c.id, q.depart_at, q.return_at + b.buf, array[q.id])
+      and not exists (select 1 from public.car_maintenance_blocks m
+        where m.car_id = c.id and tstzrange(m.starts_at, m.ends_at, '[)') && tstzrange(q.depart_at, q.return_at + b.buf, '[)'))
+      and not public.car_held_by_waitlist_group(c.id, q.depart_at, q.return_at + b.buf, q.id));
+$$;
+
+
+ALTER FUNCTION "public"."_ride_shorten_car_fits"("p_request_id" "uuid", "p_car_id" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."_ride_shorten_parties_json"("p_department_id" "uuid", "p_week_start" "date", "p_car_id" "uuid", "p_starts_at" timestamp with time zone, "p_ends_at" timestamp with time zone, "p_exclude_ride" "uuid", "p_requester" "uuid") RETURNS "jsonb"
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  select coalesce(jsonb_agg(jsonb_build_object(
+      'ride_id', x.ride_id, 'driver_id', x.driver_id, 'name', coalesce(x.driver_name, ''), 'phone', public.phone_of(x.driver_id),
+      'starts_at', x.starts_at, 'ends_at', x.ends_at, 'end_option', x.end_option, 'start_option', x.start_option,
+      'askable', x.askable) order by x.starts_at, x.ride_id), '[]'::jsonb)
+  from public._ride_shorten_plan(p_department_id, p_week_start, p_car_id, p_starts_at, p_ends_at, p_exclude_ride, p_requester) x;
+$$;
+
+
+ALTER FUNCTION "public"."_ride_shorten_parties_json"("p_department_id" "uuid", "p_week_start" "date", "p_car_id" "uuid", "p_starts_at" timestamp with time zone, "p_ends_at" timestamp with time zone, "p_exclude_ride" "uuid", "p_requester" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."_ride_shorten_plan"("p_department_id" "uuid", "p_week_start" "date", "p_car_id" "uuid", "p_starts_at" timestamp with time zone, "p_ends_at" timestamp with time zone, "p_exclude_ride" "uuid", "p_requester" "uuid") RETURNS TABLE("ride_id" "uuid", "driver_id" "uuid", "driver_name" "text", "ride_version" integer, "starts_at" timestamp with time zone, "ends_at" timestamp with time zone, "end_option" timestamp with time zone, "start_option" timestamp with time zone, "askable" boolean)
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  with b as (
+    select make_interval(mins => coalesce(public.required_turnaround_minutes(p_department_id, p_week_start), 30)) as buf
+  )
+  select r.id, r.driver_id, p.full_name, r.version, r.starts_at, r.ends_at,
+    case when e.at > r.starts_at then e.at end,
+    case when s.at < r.ends_at then s.at end,
+    (r.driver_id is not null and r.driver_id is distinct from p_requester
+      and r.origin_id = r.destination_id and not r.auto_relocation and not r.planning_conflict
+      and exists (select 1 from public.ride_requests rr where rr.ride_id = r.id)
+      and not exists (select 1 from public.ride_requests rr join public.requests q on q.id = rr.request_id
+        where rr.ride_id = r.id and (q.requester_id <> r.driver_id or rr.car_mode = 'relay'))
+      and not exists (select 1 from public.ride_requests rr join public.request_companions c on c.request_id = rr.request_id
+        where rr.ride_id = r.id)
+      and not exists (select 1 from public.ride_passengers rp
+        where rp.ride_id = r.id and rp.child_id is null and rp.person_id is distinct from r.driver_id))
+  from public.rides r
+  cross join b
+  left join public.profiles p on p.id = r.driver_id
+  cross join lateral (select to_timestamp(floor(extract(epoch from p_starts_at - b.buf) / 900) * 900) as at) e
+  cross join lateral (select to_timestamp(ceil(extract(epoch from p_ends_at + b.buf) / 900) * 900) as at) s
+  where r.car_id = p_car_id and r.id is distinct from p_exclude_ride and r.status <> 'cancelled' and not r.draft_hold
+    and tstzrange(r.starts_at, r.blocked_until, '[)') && tstzrange(p_starts_at, p_ends_at + b.buf, '[)')
+  order by r.starts_at, r.id;
+$$;
+
+
+ALTER FUNCTION "public"."_ride_shorten_plan"("p_department_id" "uuid", "p_week_start" "date", "p_car_id" "uuid", "p_starts_at" timestamp with time zone, "p_ends_at" timestamp with time zone, "p_exclude_ride" "uuid", "p_requester" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."is_quarter_hour"("_t" timestamp with time zone) RETURNS boolean
+    LANGUAGE "sql" IMMUTABLE
+    AS $$
+  select extract(epoch from _t)::bigint % 900 = 0;
+$$;
+
+
+ALTER FUNCTION "public"."is_quarter_hour"("_t" timestamp with time zone) OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."is_same_day_end"("p_end" timestamp with time zone) RETURNS boolean
+    LANGUAGE "sql" IMMUTABLE
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  select (p_end at time zone 'Asia/Jerusalem')::time = time '23:59:00';
+$$;
+
+
+ALTER FUNCTION "public"."is_same_day_end"("p_end" timestamp with time zone) OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."requests" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "department_id" "uuid" NOT NULL,
+    "week_start" "date" NOT NULL,
+    "requester_id" "uuid" NOT NULL,
+    "filed_by" "uuid" NOT NULL,
+    "destination_id" "uuid",
+    "destination_text" "text",
+    "ride_type_id" "uuid" NOT NULL,
+    "trip_shape" "public"."trip_shape" DEFAULT 'round_trip'::"public"."trip_shape" NOT NULL,
+    "depart_at" timestamp with time zone,
+    "return_at" timestamp with time zone,
+    "one_way_car_mode" "public"."leg_car_mode",
+    "needs_car_at_destination" boolean DEFAULT true NOT NULL,
+    "adults" smallint DEFAULT 1 NOT NULL,
+    "child_seats" smallint DEFAULT 0 NOT NULL,
+    "boosters" smallint DEFAULT 0 NOT NULL,
+    "has_luggage" boolean DEFAULT false NOT NULL,
+    "flex_depart_early" interval DEFAULT '00:00:00'::interval NOT NULL,
+    "flex_depart_late" interval DEFAULT '00:00:00'::interval NOT NULL,
+    "flex_return_early" interval DEFAULT '00:00:00'::interval NOT NULL,
+    "flex_return_late" interval DEFAULT '00:00:00'::interval NOT NULL,
+    "notes" "text",
+    "is_late" boolean DEFAULT false NOT NULL,
+    "submitted_at" timestamp with time zone,
+    "status" "public"."request_status" DEFAULT 'draft'::"public"."request_status" NOT NULL,
+    "status_reason" "text",
+    "changed_since_solve" boolean DEFAULT false NOT NULL,
+    "freed_slot_opt_out" boolean DEFAULT false NOT NULL,
+    "manual_boost" numeric(6,2) DEFAULT 0 NOT NULL,
+    "manual_boost_reason" "text",
+    "join_ride_id" "uuid",
+    "template_id" "uuid",
+    "version" integer DEFAULT 1 NOT NULL,
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "preferred_car_id" "uuid",
+    "original_depart_at" timestamp with time zone,
+    "original_return_at" timestamp with time zone,
+    "ride_description" "text",
+    "guest_passenger_names" "text"[] DEFAULT '{}'::"text"[] NOT NULL,
+    "series_id" "uuid",
+    "series_index" smallint,
+    "series_count" smallint,
+    "origin_id" "uuid",
+    "origin_text" "text",
+    "trip_type" "public"."trip_type" DEFAULT 'round_trip'::"public"."trip_type" NOT NULL,
+    "kept_return_at" timestamp with time zone,
+    "depart_anchor" "public"."time_anchor" DEFAULT 'leave'::"public"."time_anchor" NOT NULL,
+    "arrive_by" timestamp with time zone,
+    "return_anchor" "public"."time_anchor" DEFAULT 'arrive'::"public"."time_anchor" NOT NULL,
+    "leave_dest_at" timestamp with time zone,
+    "luggage_waived_at" timestamp with time zone,
+    "luggage_waived_by" "uuid",
+    "duration_locked" boolean DEFAULT false NOT NULL,
+    "fallback" "public"."request_fallback" DEFAULT 'none'::"public"."request_fallback" NOT NULL,
+    "served_by_alternative" boolean DEFAULT false NOT NULL,
+    "plan_b_parent_id" "uuid",
+    "keep_car_at_destination" boolean DEFAULT false NOT NULL,
+    "reserved_at" timestamp with time zone,
+    CONSTRAINT "requests_adults_ck" CHECK (("adults" >= 1)),
+    CONSTRAINT "requests_arrive_by_anchor_ck" CHECK ((("arrive_by" IS NULL) OR ("depart_anchor" = 'arrive'::"public"."time_anchor"))),
+    CONSTRAINT "requests_arrive_by_qh_ck" CHECK ("public"."is_quarter_hour"("arrive_by")),
+    CONSTRAINT "requests_boosters_ck" CHECK (("boosters" >= 0)),
+    CONSTRAINT "requests_child_seats_ck" CHECK (("child_seats" >= 0)),
+    CONSTRAINT "requests_depart_presence_ck" CHECK ((("depart_at" IS NOT NULL) = ("trip_shape" <> 'one_way_from'::"public"."trip_shape"))),
+    CONSTRAINT "requests_depart_qh_ck" CHECK ("public"."is_quarter_hour"("depart_at")),
+    CONSTRAINT "requests_destination_ck" CHECK ((("destination_id" IS NOT NULL) OR ("destination_text" IS NOT NULL))),
+    CONSTRAINT "requests_flex_depart_early_ck" CHECK (("flex_depart_early" = ANY (ARRAY['00:00:00'::interval, '00:15:00'::interval, '00:30:00'::interval, '01:00:00'::interval, '02:00:00'::interval, '1 day'::interval]))),
+    CONSTRAINT "requests_flex_depart_late_ck" CHECK ((("flex_depart_late" = ANY (ARRAY['00:00:00'::interval, '00:15:00'::interval, '00:30:00'::interval, '01:00:00'::interval, '02:00:00'::interval, '1 day'::interval])) OR ("duration_locked" AND ("flex_depart_late" > '00:00:00'::interval) AND ("flex_depart_late" <= '1 day'::interval) AND (((EXTRACT(epoch FROM "flex_depart_late"))::bigint % (900)::bigint) = 0)))),
+    CONSTRAINT "requests_flex_return_early_ck" CHECK (("flex_return_early" = ANY (ARRAY['00:00:00'::interval, '00:15:00'::interval, '00:30:00'::interval, '01:00:00'::interval, '02:00:00'::interval, '1 day'::interval]))),
+    CONSTRAINT "requests_flex_return_late_ck" CHECK ((("flex_return_late" = ANY (ARRAY['00:00:00'::interval, '00:15:00'::interval, '00:30:00'::interval, '01:00:00'::interval, '02:00:00'::interval, '1 day'::interval])) OR ("duration_locked" AND ("flex_return_late" > '00:00:00'::interval) AND ("flex_return_late" <= '1 day'::interval) AND (((EXTRACT(epoch FROM "flex_return_late"))::bigint % (900)::bigint) = 0)))),
+    CONSTRAINT "requests_keep_car_at_destination_ck" CHECK (((NOT "keep_car_at_destination") OR (("trip_type" = 'drop_off'::"public"."trip_type") AND ("trip_shape" = 'round_trip'::"public"."trip_shape")))),
+    CONSTRAINT "requests_leave_dest_anchor_ck" CHECK ((("leave_dest_at" IS NULL) OR ("return_anchor" = 'leave'::"public"."time_anchor"))),
+    CONSTRAINT "requests_leave_dest_qh_ck" CHECK ("public"."is_quarter_hour"("leave_dest_at")),
+    CONSTRAINT "requests_luggage_waiver_ck" CHECK ((("luggage_waived_at" IS NULL) OR "has_luggage")),
+    CONSTRAINT "requests_manual_boost_ck" CHECK ((("manual_boost" = (0)::numeric) OR ("manual_boost_reason" IS NOT NULL))),
+    CONSTRAINT "requests_one_way_mode_ck" CHECK (((("one_way_car_mode" IS NULL) = ("trip_shape" = 'round_trip'::"public"."trip_shape")) AND (("one_way_car_mode" IS NULL) OR ("one_way_car_mode" = ANY (ARRAY['relay'::"public"."leg_car_mode", 'passenger'::"public"."leg_car_mode"]))))),
+    CONSTRAINT "requests_origin_ck" CHECK ((("origin_id" IS NOT NULL) OR ("origin_text" IS NOT NULL))),
+    CONSTRAINT "requests_return_after_depart_ck" CHECK ((("depart_at" IS NULL) OR ("return_at" IS NULL) OR ("return_at" > "depart_at"))),
+    CONSTRAINT "requests_return_presence_ck" CHECK ((("return_at" IS NOT NULL) = ("trip_shape" <> 'one_way_to'::"public"."trip_shape"))),
+    CONSTRAINT "requests_return_qh_ck" CHECK (("public"."is_quarter_hour"("return_at") OR "public"."is_same_day_end"("return_at"))),
+    CONSTRAINT "requests_series_ck" CHECK (((("series_id" IS NULL) AND ("series_index" IS NULL) AND ("series_count" IS NULL)) OR (("series_id" IS NOT NULL) AND ("series_index" IS NOT NULL) AND ("series_count" IS NOT NULL) AND ("series_count" >= 2) AND ("series_index" >= 1) AND ("series_index" <= "series_count"))))
+);
+
+ALTER TABLE ONLY "public"."requests" FORCE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."requests" OWNER TO "postgres";
+
+
+COMMENT ON COLUMN "public"."requests"."preferred_car_id" IS 'Optional car the member asked for when filing (quick-request-from-empty-slot flow, UX_FLOWS.md §18). try_auto_approve() tries it first in live weeks, then falls back to any free car exactly as before; visible to the Sadran alongside the request, never required.';
+
+
+
+COMMENT ON COLUMN "public"."requests"."kept_return_at" IS 'Last real return time while return_at is cleared by a switch to one-way; restored by set_request_trip_type / submit_request, cleared once return_at is stored again.';
+
+
+
+COMMENT ON COLUMN "public"."requests"."luggage_waived_at" IS 'REQ §13.111 (a): set when a Sadran/member placing by hand accepted a car without a large trunk for this large-luggage request; cleared when has_luggage changes.';
+
+
+
+COMMENT ON COLUMN "public"."requests"."keep_car_at_destination" IS 'REQ §13.126 g: a member-driven round trip whose car stays at the destination between the legs (two connected relay legs on one car, never split by the wait-needed-elsewhere rule).';
+
+
+
+CREATE OR REPLACE FUNCTION "public"."_ride_shorten_request"("p_request_id" "uuid") RETURNS "public"."requests"
+    LANGUAGE "plpgsql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare q public.requests%rowtype;
+begin
+  select * into q from public.requests where id = p_request_id;
+  if q.id is null then raise exception 'request_not_found' using errcode = 'P0001'; end if;
+  if not public.is_approved() or (select auth.uid()) not in (q.requester_id, coalesce(q.filed_by, q.requester_id)) then
+    raise exception 'not_authorized' using errcode = 'P0001';
+  end if;
+  if q.status <> 'waitlisted' or q.trip_type <> 'round_trip' or q.origin_id is null or q.depart_at is null or q.return_at is null
+     or q.depart_at <= now()
+     or not public.is_day_public(q.department_id, q.week_start, (q.depart_at at time zone 'Asia/Jerusalem')::date) then
+    raise exception 'request_not_editable' using errcode = 'P0001';
+  end if;
+  return q;
+end $$;
+
+
+ALTER FUNCTION "public"."_ride_shorten_request"("p_request_id" "uuid") OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."ride_change_requests" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "department_id" "uuid" NOT NULL,
+    "week_start" "date" NOT NULL,
+    "requester_id" "uuid" NOT NULL,
+    "ride_id" "uuid",
+    "car_id" "uuid" NOT NULL,
+    "starts_at" timestamp with time zone NOT NULL,
+    "ends_at" timestamp with time zone NOT NULL,
+    "expected_version" integer NOT NULL,
+    "status" "text" DEFAULT 'pending'::"text" NOT NULL,
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "version" integer DEFAULT 1 NOT NULL,
+    "is_planning" boolean DEFAULT false NOT NULL,
+    "allow_small_trunk" boolean DEFAULT false NOT NULL,
+    "closed_reason" "text",
+    "request_id" "uuid",
+    "talked" boolean DEFAULT false NOT NULL,
+    CONSTRAINT "ride_change_requests_check" CHECK ((("ends_at" > "starts_at") AND "public"."is_quarter_hour"("starts_at") AND ("public"."is_quarter_hour"("ends_at") OR "public"."is_same_day_end"("ends_at")))),
+    CONSTRAINT "ride_change_requests_closed_reason_check" CHECK ((("closed_reason" IS NULL) OR ("closed_reason" = 'ride_moved'::"text"))),
+    CONSTRAINT "ride_change_requests_status_check" CHECK (("status" = ANY (ARRAY['pending'::"text", 'accepted'::"text", 'declined'::"text", 'cancelled'::"text"]))),
+    CONSTRAINT "ride_change_requests_target" CHECK (("is_planning" OR (("ride_id" IS NULL) <> ("request_id" IS NULL))))
+);
+
+ALTER TABLE ONLY "public"."ride_change_requests" FORCE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."ride_change_requests" OWNER TO "postgres";
+
+
+COMMENT ON COLUMN "public"."ride_change_requests"."request_id" IS 'REQ §13.203 (d): the waiting-list request placed on car_id at starts_at–ends_at once every party accepts (ride_id is then null).';
+
+
+
+COMMENT ON COLUMN "public"."ride_change_requests"."talked" IS 'REQ §13.203 (a): the requester confirmed they talked with the asked drivers ("דיברתי עם X").';
+
+
+
+CREATE OR REPLACE FUNCTION "public"."_ride_shorten_tell_requester"("ch" "public"."ride_change_requests", "p_variant" "text", "p_party_name" "text") RETURNS "void"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+begin
+  if not ch.talked then return; end if;
+  perform public.enqueue_notification(ch.requester_id, 'outcome_changed', ch.department_id, ch.week_start,
+    jsonb_build_object('partyName', coalesce(p_party_name, ''), 'day', public.day_date_label(ch.starts_at),
+      'timeRange', to_char(ch.starts_at at time zone 'Asia/Jerusalem', 'HH24:MI') || '–' || to_char(ch.ends_at at time zone 'Asia/Jerusalem', 'HH24:MI'),
+      'car', coalesce((select name from public.cars where id = ch.car_id), '')),
+    jsonb_strip_nulls(jsonb_build_object('variant', p_variant, 'ride_id', ch.ride_id, 'request_id', ch.request_id)),
+    format('%s:%s:%s', p_variant, ch.id, (select auth.uid())));
+end $$;
+
+
+ALTER FUNCTION "public"."_ride_shorten_tell_requester"("ch" "public"."ride_change_requests", "p_variant" "text", "p_party_name" "text") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."_ride_task_people"("p_ride_id" "uuid") RETURNS SETOF "uuid"
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -11273,16 +11554,6 @@ $$;
 ALTER FUNCTION "public"."is_proposal_party"("_proposal_id" "uuid") OWNER TO "postgres";
 
 
-CREATE OR REPLACE FUNCTION "public"."is_quarter_hour"("_t" timestamp with time zone) RETURNS boolean
-    LANGUAGE "sql" IMMUTABLE
-    AS $$
-  select extract(epoch from _t)::bigint % 900 = 0;
-$$;
-
-
-ALTER FUNCTION "public"."is_quarter_hour"("_t" timestamp with time zone) OWNER TO "postgres";
-
-
 CREATE OR REPLACE FUNCTION "public"."is_request_companion"("_request_id" "uuid") RETURNS boolean
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -11325,17 +11596,6 @@ $$;
 
 
 ALTER FUNCTION "public"."is_sadran_any"("_dept" "uuid") OWNER TO "postgres";
-
-
-CREATE OR REPLACE FUNCTION "public"."is_same_day_end"("p_end" timestamp with time zone) RETURNS boolean
-    LANGUAGE "sql" IMMUTABLE
-    SET "search_path" TO 'public', 'pg_temp'
-    AS $$
-  select (p_end at time zone 'Asia/Jerusalem')::time = time '23:59:00';
-$$;
-
-
-ALTER FUNCTION "public"."is_same_day_end"("p_end" timestamp with time zone) OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."is_week_public"("_dept" "uuid", "_week" "date") RETURNS boolean
@@ -17061,46 +17321,97 @@ CREATE OR REPLACE FUNCTION "public"."request_ride_change"("p_ride_id" "uuid", "p
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
-declare r public.rides%rowtype; other public.rides%rowtype; ch uuid; buffer interval; cnt int:=0;
 begin
-  select * into r from public.rides where id=p_ride_id for update;
-  if not found then raise exception 'ride_not_found'; end if;
-  if not public.is_approved() or r.driver_id is distinct from (select auth.uid()) or not public.is_week_public(r.department_id,r.week_start) then raise exception 'not_authorized'; end if;
-  if r.status='cancelled' or r.version<>p_expected_version then perform public.raise_stale_version(); end if;
-  -- REQ §13.128 (a): a ride of today may still change (the day itself must stay the same, below).
-  if (r.starts_at at time zone 'Asia/Jerusalem')::date < (now() at time zone 'Asia/Jerusalem')::date or p_ends_at<=p_starts_at or (p_starts_at at time zone 'Asia/Jerusalem')::date<>(r.starts_at at time zone 'Asia/Jerusalem')::date then raise exception 'ride_request_day_mismatch'; end if;
-  if not (public.week_range(r.week_start) @> tstzrange(p_starts_at,p_ends_at,'[)')) then raise exception 'ride_outside_week'; end if;
-  if exists(select 1 from public.ride_requests rr join public.requests q on q.id=rr.request_id where rr.ride_id=r.id and (q.requester_id<>r.driver_id or rr.car_mode='relay')) then raise exception 'shared_ride_requires_sadran'; end if;
-  -- REQ §13.111 (a): the driver may accept a car without a large trunk for their own large-luggage request(s); the
-  -- waiver is stamped only when the change is accepted (respond_ride_change_before_planning).
-  perform public._small_trunk_check(array(select rr.request_id from public.ride_requests rr where rr.ride_id=r.id), p_car_id, p_allow_small_trunk);
-  perform 1 from public.cars where id=p_car_id and department_id=r.department_id and status='active' and type='shared' for update;
-  if not found then raise exception 'car_unavailable'; end if;
-  select make_interval(mins=>coalesce((w.settings_overrides->>'turnaround_minutes')::int,s.turnaround_minutes)) into buffer
-  from public.department_settings s join public.weeks w on w.department_id=s.department_id where w.department_id=r.department_id and w.week_start=r.week_start;
-  if exists(select 1 from public.car_maintenance_blocks where car_id=p_car_id and tstzrange(starts_at,ends_at,'[)') && tstzrange(p_starts_at,p_ends_at+buffer,'[)')) then raise exception 'ride_conflicts_with_maintenance'; end if;
-  update public.ride_change_requests set status='cancelled' where ride_id=r.id and status='pending';
-  insert into public.ride_change_requests(department_id,week_start,requester_id,ride_id,car_id,starts_at,ends_at,expected_version,allow_small_trunk)
-  values(r.department_id,r.week_start,(select auth.uid()),r.id,p_car_id,p_starts_at,p_ends_at,r.version,coalesce(p_allow_small_trunk,false)) returning id into ch;
-  for other in select * from public.rides where car_id=p_car_id and id<>r.id and status<>'cancelled' and not draft_hold
-    and tstzrange(starts_at,blocked_until,'[)') && tstzrange(p_starts_at,p_ends_at+buffer,'[)') order by id for update loop
-    if other.driver_id is null or other.driver_id=r.driver_id or other.origin_id<>other.destination_id
-      or exists(select 1 from public.ride_requests rr join public.requests q on q.id=rr.request_id where rr.ride_id=other.id and q.requester_id<>other.driver_id)
-    then raise exception 'shared_ride_requires_sadran'; end if;
-    insert into public.ride_change_parties(change_id,ride_id,profile_id,expected_version) values(ch,other.id,other.driver_id,other.version);
-    perform public.enqueue_notification(other.driver_id,'proposal_received',r.department_id,r.week_start,
-      jsonb_build_object('requesterName',(select full_name from public.profiles where id=r.driver_id),
-        'date',to_char(p_starts_at at time zone 'Asia/Jerusalem','DD/MM/YY'),
-        'depart',to_char(p_starts_at at time zone 'Asia/Jerusalem','HH24:MI'),'return',to_char(p_ends_at at time zone 'Asia/Jerusalem','HH24:MI')),
-      jsonb_build_object('ride_change_id',ch,'ride_id',other.id,'url','/inbox?change='||ch),format('ride_change:%s:%s',ch,other.driver_id));
-    cnt:=cnt+1;
-  end loop;
-  if cnt=0 then raise exception 'no_conflicting_ride'; end if;
-  return ch;
+  raise exception 'ride_shorten_needs_talk' using errcode = 'P0001';
 end $$;
 
 
 ALTER FUNCTION "public"."request_ride_change"("p_ride_id" "uuid", "p_car_id" "uuid", "p_starts_at" timestamp with time zone, "p_ends_at" timestamp with time zone, "p_expected_version" integer, "p_allow_small_trunk" boolean) OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."request_ride_shorten"("p_ride_id" "uuid", "p_request_id" "uuid", "p_car_id" "uuid", "p_starts_at" timestamp with time zone, "p_ends_at" timestamp with time zone, "p_expected_version" integer, "p_cuts" "jsonb", "p_talked" boolean, "p_allow_small_trunk" boolean DEFAULT false) RETURNS "uuid"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  r public.rides%rowtype; q public.requests%rowtype; v_uid uuid := (select auth.uid());
+  v_dept uuid; v_week date; v_version integer; v_s timestamptz; v_e timestamptz;
+  x record; v_cut text; v_ns timestamptz; v_ne timestamptz; ch uuid; cnt int := 0; buffer interval; v_name text;
+begin
+  if not coalesce(p_talked, false) then raise exception 'ride_shorten_needs_talk' using errcode = 'P0001'; end if;
+  if (p_ride_id is null) = (p_request_id is null) then raise exception 'ride_shorten_invalid' using errcode = 'P0001'; end if;
+
+  if p_ride_id is not null then
+    -- Same checks as moving one's own ride (request_ride_change before REQ §13.203).
+    select * into r from public.rides where id = p_ride_id for update;
+    if not found then raise exception 'ride_not_found' using errcode = 'P0001'; end if;
+    if not public.is_approved() or r.driver_id is distinct from v_uid or not public.is_week_public(r.department_id, r.week_start) then
+      raise exception 'not_authorized' using errcode = 'P0001';
+    end if;
+    if r.status = 'cancelled' or r.version <> p_expected_version then perform public.raise_stale_version(); end if;
+    if (r.starts_at at time zone 'Asia/Jerusalem')::date < (now() at time zone 'Asia/Jerusalem')::date or p_ends_at <= p_starts_at
+       or (p_starts_at at time zone 'Asia/Jerusalem')::date <> (r.starts_at at time zone 'Asia/Jerusalem')::date then
+      raise exception 'ride_request_day_mismatch' using errcode = 'P0001';
+    end if;
+    if not (public.week_range(r.week_start) @> tstzrange(p_starts_at, p_ends_at, '[)')) then raise exception 'ride_outside_week' using errcode = 'P0001'; end if;
+    if exists (select 1 from public.ride_requests rr join public.requests rq on rq.id = rr.request_id
+               where rr.ride_id = r.id and (rq.requester_id <> r.driver_id or rr.car_mode = 'relay')) then
+      raise exception 'shared_ride_requires_sadran' using errcode = 'P0001';
+    end if;
+    perform public._small_trunk_check(array(select rr.request_id from public.ride_requests rr where rr.ride_id = r.id), p_car_id, p_allow_small_trunk);
+    perform 1 from public.cars where id = p_car_id and department_id = r.department_id and status = 'active' and type = 'shared' for update;
+    if not found then raise exception 'car_unavailable' using errcode = 'P0001'; end if;
+    v_dept := r.department_id; v_week := r.week_start; v_version := r.version; v_s := p_starts_at; v_e := p_ends_at;
+  else
+    q := public._ride_shorten_request(p_request_id);
+    perform 1 from public.requests where id = q.id for update;
+    if not public._ride_shorten_car_fits(q.id, p_car_id) then raise exception 'car_unavailable' using errcode = 'P0001'; end if;
+    v_dept := q.department_id; v_week := q.week_start; v_version := q.version; v_s := q.depart_at; v_e := q.return_at;
+  end if;
+
+  buffer := make_interval(mins => coalesce(public.required_turnaround_minutes(v_dept, v_week), 30));
+  if exists (select 1 from public.car_maintenance_blocks where car_id = p_car_id
+             and tstzrange(starts_at, ends_at, '[)') && tstzrange(v_s, v_e + buffer, '[)')) then
+    raise exception 'ride_conflicts_with_maintenance' using errcode = 'P0001';
+  end if;
+
+  update public.ride_change_requests set status = 'cancelled'
+  where status = 'pending' and ((p_ride_id is not null and ride_id = p_ride_id) or (p_request_id is not null and request_id = p_request_id));
+  insert into public.ride_change_requests(department_id, week_start, requester_id, ride_id, request_id, car_id, starts_at, ends_at,
+    expected_version, allow_small_trunk, talked)
+  values (v_dept, v_week, v_uid, p_ride_id, p_request_id, p_car_id, v_s, v_e, v_version, coalesce(p_allow_small_trunk, false), true)
+  returning id into ch;
+  select full_name into v_name from public.profiles where id = v_uid;
+
+  for x in select * from public._ride_shorten_plan(v_dept, v_week, p_car_id, v_s, v_e, p_ride_id, coalesce(r.driver_id, q.requester_id)) loop
+    if not x.askable then raise exception 'shared_ride_requires_sadran' using errcode = 'P0001'; end if;
+    perform 1 from public.rides where id = x.ride_id for update;
+    select c ->> 'cut' into v_cut from jsonb_array_elements(coalesce(p_cuts, '[]'::jsonb)) c where c ->> 'ride_id' = x.ride_id::text limit 1;
+    v_ns := null; v_ne := null;
+    if v_cut = 'end' and x.end_option is not null then v_ne := x.end_option;
+    elsif v_cut = 'start' and x.start_option is not null then v_ns := x.start_option;
+    elsif v_cut is distinct from 'cancel' then raise exception 'ride_shorten_invalid' using errcode = 'P0001';
+    end if;
+    insert into public.ride_change_parties(change_id, ride_id, profile_id, expected_version, cut, new_starts_at, new_ends_at)
+    values (ch, x.ride_id, x.driver_id, x.ride_version, v_cut, v_ns, v_ne);
+    perform public.enqueue_notification(x.driver_id, 'proposal_received', v_dept, v_week,
+      jsonb_build_object('requesterName', coalesce(v_name, ''), 'day', public.day_date_label(x.starts_at),
+        'timeRange', to_char(x.starts_at at time zone 'Asia/Jerusalem', 'HH24:MI') || '–' || to_char(x.ends_at at time zone 'Asia/Jerusalem', 'HH24:MI'),
+        'oldTime', to_char((case v_cut when 'start' then x.starts_at else x.ends_at end) at time zone 'Asia/Jerusalem', 'HH24:MI'),
+        'newTime', to_char(coalesce(v_ns, v_ne, x.ends_at) at time zone 'Asia/Jerusalem', 'HH24:MI'),
+        'minutes', case v_cut when 'end' then (extract(epoch from x.ends_at - v_ne) / 60)::int
+                              when 'start' then (extract(epoch from v_ns - x.starts_at) / 60)::int else 0 end),
+      jsonb_build_object('ride_change_id', ch, 'ride_id', x.ride_id,
+        'variant', case v_cut when 'end' then 'ride_shorten_end' when 'start' then 'ride_shorten_start' else 'ride_change' end),
+      format('ride_change:%s:%s', ch, x.driver_id));
+    cnt := cnt + 1;
+  end loop;
+  if cnt = 0 then raise exception 'no_conflicting_ride' using errcode = 'P0001'; end if;
+  return ch;
+end $$;
+
+
+ALTER FUNCTION "public"."request_ride_shorten"("p_ride_id" "uuid", "p_request_id" "uuid", "p_car_id" "uuid", "p_starts_at" timestamp with time zone, "p_ends_at" timestamp with time zone, "p_expected_version" integer, "p_cuts" "jsonb", "p_talked" boolean, "p_allow_small_trunk" boolean) OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."request_route_label"("p_request_id" "uuid") RETURNS "text"
@@ -17339,6 +17650,21 @@ end $$;
 
 
 ALTER FUNCTION "public"."requests_clear_luggage_waiver"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."requests_close_ride_shorten"() RETURNS "trigger"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+begin
+  if current_setting('app.audit_reason', true) = 'accepted_ride_change' then return new; end if;
+  update public.ride_change_requests set status = 'cancelled', closed_reason = 'ride_moved'
+  where request_id = new.id and status = 'pending';
+  return new;
+end $$;
+
+
+ALTER FUNCTION "public"."requests_close_ride_shorten"() OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."requests_default_origin"() RETURNS "trigger"
@@ -17922,36 +18248,78 @@ CREATE OR REPLACE FUNCTION "public"."respond_ride_change_before_planning"("p_cha
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
-declare ch public.ride_change_requests%rowtype; r public.rides%rowtype; party record;
+declare
+  ch public.ride_change_requests%rowtype; r public.rides%rowtype; party record; q public.requests%rowtype;
+  v_prev text := coalesce(current_setting('app.system_status_transition', true), 'off');
+  v_name text; v_car text; v_ok boolean := true;
 begin
-  select * into ch from public.ride_change_requests where id=p_change_id for update;
+  select * into ch from public.ride_change_requests where id = p_change_id for update;
   if not found then raise exception 'ride_change_not_found'; end if;
-  if not public.is_approved() or not exists(select 1 from public.ride_change_parties where change_id=ch.id and profile_id=(select auth.uid())) then raise exception 'not_authorized'; end if;
-  if ch.status<>'pending' then raise exception 'ride_change_not_pending'; end if;
-  if ch.starts_at<=now() then update public.ride_change_requests set status='cancelled' where id=ch.id; return; end if;
-  update public.ride_change_parties set accepted=p_accept,responded_at=now() where change_id=ch.id and profile_id=(select auth.uid());
-  if not p_accept then update public.ride_change_requests set status='declined' where id=ch.id; return; end if;
-  if exists(select 1 from public.ride_change_parties where change_id=ch.id and accepted is distinct from true) then return; end if;
-  perform 1 from public.rides where id=ch.ride_id or id in(select ride_id from public.ride_change_parties where change_id=ch.id) order by id for update;
-  select * into r from public.rides where id=ch.ride_id;
-  if r.version<>ch.expected_version or r.status='cancelled' or exists(
-    select 1 from public.ride_change_parties p join public.rides rd on rd.id=p.ride_id where p.change_id=ch.id and (rd.version<>p.expected_version or rd.status='cancelled')
-  ) then update public.ride_change_requests set status='cancelled' where id=ch.id; return; end if;
-  perform set_config('app.audit_reason','accepted_ride_change',true);
+  if not public.is_approved() or not exists (select 1 from public.ride_change_parties where change_id = ch.id and profile_id = (select auth.uid())) then
+    raise exception 'not_authorized';
+  end if;
+  if ch.status <> 'pending' then raise exception 'ride_change_not_pending'; end if;
+  if ch.starts_at <= now() then update public.ride_change_requests set status = 'cancelled' where id = ch.id; return; end if;
+  update public.ride_change_parties set accepted = p_accept, responded_at = now() where change_id = ch.id and profile_id = (select auth.uid());
+  select full_name into v_name from public.profiles where id = (select auth.uid());
+  if not p_accept then
+    update public.ride_change_requests set status = 'declined' where id = ch.id;
+    perform public._ride_shorten_tell_requester(ch, 'ride_shorten_declined', v_name);
+    return;
+  end if;
+  if exists (select 1 from public.ride_change_parties where change_id = ch.id and accepted is distinct from true) then return; end if;
+
+  perform 1 from public.rides where id = ch.ride_id or id in (select ride_id from public.ride_change_parties where change_id = ch.id) order by id for update;
+  if ch.ride_id is not null then
+    select * into r from public.rides where id = ch.ride_id;
+    v_ok := r.version = ch.expected_version and r.status <> 'cancelled';
+  else
+    select * into q from public.requests where id = ch.request_id for update;
+    v_ok := q.status = 'waitlisted' and q.version = ch.expected_version;
+  end if;
+  if not v_ok or exists (
+    select 1 from public.ride_change_parties p join public.rides rd on rd.id = p.ride_id
+    where p.change_id = ch.id and (rd.version <> p.expected_version or rd.status = 'cancelled')
+  ) then
+    update public.ride_change_requests set status = 'cancelled' where id = ch.id;
+    return;
+  end if;
+
+  perform set_config('app.audit_reason', 'accepted_ride_change', true);
   if ch.allow_small_trunk then perform public._small_trunk_mode(true); end if;   -- REQ §13.111 (a): the proposer's waiver
-  perform set_config('app.system_status_transition','on',true);
-  for party in select * from public.ride_change_parties where change_id=ch.id loop
-    update public.rides set status='cancelled',cancelled_at=now(),cancelled_by=party.profile_id,cancel_reason='ACCEPTED_RIDE_CHANGE' where id=party.ride_id;
-    update public.requests set status='cancelled',status_reason='RIDE_CANCELLED' where id in(select request_id from public.ride_requests where ride_id=party.ride_id);
-    delete from public.ride_requests where ride_id=party.ride_id;
-  end loop;
-  update public.rides set car_id=ch.car_id,starts_at=ch.starts_at,ends_at=ch.ends_at,is_pinned=true,pin_reason='MEMBER_EDIT' where id=ch.ride_id;
-  perform public.assert_ride_request_day(ch.ride_id);
-  perform public.assert_ride_seats_fit(ch.ride_id);
-  perform public.assert_car_chain(ch.car_id,ch.week_start);
-  if r.car_id<>ch.car_id then perform public.assert_car_chain(r.car_id,ch.week_start); end if;
-  update public.ride_change_requests set status='accepted' where id=ch.id;
-  perform set_config('app.system_status_transition','off',true);
+  perform set_config('app.system_status_transition', 'on', true);
+  begin
+    for party in select * from public.ride_change_parties where change_id = ch.id loop
+      if party.cut in ('end', 'start') then
+        update public.rides set starts_at = coalesce(party.new_starts_at, starts_at), ends_at = coalesce(party.new_ends_at, ends_at),
+          is_pinned = true, pin_reason = 'MEMBER_EDIT'
+        where id = party.ride_id;
+      else
+        update public.rides set status = 'cancelled', cancelled_at = now(), cancelled_by = party.profile_id, cancel_reason = 'ACCEPTED_RIDE_CHANGE' where id = party.ride_id;
+        update public.requests set status = 'cancelled', status_reason = 'RIDE_CANCELLED' where id in (select request_id from public.ride_requests where ride_id = party.ride_id);
+        delete from public.ride_requests where ride_id = party.ride_id;
+      end if;
+    end loop;
+    if ch.ride_id is not null then
+      update public.rides set car_id = ch.car_id, starts_at = ch.starts_at, ends_at = ch.ends_at, is_pinned = true, pin_reason = 'MEMBER_EDIT' where id = ch.ride_id;
+      perform public.assert_ride_request_day(ch.ride_id);
+      perform public.assert_ride_seats_fit(ch.ride_id);
+      perform public.assert_car_chain(ch.car_id, ch.week_start);
+      if r.car_id <> ch.car_id then perform public.assert_car_chain(r.car_id, ch.week_start); end if;
+    else
+      perform public.place_request_on_car(q.id, ch.car_id, true, q.requester_id, null, q.depart_at, q.return_at, 'MEMBER_PLACED');
+    end if;
+  exception when others then
+    -- Something changed since the request was sent (the car, the request, a turnaround): nothing changes.
+    v_ok := false;
+  end;
+  perform set_config('app.system_status_transition', v_prev, true);
+  if not v_ok then
+    update public.ride_change_requests set status = 'cancelled' where id = ch.id;
+    return;
+  end if;
+  update public.ride_change_requests set status = 'accepted' where id = ch.id;
+  perform public._ride_shorten_tell_requester(ch, 'ride_shorten_accepted', v_name);
 end $$;
 
 
@@ -18700,6 +19068,63 @@ end $$;
 
 
 ALTER FUNCTION "public"."ride_seat_fit_check_ride"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."ride_shorten_options"("p_ride_id" "uuid", "p_car_id" "uuid", "p_starts_at" timestamp with time zone, "p_ends_at" timestamp with time zone) RETURNS "jsonb"
+    LANGUAGE "plpgsql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare r public.rides%rowtype; v_parties jsonb; v_maintenance boolean;
+begin
+  select * into r from public.rides where id = p_ride_id;
+  if not found then raise exception 'ride_not_found' using errcode = 'P0001'; end if;
+  if not public.is_approved() or r.driver_id is distinct from (select auth.uid()) or not public.is_week_public(r.department_id, r.week_start) then
+    raise exception 'not_authorized' using errcode = 'P0001';
+  end if;
+  if not exists (select 1 from public.cars where id = p_car_id and department_id = r.department_id) then
+    raise exception 'car_unavailable' using errcode = 'P0001';
+  end if;
+  v_parties := public._ride_shorten_parties_json(r.department_id, r.week_start, p_car_id, p_starts_at, p_ends_at, r.id, r.driver_id);
+  select exists (select 1 from public.car_maintenance_blocks m where m.car_id = p_car_id
+    and tstzrange(m.starts_at, m.ends_at, '[)') && tstzrange(p_starts_at, p_ends_at
+      + make_interval(mins => coalesce(public.required_turnaround_minutes(r.department_id, r.week_start), 30)), '[)')) into v_maintenance;
+  return jsonb_build_object('parties', v_parties,
+    'askable', jsonb_array_length(v_parties) > 0 and not v_maintenance
+      and not exists (select 1 from jsonb_array_elements(v_parties) x where not (x ->> 'askable')::boolean));
+end $$;
+
+
+ALTER FUNCTION "public"."ride_shorten_options"("p_ride_id" "uuid", "p_car_id" "uuid", "p_starts_at" timestamp with time zone, "p_ends_at" timestamp with time zone) OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."ride_shorten_options_for_request"("p_request_id" "uuid") RETURNS "jsonb"
+    LANGUAGE "plpgsql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare q public.requests%rowtype;
+begin
+  q := public._ride_shorten_request(p_request_id);
+  return coalesce((
+    select jsonb_agg(jsonb_build_object('car_id', x.car_id, 'car_name', x.car_name, 'parties', x.parties) order by x.cost, x.car_id)
+    from (
+      select c.id as car_id, c.name as car_name, pj.parties,
+        (select sum(least(
+            coalesce(extract(epoch from (y.ends_at - y.end_option)), 1e9),
+            coalesce(extract(epoch from (y.start_option - y.starts_at)), 1e9),
+            extract(epoch from (y.ends_at - y.starts_at))))
+         from public._ride_shorten_plan(q.department_id, q.week_start, c.id, q.depart_at, q.return_at, null, q.requester_id) y) as cost
+      from public.cars c
+      cross join lateral (select public._ride_shorten_parties_json(q.department_id, q.week_start, c.id, q.depart_at, q.return_at, null, q.requester_id) as parties) pj
+      where c.department_id = q.department_id and c.status = 'active' and c.type = 'shared'
+        and public._ride_shorten_car_fits(q.id, c.id)
+        and jsonb_array_length(pj.parties) > 0
+        and not exists (select 1 from jsonb_array_elements(pj.parties) e where not (e ->> 'askable')::boolean)
+      order by 4, 1
+      limit 3) x), '[]'::jsonb);
+end $$;
+
+
+ALTER FUNCTION "public"."ride_shorten_options_for_request"("p_request_id" "uuid") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."rides_before_write"() RETURNS "trigger"
@@ -23717,113 +24142,6 @@ end $$;
 ALTER FUNCTION "public"."validate_request_companion"() OWNER TO "postgres";
 
 
-CREATE TABLE IF NOT EXISTS "public"."requests" (
-    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
-    "department_id" "uuid" NOT NULL,
-    "week_start" "date" NOT NULL,
-    "requester_id" "uuid" NOT NULL,
-    "filed_by" "uuid" NOT NULL,
-    "destination_id" "uuid",
-    "destination_text" "text",
-    "ride_type_id" "uuid" NOT NULL,
-    "trip_shape" "public"."trip_shape" DEFAULT 'round_trip'::"public"."trip_shape" NOT NULL,
-    "depart_at" timestamp with time zone,
-    "return_at" timestamp with time zone,
-    "one_way_car_mode" "public"."leg_car_mode",
-    "needs_car_at_destination" boolean DEFAULT true NOT NULL,
-    "adults" smallint DEFAULT 1 NOT NULL,
-    "child_seats" smallint DEFAULT 0 NOT NULL,
-    "boosters" smallint DEFAULT 0 NOT NULL,
-    "has_luggage" boolean DEFAULT false NOT NULL,
-    "flex_depart_early" interval DEFAULT '00:00:00'::interval NOT NULL,
-    "flex_depart_late" interval DEFAULT '00:00:00'::interval NOT NULL,
-    "flex_return_early" interval DEFAULT '00:00:00'::interval NOT NULL,
-    "flex_return_late" interval DEFAULT '00:00:00'::interval NOT NULL,
-    "notes" "text",
-    "is_late" boolean DEFAULT false NOT NULL,
-    "submitted_at" timestamp with time zone,
-    "status" "public"."request_status" DEFAULT 'draft'::"public"."request_status" NOT NULL,
-    "status_reason" "text",
-    "changed_since_solve" boolean DEFAULT false NOT NULL,
-    "freed_slot_opt_out" boolean DEFAULT false NOT NULL,
-    "manual_boost" numeric(6,2) DEFAULT 0 NOT NULL,
-    "manual_boost_reason" "text",
-    "join_ride_id" "uuid",
-    "template_id" "uuid",
-    "version" integer DEFAULT 1 NOT NULL,
-    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
-    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
-    "preferred_car_id" "uuid",
-    "original_depart_at" timestamp with time zone,
-    "original_return_at" timestamp with time zone,
-    "ride_description" "text",
-    "guest_passenger_names" "text"[] DEFAULT '{}'::"text"[] NOT NULL,
-    "series_id" "uuid",
-    "series_index" smallint,
-    "series_count" smallint,
-    "origin_id" "uuid",
-    "origin_text" "text",
-    "trip_type" "public"."trip_type" DEFAULT 'round_trip'::"public"."trip_type" NOT NULL,
-    "kept_return_at" timestamp with time zone,
-    "depart_anchor" "public"."time_anchor" DEFAULT 'leave'::"public"."time_anchor" NOT NULL,
-    "arrive_by" timestamp with time zone,
-    "return_anchor" "public"."time_anchor" DEFAULT 'arrive'::"public"."time_anchor" NOT NULL,
-    "leave_dest_at" timestamp with time zone,
-    "luggage_waived_at" timestamp with time zone,
-    "luggage_waived_by" "uuid",
-    "duration_locked" boolean DEFAULT false NOT NULL,
-    "fallback" "public"."request_fallback" DEFAULT 'none'::"public"."request_fallback" NOT NULL,
-    "served_by_alternative" boolean DEFAULT false NOT NULL,
-    "plan_b_parent_id" "uuid",
-    "keep_car_at_destination" boolean DEFAULT false NOT NULL,
-    "reserved_at" timestamp with time zone,
-    CONSTRAINT "requests_adults_ck" CHECK (("adults" >= 1)),
-    CONSTRAINT "requests_arrive_by_anchor_ck" CHECK ((("arrive_by" IS NULL) OR ("depart_anchor" = 'arrive'::"public"."time_anchor"))),
-    CONSTRAINT "requests_arrive_by_qh_ck" CHECK ("public"."is_quarter_hour"("arrive_by")),
-    CONSTRAINT "requests_boosters_ck" CHECK (("boosters" >= 0)),
-    CONSTRAINT "requests_child_seats_ck" CHECK (("child_seats" >= 0)),
-    CONSTRAINT "requests_depart_presence_ck" CHECK ((("depart_at" IS NOT NULL) = ("trip_shape" <> 'one_way_from'::"public"."trip_shape"))),
-    CONSTRAINT "requests_depart_qh_ck" CHECK ("public"."is_quarter_hour"("depart_at")),
-    CONSTRAINT "requests_destination_ck" CHECK ((("destination_id" IS NOT NULL) OR ("destination_text" IS NOT NULL))),
-    CONSTRAINT "requests_flex_depart_early_ck" CHECK (("flex_depart_early" = ANY (ARRAY['00:00:00'::interval, '00:15:00'::interval, '00:30:00'::interval, '01:00:00'::interval, '02:00:00'::interval, '1 day'::interval]))),
-    CONSTRAINT "requests_flex_depart_late_ck" CHECK ((("flex_depart_late" = ANY (ARRAY['00:00:00'::interval, '00:15:00'::interval, '00:30:00'::interval, '01:00:00'::interval, '02:00:00'::interval, '1 day'::interval])) OR ("duration_locked" AND ("flex_depart_late" > '00:00:00'::interval) AND ("flex_depart_late" <= '1 day'::interval) AND (((EXTRACT(epoch FROM "flex_depart_late"))::bigint % (900)::bigint) = 0)))),
-    CONSTRAINT "requests_flex_return_early_ck" CHECK (("flex_return_early" = ANY (ARRAY['00:00:00'::interval, '00:15:00'::interval, '00:30:00'::interval, '01:00:00'::interval, '02:00:00'::interval, '1 day'::interval]))),
-    CONSTRAINT "requests_flex_return_late_ck" CHECK ((("flex_return_late" = ANY (ARRAY['00:00:00'::interval, '00:15:00'::interval, '00:30:00'::interval, '01:00:00'::interval, '02:00:00'::interval, '1 day'::interval])) OR ("duration_locked" AND ("flex_return_late" > '00:00:00'::interval) AND ("flex_return_late" <= '1 day'::interval) AND (((EXTRACT(epoch FROM "flex_return_late"))::bigint % (900)::bigint) = 0)))),
-    CONSTRAINT "requests_keep_car_at_destination_ck" CHECK (((NOT "keep_car_at_destination") OR (("trip_type" = 'drop_off'::"public"."trip_type") AND ("trip_shape" = 'round_trip'::"public"."trip_shape")))),
-    CONSTRAINT "requests_leave_dest_anchor_ck" CHECK ((("leave_dest_at" IS NULL) OR ("return_anchor" = 'leave'::"public"."time_anchor"))),
-    CONSTRAINT "requests_leave_dest_qh_ck" CHECK ("public"."is_quarter_hour"("leave_dest_at")),
-    CONSTRAINT "requests_luggage_waiver_ck" CHECK ((("luggage_waived_at" IS NULL) OR "has_luggage")),
-    CONSTRAINT "requests_manual_boost_ck" CHECK ((("manual_boost" = (0)::numeric) OR ("manual_boost_reason" IS NOT NULL))),
-    CONSTRAINT "requests_one_way_mode_ck" CHECK (((("one_way_car_mode" IS NULL) = ("trip_shape" = 'round_trip'::"public"."trip_shape")) AND (("one_way_car_mode" IS NULL) OR ("one_way_car_mode" = ANY (ARRAY['relay'::"public"."leg_car_mode", 'passenger'::"public"."leg_car_mode"]))))),
-    CONSTRAINT "requests_origin_ck" CHECK ((("origin_id" IS NOT NULL) OR ("origin_text" IS NOT NULL))),
-    CONSTRAINT "requests_return_after_depart_ck" CHECK ((("depart_at" IS NULL) OR ("return_at" IS NULL) OR ("return_at" > "depart_at"))),
-    CONSTRAINT "requests_return_presence_ck" CHECK ((("return_at" IS NOT NULL) = ("trip_shape" <> 'one_way_to'::"public"."trip_shape"))),
-    CONSTRAINT "requests_return_qh_ck" CHECK (("public"."is_quarter_hour"("return_at") OR "public"."is_same_day_end"("return_at"))),
-    CONSTRAINT "requests_series_ck" CHECK (((("series_id" IS NULL) AND ("series_index" IS NULL) AND ("series_count" IS NULL)) OR (("series_id" IS NOT NULL) AND ("series_index" IS NOT NULL) AND ("series_count" IS NOT NULL) AND ("series_count" >= 2) AND ("series_index" >= 1) AND ("series_index" <= "series_count"))))
-);
-
-ALTER TABLE ONLY "public"."requests" FORCE ROW LEVEL SECURITY;
-
-
-ALTER TABLE "public"."requests" OWNER TO "postgres";
-
-
-COMMENT ON COLUMN "public"."requests"."preferred_car_id" IS 'Optional car the member asked for when filing (quick-request-from-empty-slot flow, UX_FLOWS.md §18). try_auto_approve() tries it first in live weeks, then falls back to any free car exactly as before; visible to the Sadran alongside the request, never required.';
-
-
-
-COMMENT ON COLUMN "public"."requests"."kept_return_at" IS 'Last real return time while return_at is cleared by a switch to one-way; restored by set_request_trip_type / submit_request, cleared once return_at is stored again.';
-
-
-
-COMMENT ON COLUMN "public"."requests"."luggage_waived_at" IS 'REQ §13.111 (a): set when a Sadran/member placing by hand accepted a car without a large trunk for this large-luggage request; cleared when has_luggage changes.';
-
-
-
-COMMENT ON COLUMN "public"."requests"."keep_car_at_destination" IS 'REQ §13.126 g: a member-driven round trip whose car stays at the destination between the legs (two connected relay legs on one car, never split by the wait-needed-elsewhere rule).';
-
-
-
 CREATE OR REPLACE FUNCTION "public"."waitlist_cause"("r" "public"."requests") RETURNS "text"
     LANGUAGE "plpgsql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -25780,7 +26098,11 @@ CREATE TABLE IF NOT EXISTS "public"."ride_change_parties" (
     "responded_at" timestamp with time zone,
     "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
     "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
-    "version" integer DEFAULT 1 NOT NULL
+    "version" integer DEFAULT 1 NOT NULL,
+    "cut" "text",
+    "new_starts_at" timestamp with time zone,
+    "new_ends_at" timestamp with time zone,
+    CONSTRAINT "ride_change_parties_cut_check" CHECK ((("cut" IS NULL) OR ("cut" = ANY (ARRAY['end'::"text", 'start'::"text", 'cancel'::"text"]))))
 );
 
 ALTER TABLE ONLY "public"."ride_change_parties" FORCE ROW LEVEL SECURITY;
@@ -25789,32 +26111,8 @@ ALTER TABLE ONLY "public"."ride_change_parties" FORCE ROW LEVEL SECURITY;
 ALTER TABLE "public"."ride_change_parties" OWNER TO "postgres";
 
 
-CREATE TABLE IF NOT EXISTS "public"."ride_change_requests" (
-    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
-    "department_id" "uuid" NOT NULL,
-    "week_start" "date" NOT NULL,
-    "requester_id" "uuid" NOT NULL,
-    "ride_id" "uuid" NOT NULL,
-    "car_id" "uuid" NOT NULL,
-    "starts_at" timestamp with time zone NOT NULL,
-    "ends_at" timestamp with time zone NOT NULL,
-    "expected_version" integer NOT NULL,
-    "status" "text" DEFAULT 'pending'::"text" NOT NULL,
-    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
-    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
-    "version" integer DEFAULT 1 NOT NULL,
-    "is_planning" boolean DEFAULT false NOT NULL,
-    "allow_small_trunk" boolean DEFAULT false NOT NULL,
-    "closed_reason" "text",
-    CONSTRAINT "ride_change_requests_check" CHECK ((("ends_at" > "starts_at") AND "public"."is_quarter_hour"("starts_at") AND ("public"."is_quarter_hour"("ends_at") OR "public"."is_same_day_end"("ends_at")))),
-    CONSTRAINT "ride_change_requests_closed_reason_check" CHECK ((("closed_reason" IS NULL) OR ("closed_reason" = 'ride_moved'::"text"))),
-    CONSTRAINT "ride_change_requests_status_check" CHECK (("status" = ANY (ARRAY['pending'::"text", 'accepted'::"text", 'declined'::"text", 'cancelled'::"text"])))
-);
+COMMENT ON COLUMN "public"."ride_change_parties"."cut" IS 'REQ §13.203: end = return earlier (new_ends_at), start = leave later (new_starts_at), cancel (or null, older rows) = give the ride up.';
 
-ALTER TABLE ONLY "public"."ride_change_requests" FORCE ROW LEVEL SECURITY;
-
-
-ALTER TABLE "public"."ride_change_requests" OWNER TO "postgres";
 
 
 CREATE TABLE IF NOT EXISTS "public"."ride_passengers" (
@@ -27624,11 +27922,19 @@ CREATE UNIQUE INDEX "ride_change_one_pending" ON "public"."ride_change_requests"
 
 
 
+CREATE UNIQUE INDEX "ride_change_one_pending_request" ON "public"."ride_change_requests" USING "btree" ("request_id") WHERE ("status" = 'pending'::"text");
+
+
+
 CREATE INDEX "ride_change_parties_profile" ON "public"."ride_change_parties" USING "btree" ("profile_id", "change_id");
 
 
 
 CREATE INDEX "ride_change_parties_ride_id_idx" ON "public"."ride_change_parties" USING "btree" ("ride_id");
+
+
+
+CREATE INDEX "ride_change_requests_request_id_idx" ON "public"."ride_change_requests" USING "btree" ("request_id") WHERE ("request_id" IS NOT NULL);
 
 
 
@@ -28554,6 +28860,10 @@ CREATE OR REPLACE TRIGGER "requests_awaiting_driver_status" BEFORE UPDATE OF "st
 
 
 CREATE OR REPLACE TRIGGER "requests_clear_luggage_waiver" BEFORE UPDATE OF "has_luggage" ON "public"."requests" FOR EACH ROW EXECUTE FUNCTION "public"."requests_clear_luggage_waiver"();
+
+
+
+CREATE OR REPLACE TRIGGER "requests_close_ride_shorten" AFTER UPDATE OF "status" ON "public"."requests" FOR EACH ROW WHEN ((("old"."status" = 'waitlisted'::"public"."request_status") AND ("new"."status" IS DISTINCT FROM 'waitlisted'::"public"."request_status"))) EXECUTE FUNCTION "public"."requests_close_ride_shorten"();
 
 
 
@@ -29920,6 +30230,11 @@ ALTER TABLE ONLY "public"."ride_change_requests"
 
 ALTER TABLE ONLY "public"."ride_change_requests"
     ADD CONSTRAINT "ride_change_requests_department_id_week_start_fkey" FOREIGN KEY ("department_id", "week_start") REFERENCES "public"."weeks"("department_id", "week_start");
+
+
+
+ALTER TABLE ONLY "public"."ride_change_requests"
+    ADD CONSTRAINT "ride_change_requests_request_id_fkey" FOREIGN KEY ("request_id") REFERENCES "public"."requests"("id") ON DELETE CASCADE;
 
 
 
@@ -31521,6 +31836,285 @@ GRANT ALL ON FUNCTION "public"."_ride_route_with"("p_ride_id" "uuid", "p_extra_r
 
 
 
+REVOKE ALL ON FUNCTION "public"."_ride_shorten_car_fits"("p_request_id" "uuid", "p_car_id" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_ride_shorten_car_fits"("p_request_id" "uuid", "p_car_id" "uuid") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."_ride_shorten_parties_json"("p_department_id" "uuid", "p_week_start" "date", "p_car_id" "uuid", "p_starts_at" timestamp with time zone, "p_ends_at" timestamp with time zone, "p_exclude_ride" "uuid", "p_requester" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_ride_shorten_parties_json"("p_department_id" "uuid", "p_week_start" "date", "p_car_id" "uuid", "p_starts_at" timestamp with time zone, "p_ends_at" timestamp with time zone, "p_exclude_ride" "uuid", "p_requester" "uuid") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."_ride_shorten_plan"("p_department_id" "uuid", "p_week_start" "date", "p_car_id" "uuid", "p_starts_at" timestamp with time zone, "p_ends_at" timestamp with time zone, "p_exclude_ride" "uuid", "p_requester" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_ride_shorten_plan"("p_department_id" "uuid", "p_week_start" "date", "p_car_id" "uuid", "p_starts_at" timestamp with time zone, "p_ends_at" timestamp with time zone, "p_exclude_ride" "uuid", "p_requester" "uuid") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."is_quarter_hour"("_t" timestamp with time zone) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."is_quarter_hour"("_t" timestamp with time zone) TO "authenticated";
+GRANT ALL ON FUNCTION "public"."is_quarter_hour"("_t" timestamp with time zone) TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."is_same_day_end"("p_end" timestamp with time zone) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."is_same_day_end"("p_end" timestamp with time zone) TO "authenticated";
+GRANT ALL ON FUNCTION "public"."is_same_day_end"("p_end" timestamp with time zone) TO "service_role";
+
+
+
+GRANT INSERT,DELETE,MAINTAIN,UPDATE ON TABLE "public"."requests" TO "authenticated";
+GRANT ALL ON TABLE "public"."requests" TO "service_role";
+
+
+
+GRANT SELECT("id") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("department_id") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("week_start") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("requester_id") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("filed_by") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("destination_id") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("destination_text") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("ride_type_id") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("trip_shape") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("depart_at") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("return_at") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("one_way_car_mode") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("needs_car_at_destination") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("adults") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("child_seats") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("boosters") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("has_luggage") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("flex_depart_early") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("flex_depart_late") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("flex_return_early") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("flex_return_late") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("is_late") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("submitted_at") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("status") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("status_reason") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("changed_since_solve") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("freed_slot_opt_out") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("manual_boost") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("manual_boost_reason") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("join_ride_id") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("template_id") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("version") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("created_at") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("updated_at") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("preferred_car_id") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("original_depart_at") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("original_return_at") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("ride_description") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("guest_passenger_names") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("series_id") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("series_index") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("series_count") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("origin_id") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("origin_text") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("trip_type") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("kept_return_at") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("depart_anchor") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("arrive_by") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("return_anchor") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("leave_dest_at") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("luggage_waived_at") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("luggage_waived_by") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("duration_locked") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("fallback") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("served_by_alternative") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("plan_b_parent_id") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("keep_car_at_destination") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+GRANT SELECT("reserved_at") ON TABLE "public"."requests" TO "authenticated";
+
+
+
+REVOKE ALL ON FUNCTION "public"."_ride_shorten_request"("p_request_id" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_ride_shorten_request"("p_request_id" "uuid") TO "service_role";
+
+
+
+GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE "public"."ride_change_requests" TO "authenticated";
+GRANT ALL ON TABLE "public"."ride_change_requests" TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."_ride_shorten_tell_requester"("ch" "public"."ride_change_requests", "p_variant" "text", "p_party_name" "text") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_ride_shorten_tell_requester"("ch" "public"."ride_change_requests", "p_variant" "text", "p_party_name" "text") TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."_ride_task_people"("p_ride_id" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."_ride_task_people"("p_ride_id" "uuid") TO "service_role";
 
@@ -32434,12 +33028,6 @@ GRANT ALL ON FUNCTION "public"."is_proposal_party"("_proposal_id" "uuid") TO "se
 
 
 
-REVOKE ALL ON FUNCTION "public"."is_quarter_hour"("_t" timestamp with time zone) FROM PUBLIC;
-GRANT ALL ON FUNCTION "public"."is_quarter_hour"("_t" timestamp with time zone) TO "authenticated";
-GRANT ALL ON FUNCTION "public"."is_quarter_hour"("_t" timestamp with time zone) TO "service_role";
-
-
-
 REVOKE ALL ON FUNCTION "public"."is_request_companion"("_request_id" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."is_request_companion"("_request_id" "uuid") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."is_request_companion"("_request_id" "uuid") TO "service_role";
@@ -32455,12 +33043,6 @@ GRANT ALL ON FUNCTION "public"."is_sadran"("_dept" "uuid", "_week" "date") TO "s
 REVOKE ALL ON FUNCTION "public"."is_sadran_any"("_dept" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."is_sadran_any"("_dept" "uuid") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."is_sadran_any"("_dept" "uuid") TO "service_role";
-
-
-
-REVOKE ALL ON FUNCTION "public"."is_same_day_end"("p_end" timestamp with time zone) FROM PUBLIC;
-GRANT ALL ON FUNCTION "public"."is_same_day_end"("p_end" timestamp with time zone) TO "authenticated";
-GRANT ALL ON FUNCTION "public"."is_same_day_end"("p_end" timestamp with time zone) TO "service_role";
 
 
 
@@ -33151,6 +33733,12 @@ GRANT ALL ON FUNCTION "public"."request_ride_change"("p_ride_id" "uuid", "p_car_
 
 
 
+REVOKE ALL ON FUNCTION "public"."request_ride_shorten"("p_ride_id" "uuid", "p_request_id" "uuid", "p_car_id" "uuid", "p_starts_at" timestamp with time zone, "p_ends_at" timestamp with time zone, "p_expected_version" integer, "p_cuts" "jsonb", "p_talked" boolean, "p_allow_small_trunk" boolean) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."request_ride_shorten"("p_ride_id" "uuid", "p_request_id" "uuid", "p_car_id" "uuid", "p_starts_at" timestamp with time zone, "p_ends_at" timestamp with time zone, "p_expected_version" integer, "p_cuts" "jsonb", "p_talked" boolean, "p_allow_small_trunk" boolean) TO "service_role";
+GRANT ALL ON FUNCTION "public"."request_ride_shorten"("p_ride_id" "uuid", "p_request_id" "uuid", "p_car_id" "uuid", "p_starts_at" timestamp with time zone, "p_ends_at" timestamp with time zone, "p_expected_version" integer, "p_cuts" "jsonb", "p_talked" boolean, "p_allow_small_trunk" boolean) TO "authenticated";
+
+
+
 REVOKE ALL ON FUNCTION "public"."request_route_label"("p_request_id" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."request_route_label"("p_request_id" "uuid") TO "service_role";
 
@@ -33208,6 +33796,11 @@ GRANT ALL ON FUNCTION "public"."requests_awaiting_driver_status"() TO "service_r
 
 REVOKE ALL ON FUNCTION "public"."requests_clear_luggage_waiver"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."requests_clear_luggage_waiver"() TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."requests_close_ride_shorten"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."requests_close_ride_shorten"() TO "service_role";
 
 
 
@@ -33447,6 +34040,18 @@ GRANT ALL ON FUNCTION "public"."ride_seat_fit_check"() TO "service_role";
 REVOKE ALL ON FUNCTION "public"."ride_seat_fit_check_ride"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."ride_seat_fit_check_ride"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."ride_seat_fit_check_ride"() TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."ride_shorten_options"("p_ride_id" "uuid", "p_car_id" "uuid", "p_starts_at" timestamp with time zone, "p_ends_at" timestamp with time zone) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."ride_shorten_options"("p_ride_id" "uuid", "p_car_id" "uuid", "p_starts_at" timestamp with time zone, "p_ends_at" timestamp with time zone) TO "service_role";
+GRANT ALL ON FUNCTION "public"."ride_shorten_options"("p_ride_id" "uuid", "p_car_id" "uuid", "p_starts_at" timestamp with time zone, "p_ends_at" timestamp with time zone) TO "authenticated";
+
+
+
+REVOKE ALL ON FUNCTION "public"."ride_shorten_options_for_request"("p_request_id" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."ride_shorten_options_for_request"("p_request_id" "uuid") TO "service_role";
+GRANT ALL ON FUNCTION "public"."ride_shorten_options_for_request"("p_request_id" "uuid") TO "authenticated";
 
 
 
@@ -33873,243 +34478,6 @@ GRANT ALL ON FUNCTION "public"."validate_preferred_car"() TO "service_role";
 
 REVOKE ALL ON FUNCTION "public"."validate_request_companion"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."validate_request_companion"() TO "service_role";
-
-
-
-GRANT INSERT,DELETE,MAINTAIN,UPDATE ON TABLE "public"."requests" TO "authenticated";
-GRANT ALL ON TABLE "public"."requests" TO "service_role";
-
-
-
-GRANT SELECT("id") ON TABLE "public"."requests" TO "authenticated";
-
-
-
-GRANT SELECT("department_id") ON TABLE "public"."requests" TO "authenticated";
-
-
-
-GRANT SELECT("week_start") ON TABLE "public"."requests" TO "authenticated";
-
-
-
-GRANT SELECT("requester_id") ON TABLE "public"."requests" TO "authenticated";
-
-
-
-GRANT SELECT("filed_by") ON TABLE "public"."requests" TO "authenticated";
-
-
-
-GRANT SELECT("destination_id") ON TABLE "public"."requests" TO "authenticated";
-
-
-
-GRANT SELECT("destination_text") ON TABLE "public"."requests" TO "authenticated";
-
-
-
-GRANT SELECT("ride_type_id") ON TABLE "public"."requests" TO "authenticated";
-
-
-
-GRANT SELECT("trip_shape") ON TABLE "public"."requests" TO "authenticated";
-
-
-
-GRANT SELECT("depart_at") ON TABLE "public"."requests" TO "authenticated";
-
-
-
-GRANT SELECT("return_at") ON TABLE "public"."requests" TO "authenticated";
-
-
-
-GRANT SELECT("one_way_car_mode") ON TABLE "public"."requests" TO "authenticated";
-
-
-
-GRANT SELECT("needs_car_at_destination") ON TABLE "public"."requests" TO "authenticated";
-
-
-
-GRANT SELECT("adults") ON TABLE "public"."requests" TO "authenticated";
-
-
-
-GRANT SELECT("child_seats") ON TABLE "public"."requests" TO "authenticated";
-
-
-
-GRANT SELECT("boosters") ON TABLE "public"."requests" TO "authenticated";
-
-
-
-GRANT SELECT("has_luggage") ON TABLE "public"."requests" TO "authenticated";
-
-
-
-GRANT SELECT("flex_depart_early") ON TABLE "public"."requests" TO "authenticated";
-
-
-
-GRANT SELECT("flex_depart_late") ON TABLE "public"."requests" TO "authenticated";
-
-
-
-GRANT SELECT("flex_return_early") ON TABLE "public"."requests" TO "authenticated";
-
-
-
-GRANT SELECT("flex_return_late") ON TABLE "public"."requests" TO "authenticated";
-
-
-
-GRANT SELECT("is_late") ON TABLE "public"."requests" TO "authenticated";
-
-
-
-GRANT SELECT("submitted_at") ON TABLE "public"."requests" TO "authenticated";
-
-
-
-GRANT SELECT("status") ON TABLE "public"."requests" TO "authenticated";
-
-
-
-GRANT SELECT("status_reason") ON TABLE "public"."requests" TO "authenticated";
-
-
-
-GRANT SELECT("changed_since_solve") ON TABLE "public"."requests" TO "authenticated";
-
-
-
-GRANT SELECT("freed_slot_opt_out") ON TABLE "public"."requests" TO "authenticated";
-
-
-
-GRANT SELECT("manual_boost") ON TABLE "public"."requests" TO "authenticated";
-
-
-
-GRANT SELECT("manual_boost_reason") ON TABLE "public"."requests" TO "authenticated";
-
-
-
-GRANT SELECT("join_ride_id") ON TABLE "public"."requests" TO "authenticated";
-
-
-
-GRANT SELECT("template_id") ON TABLE "public"."requests" TO "authenticated";
-
-
-
-GRANT SELECT("version") ON TABLE "public"."requests" TO "authenticated";
-
-
-
-GRANT SELECT("created_at") ON TABLE "public"."requests" TO "authenticated";
-
-
-
-GRANT SELECT("updated_at") ON TABLE "public"."requests" TO "authenticated";
-
-
-
-GRANT SELECT("preferred_car_id") ON TABLE "public"."requests" TO "authenticated";
-
-
-
-GRANT SELECT("original_depart_at") ON TABLE "public"."requests" TO "authenticated";
-
-
-
-GRANT SELECT("original_return_at") ON TABLE "public"."requests" TO "authenticated";
-
-
-
-GRANT SELECT("ride_description") ON TABLE "public"."requests" TO "authenticated";
-
-
-
-GRANT SELECT("guest_passenger_names") ON TABLE "public"."requests" TO "authenticated";
-
-
-
-GRANT SELECT("series_id") ON TABLE "public"."requests" TO "authenticated";
-
-
-
-GRANT SELECT("series_index") ON TABLE "public"."requests" TO "authenticated";
-
-
-
-GRANT SELECT("series_count") ON TABLE "public"."requests" TO "authenticated";
-
-
-
-GRANT SELECT("origin_id") ON TABLE "public"."requests" TO "authenticated";
-
-
-
-GRANT SELECT("origin_text") ON TABLE "public"."requests" TO "authenticated";
-
-
-
-GRANT SELECT("trip_type") ON TABLE "public"."requests" TO "authenticated";
-
-
-
-GRANT SELECT("kept_return_at") ON TABLE "public"."requests" TO "authenticated";
-
-
-
-GRANT SELECT("depart_anchor") ON TABLE "public"."requests" TO "authenticated";
-
-
-
-GRANT SELECT("arrive_by") ON TABLE "public"."requests" TO "authenticated";
-
-
-
-GRANT SELECT("return_anchor") ON TABLE "public"."requests" TO "authenticated";
-
-
-
-GRANT SELECT("leave_dest_at") ON TABLE "public"."requests" TO "authenticated";
-
-
-
-GRANT SELECT("luggage_waived_at") ON TABLE "public"."requests" TO "authenticated";
-
-
-
-GRANT SELECT("luggage_waived_by") ON TABLE "public"."requests" TO "authenticated";
-
-
-
-GRANT SELECT("duration_locked") ON TABLE "public"."requests" TO "authenticated";
-
-
-
-GRANT SELECT("fallback") ON TABLE "public"."requests" TO "authenticated";
-
-
-
-GRANT SELECT("served_by_alternative") ON TABLE "public"."requests" TO "authenticated";
-
-
-
-GRANT SELECT("plan_b_parent_id") ON TABLE "public"."requests" TO "authenticated";
-
-
-
-GRANT SELECT("keep_car_at_destination") ON TABLE "public"."requests" TO "authenticated";
-
-
-
-GRANT SELECT("reserved_at") ON TABLE "public"."requests" TO "authenticated";
 
 
 
@@ -34597,11 +34965,6 @@ GRANT ALL ON TABLE "public"."request_templates" TO "service_role";
 
 GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE "public"."ride_change_parties" TO "authenticated";
 GRANT ALL ON TABLE "public"."ride_change_parties" TO "service_role";
-
-
-
-GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE "public"."ride_change_requests" TO "authenticated";
-GRANT ALL ON TABLE "public"."ride_change_requests" TO "service_role";
 
 
 

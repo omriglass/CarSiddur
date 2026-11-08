@@ -40,7 +40,7 @@ begin
   for d in 1..2 loop
     select * into r from public.rides where id=(select id from rcs_ids where k=format('ride%s_1',d));
     select * into other from public.rides where id=(select id from rcs_ids where k=format('ride%s_2',d));
-    insert into rcs_ids values(format('change%s',d),public.request_ride_change(r.id,other.car_id,other.starts_at,other.ends_at,r.version));
+    insert into rcs_ids values(format('change%s',d),public.request_ride_shorten(r.id,null,other.car_id,other.starts_at,other.ends_at,r.version,(select jsonb_agg(jsonb_build_object('ride_id',p->>'ride_id','cut','cancel')) from jsonb_array_elements(public.ride_shorten_options(r.id,other.car_id,other.starts_at,other.ends_at)->'parties') p),true));
   end loop;
 end $$;
 reset role;
@@ -103,7 +103,7 @@ declare r public.rides%rowtype; other public.rides%rowtype;
 begin
   select * into r from public.rides where id=(select id from rcs_ids where k='ride3_1');
   select * into other from public.rides where id=(select id from rcs_ids where k='ride3_2');
-  insert into rcs_ids values('change3',public.request_ride_change(r.id,other.car_id,other.starts_at,other.ends_at,r.version));
+  insert into rcs_ids values('change3',public.request_ride_shorten(r.id,null,other.car_id,other.starts_at,other.ends_at,r.version,(select jsonb_agg(jsonb_build_object('ride_id',p->>'ride_id','cut','cancel')) from jsonb_array_elements(public.ride_shorten_options(r.id,other.car_id,other.starts_at,other.ends_at)->'parties') p),true));
 end $$;
 select set_config('request.jwt.claims','{"sub":"00000000-0000-0000-0000-000000000104","role":"authenticated"}',true);
 do $$
