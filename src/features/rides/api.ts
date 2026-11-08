@@ -178,6 +178,8 @@ export interface MemberMergePreview {
   waivable: boolean;
   /** A car without a large trunk for large luggage — accepted after "אני מודע/ת" (REQ §13.175 g). */
   luggageProblem: boolean;
+  /** REQ §13.200: which car needs are missing (`luggageProblem` covers both); empty from an older server = large trunk. */
+  needs: ("large_trunk" | "tow_hitch")[];
   joinerDepartAt: string | null;
   joinerReturnAt: string | null;
   wantedDepartAt: string | null;
@@ -206,6 +208,7 @@ export async function memberMergePreview(rideId: string, sourceRideId: string, r
     longDetour: parseLongDetour(raw),
     waivable: raw.waivable === true,
     luggageProblem: raw.luggage_waivable === true,
+    needs: Array.isArray(raw.needs) ? raw.needs.filter((n): n is "large_trunk" | "tow_hitch" => n === "large_trunk" || n === "tow_hitch") : [],
     joinerDepartAt: isoOr(raw.joiner_depart_at), joinerReturnAt: isoOr(raw.joiner_return_at),
     wantedDepartAt: isoOr(raw.joiner_old_depart_at), wantedReturnAt: isoOr(raw.joiner_old_return_at),
     waitStartsAt: isoOr(raw.wait_starts_at), waitEndsAt: isoOr(raw.wait_ends_at),

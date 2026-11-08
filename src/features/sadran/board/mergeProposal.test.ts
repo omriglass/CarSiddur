@@ -192,6 +192,9 @@ describe("mergeVerdict / mergeRefusalText (REQ item 108 M1: the server decides)"
     expect(mergeRefusalText("seats")).toBe(he.mergedRide.invalid.seats_full);
     expect(mergeRefusalText("detour")).toBe(he.mergedRide.invalid.detour_too_long);
     expect(mergeRefusalText("luggage")).toBe(he.mergedRide.invalid.luggage_needs_large_trunk);
+    expect(mergeRefusalText("luggage", null, ["large_trunk"])).toBe(he.mergedRide.invalid.luggage_needs_large_trunk);
+    expect(mergeRefusalText("luggage", null, ["tow_hitch"])).toBe(he.mergedRide.invalid.tow_needs_hitch);
+    expect(mergeRefusalText("luggage", null, ["large_trunk", "tow_hitch"])).toBe(he.mergedRide.invalid.luggage_and_tow);
     expect(mergeRefusalText("boards_at_end")).toBe(he.mergedRide.invalid.boards_at_end);
     expect(mergeRefusalText("private_car")).toBe(he.mergedRide.invalid.private_car);
     expect(mergeRefusalText("turnaround")).toBe(he.mergedRide.invalid.turnaround_conflict);

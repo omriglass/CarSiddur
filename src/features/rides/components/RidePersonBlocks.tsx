@@ -34,6 +34,7 @@ export function RidePersonBlocks({ blocks }: { blocks: readonly PersonBlock[] })
                 block.seats.childSeats ? tv("rideDetail.person.childSeats", { count: String(block.seats.childSeats) }) : "",
                 block.seats.boosters ? tv("rideDetail.person.boosters", { count: String(block.seats.boosters) }) : "",
                 block.luggage ? he.rideDetail.person.luggage : "",
+                block.tow ? he.rideDetail.person.tow : "",
               ].filter(Boolean)
             : [];
           const departFlex = block.flex ? flexPairText(block.flex.departEarly, block.flex.departLate) : "";

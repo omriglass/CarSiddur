@@ -36,12 +36,12 @@ describe("REQ §13.200: the towing wording follows the missing needs", () => {
   it("towing only: its own title and body", () => {
     const info = detail({ needs: ["tow_hitch"] });
     expect(smallTrunkConfirmTitle(info)).toBe("צריך רכב גורר");
-    expect(smallTrunkConfirmBody(info)).toBe("הבקשה של דנה צריכה רכב גורר, וליונדאי 1 אין. לשבץ בכל זאת?");
+    expect(smallTrunkConfirmBody(info)).toBe("הבקשה של דנה צריכה רכב גורר, ויונדאי 1 אינו רכב גורר. לשבץ בכל זאת?");
   });
   it("both needs: one question naming both", () => {
     const info = detail({ needs: ["large_trunk", "tow_hitch"] });
     expect(smallTrunkConfirmTitle(info)).toBe("צריך תא מטען גדול ורכב גורר");
-    expect(smallTrunkConfirmBody(info)).toBe("הבקשה של דנה צריכה תא מטען גדול ורכב גורר, וליונדאי 1 אין. לשבץ בכל זאת?");
+    expect(smallTrunkConfirmBody(info)).toBe("הבקשה של דנה צריכה תא מטען גדול ורכב גורר, וליונדאי 1 אין תא מטען גדול והוא אינו רכב גורר. לשבץ בכל זאת?");
   });
   it("the hitch is taken: says for whom", () => {
     const info = detail({ needs: ["tow_hitch"], tow_taken_by: "רן" });

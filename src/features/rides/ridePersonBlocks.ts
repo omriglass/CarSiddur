@@ -47,6 +47,8 @@ export interface PersonBlock {
   flex: { departEarly: number | null; departLate: number | null; returnEarly: number | null; returnLate: number | null } | null;
   seats: { adults: number; childSeats: number; boosters: number } | null;
   luggage: boolean;
+  /** REQ §13.200: the request needs a towing car. */
+  tow: boolean;
   /** Companions, named children, guests riding on this person's request. */
   withNames: string[];
   note: string | null;
@@ -152,6 +154,7 @@ export function buildPersonBlocks({ ride, served, homeDestinationId, requests }:
       flex: flexOf(extras),
       seats: { adults: entry.adults, childSeats: entry.child_seats, boosters: entry.boosters },
       luggage: !!entry.luggage,
+      tow: !!entry.tow_hitch,
       withNames,
       note: extras?.note?.trim() || null,
       differs,
@@ -174,7 +177,7 @@ export function buildPersonBlocks({ ride, served, homeDestinationId, requests }:
 function emptyBlock(key: string, name: string, role: PersonBlockRole): PersonBlock {
   return {
     key, name, role, requestId: null, routeText: null, leg: null, outStops: [], returnStops: [], departAt: null, returnAt: null,
-    flex: null, seats: null, luggage: false, withNames: [], note: null, differs: [],
+    flex: null, seats: null, luggage: false, tow: false, withNames: [], note: null, differs: [],
   };
 }
 

@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { he, tv } from "@/i18n/he";
 import { showErrorToast } from "@/lib/rpc";
+import { smallTrunkConfirmTitle } from "@/lib/smallTrunk";
 import { formatTime } from "@/lib/time";
 
 import { memberMergePreview, memberMergeRide, type BoardRide, type MemberMergePreview } from "./api";
@@ -29,7 +30,10 @@ interface Flow {
 }
 
 /** Hebrew reason for a refused member merge (the board's codes, `he.mergedRide.invalid`). */
-function refusal(code: string | null): string {
+function refusal(code: string | null, needs: readonly ("large_trunk" | "tow_hitch")[]): string {
+  if (code === "luggage" && needs.includes("tow_hitch")) {
+    return needs.includes("large_trunk") ? he.mergedRide.invalid.luggage_and_tow : he.mergedRide.invalid.tow_needs_hitch;
+  }
   const map: Record<string, string> = {
     boards_at_end: he.mergedRide.invalid.boards_at_end, seats: he.mergedRide.invalid.seats_full, luggage: he.mergedRide.invalid.luggage_needs_large_trunk,
     turnaround: he.mergedRide.invalid.turnaround_conflict, window: he.mergedRide.invalid.window, time_far: he.mergedRide.invalid.time_far,
@@ -37,6 +41,12 @@ function refusal(code: string | null): string {
     already_on_ride: he.mergedRide.invalid.already_on_ride, leg_missing: he.mergedRide.invalid.leg_missing,
   };
   return (code ? map[code] : undefined) ?? he.mergedRide.invalid.unknown;
+}
+
+/** REQ §13.200: the "אני מודע/ת" step's body follows the missing needs (large trunk / towing / both). */
+function mergeNeedsBody(needs: readonly ("large_trunk" | "tow_hitch")[]): "rideEditing.mergeLuggageBody" | "rideEditing.mergeTowBody" | "rideEditing.mergeBothBody" {
+  if (!needs.includes("tow_hitch")) return "rideEditing.mergeLuggageBody";
+  return needs.includes("large_trunk") ? "rideEditing.mergeBothBody" : "rideEditing.mergeTowBody";
 }
 
 export function useMemberMerge({ departmentId, weekStart, onDone }: {
@@ -51,7 +61,7 @@ export function useMemberMerge({ departmentId, weekStart, onDone }: {
     try {
       const preview = await memberMergePreview(host.id, target.ride.id, target.requestId);
       if (!preview.ok && !preview.waivable) {
-        toast.error(refusal(preview.code));
+        toast.error(refusal(preview.code, preview.needs));
         return;
       }
       setFlow({ host, target, preview, step: "confirm", wait: false });
@@ -119,7 +129,8 @@ export function useMemberMerge({ departmentId, weekStart, onDone }: {
         }) : ""}
         confirmLabel={he.mergedRide.longDetourConfirm} loading={busy} onConfirm={() => { if (flow) next(flow, "detour"); }} />
       <ConfirmDialog open={flow?.step === "luggage"} onOpenChange={(open) => { if (!open) close(); }}
-        title={he.smallTrunk.confirmTitle} description={tv("rideEditing.mergeLuggageBody", { name: guest })}
+        title={smallTrunkConfirmTitle({ requestIds: [], names: [], carId: null, carName: null, needs: flow?.preview.needs ?? [], towTakenBy: null })}
+        description={tv(mergeNeedsBody(flow?.preview.needs ?? []), { name: guest })}
         confirmLabel={he.rideEditing.mergeLuggageAware} loading={busy} onConfirm={() => { if (flow) next(flow, "luggage"); }} />
       <ConfirmDialog open={flow?.step === "agree"} onOpenChange={(open) => { if (!open) close(); }}
         title={tv("rideEditing.mergeTalkedTitle", { names })} description={tv("rideEditing.mergeTalkedBody", { names })}

@@ -272,8 +272,12 @@ const MERGE_CODE_TEXT: Record<string, string> = {
 };
 
 /** Hebrew reason for a `merge_preview` refusal `code` (REQ item 108 M1). */
-export function mergeRefusalText(code: string | null | undefined, turnaroundSide?: "previous" | "next" | null): string {
+export function mergeRefusalText(code: string | null | undefined, turnaroundSide?: "previous" | "next" | null, needs?: readonly ("large_trunk" | "tow_hitch")[]): string {
   if (code === "turnaround" && turnaroundSide === "previous") return he.mergedRide.invalid.turnaround_conflict_previous;
+  // REQ §13.200: the `luggage` code covers both car needs - word it from the missing ones
+  if (code === "luggage" && needs?.includes("tow_hitch")) {
+    return needs.includes("large_trunk") ? he.mergedRide.invalid.luggage_and_tow : he.mergedRide.invalid.tow_needs_hitch;
+  }
   return (code ? MERGE_CODE_TEXT[code] : undefined) ?? he.mergedRide.invalid.unknown;
 }
 
@@ -314,7 +318,7 @@ export function mergeVerdict(states: readonly MergePreviewState[], twinInvalid: 
       if (!state.data.ok && state.data.waivable) {
         if (state.data.luggageWaivable ?? !state.data.longDetour) { waivable = true; for (const need of state.data.needs ?? []) needs.add(need); }
         if (state.data.longDetour) longDetour ??= state.data.longDetour;
-      } else if (!state.data.ok) return { status: "refused", message: mergeRefusalText(state.data.code, state.data.turnaroundSide), code: state.data.code, source: "server" };
+      } else if (!state.data.ok) return { status: "refused", message: mergeRefusalText(state.data.code, state.data.turnaroundSide, state.data.needs), code: state.data.code, source: "server" };
     } else if (state.isError || state.data === null) {
       if (twinInvalid) return { status: "refused", message: he.mergedRide.invalid[twinInvalid], code: twinInvalid, source: "twin" };
     } else {

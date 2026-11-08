@@ -887,6 +887,9 @@ export const heSadran = {
       boards_at_end: "אי אפשר לצרף — האיסוף אחרי היעד של הנסיעה",
       detour_too_long: "אי אפשר לצרף — העיקוף ארוך מהמותר",
       luggage_needs_large_trunk: "אי אפשר לצרף — ציוד רב דורש רכב עם תא מטען גדול",
+      /** REQ §13.200: the `luggage` code when the missing need is the hitch (`needs`). */
+      tow_needs_hitch: "אי אפשר לצרף — הבקשה צריכה רכב גורר, והרכב הזה אינו רכב גורר או שכבר גורר",
+      luggage_and_tow: "אי אפשר לצרף — הבקשה צריכה תא מטען גדול ורכב גורר",
       series_span_invalid: "טווח הימים אינו תקין — צריך לפחות יומיים רצופים מתוך ההזמנה",
       series_span_head: "קיצור ימים מוצע רק על הבקשה הראשונה בהזמנה הרב-יומית",
       series_span_shared: "אי אפשר לקצר — נוסעים נוספים משובצים באחת הנסיעות",

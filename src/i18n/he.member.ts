@@ -507,6 +507,7 @@ export const heMember = {
       childSeats: "מושבי ילדים: {{count}}",
       boosters: "בוסטרים: {{count}}",
       luggage: "ציוד גדול",
+      tow: "רכב גורר",
       differsStart: "ביקש/ה יציאה ב־{{asked}}, הנסיעה יוצאת ב־{{ride}}",
       differsRoute: "הנסיעה עוברת גם דרך: {{places}}",
     },

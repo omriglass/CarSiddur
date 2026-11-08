@@ -351,7 +351,7 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
       try { server = await fetchMergePreview(hostId, req.id, leg); } catch { return { leg: preferred, anchor }; }
       if (!server) return { leg: preferred, anchor };
       if (server.ok || server.waivable) return { leg, anchor: leg === "return" ? "return" : leg === "out" && anchor === "return" ? null : anchor };
-      firstRefusal ??= mergeRefusalText(server.code, server.turnaroundSide);
+      firstRefusal ??= mergeRefusalText(server.code, server.turnaroundSide, server.needs);
     }
     toast.error(firstRefusal ?? he.mergedRide.invalid.unknown);
     return null;
