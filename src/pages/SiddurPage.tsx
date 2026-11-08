@@ -41,6 +41,7 @@ import { useMyDepartments } from "@/features/auth/useMyDepartments";
 import { useSession } from "@/features/auth/useSession";
 import { useIsSadran } from "@/features/auth/useIsSadran";
 import { ownRequestIds } from "@/features/requests/filedForOther";
+import { useRideEditorsQuery } from "@/features/member/hooks";
 import { useMyRequests, useCancelRideMutation } from "@/features/requests/hooks";
 import { canEditRequest } from "@/features/requests/window";
 import { useCars, useDestinations, useRideTypes, useMaintenanceBlocks } from "@/features/fleet/hooks";
@@ -235,8 +236,13 @@ export function SiddurPage() {
   const mergedEditRequestId = selectedRideId
     ? (() => { const selected = rides.find((r) => r.id === selectedRideId); return selected && isMergedRide(selected) && isMyRide(selected) ? relatedRequestIdToEdit(selected) : undefined; })()
     : undefined;
-  const editHrefForRide = mergedEditRequestId ? paths.requests.edit(mergedEditRequestId)
-    : editableOwnRequest ? paths.requests.edit(editableOwnRequest.id) : relatedEditRequestId ? paths.requests.edit(relatedEditRequestId) : undefined;
+  const editRequestIdForRide = mergedEditRequestId ?? editableOwnRequest?.id ?? relatedEditRequestId;
+  const editHrefForRide = editRequestIdForRide ? paths.requests.edit(editRequestIdForRide) : undefined;
+  // REQ §13.202: the ride of someone who named me their editor — its edit says whose it is, and I may remove it as theirs.
+  const rideEditorsQuery = useRideEditorsQuery();
+  const editorOwnerIds = new Set((rideEditorsQuery.data?.grantedToMe ?? []).filter((link) => link.departmentId === departmentId).map((link) => link.person.id));
+  const editorOwnerOfEdit = editRequestIdForRide ? (myRequestsQuery.data ?? []).find((request) => request.id === editRequestIdForRide)?.editorOf ?? null : null;
+  const editLabelForRide = editorOwnerOfEdit ? tv("rideDetail.editRequestOf", { name: editorOwnerOfEdit }) : he.rideDetail.edit;
 
   // `?ride=<id>` (notification deep link, `notification_default_url`'s
   // `/siddur/<dept>/<week>?ride=<id>` case): open the ride detail sheet for it once, on the
@@ -343,7 +349,7 @@ export function SiddurPage() {
     const selected = selectedRideId ? rides.find((r) => r.id === selectedRideId) : undefined;
     if (!settingsQuery.data?.anyone_edits_rides || !isMyDepartment || !selected || selected.status === "cancelled"
         || (selected.ends_at && Date.parse(selected.ends_at) <= now.getTime())) {
-      return editHrefForRide ? [{ href: editHrefForRide, label: he.rideDetail.edit }] : [];
+      return editHrefForRide ? [{ href: editHrefForRide, label: editLabelForRide }] : [];
     }
     const targets = rideEditTargets(selected);
     return targets.map((target) => ({
@@ -852,7 +858,9 @@ export function SiddurPage() {
         locationBadge={selectedLocation}
         homeDestinationId={homeDestinationId}
         onOpenChange={(open) => !open && setSelectedRideId(null)}
-        onRemoveOwnRide={selectedRide?.id && selectedRide.driver_id === profileId && !volunteerDriverOf(selectedRide) && selectedRide.version != null ? () => cancelRideMutation.mutate({ rideId: selectedRide.id!, expectedVersion: selectedRide.version!, reason: "CANCELLED_BY_MEMBER" }, { onSuccess: () => setSelectedRideId(null) }) : undefined}
+        onRemoveOwnRide={selectedRide?.id && (selectedRide.driver_id === profileId || (!!selectedRide.driver_id && editorOwnerIds.has(selectedRide.driver_id))) && !volunteerDriverOf(selectedRide) && selectedRide.version != null
+          ? () => cancelRideMutation.mutate({ rideId: selectedRide.id!, expectedVersion: selectedRide.version!, reason: "CANCELLED_BY_MEMBER", asEditor: selectedRide.driver_id !== profileId }, { onSuccess: () => setSelectedRideId(null) })
+          : undefined}
         removingOwnRide={cancelRideMutation.isPending}
         onRemoveMe={(() => {
           const myKey = selectedRide ? myRidePersonKey(selectedRide, profileId) : null;

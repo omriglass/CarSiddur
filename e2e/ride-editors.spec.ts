@@ -2,8 +2,9 @@ import { expect, test } from "@playwright/test";
 
 import { paths } from "../src/app/routes";
 import { he, tv } from "../src/i18n/he";
-import { NEVO_DEPARTMENT_ID, newSignedInPage, SEEDED_USERS, serviceRoleClient } from "./helpers";
-import { dayOfWeek, insertRequest, PLACES, PROFILE_IDS, removeWeek } from "./request-form";
+import { NEVO_DEPARTMENT_ID, newSignedInPage, openRideDetails, SEEDED_USERS, serviceRoleClient } from "./helpers";
+import { publishedFixtureWeek } from "./published-week";
+import { dayOfWeek, insertRequest, PLACES, PROFILE_IDS, removeWeek, sharedCarIdByName, winterAt } from "./request-form";
 
 // REQ §13.202: member1 names member2 in Profile → פרטים אישיים ("מי יכול/ה לערוך את הנסיעות שלי"); member2 gets one inbox
 // message (no push), sees member1's request on "my rides" only with the eye-menu option on, and removes it — member1 is told.
@@ -69,6 +70,54 @@ test("a named editor sees and removes the owner's request; the owner is told (RE
   } finally {
     for (const context of contexts) await context.close().catch(() => undefined);
     await service.from("notifications").delete().eq("recipient_id", PROFILE_IDS.member1).eq("event", "ride_edited").contains("data", { variant: "editor_withdrew" });
+    await reset();
+  }
+});
+
+// The same on the siddur: the owner's published ride offers the editor "עריכת הבקשה של X" and "בטל נסיעה" (as the owner's).
+const PUBLISHED_WEEK = "2041-02-03";
+
+test("on the siddur the editor edits and removes the owner's ride (REQ §13.202)", { tag: ["@siddur", "@notifications"] }, async ({ browser }) => {
+  const service = serviceRoleClient();
+  const reset = async () => {
+    await service.from("ride_editors").delete().eq("owner_id", PROFILE_IDS.member1);
+    await service.from("notifications").delete().eq("recipient_id", PROFILE_IDS.member2).eq("event", "ride_editor_added");
+    await removeWeek(service, PUBLISHED_WEEK, { keepWeek: true });
+  };
+  await reset();
+  const admin = await publishedFixtureWeek(PUBLISHED_WEEK);
+  await admin.auth.signOut();
+  const contexts: { close: () => Promise<void> }[] = [];
+  try {
+    const day = dayOfWeek(PUBLISHED_WEEK, 2);
+    const requestId = await insertRequest(service, day, { week: PUBLISHED_WEEK, requester: PROFILE_IDS.member1, depart: "09:00", return: "13:00", destinationId: PLACES.haifa.id, status: "assigned" });
+    const { data: ride, error } = await service.from("rides").insert({
+      department_id: NEVO_DEPARTMENT_ID, week_start: PUBLISHED_WEEK, car_id: await sharedCarIdByName(service, "יונדאי 1"),
+      driver_id: PROFILE_IDS.member1, created_by: PROFILE_IDS.member1,
+      starts_at: winterAt(day, "09:00"), ends_at: winterAt(day, "13:00"), blocked_until: winterAt(day, "13:30"),
+      origin_id: PLACES.home.id, destination_id: PLACES.home.id, status: "confirmed",
+    }).select("id").single();
+    if (error) throw error;
+    await service.from("ride_requests").insert({ ride_id: ride!.id, request_id: requestId, role: "driver", leg: "both", car_mode: "keep" });
+    await service.from("ride_editors").insert({ department_id: NEVO_DEPARTMENT_ID, owner_id: PROFILE_IDS.member1, editor_id: PROFILE_IDS.member2 });
+
+    const editor = await newSignedInPage(browser, SEEDED_USERS.member2);
+    contexts.push(editor.context);
+    const page = editor.page;
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto(`/siddur/${NEVO_DEPARTMENT_ID}/${PUBLISHED_WEEK}?day=${day}`);
+    await openRideDetails(page, page.locator(`[data-ride-id="${ride!.id}"]:visible`).first());
+    const dialog = page.getByRole("dialog");
+    await expect(dialog.getByRole("link", { name: tv("rideDetail.editRequestOf", { name: SEEDED_USERS.member1.fullName }) })).toHaveAttribute("href", new RegExp(`/requests/${requestId}/edit`));
+    await dialog.getByRole("button", { name: he.action.cancelRide }).click();
+    await page.getByRole("alertdialog").or(page.getByRole("dialog").filter({ hasText: he.request.cancelConfirmTitle })).last()
+      .getByRole("button", { name: he.action.cancelRide }).click();
+    await expect.poll(async () => (await service.from("rides").select("status").eq("id", ride!.id).single()).data?.status).toBe("cancelled");
+    const { data: told } = await service.from("notifications").select("data").eq("recipient_id", PROFILE_IDS.member1).eq("event", "ride_edited");
+    expect(told!.some((n) => (n.data as { variant?: string }).variant === "editor_cancelled")).toBe(true);
+  } finally {
+    for (const context of contexts) await context.close().catch(() => undefined);
+    await service.from("notifications").delete().eq("recipient_id", PROFILE_IDS.member1).eq("event", "ride_edited").contains("data", { variant: "editor_cancelled" });
     await reset();
   }
 });

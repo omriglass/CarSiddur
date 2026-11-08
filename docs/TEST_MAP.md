@@ -238,7 +238,7 @@ migration `*my_rides_week_view*`; `supabase/tests/request_anchors.sql` (TEST 8).
 **Automated**:
 - Vitest: `npx vitest run src/features/requests/myWeek src/features/calendar`
 - SQL: `request_anchors.sql` (own-row `profiles.my_rides_week_view`, anon cannot read), `rls_smoke.sql` (TEST 18 column classification)
-- Playwright: `npx playwright test --grep "@my-week"` — `my-rides-options.spec.ts` (REQ §13.177 c/d: filed-for-others and co-parent options, not painted as mine on /my and the siddur), `ride-editors.spec.ts` (REQ §13.202: Profile "מי יכול/ה לערוך את הנסיעות שלי" names an editor — one inbox message, no push; the editor sees the owner's request only with "הצגת נסיעות של מי שנתנו לי לערוך" and removes it, the owner is told — suite `supabase/tests/ride_editors.sql`, unit `RideEditorsCard.test.tsx`, paths `features/member/components/RideEditorsCard.tsx`, migrations `*ride_editor*`), `unpublished-day.spec.ts`
+- Playwright: `npx playwright test --grep "@my-week"` — `my-rides-options.spec.ts` (REQ §13.177 c/d: filed-for-others and co-parent options, not painted as mine on /my and the siddur), `ride-editors.spec.ts` (REQ §13.202: Profile "מי יכול/ה לערוך את הנסיעות שלי" names an editor — one inbox message, no push; the editor sees the owner's request only with "הצגת נסיעות של מי שנתנו לי לערוך" and removes it, the owner is told; on the siddur the owner's ride sheet offers "עריכת הבקשה של X" and "בטל נסיעה" — suite `supabase/tests/ride_editors.sql`, unit `RideEditorsCard.test.tsx`, paths `features/member/components/RideEditorsCard.tsx`, migrations `*ride_editor*`), `unpublished-day.spec.ts`
 
 **QA script**:
 1. As `member1`, open `/my`, tap "שבוע". Expected: seven day columns headed like "א׳ 11.10", sideways
