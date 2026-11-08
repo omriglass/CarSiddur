@@ -7002,11 +7002,17 @@ CREATE OR REPLACE FUNCTION "public"."can_manage_car"("p_car_id" "uuid") RETURNS 
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
-  select public.is_admin() or (public.is_approved() and exists (
-    select 1 from public.cars c
-    where c.id = p_car_id
-      and (c.responsible_id = (select auth.uid())
-           or (c.type = 'shared' and public.is_car_admin(c.department_id)))));
+  select exists (
+    select 1 from public.profiles p
+     where p.id = (select auth.uid()) and p.approval_status = 'approved'
+       and (p.is_admin or exists (
+         select 1 from public.cars c
+          where c.id = p_car_id
+            and (c.responsible_id = p.id
+                 or (c.type = 'shared' and exists (
+                   select 1 from public.department_members dm
+                    where dm.department_id = c.department_id and dm.profile_id = p.id
+                      and dm.removed_at is null and dm.is_car_admin))))));
 $$;
 
 
@@ -7017,10 +7023,13 @@ CREATE OR REPLACE FUNCTION "public"."can_manage_operations"("p_department_id" "u
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
-  select public.is_admin() or (public.is_approved() and exists (
-    select 1 from public.department_members dm where dm.profile_id=(select auth.uid())
-      and dm.removed_at is null and dm.role='sadran'
-      and (p_department_id is null or dm.department_id=p_department_id)));
+  select exists (
+    select 1 from public.profiles p
+     where p.id = (select auth.uid()) and p.approval_status = 'approved'
+       and (p.is_admin or exists (
+         select 1 from public.department_members dm
+          where dm.profile_id = p.id and dm.removed_at is null and dm.role = 'sadran'
+            and (p_department_id is null or dm.department_id = p_department_id))));
 $$;
 
 
@@ -7031,7 +7040,15 @@ CREATE OR REPLACE FUNCTION "public"."can_manage_week"("_dept" "uuid", "_week" "d
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
-  select public.is_admin() or public.is_sadran(_dept, _week);
+  select exists (
+    select 1 from public.profiles p
+     where p.id = (select auth.uid()) and p.approval_status = 'approved'
+       and (p.is_admin or exists (
+         select 1 from public.department_members dm
+          where dm.department_id = _dept and dm.profile_id = p.id and dm.removed_at is null
+            and (dm.role = 'sadran' or exists (
+              select 1 from public.sadran_assignments sa
+               where sa.department_id = _dept and sa.week_start = _week and sa.profile_id = p.id)))));
 $$;
 
 
@@ -10987,10 +11004,10 @@ CREATE OR REPLACE FUNCTION "public"."is_car_admin"("_dept" "uuid") RETURNS boole
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
-  select public.is_approved() and exists (
-    select 1 from public.department_members dm
-    where dm.department_id = _dept and dm.profile_id = (select auth.uid())
-      and dm.removed_at is null and dm.is_car_admin);
+  select exists (
+    select 1 from public.department_members dm join public.profiles p on p.id = dm.profile_id
+     where dm.department_id = _dept and dm.profile_id = (select auth.uid()) and dm.removed_at is null
+       and dm.is_car_admin and p.approval_status = 'approved');
 $$;
 
 
@@ -11001,8 +11018,9 @@ CREATE OR REPLACE FUNCTION "public"."is_car_responsible"("_car_id" "uuid") RETUR
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
-  select public.is_approved() and exists (
-    select 1 from public.cars c where c.id = _car_id and c.responsible_id = (select auth.uid()));
+  select exists (
+    select 1 from public.cars c join public.profiles p on p.id = c.responsible_id
+     where c.id = _car_id and c.responsible_id = (select auth.uid()) and p.approval_status = 'approved');
 $$;
 
 
@@ -11061,9 +11079,13 @@ CREATE OR REPLACE FUNCTION "public"."is_sadran"("_dept" "uuid", "_week" "date") 
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
-  select public.is_sadran_any(_dept) or (public.member_of(_dept) and exists (
-    select 1 from public.sadran_assignments sa where sa.department_id=_dept
-      and sa.week_start=_week and sa.profile_id=(select auth.uid())));
+  select exists (
+    select 1 from public.department_members dm join public.profiles p on p.id = dm.profile_id
+     where dm.department_id = _dept and dm.profile_id = (select auth.uid()) and dm.removed_at is null
+       and p.approval_status = 'approved'
+       and (dm.role = 'sadran' or exists (
+         select 1 from public.sadran_assignments sa
+          where sa.department_id = _dept and sa.week_start = _week and sa.profile_id = dm.profile_id)));
 $$;
 
 
@@ -11074,9 +11096,10 @@ CREATE OR REPLACE FUNCTION "public"."is_sadran_any"("_dept" "uuid") RETURNS bool
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
-  select public.is_approved() and exists (
-    select 1 from public.department_members dm where dm.department_id=_dept
-      and dm.profile_id=(select auth.uid()) and dm.removed_at is null and dm.role='sadran');
+  select exists (
+    select 1 from public.department_members dm join public.profiles p on p.id = dm.profile_id
+     where dm.department_id = _dept and dm.profile_id = (select auth.uid()) and dm.removed_at is null
+       and dm.role = 'sadran' and p.approval_status = 'approved');
 $$;
 
 
@@ -11916,9 +11939,10 @@ CREATE OR REPLACE FUNCTION "public"."member_of"("_dept" "uuid") RETURNS boolean
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
-  select public.is_approved() and exists (
-    select 1 from public.department_members dm
-    where dm.department_id = _dept and dm.profile_id = (select auth.uid()) and dm.removed_at is null);
+  select exists (
+    select 1 from public.department_members dm join public.profiles p on p.id = dm.profile_id
+     where dm.department_id = _dept and dm.profile_id = (select auth.uid()) and dm.removed_at is null
+       and p.approval_status = 'approved');
 $$;
 
 
@@ -16834,9 +16858,13 @@ CREATE OR REPLACE FUNCTION "public"."request_served_by_public_ride"("_request_id
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
-  select exists(select 1 from public.ride_requests rr join public.rides r on r.id=rr.ride_id
-    where rr.request_id=_request_id and r.status not in ('draft','cancelled')
-      and public.is_day_public(r.department_id,r.week_start,(r.starts_at at time zone 'Asia/Jerusalem')::date));
+  select exists (
+    select 1 from public.ride_requests rr
+      join public.rides r on r.id = rr.ride_id
+      join public.weeks w on w.department_id = r.department_id and w.week_start = r.week_start
+     where rr.request_id = _request_id and r.status not in ('draft', 'cancelled')
+       and w.phase in ('published', 'live', 'archived')
+       and (r.starts_at at time zone 'Asia/Jerusalem')::date = any(w.published_days));
 $$;
 
 
@@ -18191,12 +18219,12 @@ CREATE OR REPLACE FUNCTION "public"."ride_routes_json"("p_ride_ids" "uuid"[]) RE
   ),
   me as (select (select auth.uid()) is null as service, public.is_approved() as approved),
   wk as (
-    select distinct r.department_id, r.week_start, public.can_manage_week(r.department_id, r.week_start) as manages
-      from r
+    select w.department_id, w.week_start, public.can_manage_week(w.department_id, w.week_start) as manages
+      from (select distinct r.department_id, r.week_start from r) w
   ),
   dy as (
-    select distinct r.department_id, r.week_start, r.day, public.is_day_public(r.department_id, r.week_start, r.day) as public_day
-      from r, me where not me.service and me.approved
+    select y.department_id, y.week_start, y.day, public.is_day_public(y.department_id, y.week_start, y.day) as public_day
+      from (select distinct r.department_id, r.week_start, r.day from r, me where not me.service and me.approved) y
   )
   select r.id,
          case when me.service or wk.manages or (me.approved and r.status <> 'draft' and coalesce(dy.public_day, false)) then
@@ -23298,9 +23326,9 @@ CREATE TABLE IF NOT EXISTS "public"."requests" (
     CONSTRAINT "requests_depart_qh_ck" CHECK ("public"."is_quarter_hour"("depart_at")),
     CONSTRAINT "requests_destination_ck" CHECK ((("destination_id" IS NOT NULL) OR ("destination_text" IS NOT NULL))),
     CONSTRAINT "requests_flex_depart_early_ck" CHECK (("flex_depart_early" = ANY (ARRAY['00:00:00'::interval, '00:15:00'::interval, '00:30:00'::interval, '01:00:00'::interval, '02:00:00'::interval, '1 day'::interval]))),
-    CONSTRAINT "requests_flex_depart_late_ck" CHECK ((("flex_depart_late" = ANY (ARRAY['00:00:00'::interval, '00:15:00'::interval, '00:30:00'::interval, '01:00:00'::interval, '02:00:00'::interval, '1 day'::interval])) OR ("duration_locked" AND ("flex_depart_late" > '00:00:00'::interval) AND ("flex_depart_late" <= '1 day'::interval) AND (((EXTRACT("epoch" FROM "flex_depart_late"))::bigint % (900)::bigint) = 0)))),
+    CONSTRAINT "requests_flex_depart_late_ck" CHECK ((("flex_depart_late" = ANY (ARRAY['00:00:00'::interval, '00:15:00'::interval, '00:30:00'::interval, '01:00:00'::interval, '02:00:00'::interval, '1 day'::interval])) OR ("duration_locked" AND ("flex_depart_late" > '00:00:00'::interval) AND ("flex_depart_late" <= '1 day'::interval) AND (((EXTRACT(epoch FROM "flex_depart_late"))::bigint % (900)::bigint) = 0)))),
     CONSTRAINT "requests_flex_return_early_ck" CHECK (("flex_return_early" = ANY (ARRAY['00:00:00'::interval, '00:15:00'::interval, '00:30:00'::interval, '01:00:00'::interval, '02:00:00'::interval, '1 day'::interval]))),
-    CONSTRAINT "requests_flex_return_late_ck" CHECK ((("flex_return_late" = ANY (ARRAY['00:00:00'::interval, '00:15:00'::interval, '00:30:00'::interval, '01:00:00'::interval, '02:00:00'::interval, '1 day'::interval])) OR ("duration_locked" AND ("flex_return_late" > '00:00:00'::interval) AND ("flex_return_late" <= '1 day'::interval) AND (((EXTRACT("epoch" FROM "flex_return_late"))::bigint % (900)::bigint) = 0)))),
+    CONSTRAINT "requests_flex_return_late_ck" CHECK ((("flex_return_late" = ANY (ARRAY['00:00:00'::interval, '00:15:00'::interval, '00:30:00'::interval, '01:00:00'::interval, '02:00:00'::interval, '1 day'::interval])) OR ("duration_locked" AND ("flex_return_late" > '00:00:00'::interval) AND ("flex_return_late" <= '1 day'::interval) AND (((EXTRACT(epoch FROM "flex_return_late"))::bigint % (900)::bigint) = 0)))),
     CONSTRAINT "requests_keep_car_at_destination_ck" CHECK (((NOT "keep_car_at_destination") OR (("trip_type" = 'drop_off'::"public"."trip_type") AND ("trip_shape" = 'round_trip'::"public"."trip_shape")))),
     CONSTRAINT "requests_leave_dest_anchor_ck" CHECK ((("leave_dest_at" IS NULL) OR ("return_anchor" = 'leave'::"public"."time_anchor"))),
     CONSTRAINT "requests_leave_dest_qh_ck" CHECK ("public"."is_quarter_hour"("leave_dest_at")),
@@ -23672,6 +23700,17 @@ CREATE OR REPLACE FUNCTION "public"."week_board_rides_rows"("p_department_id" "u
   vrp as materialized (
     select x.* from public.ride_passengers x where x.ride_id in (select vr.id from vr)
   ),
+  -- PF1: the part of each ride a request rides, once per (ride, request) instead of once per person:
+  -- its first stored leg; only a passenger's out leg can be a reversed one-way guest (ride_request_ride_leg).
+  -- Like ride_request_ride_leg, no leg for a caller outside the department (public rides are readable by all).
+  vleg as materialized (
+    select f.ride_id, f.request_id,
+           case when f.role = 'passenger' and f.leg = 'out' then public.ride_request_ride_leg(f.ride_id, f.request_id)
+                else f.leg end as leg
+      from (select distinct on (x.ride_id, x.request_id) x.ride_id, x.request_id, x.role, x.leg
+              from vrr x order by x.ride_id, x.request_id, x.created_at) f
+     where (select public.member_of(p_department_id) or public.is_admin() or (select auth.uid()) is null)
+  ),
   -- O28-8: every ride's passenger list in one pass (was a correlated subquery per ride, ~1 ms each)
   vpeo as (
     select r.id as ride_id, ('driver:'::text || r.driver_id) as key, 'driver'::text as source,
@@ -23715,7 +23754,7 @@ CREATE OR REPLACE FUNCTION "public"."week_board_rides_rows"("p_department_id" "u
                                         'seat_kind', pe.seat_kind, 'added_by', pe.added_by,
                                         'removable', pe.removable,
                                         'leg', coalesce((select x.leg from vrp x where x.id = pe.ride_passenger_id),
-                                          public.ride_request_ride_leg(pe.ride_id, pe.request_id)))
+                                          (select lg.leg from vleg lg where lg.ride_id = pe.ride_id and lg.request_id = pe.request_id)))
                      order by pe.is_driver desc, pe.display_name, pe.key) as people
       from vpeo pe
      where p_ride_ids is null or pe.ride_id = any(p_ride_ids)
@@ -25216,28 +25255,28 @@ CREATE TABLE IF NOT EXISTS "public"."request_templates" (
     "repeat_anchor_week" "date",
     CONSTRAINT "request_templates_adults_ck" CHECK (("adults" >= 1)),
     CONSTRAINT "request_templates_arrive_by_anchor_ck" CHECK ((("arrive_by_time" IS NULL) OR ("depart_anchor" = 'arrive'::"public"."time_anchor"))),
-    CONSTRAINT "request_templates_arrive_by_qh_ck" CHECK ((("arrive_by_time" IS NULL) OR (((EXTRACT("minute" FROM "arrive_by_time"))::integer % 15) = 0))),
+    CONSTRAINT "request_templates_arrive_by_qh_ck" CHECK ((("arrive_by_time" IS NULL) OR (((EXTRACT(minute FROM "arrive_by_time"))::integer % 15) = 0))),
     CONSTRAINT "request_templates_boosters_ck" CHECK (("boosters" >= 0)),
     CONSTRAINT "request_templates_child_seats_ck" CHECK (("child_seats" >= 0)),
     CONSTRAINT "request_templates_depart_ck" CHECK ((("depart_dow" IS NULL) = ("trip_shape" = 'one_way_from'::"public"."trip_shape"))),
     CONSTRAINT "request_templates_depart_dow_ck" CHECK ((("depart_dow" IS NULL) OR (("depart_dow" >= 0) AND ("depart_dow" <= 6)))),
     CONSTRAINT "request_templates_destination_ck" CHECK ((("destination_id" IS NOT NULL) OR ("destination_text" IS NOT NULL))),
     CONSTRAINT "request_templates_flex_depart_early_ck" CHECK (("flex_depart_early" = ANY (ARRAY['00:00:00'::interval, '00:15:00'::interval, '00:30:00'::interval, '01:00:00'::interval, '02:00:00'::interval, '1 day'::interval]))),
-    CONSTRAINT "request_templates_flex_depart_late_ck" CHECK ((("flex_depart_late" = ANY (ARRAY['00:00:00'::interval, '00:15:00'::interval, '00:30:00'::interval, '01:00:00'::interval, '02:00:00'::interval, '1 day'::interval])) OR ("duration_locked" AND ("flex_depart_late" > '00:00:00'::interval) AND ("flex_depart_late" <= '1 day'::interval) AND (((EXTRACT("epoch" FROM "flex_depart_late"))::bigint % (900)::bigint) = 0)))),
+    CONSTRAINT "request_templates_flex_depart_late_ck" CHECK ((("flex_depart_late" = ANY (ARRAY['00:00:00'::interval, '00:15:00'::interval, '00:30:00'::interval, '01:00:00'::interval, '02:00:00'::interval, '1 day'::interval])) OR ("duration_locked" AND ("flex_depart_late" > '00:00:00'::interval) AND ("flex_depart_late" <= '1 day'::interval) AND (((EXTRACT(epoch FROM "flex_depart_late"))::bigint % (900)::bigint) = 0)))),
     CONSTRAINT "request_templates_flex_return_early_ck" CHECK (("flex_return_early" = ANY (ARRAY['00:00:00'::interval, '00:15:00'::interval, '00:30:00'::interval, '01:00:00'::interval, '02:00:00'::interval, '1 day'::interval]))),
-    CONSTRAINT "request_templates_flex_return_late_ck" CHECK ((("flex_return_late" = ANY (ARRAY['00:00:00'::interval, '00:15:00'::interval, '00:30:00'::interval, '01:00:00'::interval, '02:00:00'::interval, '1 day'::interval])) OR ("duration_locked" AND ("flex_return_late" > '00:00:00'::interval) AND ("flex_return_late" <= '1 day'::interval) AND (((EXTRACT("epoch" FROM "flex_return_late"))::bigint % (900)::bigint) = 0)))),
+    CONSTRAINT "request_templates_flex_return_late_ck" CHECK ((("flex_return_late" = ANY (ARRAY['00:00:00'::interval, '00:15:00'::interval, '00:30:00'::interval, '01:00:00'::interval, '02:00:00'::interval, '1 day'::interval])) OR ("duration_locked" AND ("flex_return_late" > '00:00:00'::interval) AND ("flex_return_late" <= '1 day'::interval) AND (((EXTRACT(epoch FROM "flex_return_late"))::bigint % (900)::bigint) = 0)))),
     CONSTRAINT "request_templates_keep_car_at_destination_ck" CHECK (((NOT "keep_car_at_destination") OR (("trip_type" = 'drop_off'::"public"."trip_type") AND ("trip_shape" = 'round_trip'::"public"."trip_shape")))),
     CONSTRAINT "request_templates_leave_dest_anchor_ck" CHECK ((("leave_dest_time" IS NULL) OR ("return_anchor" = 'leave'::"public"."time_anchor"))),
-    CONSTRAINT "request_templates_leave_dest_qh_ck" CHECK ((("leave_dest_time" IS NULL) OR (((EXTRACT("minute" FROM "leave_dest_time"))::integer % 15) = 0))),
+    CONSTRAINT "request_templates_leave_dest_qh_ck" CHECK ((("leave_dest_time" IS NULL) OR (((EXTRACT(minute FROM "leave_dest_time"))::integer % 15) = 0))),
     CONSTRAINT "request_templates_one_way_mode_ck" CHECK (((("one_way_car_mode" IS NULL) = ("trip_shape" = 'round_trip'::"public"."trip_shape")) AND (("one_way_car_mode" IS NULL) OR ("one_way_car_mode" = ANY (ARRAY['relay'::"public"."leg_car_mode", 'passenger'::"public"."leg_car_mode"]))))),
     CONSTRAINT "request_templates_origin_ck" CHECK ((("origin_id" IS NOT NULL) OR ("origin_text" IS NOT NULL))),
     CONSTRAINT "request_templates_planned_ck" CHECK ((("schedule" = 'dated'::"public"."template_schedule") = ("planned_date" IS NOT NULL))),
     CONSTRAINT "request_templates_planned_until_ck" CHECK ((("planned_until" IS NULL) OR (("planned_date" IS NOT NULL) AND ("planned_until" > "planned_date") AND ("planned_until" <= ("planned_date" + 30))))),
-    CONSTRAINT "request_templates_repeat_anchor_week_sunday_ck" CHECK ((("repeat_anchor_week" IS NULL) OR (EXTRACT("dow" FROM "repeat_anchor_week") = (0)::numeric))),
+    CONSTRAINT "request_templates_repeat_anchor_week_sunday_ck" CHECK ((("repeat_anchor_week" IS NULL) OR (EXTRACT(dow FROM "repeat_anchor_week") = (0)::numeric))),
     CONSTRAINT "request_templates_repeat_every_weeks_ck" CHECK ((("repeat_every_weeks" >= 1) AND ("repeat_every_weeks" <= 8))),
     CONSTRAINT "request_templates_return_ck" CHECK ((("return_dow" IS NULL) = ("trip_shape" = 'one_way_to'::"public"."trip_shape"))),
     CONSTRAINT "request_templates_return_dow_ck" CHECK ((("return_dow" IS NULL) OR (("return_dow" >= 0) AND ("return_dow" <= 6)))),
-    CONSTRAINT "request_templates_snoozed_until_week_sunday_ck" CHECK ((("snoozed_until_week" IS NULL) OR (EXTRACT("dow" FROM "snoozed_until_week") = (0)::numeric)))
+    CONSTRAINT "request_templates_snoozed_until_week_sunday_ck" CHECK ((("snoozed_until_week" IS NULL) OR (EXTRACT(dow FROM "snoozed_until_week") = (0)::numeric)))
 );
 
 ALTER TABLE ONLY "public"."request_templates" FORCE ROW LEVEL SECURITY;
@@ -25445,7 +25484,7 @@ CREATE TABLE IF NOT EXISTS "public"."sadran_assignments" (
     "week_start" "date",
     "assigned_by" "uuid",
     "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
-    CONSTRAINT "sadran_assignments_week_dow_ck" CHECK ((("week_start" IS NULL) OR (EXTRACT("dow" FROM "week_start") = (0)::numeric)))
+    CONSTRAINT "sadran_assignments_week_dow_ck" CHECK ((("week_start" IS NULL) OR (EXTRACT(dow FROM "week_start") = (0)::numeric)))
 );
 
 ALTER TABLE ONLY "public"."sadran_assignments" FORCE ROW LEVEL SECURITY;
@@ -25897,7 +25936,7 @@ CREATE TABLE IF NOT EXISTS "public"."weeks" (
     "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
     "published_days" "date"[] DEFAULT '{}'::"date"[] NOT NULL,
     CONSTRAINT "weeks_time_order_ck" CHECK ((("open_at" < "close_at") AND ("close_at" <= "publish_at"))),
-    CONSTRAINT "weeks_week_start_sunday_ck" CHECK ((EXTRACT("dow" FROM "week_start") = (0)::numeric))
+    CONSTRAINT "weeks_week_start_sunday_ck" CHECK ((EXTRACT(dow FROM "week_start") = (0)::numeric))
 );
 
 ALTER TABLE ONLY "public"."weeks" FORCE ROW LEVEL SECURITY;
@@ -26048,7 +26087,7 @@ CREATE OR REPLACE VIEW "public"."v_request_template_suggestions" WITH ("security
                     "t_1"."guest_passenger_names",
                     "t_1"."notes"
                    FROM ((("public"."request_templates" "t_1"
-                     JOIN "public"."weeks" "w" ON ((("w"."department_id" = "t_1"."department_id") AND ("w"."phase" = 'open'::"public"."week_phase") AND ((("t_1"."schedule" = 'weekly'::"public"."template_schedule") AND (("t_1"."repeat_every_weeks" = 1) OR (((("w"."week_start" - COALESCE("t_1"."repeat_anchor_week", "w"."week_start")) / 7) % ("t_1"."repeat_every_weeks")::integer) = 0))) OR ("w"."week_start" = ("t_1"."planned_date" - (EXTRACT("dow" FROM "t_1"."planned_date"))::integer))))))
+                     JOIN "public"."weeks" "w" ON ((("w"."department_id" = "t_1"."department_id") AND ("w"."phase" = 'open'::"public"."week_phase") AND ((("t_1"."schedule" = 'weekly'::"public"."template_schedule") AND (("t_1"."repeat_every_weeks" = 1) OR (((("w"."week_start" - COALESCE("t_1"."repeat_anchor_week", "w"."week_start")) / 7) % ("t_1"."repeat_every_weeks")::integer) = 0))) OR ("w"."week_start" = ("t_1"."planned_date" - (EXTRACT(dow FROM "t_1"."planned_date"))::integer))))))
                      LEFT JOIN "public"."destinations" "dst" ON (("dst"."id" = "t_1"."destination_id")))
                      JOIN "public"."ride_types" "rt" ON (("rt"."id" = "t_1"."ride_type_id")))
                   WHERE (("t_1"."requester_id" = ( SELECT "auth"."uid"() AS "uid")) AND "t_1"."is_active" AND ("t_1"."cancelled_at" IS NULL) AND (("t_1"."snoozed_until_week" IS NULL) OR ("t_1"."snoozed_until_week" <= "w"."week_start")) AND (NOT (EXISTS ( SELECT 1
@@ -26072,7 +26111,7 @@ CREATE OR REPLACE VIEW "public"."v_ride_car_neighbours" WITH ("security_invoker"
     "nx"."people" AS "next_people",
         CASE
             WHEN ("nx"."id" IS NULL) THEN NULL::integer
-            ELSE ("round"((EXTRACT("epoch" FROM ("nx"."starts_at" - "r"."ends_at")) / (60)::numeric)))::integer
+            ELSE ("round"((EXTRACT(epoch FROM ("nx"."starts_at" - "r"."ends_at")) / (60)::numeric)))::integer
         END AS "next_gap_minutes",
     COALESCE((("nx"."id" IS NOT NULL) AND (("nx"."starts_at" - "r"."ends_at") <= "make_interval"("mins" => "th"."minutes"))), false) AS "next_tight",
     "pv"."id" AS "prev_ride_id",
@@ -26082,7 +26121,7 @@ CREATE OR REPLACE VIEW "public"."v_ride_car_neighbours" WITH ("security_invoker"
     "pv"."people" AS "prev_people",
         CASE
             WHEN ("pv"."id" IS NULL) THEN NULL::integer
-            ELSE ("round"((EXTRACT("epoch" FROM ("r"."starts_at" - "pv"."ends_at")) / (60)::numeric)))::integer
+            ELSE ("round"((EXTRACT(epoch FROM ("r"."starts_at" - "pv"."ends_at")) / (60)::numeric)))::integer
         END AS "prev_gap_minutes",
     COALESCE((("pv"."id" IS NOT NULL) AND (("r"."starts_at" - "pv"."ends_at") <= "make_interval"("mins" => "th"."minutes"))), false) AS "prev_tight"
    FROM ((("public"."rides" "r"
