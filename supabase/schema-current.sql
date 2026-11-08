@@ -30215,7 +30215,7 @@ CREATE POLICY "request_templates_update" ON "public"."request_templates" FOR UPD
 ALTER TABLE "public"."requests" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "requests_select" ON "public"."requests" FOR SELECT TO "authenticated" USING ((("requester_id" = ( SELECT "auth"."uid"() AS "uid")) OR ("filed_by" = ( SELECT "auth"."uid"() AS "uid")) OR "public"."is_request_companion"("id") OR "public"."is_sadran"("department_id", "week_start") OR "public"."is_admin"() OR ("public"."is_approved"() AND "public"."is_week_public"("department_id", "week_start") AND "public"."request_served_by_public_ride"("id"))));
+CREATE POLICY "requests_select" ON "public"."requests" FOR SELECT TO "authenticated" USING ((("requester_id" = ( SELECT "auth"."uid"() AS "uid")) OR ("filed_by" = ( SELECT "auth"."uid"() AS "uid")) OR ( SELECT "public"."is_admin"() AS "is_admin") OR "public"."is_sadran"("department_id", "week_start") OR "public"."is_request_companion"("id") OR (( SELECT "public"."is_approved"() AS "is_approved") AND "public"."is_week_public"("department_id", "week_start") AND "public"."request_served_by_public_ride"("id"))));
 
 
 
