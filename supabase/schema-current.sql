@@ -11829,6 +11829,10 @@ begin
   local_day:=(p_now at time zone 'Asia/Jerusalem')::date;
   for offset_weeks in 0..greatest(0,settings.weeks_open_ahead) loop
     target:=local_day-extract(dow from local_day)::int+7*offset_weeks;
+    if exists(select 1 from public.weeks w
+               where w.department_id=p_department_id and w.week_start=target and w.phase<>'upcoming') then
+      continue;
+    end if;
     select * into times from public.week_phase_timestamps(settings, target);
     if times.open_at > p_now then continue; end if;
     insert into public.weeks(department_id,week_start,phase,open_at,close_at,publish_at)
@@ -13880,11 +13884,54 @@ begin
       union
       select d.home_destination_id from public.departments d
         where d.id = p_department_id and d.home_destination_id is not null
+    ),
+    pairs as (
+      select a.place_id as from_id, b.place_id as to_id,
+             df.id as f_id, df.department_id as f_dept, df.lat as f_lat, df.lng as f_lng,
+             df.distance_km as f_km, df.travel_minutes as f_min,
+             dt.id as t_id, dt.department_id as t_dept, dt.lat as t_lat, dt.lng as t_lng,
+             dt.distance_km as t_km, dt.travel_minutes as t_min
+        from places a
+        join places b on a.place_id < b.place_id
+        left join public.destinations df on df.id = a.place_id
+        left join public.destinations dt on dt.id = b.place_id
+    ),
+    judged as (
+      select p.*, r.distance_km as r_km, r.travel_minutes as r_min, r.found as r_found,
+             exists(select 1 from public.departments d where d.id = p.f_dept and d.home_destination_id = p.from_id) as home_from,
+             exists(select 1 from public.departments d where d.id = p.t_dept and d.home_destination_id = p.to_id) as home_to,
+             case when p.f_lat is not null and p.f_lng is not null and p.t_lat is not null and p.t_lng is not null then
+               (6371 * asin(sqrt(
+                   power(sin(radians(p.t_lat - p.f_lat) / 2), 2)
+                   + cos(radians(p.f_lat)) * cos(radians(p.t_lat)) * power(sin(radians(p.t_lng - p.f_lng) / 2), 2)
+                 ))) * 1.3
+             end as est_km
+        from pairs p
+        left join lateral (
+          select pd.distance_km, pd.travel_minutes, true as found from public.place_distances pd
+           where pd.department_id = p.f_dept
+             and ((pd.from_id = p.from_id and pd.to_id = p.to_id) or (pd.from_id = p.to_id and pd.to_id = p.from_id))
+           order by (pd.from_id = p.from_id) desc
+           limit 1) r on true
     )
-    select a.place_id, b.place_id, pt.distance_km, pt.travel_minutes, pt.source
-    from places a
-    join places b on a.place_id < b.place_id
-    cross join lateral public.place_travel(a.place_id, b.place_id) pt;
+    select j.from_id, j.to_id,
+           case when j.f_id is null or j.t_id is null then null::numeric
+                when j.r_found then j.r_km
+                when j.home_from and not j.home_to then j.t_km
+                when j.home_to and not j.home_from then j.f_km
+                else round(j.est_km::numeric, 1) end,
+           case when j.f_id is null or j.t_id is null then null::int
+                when j.r_found then j.r_min
+                when j.home_from and not j.home_to then j.t_min
+                when j.home_to and not j.home_from then j.f_min
+                else round(j.est_km::numeric)::int end,
+           case when j.f_id is null or j.t_id is null then null::text
+                when j.r_found then 'route'::text
+                when j.home_from and not j.home_to then 'preset'::text
+                when j.home_to and not j.home_from then 'preset'::text
+                when j.est_km is not null then 'estimate'::text
+                else null::text end
+      from judged j;
 end;
 $$;
 
@@ -25791,8 +25838,10 @@ CREATE OR REPLACE VIEW "public"."v_car_locations" WITH ("security_invoker"='true
     "dl"."name" AS "location_name",
     "r"."id" AS "leaving_ride_id",
     ("r"."overnight_ack_by" IS NOT NULL) AS "overnight_acknowledged"
-   FROM (("public"."rides" "r"
+   FROM ((("public"."rides" "r"
      JOIN "public"."destinations" "dl" ON (("dl"."id" = "r"."destination_id")))
+     JOIN LATERAL ( SELECT "public"."car_base_location"("r"."car_id") AS "base_id"
+         OFFSET 0) "b" ON (true))
      LEFT JOIN LATERAL ( SELECT "n_1"."starts_at"
            FROM "public"."rides" "n_1"
           WHERE (("n_1"."car_id" = "r"."car_id") AND ("n_1"."status" <> 'cancelled'::"public"."ride_status") AND ("n_1"."starts_at" > "r"."ends_at") AND ("n_1"."auto_relocation" OR (EXISTS ( SELECT 1
@@ -25802,7 +25851,7 @@ CREATE OR REPLACE VIEW "public"."v_car_locations" WITH ("security_invoker"='true
          LIMIT 1) "n" ON (true))
   WHERE (("r"."status" <> 'cancelled'::"public"."ride_status") AND ("r"."auto_relocation" OR (EXISTS ( SELECT 1
            FROM "public"."ride_requests" "x"
-          WHERE ("x"."ride_id" = "r"."id")))) AND ("r"."destination_id" IS DISTINCT FROM "public"."car_base_location"("r"."car_id")));
+          WHERE ("x"."ride_id" = "r"."id")))) AND ("r"."destination_id" IS DISTINCT FROM "b"."base_id"));
 
 
 ALTER VIEW "public"."v_car_locations" OWNER TO "postgres";
