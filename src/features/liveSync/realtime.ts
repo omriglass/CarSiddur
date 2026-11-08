@@ -13,13 +13,18 @@ import type { ChannelHandlers, WatchScope } from "./watcher";
  * and closes the socket when the last channel is removed.
  *
  * Two screens of one tab watching the same topic share one channel (reference counted), so closing
- * one never tears down the other's.
+ * one never tears down the other's. A channel nobody watches any more stays open for
+ * `LEAVE_LINGER_MS` first: moving between screens (siddur ⇄ my rides) unmounts the old screen before
+ * the new one subscribes, and every join costs a `realtime.authorize` call in the database (PF1).
  */
+export const LEAVE_LINGER_MS = 60_000;
+
 interface SharedChannel {
   channel: RealtimeChannel;
   listeners: Set<ChannelHandlers>;
   status: "connecting" | "live" | "failed";
   detail?: string;
+  lingerTimer?: ReturnType<typeof setTimeout>;
 }
 
 const shared = new Map<string, SharedChannel>();
@@ -75,12 +80,19 @@ function open(topic: string): SharedChannel {
 export function subscribeWeekTopic(departmentId: string, weekStart: string, scope: WatchScope, handlers: ChannelHandlers): () => void {
   const topic = weekTopic(departmentId, weekStart, scope);
   const entry = shared.get(topic) ?? open(topic);
+  clearTimeout(entry.lingerTimer);
+  entry.lingerTimer = undefined;
   entry.listeners.add(handlers);
   if (entry.status === "live") queueMicrotask(() => entry.listeners.has(handlers) && handlers.onStatus("live"));
   return () => {
     entry.listeners.delete(handlers);
     if (entry.listeners.size > 0 || shared.get(topic) !== entry) return;
-    shared.delete(topic);
-    void supabase.removeChannel(entry.channel);
+    clearTimeout(entry.lingerTimer);
+    entry.lingerTimer = setTimeout(() => {
+      entry.lingerTimer = undefined;
+      if (entry.listeners.size > 0 || shared.get(topic) !== entry) return;
+      shared.delete(topic);
+      void supabase.removeChannel(entry.channel);
+    }, LEAVE_LINGER_MS);
   };
 }
