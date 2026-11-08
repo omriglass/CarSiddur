@@ -329,6 +329,22 @@ export const heSadran = {
     removeAssignmentReason: "הוסר שיבוץ מהלוח (נגרר לרשימת הלא-משובצים)",
     /** Multi-day request leg (REQ §13.77, UX_FLOWS.md §4.2). */
     seriesLine: "בקשה רב-יומית · יום {{index}} מתוך {{count}}",
+    /** REQ §13.201: the ride sheet's four tabs and the summary's one line per request. */
+    tabsLabel: "חלקי פרטי הנסיעה",
+    tabs: { summary: "סיכום", people: "אנשים", route: "יעדים", actions: "פעולות" },
+    summaryLine: "{{name}} {{route}} ב־{{time}}",
+    summaryWith: "{{line}} · עם {{names}}",
+    noRoute: "אין מסלול לערוך בנסיעה הזאת.",
+    noActions: "אין פעולות זמינות בנסיעה הזאת.",
+    cancelledNote: "הנסיעה בוטלה.",
+    helpPin: "הפתרון האוטומטי לא יזיז את הנסיעה כשהיא נעולה.",
+    helpUnpin: "הפתרון האוטומטי יוכל שוב להזיז את הנסיעה.",
+    helpJoinLegs: "הלוך ואיסוף של אותה בקשה יהפכו לנסיעה אחת על אותו רכב.",
+    helpUnassign: "הבקשות חוזרות לרשימת ״לא שובצו״, בלי לבטל אותן.",
+    helpDuplicate: "הבקשה נמשכת; החבר/ה יכול/ה לומר שזו לא כפילות.",
+    helpCancel: "מבטל את הנסיעה לכל הנוסעים ושולח להם הודעה.",
+    helpRemoveReservation: "שמירת הזמן נמחקת; אפשר לבטל מההודעה שמופיעה אחרי המחיקה.",
+    helpCancelPlanning: "השינוי המתוכנן מבוטל והנסיעה נשארת כפי שפורסמה.",
   },
   sadranProposal: {
     sameTimesCar: "יש רכב פנוי בשעות שביקשת: {{car}}.",
@@ -804,7 +820,6 @@ export const heSadran = {
   rideDriver: {
     /** R14U2: search box and free-only toggle above the driver list. */
     searchPlaceholder: "חיפוש לפי שם",
-    freeOnly: "פנויים בלבד",
     noMatch: "אין מי שמתאים לחיפוש",
     busy: "תפוס/ה בשעות האלה",
     /** R13F2: the chosen candidate's other rides and requests that day. */
@@ -814,7 +829,6 @@ export const heSadran = {
     dayDestination: "ל{{place}}",
     dayOverlap: "חופף לנסיעה הזו",
     assignLabel: "שיבוץ נהג/ת מתנדב/ת",
-    placeholder: "בחר/י נהג/ת",
     selectAria: "נהג/ת לנסיעה",
     assign: "שבץ/י נהג/ת",
     assigned: "{{name}} שובץ/ה כנהג/ת — הנוסעים עודכנו",

@@ -2,6 +2,7 @@ import { fromZonedTime } from "date-fns-tz";
 import { useState } from "react";
 import { ridePublicDetails } from "@/lib/ridePublicDetails";
 import { ridePassengerSummary } from "@/lib/ridePassengerSummary";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { joinableDropOffLegs } from "../joinLegs";
 import { AddPassengersDialog } from "@/features/rides/components/AddPassengersDialog";
 import { RidePassengersList } from "@/features/rides/components/RidePassengersList";
@@ -29,7 +30,7 @@ import { he, t, tv } from "@/i18n/he";
 import { TZ, dateKey, formatTime } from "@/lib/time";
 
 import { rideBlockLabel } from "../rideLabel";
-import { requestRouteLine } from "../requestRoute";
+import { requestRouteText } from "../requestRoute";
 import { isReservation } from "@/features/rides/servedOf";
 import { namedPassengersOf, relayPartnerOf, servedOf, withChildNames } from "../../solverRun";
 import { addedPeopleNames, peopleOf } from "@/features/rides/ridePeople";
@@ -52,6 +53,9 @@ export interface RideSheetSaveInput {
   startsAt: string;
   endsAt: string;
 }
+
+const RIDE_SHEET_TABS = ["summary", "people", "route", "actions"] as const;
+type RideSheetTab = (typeof RIDE_SHEET_TABS)[number];
 
 interface RideSheetProps {
   ride: BoardRide | null;
@@ -121,6 +125,7 @@ export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenCha
   const [startTime, setStartTime] = useState(ride?.starts_at ? formatTime(new Date(ride.starts_at)) : "08:00");
   const [endTime, setEndTime] = useState(ride?.ends_at ? formatTime(new Date(ride.ends_at)) : "09:00");
   const [showCancelDialog, setShowCancelDialog] = useState(false);
+  const [tab, setTab] = useState<RideSheetTab>("summary");
 
   if ((ride?.id ?? null) !== lastRideId) {
     // Derived during render, no effect needed (same convention as
@@ -130,6 +135,7 @@ export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenCha
     setStartTime(ride?.starts_at ? formatTime(new Date(ride.starts_at)) : "08:00");
     setEndTime(ride?.ends_at ? formatTime(new Date(ride.ends_at)) : "09:00");
     setShowCancelDialog(false);
+    setTab("summary");
   }
 
   function dayIso(): string {
@@ -170,6 +176,21 @@ export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenCha
     }]),
   );
 
+  const cancelled = ride?.status === "cancelled";
+
+  /** REQ §13.201: one line per served request - "name route ב־time", plus the people who ride with them (once). */
+  function summaryLineOf(entry: ReturnType<typeof servedOf>[number]): string {
+    const entryRequest = entry.request_id ? requests.find((request) => request.id === entry.request_id) : undefined;
+    const route = requestRouteText({ originId: entry.origin_id, originName: entry.origin_name, originText: entry.origin_text, destination: entry.destination ?? "" }, homeDestinationId);
+    const departIso = (entry.ride_leg ?? entry.leg) === "return" ? entryRequest?.return_at ?? ride?.starts_at : entryRequest?.depart_at ?? ride?.starts_at;
+    const time = departIso ? formatTime(new Date(departIso)) : "";
+    const name = entry.requester ?? entryRequest?.requester_full_name ?? "";
+    const line = tv("sadranRideSheet.summaryLine", { name, route, time: `⁦${time}⁩` }).replace(/\s+/g, " ").trim();
+    const withNames = [...(entry.companions ?? []).map((person) => person.name), ...(entry.guest_passenger_names ?? []), ...(entry.childNames ?? [])]
+      .map((person) => person.trim()).filter(Boolean);
+    return withNames.length ? tv("sadranRideSheet.summaryWith", { line, names: withNames.join(", ") }) : line;
+  }
+
   return (
     <Sheet open={!!ride} onOpenChange={onOpenChange}>
       <PortalSheetContent side="bottom" className="max-h-[85dvh] overflow-y-auto">
@@ -179,6 +200,7 @@ export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenCha
               <SheetTitle>{he.sadranRideSheet.title}</SheetTitle>
             </SheetHeader>
             <div className="space-y-4 py-4 text-sm">
+              {/* Banners that need attention stay above the tabs so every tab shows them. */}
               {ride.needs_driver ? <div className="space-y-2 rounded-md border border-destructive bg-destructive/10 p-3 text-destructive">
                 <p className="font-semibold">{he.boardCoordination.needsDriver}</p><p>{he.boardCoordination.needsDriverHelp}</p>
                 {onClaimDriver ? <Button disabled={saving} onClick={onClaimDriver}>{he.boardCoordination.claimDriver}</Button> : null}
@@ -195,258 +217,311 @@ export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenCha
                 <p>{tv("sadranRideSheet.pendingMerge", { name: pendingMerge.guestName })}</p>
                 <Button type="button" variant="outline" className="min-h-11" onClick={pendingMerge.onOpen}>{he.sadranRideSheet.pendingMergeOpen}</Button>
               </div> : null}
-              {driverCandidates && !isPlanning && !reservation && ride.id && ride.version != null && ride.status !== "cancelled"
-                && ride.ends_at && Date.parse(ride.ends_at) > nowMs && departmentId && weekStart ? (
-                <RideDriverPicker
-                  rideId={ride.id}
-                  version={ride.version}
-                  needsDriver={!!ride.needs_driver}
-                  volunteerName={!ride.needs_driver && ride.driver_id ? (driverName ?? ride.driver_name ?? "") : null}
-                  ownRequest={servedEntries.some((entry) => entry.role === "driver")}
-                  volunteerId={!ride.needs_driver && ride.driver_id ? ride.driver_id : null}
-                  candidates={driverCandidates}
-                  busyIds={busyDriverIds(ride, otherRides, requests)}
-                  dayEntriesOf={(personId) => personDayEntries(personId, ride, otherRides, requests)}
-                  placeName={(id) => destinations?.find((d) => d.id === id)?.name}
-                  homeDestinationId={homeDestinationId}
-                  departmentId={departmentId}
-                  weekStart={weekStart}
-                  disabled={saving}
-                  published={ride.status !== "draft"}
-                  onDone={() => onOpenChange(false)}
-                />
-              ) : null}
-              {tightSchedule ? <p className="text-xs text-amber-700">{he.boardCoordination.tight} · {he.boardCoordination.tightHelp}</p> : null}
-              {/* R17B9: a warning only — the route's times are estimates. */}
-              {routeOverrunsWindow(ride.route, ride.ends_at) ? <p className="text-xs text-amber-700" data-testid="route-overrun">{he.boardCoordination.routeOverrun}</p> : null}
-              {ride.series_count && ride.series_count > 1 ? (
-                <p className="text-muted-foreground">{tv("sadranRideSheet.seriesLine", { index: String(ride.series_index ?? 1), count: String(ride.series_count) })}</p>
-              ) : null}
-              <p className="whitespace-pre-wrap break-words">{ridePassengerSummary(servedEntries, ride.needs_driver || volunteerShownByPicker ? null : driverName ?? ride.driver_name, { addedNames })}</p>
-              {/* `includeCompanions: false` here — the summary line above already lists every
-                  named person, added ones included; this is only the free-text description. */}
-              {ridePublicDetails(servedEntries, { includeCompanions: false }) ? <p className="whitespace-pre-wrap break-words">{ridePublicDetails(servedEntries, { includeCompanions: false })}</p> : null}
-              {coordinatorNotes ? <div className="whitespace-pre-wrap break-words text-muted-foreground"><span className="font-medium">{he.field.notes}: </span>{coordinatorNotes}</div> : null}
-              <p className="text-muted-foreground">
-                {reservation ? (driverName ?? ride.driver_name ?? "") : ride.origin_id && ride.destination_id && homeDestinationId
-                  ? rideBlockLabel({
-                      originId: ride.origin_id,
-                      destinationId: ride.destination_id,
-                      originName: ride.origin_name ?? "",
-                      destinationName: ride.destination_name ?? "",
-                      homeDestinationId,
-                      served: servedOf(ride),
-                      driverName: driverName ?? ride.driver_name,
-                      isChauffeur: !!ride.is_chauffeur,
-                      needsDriver: !!ride.needs_driver,
-                      autoRelocation: !!ride.auto_relocation,
-                      carMove: ride.pin_reason === "CAR_MOVE",
-                      startsAt: ride.starts_at ?? undefined,
-                      relayPartner: relayPartnerOf(ride, otherRides),
-                    })
-                  : `${ride.origin_name} → ${ride.destination_name} · ${driverName ?? ride.driver_name}`}
-              </p>
 
-              {/* G6: each served request's own start/destination and trip type. */}
-              <ul className="space-y-0.5 text-xs text-muted-foreground" data-testid="ride-sheet-requests">
-                {servedEntries.map((entry) => {
-                  const entryRequest = entry.request_id ? requests.find((request) => request.id === entry.request_id) : undefined;
-                  return (
-                    <li key={entry.request_id} className="space-y-1">
-                      <span>
-                        {entry.requester ? `${entry.requester}: ` : ""}
-                        {requestRouteLine({ originId: entry.origin_id, originName: entry.origin_name, originText: entry.origin_text, destination: entry.destination ?? "", tripType: entry.trip_type, keepCarAtDestination: entry.keep_car_at_destination }, homeDestinationId)}
-                      </span>
-                      {/* REQ §13.95 (H3): the Sadran changes the trip type directly. */}
-                      {entry.request_id && entryRequest && departmentId && weekStart && !isPlanning && ride.status !== "cancelled" ? (
-                        <TripTypeChange
-                          requestId={entry.request_id}
-                          version={entryRequest.version}
-                          tripType={entryRequest.trip_type ?? entry.trip_type}
-                          keepCarAtDestination={entryRequest.keep_car_at_destination ?? entry.keep_car_at_destination}
-                          destination={entry.destination}
-                          name={entry.requester ?? entryRequest.requester_full_name ?? ""}
-                          departmentId={departmentId}
-                          weekStart={weekStart}
-                          disabled={saving}
-                        />
-                      ) : null}
-                      {entryRequest && departmentId && weekStart && !isPlanning && ride.status !== "cancelled" ? (
-                        <PlanSwitchButton request={entryRequest} name={entry.requester ?? entryRequest.requester_full_name ?? ""} departmentId={departmentId} weekStart={weekStart} disabled={saving} />
-                      ) : null}
-                      {entry.request_id && entryRequest && !entryRequest.series_id && departmentId && weekStart && !isPlanning && ride.status !== "cancelled" ? (
+              <Tabs value={tab} onValueChange={(value) => setTab(value as RideSheetTab)}>
+                <TabsList className="grid h-auto w-full grid-cols-4" aria-label={he.sadranRideSheet.tabsLabel}>
+                  {RIDE_SHEET_TABS.map((id) => (
+                    <TabsTrigger key={id} value={id} className="min-h-11 whitespace-normal px-1 text-xs sm:text-sm" data-testid={`ride-sheet-tab-${id}`}>
+                      {he.sadranRideSheet.tabs[id]}
+                    </TabsTrigger>
+                  ))}
+                </TabsList>
+
+                {/* ── סיכום ── */}
+                <TabsContent value="summary" className="space-y-4">
+                  {tightSchedule ? <p className="text-xs text-amber-700">{he.boardCoordination.tight} · {he.boardCoordination.tightHelp}</p> : null}
+                  {/* R17B9: a warning only — the route's times are estimates. */}
+                  {routeOverrunsWindow(ride.route, ride.ends_at) ? <p className="text-xs text-amber-700" data-testid="route-overrun">{he.boardCoordination.routeOverrun}</p> : null}
+                  {ride.series_count && ride.series_count > 1 ? (
+                    <p className="text-muted-foreground">{tv("sadranRideSheet.seriesLine", { index: String(ride.series_index ?? 1), count: String(ride.series_count) })}</p>
+                  ) : null}
+
+                  {/* One line per served request (owner 2026-11-08: no repeated information, normal text colour). */}
+                  {servedEntries.length && !reservation ? (
+                    <ul className="space-y-2" data-testid="ride-sheet-requests">
+                      {servedEntries.map((entry) => {
+                        const entryRequest = entry.request_id ? requests.find((request) => request.id === entry.request_id) : undefined;
+                        return (
+                          <li key={entry.request_id ?? entry.requester} className="space-y-1">
+                            <p className="whitespace-pre-wrap break-words text-foreground" data-testid="ride-sheet-summary-line">{summaryLineOf(entry)}</p>
+                            {/* REQ §13.95 (H3): the Sadran changes the trip type directly. */}
+                            {entry.request_id && entryRequest && departmentId && weekStart && !isPlanning && !cancelled ? (
+                              <TripTypeChange
+                                requestId={entry.request_id}
+                                version={entryRequest.version}
+                                tripType={entryRequest.trip_type ?? entry.trip_type}
+                                keepCarAtDestination={entryRequest.keep_car_at_destination ?? entry.keep_car_at_destination}
+                                destination={entry.destination}
+                                name={entry.requester ?? entryRequest.requester_full_name ?? ""}
+                                departmentId={departmentId}
+                                weekStart={weekStart}
+                                disabled={saving}
+                              />
+                            ) : null}
+                            {entryRequest && departmentId && weekStart && !isPlanning && !cancelled ? (
+                              <PlanSwitchButton request={entryRequest} name={entry.requester ?? entryRequest.requester_full_name ?? ""} departmentId={departmentId} weekStart={weekStart} disabled={saving} />
+                            ) : null}
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  ) : (
+                    <p className="whitespace-pre-wrap break-words text-foreground" data-testid="ride-sheet-summary-line">
+                      {reservation
+                        ? (ridePassengerSummary(servedEntries, ride.needs_driver || volunteerShownByPicker ? null : driverName ?? ride.driver_name, { addedNames }) || (driverName ?? ride.driver_name ?? ""))
+                        : ride.origin_id && ride.destination_id && homeDestinationId
+                          ? rideBlockLabel({
+                              originId: ride.origin_id,
+                              destinationId: ride.destination_id,
+                              originName: ride.origin_name ?? "",
+                              destinationName: ride.destination_name ?? "",
+                              homeDestinationId,
+                              served: servedOf(ride),
+                              driverName: driverName ?? ride.driver_name,
+                              isChauffeur: !!ride.is_chauffeur,
+                              needsDriver: !!ride.needs_driver,
+                              autoRelocation: !!ride.auto_relocation,
+                              carMove: ride.pin_reason === "CAR_MOVE",
+                              startsAt: ride.starts_at ?? undefined,
+                              relayPartner: relayPartnerOf(ride, otherRides),
+                            })
+                          : `${ride.origin_name} → ${ride.destination_name} · ${driverName ?? ride.driver_name}`}
+                    </p>
+                  )}
+
+                  {/* `includeCompanions: false` — the people are named once, on each request's line above. */}
+                  {ridePublicDetails(servedEntries, { includeCompanions: false }) ? <p className="whitespace-pre-wrap break-words">{ridePublicDetails(servedEntries, { includeCompanions: false })}</p> : null}
+                  {coordinatorNotes ? <div className="whitespace-pre-wrap break-words text-muted-foreground"><span className="font-medium">{he.field.notes}: </span>{coordinatorNotes}</div> : null}
+
+                  <div className="flex items-end gap-2">
+                    <div className="flex-1 space-y-1">
+                      <span className="block text-xs text-muted-foreground">{he.sadranRideSheet.depart}</span>
+                      <TimeField15 min="00:00" value={startTime} onChange={setStartTime} aria-label={he.sadranRideSheet.depart} />
+                    </div>
+                    <span className="pb-2">–</span>
+                    <div className="flex-1 space-y-1">
+                      <span className="block text-xs text-muted-foreground">{he.sadranRideSheet.return}</span>
+                      <TimeField15 min="00:00" max="23:59" value={endTime} onChange={setEndTime} aria-label={he.sadranRideSheet.return} />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="mb-1 block text-xs text-muted-foreground">{he.sadranRideSheet.moveToCar}</label>
+                    <Select value={carId} onValueChange={setCarId}>
+                      <SelectTrigger data-testid="ride-car-select">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {cars.map((c) => (
+                          <SelectItem key={c.id} value={c.id}>
+                            {c.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <Button className="w-full" onClick={handleSave} disabled={saving}>
+                    {he.sadranRideSheet.save}
+                  </Button>
+
+                  {isPlanning ? <p className="text-destructive">{he.boardCoordination.planning}</p> : ride.id && ride.version != null && !cancelled && ride.ends_at && Date.parse(ride.ends_at) > nowMs && departmentId && weekStart ? (
+                    <RidePublicNotesEditor key={`${ride.id}:${ride.version}:notes`} rideId={ride.id} expectedVersion={ride.version} initialNotes={ride.notes} departmentId={departmentId} weekStart={weekStart} />
+                  ) : ride.notes ? <p className="whitespace-pre-wrap break-words">{ride.notes}</p> : null}
+                </TabsContent>
+
+                {/* ── אנשים ── */}
+                <TabsContent value="people" className="space-y-4">
+                  {driverCandidates && !isPlanning && !reservation && ride.id && ride.version != null && !cancelled
+                    && ride.ends_at && Date.parse(ride.ends_at) > nowMs && departmentId && weekStart ? (
+                    <RideDriverPicker
+                      rideId={ride.id}
+                      version={ride.version}
+                      needsDriver={!!ride.needs_driver}
+                      volunteerName={!ride.needs_driver && ride.driver_id ? (driverName ?? ride.driver_name ?? "") : null}
+                      ownRequest={servedEntries.some((entry) => entry.role === "driver")}
+                      volunteerId={!ride.needs_driver && ride.driver_id ? ride.driver_id : null}
+                      candidates={driverCandidates}
+                      busyIds={busyDriverIds(ride, otherRides, requests)}
+                      dayEntriesOf={(personId) => personDayEntries(personId, ride, otherRides, requests)}
+                      placeName={(id) => destinations?.find((d) => d.id === id)?.name}
+                      homeDestinationId={homeDestinationId}
+                      departmentId={departmentId}
+                      weekStart={weekStart}
+                      disabled={saving}
+                      published={ride.status !== "draft"}
+                      onDone={() => onOpenChange(false)}
+                    />
+                  ) : null}
+
+                  {/* REQ §13.94 (G10): people added to this ride by a merge - take them back out
+                      (a draft/sent merge is discarded/withdrawn, an applied one un-merged). */}
+                  {onRemoveAddedPerson && !isPlanning && addedPeople.length ? (
+                    <div className="space-y-1" data-testid="ride-added-people">
+                      <span className="font-medium">{he.mergedRide.addedPeople}</span>
+                      <ul className="flex flex-wrap gap-2">
+                        {addedPeople.map((entry) => (
+                          <li key={entry.request_id} className="inline-flex items-center gap-1 rounded-full border bg-muted ps-3 text-xs" data-testid="ride-added-person" data-request-id={entry.request_id ?? undefined}>
+                            <span>{entry.requester ?? ""}</span>
+                            <Button type="button" variant="ghost" size="sm" className="min-h-11 text-destructive" disabled={saving}
+                              aria-label={tv("mergedRide.removeAria", { name: entry.requester ?? "" })}
+                              onClick={() => onRemoveAddedPerson(entry.request_id as string, entry.requester ?? "")}>
+                              {he.mergedRide.removeFromRide}
+                            </Button>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
+
+                  {/* F3 (20260914120000_ride_passengers.sql): editing named people on an
+                      existing manual reservation, same editability gate as the notes editor
+                      (not planning, not cancelled, still in the future). */}
+                  {!isPlanning && ride.pin_reason === "SADRAN_MANUAL" && ride.id && ride.version != null
+                    && !cancelled && ride.ends_at && Date.parse(ride.ends_at) > nowMs && departmentId && weekStart ? (
+                    <RidePassengersEditor
+                      key={`${ride.id}:${ride.version}:passengers`}
+                      rideId={ride.id}
+                      expectedVersion={ride.version}
+                      departmentId={departmentId}
+                      weekStart={weekStart}
+                      initialPassengers={namedPassengersOf(ride)}
+                    />
+                  ) : null}
+
+                  {/* "+ נוסעים" (REQ §13.85): appends, works on any confirmed, uncancelled ride. Same unified
+                      `people` list the siddur's `RideDetailSheet` renders. */}
+                  {needsPersonBlocks(ride, servedEntries) ? (
+                    <RidePersonBlocks blocks={buildPersonBlocks({ ride, served: servedEntries, homeDestinationId, requests: personExtras })} />
+                  ) : null}
+                  <RidePassengersList
+                    rideId={ride.id}
+                    expectedVersion={ride.version}
+                    people={peopleOf(ride)}
+                    served={servedEntries}
+                    canManagePeople={!isPlanning}
+                    rideCancelled={cancelled}
+                    departmentId={departmentId}
+                    weekStart={weekStart}
+                  />
+                  {!isPlanning && ride.id && ride.version != null && !cancelled && departmentId && weekStart ? (
+                    <AddPassengersDialog
+                      key={`${ride.id}:${ride.version}:add-passengers`}
+                      rideId={ride.id}
+                      expectedVersion={ride.version}
+                      departmentId={departmentId}
+                      weekStart={weekStart}
+                      people={peopleOf(ride)}
+                    />
+                  ) : null}
+                </TabsContent>
+
+                {/* ── יעדים ── */}
+                <TabsContent value="route" className="space-y-4">
+                  {reservation ? null : routeHasIntermediates(parseRideRoute(ride.route)) ? <RideRoute route={ride.route} served={servedEntries} /> : <RideRouteStops served={servedEntries} />}
+
+                  {/* REQ §13.94 (G8): start, end and stops per leg. */}
+                  {!reservation && onSaveRoute && destinations && !isPlanning && ride.id && !cancelled && (baseRequest || !servedEntries.length) ? (
+                    <RideRouteEditor
+                      key={`${ride.id}:${ride.version}:route`}
+                      initial={initialRouteEditValues({
+                        request: baseRequest ?? null,
+                        stops: baseEntry?.stops ?? [],
+                        ride,
+                        homeId: homeDestinationId,
+                        placeName: (id) => destinations.find((d) => d.id === id)?.name,
+                      })}
+                      destinations={destinations}
+                      stopsEditable={!!baseRequest}
+                      hasReturn={baseRequest?.trip_shape === "round_trip"}
+                      saving={saving}
+                      onSave={onSaveRoute}
+                    />
+                  ) : cancelled || reservation || isPlanning ? <p className="text-muted-foreground">{cancelled ? he.sadranRideSheet.cancelledNote : he.sadranRideSheet.noRoute}</p> : null}
+                </TabsContent>
+
+                {/* ── פעולות ── */}
+                <TabsContent value="actions" className="space-y-4">
+                  {!isPlanning ? (
+                    <div className="space-y-1">
+                      <Button variant="outline" className="w-full" onClick={() => onTogglePin(!ride.is_pinned, ride.is_pinned ? null : "SADRAN_MANUAL")}>
+                        {ride.is_pinned ? t("action.unpin") : t("action.pin")}
+                      </Button>
+                      <p className="text-xs text-muted-foreground">{ride.is_pinned ? he.sadranRideSheet.helpUnpin : he.sadranRideSheet.helpPin}</p>
+                    </div>
+                  ) : null}
+                  {joinable && onJoinLegs && !isPlanning ? (
+                    <div className="space-y-1">
+                      <Button variant="outline" className="w-full" onClick={() => onJoinLegs(joinable.requestId)} disabled={saving} data-testid="join-legs">
+                        {he.sadranRideSheet.joinLegs}
+                      </Button>
+                      <p className="text-xs text-muted-foreground">{he.sadranRideSheet.helpJoinLegs}</p>
+                    </div>
+                  ) : null}
+                  {onUnassign && !isPlanning && !ride.series_id && !reservation ? (
+                    <div className="space-y-1">
+                      <Button variant="outline" className="w-full" onClick={onUnassign} disabled={saving}>
+                        {he.sadranRideSheet.removeAssignment}
+                      </Button>
+                      <p className="text-xs text-muted-foreground">{he.sadranRideSheet.helpUnassign}</p>
+                    </div>
+                  ) : null}
+                  {onUnassign && !isPlanning && ride.series_id ? (
+                    <p className="text-xs text-muted-foreground">{he.sadranBoard.seriesUnassignHint}</p>
+                  ) : null}
+                  {servedEntries.map((entry) => {
+                    const entryRequest = entry.request_id ? requests.find((request) => request.id === entry.request_id) : undefined;
+                    if (!(entry.request_id && entryRequest && !entryRequest.series_id && departmentId && weekStart && !isPlanning && !cancelled)) return null;
+                    const name = entry.requester ?? entryRequest.requester_full_name ?? "";
+                    return (
+                      <div key={entry.request_id} className="space-y-1">
+                        {servedEntries.length > 1 && name ? <p className="text-xs font-medium">{name}</p> : null}
                         <WithdrawDuplicateAction
                           requestId={entry.request_id}
                           version={entryRequest.version}
-                          name={entry.requester ?? entryRequest.requester_full_name ?? ""}
+                          name={name}
                           departmentId={departmentId}
                           weekStart={weekStart}
                           disabled={saving}
                         />
-                      ) : null}
-                    </li>
-                  );
-                })}
-              </ul>
-
-              {reservation ? null : routeHasIntermediates(parseRideRoute(ride.route)) ? <RideRoute route={ride.route} served={servedEntries} /> : <RideRouteStops served={servedEntries} />}
-
-              {/* REQ §13.94 (G10): people added to this ride by a merge - take them back out
-                  (a draft/sent merge is discarded/withdrawn, an applied one un-merged). */}
-              {onRemoveAddedPerson && !isPlanning && addedPeople.length ? (
-                <div className="space-y-1" data-testid="ride-added-people">
-                  <span className="font-medium">{he.mergedRide.addedPeople}</span>
-                  <ul className="flex flex-wrap gap-2">
-                    {addedPeople.map((entry) => (
-                      <li key={entry.request_id} className="inline-flex items-center gap-1 rounded-full border bg-muted ps-3 text-xs" data-testid="ride-added-person" data-request-id={entry.request_id ?? undefined}>
-                        <span>{entry.requester ?? ""}</span>
-                        <Button type="button" variant="ghost" size="sm" className="min-h-11 text-destructive" disabled={saving}
-                          aria-label={tv("mergedRide.removeAria", { name: entry.requester ?? "" })}
-                          onClick={() => onRemoveAddedPerson(entry.request_id as string, entry.requester ?? "")}>
-                          {he.mergedRide.removeFromRide}
-                        </Button>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ) : null}
-
-              <div className="flex items-center gap-2">
-                <TimeField15 min="00:00" value={startTime} onChange={setStartTime} aria-label={he.sadranRideSheet.depart} />
-                <span>–</span>
-                <TimeField15 min="00:00" max="23:59" value={endTime} onChange={setEndTime} aria-label={he.sadranRideSheet.return} />
-              </div>
-
-              <div>
-                <label className="mb-1 block text-xs text-muted-foreground">{he.sadranRideSheet.moveToCar}</label>
-                <Select value={carId} onValueChange={setCarId}>
-                  <SelectTrigger data-testid="ride-car-select">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {cars.map((c) => (
-                      <SelectItem key={c.id} value={c.id}>
-                        {c.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {isPlanning ? <p className="text-destructive">{he.boardCoordination.planning}</p> : ride.id && ride.version != null && ride.status !== "cancelled" && ride.ends_at && Date.parse(ride.ends_at) > nowMs && departmentId && weekStart ? (
-                <RidePublicNotesEditor key={`${ride.id}:${ride.version}:notes`} rideId={ride.id} expectedVersion={ride.version} initialNotes={ride.notes} departmentId={departmentId} weekStart={weekStart} />
-              ) : ride.notes ? <p className="whitespace-pre-wrap break-words">{ride.notes}</p> : null}
-
-              {/* F3 (20260914120000_ride_passengers.sql): editing named people on an
-                  existing manual reservation, same editability gate as the notes editor
-                  above (not planning, not cancelled, still in the future). */}
-              {!isPlanning && ride.pin_reason === "SADRAN_MANUAL" && ride.id && ride.version != null
-                && ride.status !== "cancelled" && ride.ends_at && Date.parse(ride.ends_at) > nowMs && departmentId && weekStart ? (
-                <RidePassengersEditor
-                  key={`${ride.id}:${ride.version}:passengers`}
-                  rideId={ride.id}
-                  expectedVersion={ride.version}
-                  departmentId={departmentId}
-                  weekStart={weekStart}
-                  initialPassengers={namedPassengersOf(ride)}
-                />
-              ) : null}
-
-              {/* "+ נוסעים" (REQ §13.85): unlike `RidePassengersEditor` above (a Sadran
-                  reservation's *replace* editor, manual reservations only), this appends and
-                  works on any confirmed, uncancelled ride — the board's own authorized
-                  viewer always satisfies `can_manage_week` for this week. Same unified
-                  `people` list the siddur's `RideDetailSheet` renders (REQ §13.85). */}
-              {needsPersonBlocks(ride, servedEntries) ? (
-                <RidePersonBlocks blocks={buildPersonBlocks({ ride, served: servedEntries, homeDestinationId, requests: personExtras })} />
-              ) : null}
-              <RidePassengersList
-                rideId={ride.id}
-                expectedVersion={ride.version}
-                people={peopleOf(ride)}
-                served={servedEntries}
-                canManagePeople={!isPlanning}
-                rideCancelled={ride.status === "cancelled"}
-                departmentId={departmentId}
-                weekStart={weekStart}
-              />
-              {!isPlanning && ride.id && ride.version != null && ride.status !== "cancelled" && departmentId && weekStart ? (
-                <AddPassengersDialog
-                  key={`${ride.id}:${ride.version}:add-passengers`}
-                  rideId={ride.id}
-                  expectedVersion={ride.version}
-                  departmentId={departmentId}
-                  weekStart={weekStart}
-                  people={peopleOf(ride)}
-                />
-              ) : null}
-
-              {/* REQ §13.94 (G8): start, end and stops per leg. */}
-              {!reservation && onSaveRoute && destinations && !isPlanning && ride.id && ride.status !== "cancelled" && (baseRequest || !servedEntries.length) ? (
-                <RideRouteEditor
-                  key={`${ride.id}:${ride.version}:route`}
-                  initial={initialRouteEditValues({
-                    request: baseRequest ?? null,
-                    stops: baseEntry?.stops ?? [],
-                    ride,
-                    homeId: homeDestinationId,
-                    placeName: (id) => destinations.find((d) => d.id === id)?.name,
+                        <p className="text-xs text-muted-foreground">{he.sadranRideSheet.helpDuplicate}</p>
+                      </div>
+                    );
                   })}
-                  destinations={destinations}
-                  stopsEditable={!!baseRequest}
-                  hasReturn={baseRequest?.trip_shape === "round_trip"}
-                  saving={saving}
-                  onSave={onSaveRoute}
-                />
-              ) : null}
 
-              <Button className="w-full" onClick={handleSave} disabled={saving}>
-                {he.sadranRideSheet.save}
-              </Button>
-
-              <div className="flex gap-2">
-                {!isPlanning ? <Button
-                  variant="outline"
-                  className="flex-1"
-                  onClick={() => onTogglePin(!ride.is_pinned, ride.is_pinned ? null : "SADRAN_MANUAL")}
-                >
-                  {ride.is_pinned ? t("action.unpin") : t("action.pin")}
-                </Button> : null}
-                {joinable && onJoinLegs && !isPlanning ? (
-                  <Button variant="outline" className="flex-1" onClick={() => onJoinLegs(joinable.requestId)} disabled={saving} data-testid="join-legs">
-                    {he.sadranRideSheet.joinLegs}
-                  </Button>
-                ) : null}
-                {onUnassign && !isPlanning && !ride.series_id && !reservation ? (
-                  <Button variant="outline" className="flex-1" onClick={onUnassign} disabled={saving}>
-                    {he.sadranRideSheet.removeAssignment}
-                  </Button>
-                ) : null}
-              </div>
-              {onUnassign && !isPlanning && ride.series_id ? (
-                <p className="text-xs text-muted-foreground">{he.sadranBoard.seriesUnassignHint}</p>
-              ) : null}
-
-              {/* REQ §13.194: a reservation has one way out - deleting it, undoable from the toast / ↶ (unassign_ride). */}
-              {isPlanning ? <Button variant="outline" onClick={() => onCancel("", [])} disabled={saving}>{he.boardCoordination.cancelPlanning}</Button> : reservation && onUnassign ? (
-                <Button variant="destructive" className="w-full" onClick={onUnassign} disabled={saving} data-testid="ride-sheet-remove-reservation">
-                  {he.sadranRideSheet.removeReservation}
-                </Button>
-              ) : (
-                <>
-                  <Button variant="destructive" className="w-full" onClick={() => setShowCancelDialog(true)} data-testid="ride-sheet-cancel">
-                    {t("action.cancelRide")}
-                  </Button>
-                  <RideCancelDialog
-                    open={showCancelDialog}
-                    onOpenChange={setShowCancelDialog}
-                    lines={rideCancelLines(servedOf(ride))}
-                    series={!!ride.series_id}
-                    loading={saving}
-                    onConfirm={(reason, closeIds, continueIds) => onCancel(reason, closeIds, continueIds)}
-                  />
-                </>
-              )}
+                  {/* REQ §13.194: a reservation has one way out - deleting it, undoable from the toast / ↶ (unassign_ride). */}
+                  <div className="space-y-1 border-t pt-4">
+                    {isPlanning ? (
+                      <>
+                        <Button variant="outline" className="w-full" onClick={() => onCancel("", [])} disabled={saving}>{he.boardCoordination.cancelPlanning}</Button>
+                        <p className="text-xs text-muted-foreground">{he.sadranRideSheet.helpCancelPlanning}</p>
+                      </>
+                    ) : reservation && onUnassign ? (
+                      <>
+                        <Button variant="destructive" className="w-full" onClick={onUnassign} disabled={saving} data-testid="ride-sheet-remove-reservation">
+                          {he.sadranRideSheet.removeReservation}
+                        </Button>
+                        <p className="text-xs text-muted-foreground">{he.sadranRideSheet.helpRemoveReservation}</p>
+                      </>
+                    ) : (
+                      <>
+                        <Button variant="destructive" className="w-full" onClick={() => setShowCancelDialog(true)} data-testid="ride-sheet-cancel">
+                          {t("action.cancelRide")}
+                        </Button>
+                        <p className="text-xs text-muted-foreground">{he.sadranRideSheet.helpCancel}</p>
+                        <RideCancelDialog
+                          open={showCancelDialog}
+                          onOpenChange={setShowCancelDialog}
+                          lines={rideCancelLines(servedOf(ride))}
+                          series={!!ride.series_id}
+                          loading={saving}
+                          onConfirm={(reason, closeIds, continueIds) => onCancel(reason, closeIds, continueIds)}
+                        />
+                      </>
+                    )}
+                  </div>
+                </TabsContent>
+              </Tabs>
             </div>
           </>
         ) : null}

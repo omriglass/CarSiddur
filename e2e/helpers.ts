@@ -242,3 +242,10 @@ export async function openRideDetails(page: Page, ride: Locator): Promise<void> 
   await ride.click();
   await page.getByTestId("ride-peek-open").click();
 }
+
+/** The Sadran board's ride sheet is in tabs (REQ §13.201): opens one of summary | people | route | actions. */
+export async function openRideSheetTab(page: Page, tab: "summary" | "people" | "route" | "actions"): Promise<void> {
+  const trigger = page.getByTestId(`ride-sheet-tab-${tab}`);
+  await trigger.click();
+  await expect(trigger).toHaveAttribute("data-state", "active");
+}
