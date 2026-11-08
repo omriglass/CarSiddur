@@ -36,23 +36,25 @@ html {
     --secondary-foreground: 215 27% 12%;
 
     --muted: 214 32% 91%;
-    --muted-foreground: 215 16% 47%;
+    --muted-foreground: 215 16% 42%;
 
     --accent: 214 32% 88%;
     --accent-foreground: 215 27% 12%;
 
-    --destructive: 0 84% 60%;
+    --destructive: 0 84% 47%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 214 32% 88%;
-    --input: 214 32% 88%;
+    --border: 214 32% 87%;
+    --input: 214 32% 87%;
     --ring: 217 91% 34%;
 
-    /* Semantic status colors, shared by StatusBadge, the board and fleet screens. */
-    --available: 142 76% 36%;
+    /* Semantic status colors, shared by StatusBadge, the board and fleet screens. Readability fix 2026-11-08
+       (REQ §13.196 b): muted text, destructive, available, maintenance, border and three ride colours darkened just
+       enough to pass the floor in src/themes/derive.ts (themes.test.ts checks neutral too). */
+    --available: 142 76% 28%;
     --available-foreground: 0 0% 100%;
 
-    --maintenance: 38 92% 50%;
+    --maintenance: 30 95% 36%;
     --maintenance-foreground: 0 0% 100%;
 
     --booked: 217 91% 34%;
@@ -71,11 +73,11 @@ html {
     /* Ride-type accent colors (board/siddur grid, RideCard, UnmetList — src/lib/rideTypeColors.ts; one per `ride_type_color`). */
     --ride-work: 231 48% 48%;
     --ride-childcare: 330 65% 55%;
-    --ride-healthcare: 172 66% 40%;
-    --ride-errands: 24 90% 50%;
+    --ride-healthcare: 172 66% 37%;
+    --ride-errands: 24 90% 48%;
     --ride-other: 220 9% 46%;
     --ride-green: 142 55% 36%;
-    --ride-yellow: 45 90% 40%;
+    --ride-yellow: 45 90% 36%;
     --ride-red: 0 70% 50%;
     /* Request delta tag (REQ §13.161): dark orange text on light orange. */
     --delta: 21 90% 37%;
@@ -130,7 +132,7 @@ html {
   --accent: 217 33% 20%;
   --accent-foreground: 210 40% 98%;
 
-  --destructive: 0 63% 45%;
+  --destructive: 0 63% 46%;
   --destructive-foreground: 210 40% 98%;
 
   --border: 217 33% 20%;
@@ -138,7 +140,7 @@ html {
   --ring: 217 91% 60%;
 
   --available: 142 70% 42%;
-  --available-foreground: 0 0% 100%;
+  --available-foreground: 222 47% 11%;
 
   --maintenance: 38 85% 55%;
   --maintenance-foreground: 222 47% 11%;

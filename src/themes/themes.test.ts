@@ -81,8 +81,8 @@ describe("theme registry", () => {
     for (const dark of [false, true]) {
       it(`${theme.id} (${dark ? "dark" : "light"}) passes the readability check`, () => {
         const resolved = resolveAppearance(theme.id, DEFAULT_CUSTOM_THEME, dark);
-        if (resolved.tokens === null) return; // neutral: index.css, unchanged by this batch
-        expect(checkReadability(resolved.tokens, { strongContrast: theme.strongContrast })).toEqual([]);
+        const tokens = resolved.tokens ?? (dark ? NEUTRAL_DARK : NEUTRAL_LIGHT); // null = neutral, painted by index.css
+        expect(checkReadability(tokens, { strongContrast: resolved.tokens ? theme.strongContrast : false })).toEqual([]);
       });
     }
     it(`${theme.id}: swatch colours are hex`, () => {
