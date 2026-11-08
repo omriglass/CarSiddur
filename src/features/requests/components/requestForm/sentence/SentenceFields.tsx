@@ -3,7 +3,7 @@
 // field. Weekly requests have two stages: stage 1 = the sentence, stage 2 (`StageTwo`) = the
 // modifiers that are not in it. Everything shares the classic layout's form state, schema and
 // submit pipeline; only the field arrangement differs.
-import { ArrowLeftRight, ChevronDown } from "lucide-react";
+import { ArrowLeftRight, ChevronDown, Plus } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { Controller, useWatch, type FieldErrors, type UseFormReturn } from "react-hook-form";
 
@@ -55,7 +55,7 @@ import { SentenceChip } from "./SentenceChip";
 import { StageTwo } from "./StageTwo";
 import { estimateLine } from "./estimateLine";
 import { TimeAnchorSheet } from "./TimeAnchorSheet";
-import { MAX_STOPS, StopsRoute } from "../StopsRoute";
+import { StopsSheet } from "../StopsSheet";
 import { TimeField15 } from "@/components/TimeField15";
 import { WhoSheet } from "./WhoSheet";
 import { flexBriefText } from "../../../flexText";
@@ -193,6 +193,7 @@ export function SentenceFields(props: SentenceFieldsProps) {
 
   // A quick/car-now sheet opens straight on the destination, like the classic form's autofocused combobox.
   const [sheet, setSheet] = useState<SheetKey | null>(variant === "weekly" ? null : "destination");
+  const [stopsOpen, setStopsOpen] = useState(false);
   const [descriptionOpen, setDescriptionOpen] = useState(false);
   const [notesOpen, setNotesOpen] = useState(false);
   const [hintVisible, setHintVisible] = useState(() => !readHintDismissed());
@@ -333,23 +334,7 @@ export function SentenceFields(props: SentenceFieldsProps) {
     setSheet(null);
   }
 
-  function addStopTo(leg: "out" | "return", value: DestinationValue) {
-    const field = leg === "out" ? "outStops" : "returnStops";
-    const current = (form.getValues(field) ?? []) as DestinationValue[];
-    if (current.length < MAX_STOPS) form.setValue(field, [...current, value], { shouldDirty: true, shouldValidate: true });
-  }
-
-  function removeStop(index: number) {
-    const current = (form.getValues("outStops") ?? []) as DestinationValue[];
-    form.setValue("outStops", current.filter((_, i) => i !== index), { shouldDirty: true, shouldValidate: true });
-  }
-
   const returnStops = (values.returnStops ?? []) as DestinationValue[];
-
-  function removeReturnStop(index: number) {
-    const current = (form.getValues("returnStops") ?? []) as DestinationValue[];
-    form.setValue("returnStops", current.filter((_, i) => i !== index), { shouldDirty: true, shouldValidate: true });
-  }
 
   function enterWindowMode() {
     const fixed = form.getValues();
@@ -501,8 +486,8 @@ export function SentenceFields(props: SentenceFieldsProps) {
             </Seg>
             {outStops.map((stop, index) => (
               <Seg key={`${index}:${"presetId" in stop ? stop.presetId : stop.freeText}`} prefix={he.requestSentence.via} spaced>
-                <SentenceChip field="outStops" aria-label={`${he.request.removeStop}: ${placeLabel(stop, destinations)}`} onClick={() => removeStop(index)}>
-                  {placeLabel(stop, destinations)} ×
+                <SentenceChip field="outStops" aria-label={`${he.request.stopsButton}: ${placeLabel(stop, destinations)}`} onClick={() => setStopsOpen(true)} data-testid="chip-out-stop">
+                  {placeLabel(stop, destinations)}
                 </SentenceChip>
               </Seg>
             ))}
@@ -539,8 +524,8 @@ export function SentenceFields(props: SentenceFieldsProps) {
             {hasReturn
               ? returnStops.map((stop, index) => (
                   <Seg key={`r${index}:${"presetId" in stop ? stop.presetId : stop.freeText}`} prefix={he.requestSentence.via} spaced>
-                    <SentenceChip field="returnStops" aria-label={`${he.request.removeStop}: ${placeLabel(stop, destinations)}`} onClick={() => removeReturnStop(index)} data-testid="chip-return-stop">
-                      {placeLabel(stop, destinations)} ×
+                    <SentenceChip field="returnStops" aria-label={`${he.request.stopsButton}: ${placeLabel(stop, destinations)}`} onClick={() => setStopsOpen(true)} data-testid="chip-return-stop">
+                      {placeLabel(stop, destinations)}
                     </SentenceChip>
                   </Seg>
                 ))
@@ -569,18 +554,25 @@ export function SentenceFields(props: SentenceFieldsProps) {
 
       {errorMessages.map((message) => <FieldError key={message} message={message} />)}
       {variant !== "carNow" ? (
-        <StopsRoute
-          origin={originName}
-          destination={hasDestination ? destinationName : ""}
-          outStops={outStops.map((stop) => placeLabel(stop, destinations))}
-          returnStops={returnStops.map((stop) => placeLabel(stop, destinations))}
-          hasReturn={hasReturn}
-          onRemove={(leg, index) => (leg === "out" ? removeStop(index) : removeReturnStop(index))}
-          error={(typeof errors.outStops?.message === "string" ? errors.outStops.message : undefined) ?? (typeof errors.returnStops?.message === "string" ? errors.returnStops.message : undefined)}
-          renderPicker={(done, leg) => (
-            <PlacePicker places={placesWithoutOrigin} value={null} onPick={(next) => { addStopTo(leg, next); done(); }} placeholder={he.requestSentence.placeSearch} />
-          )}
-        />
+        <div data-field="outStops">
+          <FieldError message={(typeof errors.outStops?.message === "string" ? errors.outStops.message : undefined) ?? (typeof errors.returnStops?.message === "string" ? errors.returnStops.message : undefined)} />
+        </div>
+      ) : null}
+
+      {variant !== "carNow" ? (
+        <div>
+          <button
+          type="button"
+          className="inline-flex min-h-11 items-center gap-1 text-sm font-semibold text-primary hover:underline"
+          onClick={() => setStopsOpen(true)}
+          data-testid="add-stop"
+        >
+          <Plus className="size-4" aria-hidden="true" />
+          {outStops.length + (hasReturn ? returnStops.length : 0) > 0
+            ? tv("request.stopsButtonCount", { count: String(outStops.length + (hasReturn ? returnStops.length : 0)) })
+            : he.request.stopsButton}
+        </button>
+        </div>
       ) : null}
 
       {variant !== "carNow" ? (
@@ -741,6 +733,8 @@ export function SentenceFields(props: SentenceFieldsProps) {
           recent={recentDestinations}
         />
       </FieldSheet>
+
+      {variant !== "carNow" ? <StopsSheet form={form} places={placeOptions} hasReturn={hasReturn} open={stopsOpen} onOpenChange={setStopsOpen} /> : null}
 
       <FieldSheet open={sheet === "day"} onOpenChange={(open) => !open && closeSheet()} onDone={() => advanceGuide("day")} title={he.requestSentence.sheet.day}>
         <DayAndTripShapeFields

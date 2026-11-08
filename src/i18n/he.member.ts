@@ -146,19 +146,17 @@ export const heMember = {
     /** Origin line above the destination field, tap to change (REQ §13.93). */
     fromOrigin: "מ{{place}} אל",
     stopPlaceholder: "איפה עוצרים?",
-    /** TODO ST1: the one link that replaces "+ עצירה" / "+ עצירה בחזור"; asks which leg only when there is a return. */
-    addStopAny: "+ עוד מקום בדרך",
-    stopSheetTitle: "מקום נוסף שהרכב עוצר בו בדרך (לאסוף או להוריד מישהו, לסדר משהו)",
-    stopLegQuestion: "בדרך לשם או בדרך חזרה?",
-    stopLegOut: "בדרך ל{{place}}",
-    stopLegOutPlain: "בדרך לשם",
-    stopLegReturn: "בדרך חזרה ל{{place}}",
-    stopLegReturnPlain: "בדרך חזרה",
-    routeLine: "המסלול:",
-    routeReturn: "חזרה:",
-    /** Information only (owner 2026-11-08): never blocks, never prompts, never changes the member's times. */
-    stopMinutesHint: "כל עצירה מאריכה מעט את הנסיעה; שעות ההגעה בדרך משוערות",
-    stopCancelPick: "ביטול",
+    /** TODO ST1 rework (owner 2026-11-08): the "עצירות" button opens the stops editor sheet. */
+    stopsButton: "עצירות",
+    stopsButtonCount: "עצירות ({{count}})",
+    stopsLegOut: "הלוך",
+    stopsLegReturn: "חזור",
+    stopsEditorTitle: "עצירות בדרך",
+    addStopHere: "+ הוספת עצירה",
+    stopDragHandle: "גרירת עצירה (אפשר גם בחיצים למעלה ולמטה)",
+    stopChangePlace: "שינוי מקום",
+    stopChangeFixed: "שינוי מקום: {{place}}",
+    stopBackToList: "חזרה לרשימה",
     /** Remove-stop chip button `aria-label`. */
     removeStop: "הסרת עצירה",
     /** "הקפצה" optional pickup leg toggle. */

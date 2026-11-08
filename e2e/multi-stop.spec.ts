@@ -36,17 +36,18 @@ test.describe("multi-stop rides", { tag: ["@request-form", "@board"] }, () => {
     await page.getByPlaceholder("לאן?").fill(HAIFA);
     await page.getByRole("option").filter({ hasText: HAIFA }).first().click();
 
-    // Out-stop: collapsed behind "+ עוד מקום בדרך" until tapped (REQUIREMENTS §13.93, TODO ST1) —
-    // a round trip asks which leg first, then opens the same `DestinationCombobox`, auto-focused,
-    // and closes itself on pick.
-    await page.getByRole("button", { name: he.request.addStopAny, exact: true }).click();
-    await page.getByTestId("stop-leg-out").click();
+    // Out-stop: the "עצירות" button opens the stops editor (REQUIREMENTS §13.93, TODO ST1) — one
+    // ordered list; "+ הוספת עצירה" adds the stop right before the destination, i.e. as an out-stop
+    // (dragging would move it), picked inline from the department's places.
+    await page.getByTestId("add-stop").click();
+    await page.getByTestId("add-stop-here").click();
     await page.getByPlaceholder(he.request.stopPlaceholder).fill(BINYAMINA);
     await page.getByRole("option").filter({ hasText: BINYAMINA }).first().click();
 
-    // The stop is a chip on the route line and the panel is closed again.
-    await expect(page.getByTestId("route-stop-out")).toContainText(BINYAMINA);
-    await expect(page.getByTestId("add-stop-panel")).toHaveCount(0);
+    // The stop is a block in the editor; close the sheet.
+    await expect(page.getByTestId("stop-block")).toContainText(BINYAMINA);
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("stops-sheet")).toHaveCount(0);
 
     await page.getByRole("radiogroup", { name: "סוג נסיעה" }).getByRole("radio").first().click();
     await submitRequestForm(page);

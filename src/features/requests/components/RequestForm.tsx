@@ -1431,14 +1431,14 @@ export function RequestForm({
         </div>
 
         {/* REQ §13.93 "Multi-stop rides": compact chips between the origin line and the
-            destination field, behind one "+ עוד מקום בדרך" link — not shown for carNow (fixed home
+            destination field, behind one "עצירות" button — not shown for carNow (fixed home
             round trip, no room/need for stops). */}
         {variant !== "carNow" ? (
           <StopsField
             form={form}
             hasReturn={needsReturn}
             error={stopsError(form.formState.errors.outStops) ?? stopsError(form.formState.errors.returnStops)}
-            destinations={destinationsWithoutOrigin}
+            places={(destinationsQuery.data ?? []).map((d) => ({ id: d.id, name: d.name, aliases: d.aliases, zone: d.zone, travelMinutes: d.travel_minutes }))}
           />
         ) : null}
 
