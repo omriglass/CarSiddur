@@ -10,9 +10,10 @@
 import { bestPlacementWithinFlex } from './flexibility';
 import { scoreRequests } from './policy/engine';
 import { reason } from './reasons';
-import { fits, luggageFits } from './seatFit';
-import { byId, dayBoundsForSlot, formatSlotTime, normalize } from './slots';
-import { originIdOf } from './travel';
+import { chauffeurLoad, fits, luggageFits } from './seatFit';
+import { byId, dayBoundsForSlot, formatSlotTime, minutesToSlots, normalize, travelSlotsFor } from './slots';
+import type { NormalizedRequest } from './slots';
+import { chauffeurCandidates, chauffeurTotalSlots, originIdOf, resolveStopMinutes } from './travel';
 import type { CarTimeline } from './timeline';
 import type {
   Car,
@@ -52,6 +53,7 @@ export interface FreedSlotCandidate {
 
 /**
  * One-way requests are never freed-slot candidates (REQUIREMENTS §13.64) —
+ * a one-leg drop_off is (REQ §13.193: a chauffeur ride at its own time, no shift);
  * they need a partner, host or driver. Multi-day series legs are excluded
  * too (SOLVER §3.x): they are immovable and placed all-or-nothing across
  * every leg's own day, never into a single freed slot.
@@ -83,7 +85,9 @@ export function matchFreedSlot(
   };
   const { normalized } = normalize(pseudoInput);
   const roundTrips = normalized.filter((nr) => nr.legs[0]?.side === 'both');
-  const { scores } = scoreRequests(pseudoInput, roundTrips);
+  // REQ §13.193: a drop_off ("hakpatza") with one leg (drop-off only or pickup only) takes the freed car as a chauffeur ride at its own time.
+  const singleDropOffs = normalized.filter((nr) => nr.tripType === 'drop_off' && nr.legs.length === 1 && nr.legs[0]?.side !== 'both');
+  const { scores } = scoreRequests(pseudoInput, [...roundTrips, ...singleDropOffs]);
 
   const results: FreedSlotCandidate[] = [];
   for (const nr of roundTrips) {
@@ -107,6 +111,22 @@ export function matchFreedSlot(
       }),
     });
   }
+  for (const nr of singleDropOffs) {
+    const window = singleDropOffWindow(pseudoInput, input.timeline, input.car, nr);
+    if (!window) continue;
+    const day = dayBoundsForSlot(input.week.days, window.start);
+    results.push({
+      requestId: nr.id,
+      window,
+      shift: { departureMin: 0, returnMin: 0 },
+      score: scores.get(nr.id)?.total ?? 0,
+      reason: reason('PLACED_PREFERRED', {
+        car: input.car.name,
+        dep: formatSlotTime(window.start, day),
+        ret: formatSlotTime(window.end, day),
+      }),
+    });
+  }
 
   results.sort((a, b) => {
     const pa = priority.has(a.requestId) ? 0 : 1;
@@ -119,6 +139,25 @@ export function matchFreedSlot(
     return byId({ id: a.requestId }, { id: b.requestId });
   });
   return results;
+}
+
+/** The chauffeur ride of a one-leg drop_off on the freed car at the leg's own time (the same candidates as placement,
+ *  `relay.ts`), or null when the car cannot take it there and then. */
+function singleDropOffWindow(input: SolverInput, timeline: CarTimeline, car: Car, nr: NormalizedRequest): Window | null {
+  const leg = nr.legs[0];
+  if (!leg || leg.side === 'both') return null;
+  if (!fits(car, chauffeurLoad(nr.passengers)) || !luggageFits(car, nr.luggage ? 1 : 0)) return null;
+  const side: 'out' | 'return' = leg.side === 'out' ? 'out' : 'return';
+  const point = side === 'out' ? leg.window.start : leg.window.end;
+  const day = dayBoundsForSlot(input.week.days, point);
+  const totalSlots = chauffeurTotalSlots(input, nr.request, side, nr.originId, nr.destinationId, resolveStopMinutes(input.config), input.config.chauffeurDwellMinutes);
+  const candidates = chauffeurCandidates(side, point, nr.travelSlots, travelSlotsFor(input, nr.originId, nr.destinationId),
+    minutesToSlots(input.config.chauffeurDwellMinutes), nr.originId, nr.destinationId, totalSlots);
+  for (const candidate of candidates) {
+    if (candidate.window.start < day.startSlot || candidate.window.end > day.endSlot) continue;
+    if (timeline.isFree(candidate.window, candidate.carOriginId)) return candidate.window;
+  }
+  return null;
 }
 
 /** One candidate for `freedSlotOptions`: its own requested window (slots) and policy score. */

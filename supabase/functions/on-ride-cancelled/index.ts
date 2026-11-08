@@ -549,10 +549,14 @@ async function handle(req: Request, onOffer: (id: string) => void): Promise<Resp
   const requestById = new Map(solverRequests.map((sr) => [sr.id, sr]));
   const optionItems = ranked.flatMap((c) => {
     const sr = requestById.get(c.requestId);
-    if (sr?.departureMs === undefined || sr.returnMs === undefined) return [];
+    if (!sr) return [];
+    // REQ §13.193: a one-leg הקפצה has one time; its chauffeur ride (the matcher's window) is what it takes of the gap
+    const window = sr.departureMs !== undefined && sr.returnMs !== undefined
+      ? { start: toSlotFloor(sr.departureMs, weekStartMs), end: toSlotCeil(sr.returnMs, weekStartMs) }
+      : c.window;
     return [{
       requestId: c.requestId,
-      window: { start: toSlotFloor(sr.departureMs, weekStartMs), end: toSlotCeil(sr.returnMs, weekStartMs) },
+      window,
       score: c.score,
       planB: planBIds.has(c.requestId),
     }];

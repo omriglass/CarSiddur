@@ -75,7 +75,7 @@ describe('matchFreedSlot', () => {
       timeline: tl,
       freedWindow: { start: 32, end: 48 },
       freedLocationId: HOME,
-      candidates: [makeRequest({ id: 'R1', tripShape: 'one_way_to', oneWayCarMode: 'relay', departureMs: slotMs(32) })],
+      candidates: [makeRequest({ id: 'R1', tripShape: 'one_way_to', tripType: 'one_way', oneWayCarMode: 'relay', departureMs: slotMs(32) })],
       destinations: makeDestinations(),
       policy: defaultPolicy(),
       stats: defaultStats(),
@@ -84,6 +84,26 @@ describe('matchFreedSlot', () => {
       homeLocationId: HOME,
     });
     expect(result).toEqual([]);
+  });
+
+  it('a one-leg drop_off takes the freed car as a chauffeur ride at its own time (REQ §13.193)', () => {
+    const car = makeCar('C1');
+    const match = (busy: boolean) => {
+      const tl = new CarTimeline(car, 2, 96 * 7, HOME);
+      if (busy) tl.add({ rideId: 'X', window: { start: 33, end: 36 }, startLocationId: HOME, endLocationId: HOME } as never);
+      return matchFreedSlot({
+        car, timeline: tl, freedWindow: { start: 24, end: 64 }, freedLocationId: HOME,
+        candidates: [makeRequest({ id: 'R1', tripShape: 'one_way_to', tripType: 'drop_off', departureMs: slotMs(32), returnMs: undefined })],
+        destinations: makeDestinations(), policy: defaultPolicy(), stats: defaultStats(), config: defaultConfig(),
+        week: WEEK, homeLocationId: HOME,
+      });
+    };
+    const free = match(false);
+    expect(free.map((c) => c.requestId)).toEqual(['R1']);
+    expect(free[0]?.window.start).toBe(32);
+    expect(free[0]?.window.end).toBeGreaterThan(32);
+    expect(free[0]?.shift).toEqual({ departureMin: 0, returnMin: 0 });
+    expect(match(true)).toEqual([]);
   });
 
   it('uses flex placement into a merged gap when the exact freed window needs a small shift', () => {

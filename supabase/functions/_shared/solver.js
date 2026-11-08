@@ -4661,7 +4661,8 @@ function matchFreedSlot(input, opts) {
   };
   const { normalized } = normalize(pseudoInput);
   const roundTrips = normalized.filter((nr) => nr.legs[0]?.side === "both");
-  const { scores } = scoreRequests(pseudoInput, roundTrips);
+  const singleDropOffs = normalized.filter((nr) => nr.tripType === "drop_off" && nr.legs.length === 1 && nr.legs[0]?.side !== "both");
+  const { scores } = scoreRequests(pseudoInput, [...roundTrips, ...singleDropOffs]);
   const results = [];
   for (const nr of roundTrips) {
     const envelopeStart = nr.flexDep[0];
@@ -4684,6 +4685,22 @@ function matchFreedSlot(input, opts) {
       })
     });
   }
+  for (const nr of singleDropOffs) {
+    const window = singleDropOffWindow(pseudoInput, input.timeline, input.car, nr);
+    if (!window) continue;
+    const day = dayBoundsForSlot(input.week.days, window.start);
+    results.push({
+      requestId: nr.id,
+      window,
+      shift: { departureMin: 0, returnMin: 0 },
+      score: scores.get(nr.id)?.total ?? 0,
+      reason: reason("PLACED_PREFERRED", {
+        car: input.car.name,
+        dep: formatSlotTime(window.start, day),
+        ret: formatSlotTime(window.end, day)
+      })
+    });
+  }
   results.sort((a, b) => {
     const pa = priority.has(a.requestId) ? 0 : 1;
     const pb = priority.has(b.requestId) ? 0 : 1;
@@ -4695,6 +4712,30 @@ function matchFreedSlot(input, opts) {
     return byId({ id: a.requestId }, { id: b.requestId });
   });
   return results;
+}
+function singleDropOffWindow(input, timeline, car, nr) {
+  const leg = nr.legs[0];
+  if (!leg || leg.side === "both") return null;
+  if (!fits(car, chauffeurLoad(nr.passengers)) || !luggageFits(car, nr.luggage ? 1 : 0)) return null;
+  const side = leg.side === "out" ? "out" : "return";
+  const point = side === "out" ? leg.window.start : leg.window.end;
+  const day = dayBoundsForSlot(input.week.days, point);
+  const totalSlots = chauffeurTotalSlots(input, nr.request, side, nr.originId, nr.destinationId, resolveStopMinutes(input.config), input.config.chauffeurDwellMinutes);
+  const candidates = chauffeurCandidates(
+    side,
+    point,
+    nr.travelSlots,
+    travelSlotsFor(input, nr.originId, nr.destinationId),
+    minutesToSlots(input.config.chauffeurDwellMinutes),
+    nr.originId,
+    nr.destinationId,
+    totalSlots
+  );
+  for (const candidate of candidates) {
+    if (candidate.window.start < day.startSlot || candidate.window.end > day.endSlot) continue;
+    if (timeline.isFree(candidate.window, candidate.carOriginId)) return candidate.window;
+  }
+  return null;
 }
 var FREED_OPTIONS_ENUMERATION_CAP = 500;
 function freedSlotOptions(items, freedWindow, bufferSlots) {
