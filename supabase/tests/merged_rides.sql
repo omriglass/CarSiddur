@@ -710,4 +710,18 @@ begin
   raise notice 'merged_rides.sql section 11: one verdict, turnaround side, joiner return, reversed one-way passed';
 end $$;
 
+-- PF1 (20261108140000): `ride_routes_json` builds guest-free routes set-based; it must equal the per-ride
+-- `ride_route_json` (built by `_ride_route`) for every ride left by this suite.
+do $$
+declare n_rides int; n_diff int; n_rich int;
+begin
+  select count(*), count(*) filter (where x.route is distinct from public.ride_route_json(x.ride_id)),
+         count(*) filter (where jsonb_array_length(x.route) > 2)
+    into n_rides, n_diff, n_rich
+    from public.ride_routes_json(array(select id from public.rides)) x;
+  assert n_diff = 0, format('ride_routes_json differs from ride_route_json on %s of %s rides', n_diff, n_rides);
+  assert n_rich > 0, 'parity check needs at least one ride with stops or guests';
+  raise notice 'ride routes parity: % rides identical (% with stops or guests)', n_rides, n_rich;
+end $$;
+
 rollback;
