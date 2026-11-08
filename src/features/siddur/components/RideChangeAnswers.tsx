@@ -1,3 +1,5 @@
+import { useEffect } from "react";
+import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { useSession } from "@/features/auth/useSession";
@@ -19,15 +21,24 @@ export function RideChangeAnswers({ departmentId, weekStart, canManage = false }
   const ridesById = useAskedRides();
   const mine = (changes.data ?? []).filter((change) => change.parties.some((p) => p.profile_id === session?.user.id && p.accepted === null));
   const outgoing = (changes.data ?? []).filter((change) => canManage || change.requester_id === session?.user.id);
-  if (!mine.length && !outgoing.length) return null;
+  // REQ §13.203 (c): the push opens `/inbox?change=<id>` - scroll to that card; say so when it was already settled.
+  const [searchParams] = useSearchParams();
+  const linked = scoped ? null : searchParams.get("change");
+  const linkedOpen = !!linked && mine.some((change) => change.id === linked);
+  useEffect(() => {
+    if (linkedOpen) document.getElementById(`change-${linked}`)?.scrollIntoView({ block: "center" });
+  }, [linked, linkedOpen]);
+  const linkedGone = !!linked && changes.isSuccess && !linkedOpen && !outgoing.some((change) => change.id === linked);
+  if (!mine.length && !outgoing.length && !linkedGone) return null;
   return <section className="space-y-2" aria-label={he.rideEditing.answerTitle}>
+    {linkedGone ? <p className="rounded-md border p-3 text-sm text-muted-foreground" data-testid="ride-change-settled">{he.rideEditing.linkSettled}</p> : null}
     {mine.map((change) => {
       // REQ §13.203 (c): what I am asked — return earlier, leave later, or give my ride up (older requests: give up).
       const party = change.parties.find((p) => p.profile_id === session?.user.id && p.accepted === null);
       const wanted = `${formatDayDate(change.starts_at)} \u2066${formatTime(new Date(change.starts_at))}–${formatTime(new Date(change.ends_at))}\u2069`;
       const asked = askedOf(party, ridesById.get(party?.ride_id ?? ""));
       const vars = { name: change.requester?.full_name ?? "", time: wanted, ...asked.vars };
-      return <div key={change.id} className="space-y-3 rounded-md border border-primary/40 p-3" id={`change-${change.id}`}>
+      return <div key={change.id} className={`space-y-3 rounded-md border p-3 ${change.id === linked ? "border-primary ring-2 ring-primary/40" : "border-primary/40"}`} id={`change-${change.id}`} data-linked={change.id === linked ? "true" : undefined}>
         <h2 className="font-medium">{he.rideEditing.answerTitle}</h2>
         <p className="text-sm">{tv(asked.body, vars)}</p>
         <div className="flex flex-wrap gap-2">{[true, false].map((accept) => <Button key={String(accept)} variant={accept ? "default" : "outline"} disabled={answer.isPending} onClick={() => answer.mutate({ changeId: change.id, accept }, { onSuccess: () => toast.success(he.rideEditing.answered) })}>

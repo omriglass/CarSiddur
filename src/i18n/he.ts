@@ -416,6 +416,8 @@ export const he = {
     needsCoordinator: "הנסיעה כוללת נוסעים נוספים או החלפת רכב. יש לפנות לסדרן/ית לתיאום השינוי.",
     noConflict: "הזמן כבר התפנה. סגרו את ההודעה ונסו לשמור שוב.",
     noLongerPending: "הבקשה הזו כבר טופלה. רעננו את הסידור.",
+    /** REQ §13.203 (c): the push's link leads to a request that was already answered or withdrawn. */
+    linkSettled: "הבקשה לפינוי זמן כבר נענתה או בוטלה.",
     archived: "השבוע הועבר לארכיון ולא ניתן לשנות אותו.",
     alreadyPending: "כבר יש שינוי שממתין לטיפול בנסיעה הזו. יש לטפל בו לפני שינוי נוסף.",
     pendingPublish: "יש בקשות לפינוי זמן שעדיין ממתינות לתשובה. יש לטפל בהן לפני הפרסום.",
