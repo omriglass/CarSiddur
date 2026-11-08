@@ -989,6 +989,7 @@ export const he = {
     companion_added: "נרשמת כנוסע/ת בבקשה של מישהו",
     ride_edited: "מישהו שינה את הנסיעה שלך",
     driver_reminder: "תזכורת לצאת לנסיעה שאני נוהג/ת בה",
+    ride_editor_added: "מישהו נתן לך לערוך את הנסיעות שלו",
   } satisfies Record<NotificationEvent, string>,
   car: {
     status: {

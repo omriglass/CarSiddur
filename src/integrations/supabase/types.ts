@@ -3751,6 +3751,55 @@ export type Database = {
           },
         ]
       }
+      ride_editors: {
+        Row: {
+          created_at: string
+          department_id: string
+          editor_id: string
+          id: string
+          owner_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          department_id: string
+          editor_id: string
+          id?: string
+          owner_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          department_id?: string
+          editor_id?: string
+          id?: string
+          owner_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ride_editors_department_id_fkey"
+            columns: ["department_id"]
+            isOneToOne: false
+            referencedRelation: "departments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ride_editors_editor_id_fkey"
+            columns: ["editor_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ride_editors_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       ride_passengers: {
         Row: {
           added_by: string
@@ -5653,6 +5702,10 @@ export type Database = {
         }
         Returns: undefined
       }
+      _is_ride_editor: {
+        Args: { p_actor: string; p_department: string; p_owner: string }
+        Returns: boolean
+      }
       _joiner_times: {
         Args: {
           _leg: Database["public"]["Enums"]["ride_leg"]
@@ -5712,6 +5765,17 @@ export type Database = {
           _week_start: string
         }
         Returns: boolean
+      }
+      _notify_inbox_only: {
+        Args: {
+          p_data: Json
+          p_dedupe: string
+          p_department: string
+          p_event: Database["public"]["Enums"]["notification_event"]
+          p_recipient: string
+          p_vars: Json
+        }
+        Returns: string
       }
       _notify_request_closed: {
         Args: { p_reason: string; p_request_id: string }
@@ -6026,6 +6090,10 @@ export type Database = {
       _route_hop_minutes: {
         Args: { p_from: string; p_to: string }
         Returns: number
+      }
+      _run_as_owner: {
+        Args: { p_owner: string; p_sql: string }
+        Returns: undefined
       }
       _save_request_alternative: {
         Args: { p_old_depart: string; p_payload: Json; p_request_id: string }
@@ -6625,6 +6693,10 @@ export type Database = {
       is_proposal_party: { Args: { _proposal_id: string }; Returns: boolean }
       is_quarter_hour: { Args: { _t: string }; Returns: boolean }
       is_request_companion: { Args: { _request_id: string }; Returns: boolean }
+      is_ride_editor_of: {
+        Args: { p_department: string; p_owner: string }
+        Returns: boolean
+      }
       is_sadran: { Args: { _dept: string; _week: string }; Returns: boolean }
       is_sadran_any: { Args: { _dept: string }; Returns: boolean }
       is_same_day_end: { Args: { p_end: string }; Returns: boolean }
@@ -7359,6 +7431,18 @@ export type Database = {
         Args: { p_template_id: string }
         Returns: undefined
       }
+      ride_editor_cancel_ride: {
+        Args: {
+          p_expected_version?: number
+          p_reason: string
+          p_ride_id: string
+        }
+        Returns: undefined
+      }
+      ride_editor_withdraw_request: {
+        Args: { p_expected_version: number; p_request_id: string }
+        Returns: undefined
+      }
       ride_is_reservation: { Args: { p_ride_id: string }; Returns: boolean }
       ride_merge_fingerprint: { Args: { p_ride_id: string }; Returns: string }
       ride_notice_destination: { Args: { p_ride_id: string }; Returns: string }
@@ -7539,6 +7623,10 @@ export type Database = {
           p_ride_id: string
         }
         Returns: Json
+      }
+      set_ride_editors: {
+        Args: { p_department_id: string; p_editor_ids: string[] }
+        Returns: undefined
       }
       set_ride_passengers: {
         Args: {
@@ -8053,6 +8141,7 @@ export type Database = {
         | "car_task"
         | "ride_edited"
         | "driver_reminder"
+        | "ride_editor_added"
       party_response: "pending" | "accepted" | "declined"
       proposal_status:
         | "draft"
@@ -8307,6 +8396,7 @@ export const Constants = {
         "car_task",
         "ride_edited",
         "driver_reminder",
+        "ride_editor_added",
       ],
       party_response: ["pending", "accepted", "declined"],
       proposal_status: [

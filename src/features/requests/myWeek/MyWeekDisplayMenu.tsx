@@ -30,13 +30,16 @@ interface MyWeekDisplayMenuProps {
   /** REQ §13.177 (c): rides I filed for someone else. */
   showFiledForOthers?: boolean;
   onShowFiledForOthersChange?: (show: boolean) => void;
+  showEditorRides?: boolean;
+  /** REQ §13.202: offered only to someone who was named an editor. */
+  onShowEditorRidesChange?: (show: boolean) => void;
 }
 
 /**
  * The "eye" menu of `/my` (owner 2026-10-11), same pattern and styling as the siddur's `SiddurDisplayMenu`: the
  * list / week choice (remembered on this device; `?view=` wins for one visit) and, in the week view, the zoom out / reset / in items.
  */
-export function MyWeekDisplayMenu({ view, onViewChange, zoom, onZoomChange, showKidsRides, onShowKidsRidesChange, showCoParentRides, onShowCoParentRidesChange, showFiledForOthers, onShowFiledForOthersChange }: MyWeekDisplayMenuProps) {
+export function MyWeekDisplayMenu({ view, onViewChange, zoom, onZoomChange, showKidsRides, onShowKidsRidesChange, showCoParentRides, onShowCoParentRidesChange, showFiledForOthers, onShowFiledForOthersChange, showEditorRides, onShowEditorRidesChange }: MyWeekDisplayMenuProps) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -64,6 +67,11 @@ export function MyWeekDisplayMenu({ view, onViewChange, zoom, onZoomChange, show
             {onShowFiledForOthersChange ? (
               <DropdownMenuCheckboxItem checked={!!showFiledForOthers} onCheckedChange={(checked) => onShowFiledForOthersChange(checked === true)} onSelect={(e) => e.preventDefault()} data-testid="my-show-filed-for-others">
                 {he.myWeek.showFiledForOthers}
+              </DropdownMenuCheckboxItem>
+            ) : null}
+            {onShowEditorRidesChange ? (
+              <DropdownMenuCheckboxItem checked={!!showEditorRides} onCheckedChange={(checked) => onShowEditorRidesChange(checked === true)} onSelect={(e) => e.preventDefault()} data-testid="my-show-editor-rides">
+                {he.myWeek.showEditorRides}
               </DropdownMenuCheckboxItem>
             ) : null}
           </>

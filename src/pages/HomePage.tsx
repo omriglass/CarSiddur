@@ -83,6 +83,7 @@ import type { MyWeekTarget } from "@/features/requests/myWeek/myWeekItems";
 import type { TemplateSuggestion } from "@/features/requests/api";
 import { TemplateSuggestionActions } from "@/features/requests/components/TemplateSuggestions";
 import { TripSummary } from "@/components/TripSummary";
+import { useRideEditorsQuery } from "@/features/member/hooks";
 import { useMyDisplayPrefs } from "@/features/requests/myWeek/myDisplayPrefs";
 import { useTightRideIds } from "@/features/requests/myWeek/useTightRideIds";
 import { MyWeekDisplayMenu } from "@/features/requests/myWeek/MyWeekDisplayMenu";
@@ -147,6 +148,9 @@ export function HomePage() {
   const settingsQuery = useDepartmentSettings(defaultDepartmentId);
   // Owner 2026-10-16: list/table choice and the "children's rides" option are remembered on this device.
   const displayPrefs = useMyDisplayPrefs();
+  // REQ §13.202: the eye menu offers "rides of who let me edit" only to someone who was named an editor.
+  const rideEditorsQuery = useRideEditorsQuery();
+  const isRideEditor = (rideEditorsQuery.data?.grantedToMe.length ?? 0) > 0;
   const [searchParams, setSearchParams] = useSearchParams();
   // `?view=week|list` wins for this visit; otherwise the last choice made on this device (list by default).
   const weekView = (searchParams.get("view") ?? displayPrefs.view) === "week";
@@ -259,6 +263,8 @@ export function HomePage() {
     })
     // REQ §13.177 (c): what I filed for someone else shows only with its display option on.
     .filter((row) => displayPrefs.showFiledForOthers || !isFiledForOther(row, viewerId))
+    // REQ §13.202: the requests of the people who named me their editor, only with that option on.
+    .filter((row) => displayPrefs.showEditorRides || !row.editorOf)
     .sort((a, b) => requestStart(a) - requestStart(b) || a.id.localeCompare(b.id));
 
   const upcomingRides = upcomingRidesQuery.data ?? [];
@@ -419,7 +425,7 @@ export function HomePage() {
       if (confirmAction.kind === "withdrawAll") {
         await withdrawAllMutation.mutateAsync(confirmAction);
       } else if (confirmAction.kind === "withdraw") {
-        await withdrawMutation.mutateAsync({ requestId: confirmAction.row.id, expectedVersion: confirmAction.row.version });
+        await withdrawMutation.mutateAsync({ requestId: confirmAction.row.id, expectedVersion: confirmAction.row.version, asEditor: !!confirmAction.row.editorOf });
       } else if (confirmAction.kind === "withdrawFreedClaim") {
         await withdrawClaimMutation.mutateAsync({ offerId: confirmAction.offerId, requestId: confirmAction.requestId });
       } else if (confirmAction.row.ride) {
@@ -427,6 +433,7 @@ export function HomePage() {
           rideId: confirmAction.row.ride.id,
           reason: "CANCELLED_BY_MEMBER",
           expectedVersion: confirmAction.row.ride.version,
+          asEditor: !!confirmAction.row.editorOf,
         });
       }
       setConfirmAction(null);
@@ -465,6 +472,8 @@ export function HomePage() {
               onShowCoParentRidesChange={displayPrefs.setShowCoParentRides}
               showFiledForOthers={displayPrefs.showFiledForOthers}
               onShowFiledForOthersChange={displayPrefs.setShowFiledForOthers}
+              showEditorRides={displayPrefs.showEditorRides}
+              onShowEditorRidesChange={isRideEditor ? displayPrefs.setShowEditorRides : undefined}
             />
           </div>
         )}
@@ -525,6 +534,8 @@ export function HomePage() {
           onShowCoParentRidesChange={displayPrefs.setShowCoParentRides}
           showFiledForOthers={displayPrefs.showFiledForOthers}
           onShowFiledForOthersChange={displayPrefs.setShowFiledForOthers}
+          showEditorRides={displayPrefs.showEditorRides}
+          onShowEditorRidesChange={isRideEditor ? displayPrefs.setShowEditorRides : undefined}
           childIds={myChildIds}
           guardianIds={guardianIds}
         />

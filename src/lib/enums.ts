@@ -433,6 +433,7 @@ export const NOTIFICATION_EVENTS = [
   "ride_edited",
   "changelog",
   "driver_reminder",
+  "ride_editor_added",
 ] as const satisfies readonly Enums<"notification_event">[];
 export type NotificationEvent = (typeof NOTIFICATION_EVENTS)[number];
 export const notificationEventSchema = z.enum(NOTIFICATION_EVENTS);

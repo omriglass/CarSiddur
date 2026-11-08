@@ -25,6 +25,7 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useIsSadranAnywhere } from "@/features/auth/useIsSadran";
 import { isProfileTab, PROFILE_TABS, type ProfileTab } from "@/features/member/profileTabs";
 import { ParentOfCard } from "@/features/member/components/ParentOfCard";
+import { RideEditorsCard } from "@/features/member/components/RideEditorsCard";
 import { ThemePicker } from "@/features/member/components/ThemePicker";
 import { useTheme, type ThemePreference } from "@/hooks/useTheme";
 import { useNoAutoDialogs } from "@/features/member/useNoAutoDialogs";
@@ -335,6 +336,7 @@ export function ProfilePage() {
         </Card>
 
         <ParentOfCard />
+        <RideEditorsCard departmentId={active.departmentId ?? undefined} />
         </TabsContent>
 
         <TabsContent value="prefs" className="space-y-4">

@@ -10,9 +10,11 @@ export interface MyDisplayPrefs {
   showKidsRides: boolean;
   showCoParentRides: boolean;
   showFiledForOthers: boolean;
+  /** REQ §13.202: the rides of the people who named me an editor of theirs. */
+  showEditorRides: boolean;
 }
 
-export const DEFAULT_MY_DISPLAY_PREFS: MyDisplayPrefs = { view: "list", showKidsRides: false, showCoParentRides: false, showFiledForOthers: false };
+export const DEFAULT_MY_DISPLAY_PREFS: MyDisplayPrefs = { view: "list", showKidsRides: false, showCoParentRides: false, showFiledForOthers: false, showEditorRides: false };
 
 export function parseMyDisplayPrefs(raw: string | null): MyDisplayPrefs {
   if (!raw) return DEFAULT_MY_DISPLAY_PREFS;
@@ -23,6 +25,7 @@ export function parseMyDisplayPrefs(raw: string | null): MyDisplayPrefs {
       showKidsRides: typeof parsed?.showKidsRides === "boolean" ? parsed.showKidsRides : DEFAULT_MY_DISPLAY_PREFS.showKidsRides,
       showCoParentRides: typeof parsed?.showCoParentRides === "boolean" ? parsed.showCoParentRides : DEFAULT_MY_DISPLAY_PREFS.showCoParentRides,
       showFiledForOthers: typeof parsed?.showFiledForOthers === "boolean" ? parsed.showFiledForOthers : DEFAULT_MY_DISPLAY_PREFS.showFiledForOthers,
+      showEditorRides: typeof parsed?.showEditorRides === "boolean" ? parsed.showEditorRides : DEFAULT_MY_DISPLAY_PREFS.showEditorRides,
     };
   } catch {
     return DEFAULT_MY_DISPLAY_PREFS;
@@ -63,5 +66,7 @@ export function useMyDisplayPrefs() {
     setShowCoParentRides: (showCoParentRides: boolean) => update({ showCoParentRides }),
     showFiledForOthers: prefs.showFiledForOthers,
     setShowFiledForOthers: (showFiledForOthers: boolean) => update({ showFiledForOthers }),
+    showEditorRides: prefs.showEditorRides,
+    setShowEditorRides: (showEditorRides: boolean) => update({ showEditorRides }),
   };
 }

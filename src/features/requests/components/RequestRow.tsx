@@ -136,7 +136,7 @@ export function RequestRow({
   // (`onCancelRide`, the requester's own); each keeps its own confirmation dialog. "Repeat weekly" lives in the edit form.
   // R15U1: no edit / cancel on a day of a partly published week that is not published yet (the server refuses it).
   const cancelAction = row.companionOf || isOnUnpublishedDay(row) ? null : row.ride && row.ride.status !== "cancelled"
-    ? (onCancelRide && !notRequester ? () => onCancelRide(row) : null)
+    ? (onCancelRide && (!notRequester || !!row.editorOf) ? () => onCancelRide(row) : null)
     : row.status !== "withdrawn" && row.status !== "cancelled" && onWithdraw ? () => onWithdraw(row) : null;
   const badges = (
     <>
@@ -192,6 +192,7 @@ export function RequestRow({
       {row.needsTowHitch ? <Badge variant="outline" className="w-fit" data-testid={row.towWaived ? "tow-waived" : "tow-chip"}>{row.towWaived ? he.smallTrunk.towWaivedLabel : he.request.towChip}</Badge> : null}
       {row.preferredCarName ? <p className="text-xs text-muted-foreground">{he.request.preferredCar}: {row.preferredCarName}</p> : null}
       {filedLine ? <p className="text-xs text-muted-foreground" data-testid="request-filed-line"><bdi>{filedLine}</bdi></p> : null}
+      {row.editorOf ? <p className="text-xs text-muted-foreground" data-testid="request-editor-line"><bdi>{tv("request.editorOf", { name: row.editorOf })}</bdi></p> : null}
       {row.companionOf ? <p className="text-xs text-muted-foreground" data-testid="request-companion-line"><bdi>{tv("request.companionAddedBy", { name: row.companionOf })}</bdi></p> : null}
       {others ? (
         <p className="text-xs text-muted-foreground" data-testid="request-other-people">{tv("ridePublicDetails.companions", { names: others })}</p>

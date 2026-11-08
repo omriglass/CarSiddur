@@ -96,6 +96,8 @@ export const heMember = {
     /** REQ §13.127 (d): "my rides" row lines for a request filed by / for someone else. */
     filedBy: "הוגשה ע״י {{name}}",
     filedFor: "הוגשה עבור {{name}}",
+    /** REQ §13.202: a request of someone who named me an editor of their rides. */
+    editorOf: "הנסיעה של {{name}} (אני יכול/ה לערוך)",
     /** Owner 2026-10-16 (REQ §13.135): /my row of a request that names me as a companion. */
     companionAddedBy: "{{name}} הוסיף/ה אותך כנוסע/ת",
     /** REQ §13.127 (a): confirmation before a ride is filed for someone else (everyone, Sadranim included). */
@@ -312,6 +314,7 @@ export const heMember = {
     showKidsRides: "הצגת נסיעות הילדים",
     showCoParentRides: "הצגת נסיעות ההורה השני של הילדים",
     showFiledForOthers: "הצגת נסיעות שהגשתי עבור אחרים",
+    showEditorRides: "הצגת נסיעות של מי שנתנו לי לערוך",
     /** Muted tag on a read-only ride that is a child's / another guardian's, not mine. */
     kidRideOf: "נסיעה של {{name}}",
     /** One line under the week switcher: what the grid shows and how to ask for a ride. */
@@ -652,6 +655,13 @@ export const heMember = {
     tabNotifications: "התראות",
     tabsLabel: "אזורי הפרופיל",
     parentOfTitle: "הורה של",
+    /** REQ §13.202: the "ride editors" card in פרטים אישיים. */
+    rideEditorsTitle: "מי יכול/ה לערוך את הנסיעות שלי",
+    rideEditorsHint: "מי שמופיע/ה כאן יכול/ה לערוך ולבטל את הבקשות והנסיעות שלך, ואת/ה מקבל/ת הודעה על כל שינוי.",
+    rideEditorsPicker: "חברים/ות שיכולים/ות לערוך",
+    rideEditorsSave: "שמירה",
+    rideEditorsSaved: "הרשימה נשמרה",
+    rideEditorsGrantedTitle: "אני יכול/ה לערוך את הנסיעות של",
     childWithAge: "{{name}} (גיל: {{age}} שנים)",
     email: "אימייל",
     displayName: "שם לתצוגה (כינוי / שם בעברית)",

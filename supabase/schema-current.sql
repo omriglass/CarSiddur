@@ -242,7 +242,8 @@ CREATE TYPE "public"."notification_event" AS ENUM (
     'changelog',
     'car_task',
     'ride_edited',
-    'driver_reminder'
+    'driver_reminder',
+    'ride_editor_added'
 );
 
 
@@ -2432,6 +2433,21 @@ end $$;
 ALTER FUNCTION "public"."_hold_notice"("_recipient" "uuid", "_event" "public"."notification_event", "_department_id" "uuid", "_week_start" "date", "_vars" "jsonb", "_data" "jsonb", "_dedupe_key" "text") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."_is_ride_editor"("p_department" "uuid", "p_owner" "uuid", "p_actor" "uuid") RETURNS boolean
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  select p_actor is not null and p_owner is not null and p_department is not null and p_actor <> p_owner and exists (
+    select 1 from public.ride_editors e
+    join public.department_members dm on dm.department_id = e.department_id and dm.profile_id = e.editor_id and dm.removed_at is null
+    join public.profiles p on p.id = e.editor_id and p.approval_status = 'approved'
+    where e.department_id = p_department and e.owner_id = p_owner and e.editor_id = p_actor);
+$$;
+
+
+ALTER FUNCTION "public"."_is_ride_editor"("p_department" "uuid", "p_owner" "uuid", "p_actor" "uuid") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."_joiner_times"("_ride_id" "uuid", "_request_id" "uuid", "_leg" "public"."ride_leg", OUT "dep" timestamp with time zone, OUT "ret" timestamp with time zone) RETURNS "record"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -3063,6 +3079,34 @@ end $$;
 
 
 ALTER FUNCTION "public"."_notice_is_unpublished_outcome"("_event" "public"."notification_event", "_data" "jsonb", "_recipient" "uuid", "_department_id" "uuid", "_week_start" "date", "_caller_days" "text") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."_notify_inbox_only"("p_recipient" "uuid", "p_event" "public"."notification_event", "p_department" "uuid", "p_vars" "jsonb", "p_data" "jsonb", "p_dedupe" "text") RETURNS "uuid"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare v_title text; v_body text; v_id uuid; v_data jsonb := coalesce(p_data, '{}'::jsonb);
+begin
+  if coalesce(current_setting('app.suppress_notifications', true), '') = 'on' then return null; end if;
+  select title, body into v_title, v_body from public.notification_templates
+  where event = p_event and channel = 'inbox' and variant is not distinct from nullif(v_data ->> 'variant', '');
+  if v_body is null then
+    select title, body into v_title, v_body from public.notification_templates where event = p_event and channel = 'inbox' and variant is null;
+  end if;
+  if nullif(v_data ->> 'url', '') is null then
+    v_data := v_data || jsonb_build_object('url', public.notification_default_url(p_event, v_data, p_department, null, p_recipient));
+  end if;
+  insert into public.notifications (recipient_id, department_id, week_start, event, title_he, body_he, data, dedupe_key)
+  values (p_recipient, p_department, null, p_event,
+    public.render_notification_text(v_title, coalesce(p_vars, '{}'::jsonb)), public.render_notification_text(v_body, coalesce(p_vars, '{}'::jsonb)),
+    v_data, p_dedupe)
+  on conflict (recipient_id, dedupe_key) where dedupe_key is not null do nothing
+  returning id into v_id;
+  return v_id;
+end $$;
+
+
+ALTER FUNCTION "public"."_notify_inbox_only"("p_recipient" "uuid", "p_event" "public"."notification_event", "p_department" "uuid", "p_vars" "jsonb", "p_data" "jsonb", "p_dedupe" "text") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."_notify_request_closed"("p_request_id" "uuid", "p_reason" "text") RETURNS "void"
@@ -4801,6 +4845,31 @@ $$;
 
 
 ALTER FUNCTION "public"."_route_hop_minutes"("p_from" "uuid", "p_to" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."_run_as_owner"("p_owner" "uuid", "p_sql" "text") RETURNS "void"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  v_claims text := current_setting('request.jwt.claims', true);
+  v_sub text := current_setting('request.jwt.claim.sub', true);
+begin
+  perform set_config('request.jwt.claims', jsonb_build_object('sub', p_owner, 'role', 'authenticated')::text, true);
+  perform set_config('request.jwt.claim.sub', p_owner::text, true);
+  begin
+    execute p_sql;
+  exception when others then
+    perform set_config('request.jwt.claims', coalesce(v_claims, ''), true);
+    perform set_config('request.jwt.claim.sub', coalesce(v_sub, ''), true);
+    raise;
+  end;
+  perform set_config('request.jwt.claims', coalesce(v_claims, ''), true);
+  perform set_config('request.jwt.claim.sub', coalesce(v_sub, ''), true);
+end $$;
+
+
+ALTER FUNCTION "public"."_run_as_owner"("p_owner" "uuid", "p_sql" "text") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."_save_request_alternative"("p_request_id" "uuid", "p_payload" "jsonb", "p_old_depart" timestamp with time zone) RETURNS "void"
@@ -11651,6 +11720,17 @@ $$;
 ALTER FUNCTION "public"."is_request_companion"("_request_id" "uuid") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."is_ride_editor_of"("p_department" "uuid", "p_owner" "uuid") RETURNS boolean
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  select public._is_ride_editor(p_department, p_owner, (select auth.uid()));
+$$;
+
+
+ALTER FUNCTION "public"."is_ride_editor_of"("p_department" "uuid", "p_owner" "uuid") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."is_sadran"("_dept" "uuid", "_week" "date") RETURNS boolean
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -17406,6 +17486,8 @@ CREATE OR REPLACE FUNCTION "public"."request_related"("p_request" "uuid", "p_act
       or exists (select 1 from public.request_companions rc where rc.request_id = q.id and rc.profile_id = p_actor)
       or exists (select 1 from public.ride_requests rr join public.rides r on r.id = rr.ride_id
                  where rr.request_id = q.id and r.status <> 'cancelled' and public.ride_related(r.id, p_actor))
+      -- REQ §13.202: someone the requester named as an editor of their rides.
+      or public._is_ride_editor(q.department_id, q.requester_id, p_actor)
       -- REQ §13.169 (a): with the department's switch on, every approved member of the department.
       or (exists (select 1 from public.department_settings s where s.department_id = q.department_id and s.anyone_edits_rides)
           and exists (select 1 from public.department_members dm join public.profiles p on p.id = dm.profile_id
@@ -18668,6 +18750,62 @@ end $$;
 ALTER FUNCTION "public"."ride_driver_row_check"() OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."ride_editor_cancel_ride"("p_ride_id" "uuid", "p_reason" "text", "p_expected_version" integer DEFAULT NULL::integer) RETURNS "void"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare r public.rides%rowtype; v_me uuid := (select auth.uid()); v_owner uuid; v_request uuid; v_name text;
+begin
+  select * into r from public.rides where id = p_ride_id;
+  if r.id is null or r.status = 'cancelled' then raise exception 'ride_not_found' using errcode = 'P0001'; end if;
+  if not public.is_approved() then raise exception 'not_authorized' using errcode = 'P0001'; end if;
+  -- whose ride: the driver's, else the first rider (a requester on it) who named the caller
+  if public._is_ride_editor(r.department_id, r.driver_id, v_me) then
+    v_owner := r.driver_id;
+    select rr.request_id into v_request from public.ride_requests rr join public.requests q on q.id = rr.request_id
+    where rr.ride_id = r.id and q.requester_id = v_owner order by rr.request_id limit 1;
+  else
+    select q.requester_id, q.id into v_owner, v_request from public.ride_requests rr join public.requests q on q.id = rr.request_id
+    where rr.ride_id = r.id and public._is_ride_editor(r.department_id, q.requester_id, v_me) order by q.id limit 1;
+  end if;
+  if v_owner is null then raise exception 'not_authorized' using errcode = 'P0001'; end if;
+  perform public._run_as_owner(v_owner, format('select public.cancel_ride(%L::uuid, %L, %s)', p_ride_id, p_reason, coalesce(p_expected_version::text, 'null')));
+  select full_name into v_name from public.profiles where id = v_me;
+  perform public.enqueue_notification(v_owner, 'ride_edited', r.department_id, r.week_start,
+    jsonb_build_object('byName', coalesce(v_name, ''), 'route', coalesce(public.request_route_label(v_request), ''),
+      'day', public.day_date_label(r.starts_at)),
+    jsonb_build_object('variant', 'editor_cancelled', 'ride_id', r.id) || case when v_request is null then '{}'::jsonb else jsonb_build_object('request_id', v_request) end,
+    format('editor_cancelled:%s:%s', r.id, v_owner));
+end $$;
+
+
+ALTER FUNCTION "public"."ride_editor_cancel_ride"("p_ride_id" "uuid", "p_reason" "text", "p_expected_version" integer) OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."ride_editor_withdraw_request"("p_request_id" "uuid", "p_expected_version" integer) RETURNS "void"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare q public.requests%rowtype; v_me uuid := (select auth.uid()); v_name text;
+begin
+  select * into q from public.requests where id = p_request_id;
+  if q.id is null then raise exception 'request_not_found' using errcode = 'P0001'; end if;
+  if not public.is_approved() or not public._is_ride_editor(q.department_id, q.requester_id, v_me) then
+    raise exception 'not_authorized' using errcode = 'P0001';
+  end if;
+  perform public._run_as_owner(q.requester_id, format('select public.withdraw_request(%L::uuid, %s)', p_request_id, coalesce(p_expected_version::text, 'null')));
+  select full_name into v_name from public.profiles where id = v_me;
+  perform public.enqueue_notification(q.requester_id, 'ride_edited', q.department_id, q.week_start,
+    jsonb_build_object('byName', coalesce(v_name, ''), 'route', coalesce(public.request_route_label(q.id), ''),
+      'day', public.day_date_label(coalesce(q.depart_at, q.return_at))),
+    jsonb_build_object('variant', 'editor_withdrew', 'request_id', q.id),
+    format('editor_withdrew:%s', q.id));
+end $$;
+
+
+ALTER FUNCTION "public"."ride_editor_withdraw_request"("p_request_id" "uuid", "p_expected_version" integer) OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."ride_is_reservation"("p_ride_id" "uuid") RETURNS boolean
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -18747,7 +18885,10 @@ CREATE OR REPLACE FUNCTION "public"."ride_related"("p_ride" "uuid", "p_actor" "u
       or exists (select 1 from public.ride_passengers rp where rp.ride_id = r.id and rp.person_id = p_actor)
       or exists (select 1 from public.ride_requests rr join public.requests q on q.id = rr.request_id
                  where rr.ride_id = r.id and (q.requester_id = p_actor or q.filed_by = p_actor
-                   or exists (select 1 from public.request_companions rc where rc.request_id = q.id and rc.profile_id = p_actor)))));
+                   or exists (select 1 from public.request_companions rc where rc.request_id = q.id and rc.profile_id = p_actor)
+                   or public._is_ride_editor(r.department_id, q.requester_id, p_actor)))
+      -- REQ §13.202
+      or public._is_ride_editor(r.department_id, r.driver_id, p_actor)));
 $$;
 
 
@@ -21039,6 +21180,43 @@ end $$;
 
 
 ALTER FUNCTION "public"."set_ride_driver"("p_ride_id" "uuid", "p_driver_id" "uuid", "p_expected_version" integer, "p_allow_busy" boolean) OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."set_ride_editors"("p_department_id" "uuid", "p_editor_ids" "uuid"[]) RETURNS "void"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  v_me uuid := (select auth.uid());
+  v_ids uuid[] := array(select distinct x from unnest(coalesce(p_editor_ids, '{}'::uuid[])) x where x is not null);
+  v_added record;
+  v_name text;
+begin
+  if v_me is null or not public.is_approved() or not public.member_of(p_department_id) then
+    raise exception 'not_authorized' using errcode = 'P0001';
+  end if;
+  if v_me = any(v_ids) or exists (
+    select 1 from unnest(v_ids) x
+    where not exists (select 1 from public.department_members dm join public.profiles p on p.id = dm.profile_id
+                      where dm.department_id = p_department_id and dm.profile_id = x and dm.removed_at is null
+                        and p.approval_status = 'approved')) then
+    raise exception 'ride_editor_invalid' using errcode = 'P0001';
+  end if;
+  delete from public.ride_editors where department_id = p_department_id and owner_id = v_me and not (editor_id = any(v_ids));
+  select full_name into v_name from public.profiles where id = v_me;
+  for v_added in
+    insert into public.ride_editors (department_id, owner_id, editor_id)
+    select p_department_id, v_me, x from unnest(v_ids) x
+    on conflict (department_id, owner_id, editor_id) do nothing
+    returning id, editor_id
+  loop
+    perform public._notify_inbox_only(v_added.editor_id, 'ride_editor_added', p_department_id,
+      jsonb_build_object('name', coalesce(v_name, '')), jsonb_build_object('owner_id', v_me), 'ride_editor_added:' || v_added.id);
+  end loop;
+end $$;
+
+
+ALTER FUNCTION "public"."set_ride_editors"("p_department_id" "uuid", "p_editor_ids" "uuid"[]) OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."set_ride_passengers"("p_ride_id" "uuid", "p_expected_version" integer, "p_passengers" "jsonb") RETURNS "void"
@@ -26230,6 +26408,26 @@ COMMENT ON COLUMN "public"."ride_change_parties"."cut" IS 'REQ §13.203: end = r
 
 
 
+CREATE TABLE IF NOT EXISTS "public"."ride_editors" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "department_id" "uuid" NOT NULL,
+    "owner_id" "uuid" NOT NULL,
+    "editor_id" "uuid" NOT NULL,
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    CONSTRAINT "ride_editors_not_self" CHECK (("owner_id" <> "editor_id"))
+);
+
+ALTER TABLE ONLY "public"."ride_editors" FORCE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."ride_editors" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."ride_editors" IS 'REQ §13.202: owner_id lets editor_id edit and cancel owner_id''s requests and rides in department_id. Written only by set_ride_editors().';
+
+
+
 CREATE TABLE IF NOT EXISTS "public"."ride_passengers" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "ride_id" "uuid" NOT NULL,
@@ -27688,6 +27886,16 @@ ALTER TABLE ONLY "public"."ride_change_requests"
 
 
 
+ALTER TABLE ONLY "public"."ride_editors"
+    ADD CONSTRAINT "ride_editors_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."ride_editors"
+    ADD CONSTRAINT "ride_editors_unique" UNIQUE ("department_id", "owner_id", "editor_id");
+
+
+
 ALTER TABLE ONLY "public"."ride_passengers"
     ADD CONSTRAINT "ride_passengers_pkey" PRIMARY KEY ("id");
 
@@ -28059,6 +28267,10 @@ CREATE INDEX "ride_change_ride_moved" ON "public"."ride_change_requests" USING "
 
 
 CREATE INDEX "ride_change_week" ON "public"."ride_change_requests" USING "btree" ("department_id", "week_start", "status");
+
+
+
+CREATE INDEX "ride_editors_editor_idx" ON "public"."ride_editors" USING "btree" ("editor_id", "department_id");
 
 
 
@@ -29060,6 +29272,10 @@ CREATE OR REPLACE TRIGGER "ride_changes_same_day" BEFORE INSERT OR UPDATE ON "pu
 
 
 CREATE CONSTRAINT TRIGGER "ride_driver_row_check" AFTER INSERT OR DELETE OR UPDATE ON "public"."ride_requests" DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION "public"."ride_driver_row_check"();
+
+
+
+CREATE OR REPLACE TRIGGER "ride_editors_set_updated_at" BEFORE UPDATE ON "public"."ride_editors" FOR EACH ROW EXECUTE FUNCTION "public"."set_updated_at"();
 
 
 
@@ -30364,6 +30580,21 @@ ALTER TABLE ONLY "public"."ride_change_requests"
 
 
 
+ALTER TABLE ONLY "public"."ride_editors"
+    ADD CONSTRAINT "ride_editors_department_id_fkey" FOREIGN KEY ("department_id") REFERENCES "public"."departments"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."ride_editors"
+    ADD CONSTRAINT "ride_editors_editor_id_fkey" FOREIGN KEY ("editor_id") REFERENCES "public"."profiles"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."ride_editors"
+    ADD CONSTRAINT "ride_editors_owner_id_fkey" FOREIGN KEY ("owner_id") REFERENCES "public"."profiles"("id") ON DELETE CASCADE;
+
+
+
 ALTER TABLE ONLY "public"."ride_passengers"
     ADD CONSTRAINT "ride_passengers_added_by_fkey" FOREIGN KEY ("added_by") REFERENCES "public"."profiles"("id");
 
@@ -31154,6 +31385,12 @@ CREATE POLICY "request_children_select" ON "public"."request_children" FOR SELEC
 
 
 
+CREATE POLICY "request_children_select_ride_editor" ON "public"."request_children" FOR SELECT TO "authenticated" USING ((EXISTS ( SELECT 1
+   FROM "public"."requests" "q"
+  WHERE (("q"."id" = "request_children"."request_id") AND "public"."is_ride_editor_of"("q"."department_id", "q"."requester_id")))));
+
+
+
 CREATE POLICY "request_children_write_delete" ON "public"."request_children" FOR DELETE TO "authenticated" USING ((EXISTS ( SELECT 1
    FROM "public"."requests" "q"
   WHERE (("q"."id" = "request_children"."request_id") AND (("q"."requester_id" = ( SELECT "auth"."uid"() AS "uid")) OR "public"."can_manage_week"("q"."department_id", "q"."week_start"))))));
@@ -31191,12 +31428,24 @@ CREATE POLICY "request_companions_select" ON "public"."request_companions" FOR S
 
 
 
+CREATE POLICY "request_companions_select_ride_editor" ON "public"."request_companions" FOR SELECT TO "authenticated" USING ((EXISTS ( SELECT 1
+   FROM "public"."requests" "q"
+  WHERE (("q"."id" = "request_companions"."request_id") AND "public"."is_ride_editor_of"("q"."department_id", "q"."requester_id")))));
+
+
+
 ALTER TABLE "public"."request_stops" ENABLE ROW LEVEL SECURITY;
 
 
 CREATE POLICY "request_stops_select" ON "public"."request_stops" FOR SELECT TO "authenticated" USING ((EXISTS ( SELECT 1
    FROM "public"."requests" "q"
   WHERE (("q"."id" = "request_stops"."request_id") AND (("q"."requester_id" = ( SELECT "auth"."uid"() AS "uid")) OR ("q"."filed_by" = ( SELECT "auth"."uid"() AS "uid")) OR "public"."is_request_companion"("q"."id") OR "public"."is_sadran"("q"."department_id", "q"."week_start") OR "public"."is_admin"() OR ("public"."is_approved"() AND "public"."is_week_public"("q"."department_id", "q"."week_start") AND "public"."request_served_by_public_ride"("q"."id")))))));
+
+
+
+CREATE POLICY "request_stops_select_ride_editor" ON "public"."request_stops" FOR SELECT TO "authenticated" USING ((EXISTS ( SELECT 1
+   FROM "public"."requests" "q"
+  WHERE (("q"."id" = "request_stops"."request_id") AND "public"."is_ride_editor_of"("q"."department_id", "q"."requester_id")))));
 
 
 
@@ -31226,6 +31475,10 @@ CREATE POLICY "requests_select" ON "public"."requests" FOR SELECT TO "authentica
 
 
 
+CREATE POLICY "requests_select_ride_editor" ON "public"."requests" FOR SELECT TO "authenticated" USING ("public"."is_ride_editor_of"("department_id", "requester_id"));
+
+
+
 ALTER TABLE "public"."ride_change_parties" ENABLE ROW LEVEL SECURITY;
 
 
@@ -31243,6 +31496,13 @@ ALTER TABLE "public"."ride_change_requests" ENABLE ROW LEVEL SECURITY;
 
 
 CREATE POLICY "ride_change_requests_select" ON "public"."ride_change_requests" FOR SELECT TO "authenticated" USING ((("requester_id" = ( SELECT "auth"."uid"() AS "uid")) OR "public"."can_manage_week"("department_id", "week_start") OR ("public"."is_approved"() AND "public"."is_week_public"("department_id", "week_start"))));
+
+
+
+ALTER TABLE "public"."ride_editors" ENABLE ROW LEVEL SECURITY;
+
+
+CREATE POLICY "ride_editors_select" ON "public"."ride_editors" FOR SELECT TO "authenticated" USING ((("owner_id" = ( SELECT "auth"."uid"() AS "uid")) OR ("editor_id" = ( SELECT "auth"."uid"() AS "uid"))));
 
 
 
@@ -31684,6 +31944,11 @@ GRANT ALL ON FUNCTION "public"."_hold_notice"("_recipient" "uuid", "_event" "pub
 
 
 
+REVOKE ALL ON FUNCTION "public"."_is_ride_editor"("p_department" "uuid", "p_owner" "uuid", "p_actor" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_is_ride_editor"("p_department" "uuid", "p_owner" "uuid", "p_actor" "uuid") TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."_joiner_times"("_ride_id" "uuid", "_request_id" "uuid", "_leg" "public"."ride_leg", OUT "dep" timestamp with time zone, OUT "ret" timestamp with time zone) FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."_joiner_times"("_ride_id" "uuid", "_request_id" "uuid", "_leg" "public"."ride_leg", OUT "dep" timestamp with time zone, OUT "ret" timestamp with time zone) TO "service_role";
 
@@ -31746,6 +32011,11 @@ GRANT ALL ON FUNCTION "public"."_merge_window_conflict_side"("_ride_id" "uuid", 
 
 REVOKE ALL ON FUNCTION "public"."_notice_is_unpublished_outcome"("_event" "public"."notification_event", "_data" "jsonb", "_recipient" "uuid", "_department_id" "uuid", "_week_start" "date", "_caller_days" "text") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."_notice_is_unpublished_outcome"("_event" "public"."notification_event", "_data" "jsonb", "_recipient" "uuid", "_department_id" "uuid", "_week_start" "date", "_caller_days" "text") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."_notify_inbox_only"("p_recipient" "uuid", "p_event" "public"."notification_event", "p_department" "uuid", "p_vars" "jsonb", "p_data" "jsonb", "p_dedupe" "text") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_notify_inbox_only"("p_recipient" "uuid", "p_event" "public"."notification_event", "p_department" "uuid", "p_vars" "jsonb", "p_data" "jsonb", "p_dedupe" "text") TO "service_role";
 
 
 
@@ -32257,6 +32527,11 @@ GRANT ALL ON FUNCTION "public"."_route_add_place"("p_route" "jsonb", "p_place_id
 
 REVOKE ALL ON FUNCTION "public"."_route_hop_minutes"("p_from" "uuid", "p_to" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."_route_hop_minutes"("p_from" "uuid", "p_to" "uuid") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."_run_as_owner"("p_owner" "uuid", "p_sql" "text") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_run_as_owner"("p_owner" "uuid", "p_sql" "text") TO "service_role";
 
 
 
@@ -33161,6 +33436,12 @@ GRANT ALL ON FUNCTION "public"."is_proposal_party"("_proposal_id" "uuid") TO "se
 REVOKE ALL ON FUNCTION "public"."is_request_companion"("_request_id" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."is_request_companion"("_request_id" "uuid") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."is_request_companion"("_request_id" "uuid") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."is_ride_editor_of"("p_department" "uuid", "p_owner" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."is_ride_editor_of"("p_department" "uuid", "p_owner" "uuid") TO "service_role";
+GRANT ALL ON FUNCTION "public"."is_ride_editor_of"("p_department" "uuid", "p_owner" "uuid") TO "authenticated";
 
 
 
@@ -34069,6 +34350,18 @@ GRANT ALL ON FUNCTION "public"."ride_driver_row_check"() TO "service_role";
 
 
 
+REVOKE ALL ON FUNCTION "public"."ride_editor_cancel_ride"("p_ride_id" "uuid", "p_reason" "text", "p_expected_version" integer) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."ride_editor_cancel_ride"("p_ride_id" "uuid", "p_reason" "text", "p_expected_version" integer) TO "service_role";
+GRANT ALL ON FUNCTION "public"."ride_editor_cancel_ride"("p_ride_id" "uuid", "p_reason" "text", "p_expected_version" integer) TO "authenticated";
+
+
+
+REVOKE ALL ON FUNCTION "public"."ride_editor_withdraw_request"("p_request_id" "uuid", "p_expected_version" integer) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."ride_editor_withdraw_request"("p_request_id" "uuid", "p_expected_version" integer) TO "service_role";
+GRANT ALL ON FUNCTION "public"."ride_editor_withdraw_request"("p_request_id" "uuid", "p_expected_version" integer) TO "authenticated";
+
+
+
 REVOKE ALL ON FUNCTION "public"."ride_is_reservation"("p_ride_id" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."ride_is_reservation"("p_ride_id" "uuid") TO "service_role";
 
@@ -34408,6 +34701,12 @@ GRANT ALL ON FUNCTION "public"."set_request_trip_type"("p_request_id" "uuid", "p
 REVOKE ALL ON FUNCTION "public"."set_ride_driver"("p_ride_id" "uuid", "p_driver_id" "uuid", "p_expected_version" integer, "p_allow_busy" boolean) FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."set_ride_driver"("p_ride_id" "uuid", "p_driver_id" "uuid", "p_expected_version" integer, "p_allow_busy" boolean) TO "service_role";
 GRANT ALL ON FUNCTION "public"."set_ride_driver"("p_ride_id" "uuid", "p_driver_id" "uuid", "p_expected_version" integer, "p_allow_busy" boolean) TO "authenticated";
+
+
+
+REVOKE ALL ON FUNCTION "public"."set_ride_editors"("p_department_id" "uuid", "p_editor_ids" "uuid"[]) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."set_ride_editors"("p_department_id" "uuid", "p_editor_ids" "uuid"[]) TO "service_role";
+GRANT ALL ON FUNCTION "public"."set_ride_editors"("p_department_id" "uuid", "p_editor_ids" "uuid"[]) TO "authenticated";
 
 
 
@@ -35100,6 +35399,11 @@ GRANT ALL ON TABLE "public"."request_templates" TO "service_role";
 
 GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE "public"."ride_change_parties" TO "authenticated";
 GRANT ALL ON TABLE "public"."ride_change_parties" TO "service_role";
+
+
+
+GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE "public"."ride_editors" TO "authenticated";
+GRANT ALL ON TABLE "public"."ride_editors" TO "service_role";
 
 
 

@@ -187,6 +187,11 @@ begin
       (day_b + time '08:00') at time zone 'Asia/Jerusalem', (day_b + time '10:00') at time zone 'Asia/Jerusalem'));
   perform pg_temp.expect_refused('requests.ride_shorten_options_for_request',
     format('select public.ride_shorten_options_for_request(%L)', req_b));
+  -- REQ §13.202: ride editors - naming editors in another department, and the editor RPCs on its rows
+  perform pg_temp.expect_refused('ride_editors.set_ride_editors', format('select public.set_ride_editors(%L, %L::uuid[])', dept_b, '{}'));
+  perform pg_temp.expect_refused('requests.ride_editor_withdraw_request',
+    format('select public.ride_editor_withdraw_request(%L, %s)', req_b, (select version from public.requests where id = req_b)));
+  perform pg_temp.expect_refused('rides.ride_editor_cancel_ride', format('select public.ride_editor_cancel_ride(%L, %L, %L)', ride_b, 'x', ride_b_version));
   perform pg_temp.expect_refused('rides.respond_ride_change', format('select public.respond_ride_change(%L, true)', change_b));
   perform pg_temp.expect_refused('rides.cancel_ride_change', format('select public.cancel_ride_change(%L)', change_b));
   perform pg_temp.expect_refused('rides.update_ride_public_notes', format('select public.update_ride_public_notes(%L, %L, %L)', ride_b, ride_b_version, 'attack'));
@@ -413,7 +418,7 @@ declare
   iso_covered text[] := array[
     'submit_request','withdraw_request','set_manual_boost','set_freed_slot_opt_out','set_request_children','answer_short_turnaround',
     'set_request_companions','withdraw_all_requests','submit_series_request','enter_waiting_list','apply_solver_result',
-    'edit_ride','cancel_ride','unassign_ride','restore_removed_reservation','board_changes_since','undo_board_change','unmerge_request','merge_preview','set_request_trip_type','switch_request_plan','ride_route','request_ride_change','request_ride_shorten','ride_shorten_options','ride_shorten_options_for_request','respond_ride_change','cancel_ride_change',
+    'edit_ride','cancel_ride','unassign_ride','restore_removed_reservation','board_changes_since','undo_board_change','unmerge_request','merge_preview','set_request_trip_type','switch_request_plan','ride_route','request_ride_change','request_ride_shorten','ride_shorten_options','ride_shorten_options_for_request','set_ride_editors','ride_editor_withdraw_request','ride_editor_cancel_ride','respond_ride_change','cancel_ride_change',
     'update_ride_public_notes','add_ride_passengers','set_ride_passengers','remove_ride_person',
     'log_car_care','report_car_issue','log_car_kilometrage','set_car_kilometrage','submit_car_checklist','upsert_car_checklist_item','move_car_checklist_item','delete_car_checklist_item','request_car_tasks','withdraw_car_task','complete_car_task','merge_destination','suggest_destination','car_mileage_totals',
     'admin_approve_member','admin_update_member','admin_set_sadran_assignments',
@@ -445,7 +450,7 @@ declare
     'waitlist_group_membership_sync:trigger',
     'can_manage_any_open_week:read-helper', 'can_manage_operations:read-helper', 'can_manage_car:read-helper', 'can_define_car_checklist:read-helper', 'is_car_admin:read-helper', 'admin_set_car_admin:admin-only', 'car_base_location:read-helper',
     'can_manage_week:read-helper', 'day_date_label:read-helper', 'is_admin:read-helper',
-    'is_approved:read-helper', 'is_car_responsible:read-helper', 'is_day_public:read-helper',
+    'is_approved:read-helper', 'is_ride_editor_of:read-helper', 'is_car_responsible:read-helper', 'is_day_public:read-helper',
     'is_proposal_party:read-helper', 'is_request_companion:read-helper', 'is_sadran:read-helper',
     'is_sadran_any:read-helper', 'is_week_public:read-helper', 'member_of:read-helper',
     'phone_of:read-helper', 'profile_phones:read-helper', 'request_served_by_public_ride:read-helper',

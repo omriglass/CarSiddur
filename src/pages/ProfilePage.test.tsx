@@ -28,7 +28,12 @@ vi.mock("@/features/fleet/hooks", () => ({
   useMyTemporaryCars: () => ({ data: [] }),
   useRegisterTemporaryCarMutation: () => ({ mutateAsync: vi.fn() }),
 }));
-vi.mock("@/features/member/hooks", () => ({ useGuardedChildrenQuery: () => ({ data: [] }) }));
+vi.mock("@/features/member/hooks", () => ({
+  useGuardedChildrenQuery: () => ({ data: [] }),
+  useRideEditorsQuery: () => ({ data: undefined }),
+  useSetRideEditorsMutation: () => ({ mutate: vi.fn(), isPending: false }),
+}));
+vi.mock("@/features/auth/useDepartmentMembers", () => ({ useDepartmentMembers: () => ({ data: undefined }) }));
 vi.mock("@/features/member/components/ThemePicker", () => ({ ThemePicker: () => <div data-testid="theme-picker" /> }));
 vi.mock("@/integrations/supabase/client", () => ({ supabase: { auth: { signOut: vi.fn() } } }));
 

@@ -507,6 +507,19 @@ from (values
 cross join unnest(array['inbox','push']::public.notification_channel[]) as ch
 on conflict (event,channel,(coalesce(variant,''))) do update set title=excluded.title,body=excluded.body,default_title=excluded.default_title,default_body=excluded.default_body;
 
+-- REQ §13.202: ride editors (same rows as 20261109110300_ride_editor_templates.sql).
+insert into public.notification_templates (event, channel, variant, title, body, default_title, default_body)
+select t.event::public.notification_event, ch, t.variant, t.title, t.body, t.title, t.body
+from (values
+  ('ride_editor_added', null,
+   '{{name}} נתן/ה לך לערוך את הנסיעות שלו/ה',
+   'מעכשיו אפשר לערוך ולבטל את הבקשות והנסיעות של {{name}}, ו{{name}} יקבל/תקבל הודעה על כל שינוי. כדי לראות אותן ב״הנסיעות שלי״, יש לסמן ״הצגת נסיעות של מי שנתנו לי לערוך״ בתפריט התצוגה.'),
+  ('ride_edited', 'editor_withdrew', '{{byName}} הסיר/ה את הבקשה שלך', '{{route}} · {{day}}'),
+  ('ride_edited', 'editor_cancelled', '{{byName}} ביטל/ה את הנסיעה שלך', '{{route}} · {{day}}')
+) as t(event, variant, title, body)
+cross join unnest(array['inbox','push']::public.notification_channel[]) as ch
+on conflict (event,channel,(coalesce(variant,''))) do nothing;
+
 -- Full ride cancellation: every other served passenger/driver is notified (excluding
 -- whoever cancelled it), before their request is flipped to 'cancelled'.
 insert into public.notification_templates(event,channel,variant,title,body,default_title,default_body)

@@ -88,6 +88,8 @@ interface MyWeekViewProps {
   /** REQ §13.177 (c): `requests` then also holds what I filed for others; their rides are drawn muted, "הוגשה עבור X". */
   showFiledForOthers?: boolean;
   onShowFiledForOthersChange?: (show: boolean) => void;
+  showEditorRides?: boolean;
+  onShowEditorRidesChange?: (show: boolean) => void;
 }
 
 /**
@@ -96,7 +98,7 @@ interface MyWeekViewProps {
  * suggestions and proposals waiting for my answer, each on its exact day and times; overlapping items sit side by side.
  * Past weeks (the archive) show rides only, read-only. Layout comes from `WeekGrid`; this component only maps data to it.
  */
-export function MyWeekView({ departmentId, homeDestinationId, profileId, requests, weeks, homeWeekStart, canSubmit, onTarget, archive = false, onViewChange, showKidsRides = false, onShowKidsRidesChange, childIds, guardianIds, showCoParentRides = false, onShowCoParentRidesChange, showFiledForOthers = false, onShowFiledForOthersChange }: MyWeekViewProps) {
+export function MyWeekView({ departmentId, homeDestinationId, profileId, requests, weeks, homeWeekStart, canSubmit, onTarget, archive = false, onViewChange, showKidsRides = false, onShowKidsRidesChange, childIds, guardianIds, showCoParentRides = false, onShowCoParentRidesChange, showFiledForOthers = false, onShowFiledForOthersChange, showEditorRides = false, onShowEditorRidesChange }: MyWeekViewProps) {
   const navigate = useNavigate();
   const requestLinkProps = useRequestLinkProps();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -144,6 +146,13 @@ export function MyWeekView({ departmentId, homeDestinationId, profileId, request
     const related = (showKidsRides || showCoParentRides) && (childIds?.size || guardianIds?.size)
       ? selectRelatedRides(ridesQuery.data ?? [], { profileId, childIds: childIds ?? new Set(), guardianIds: guardianIds ?? new Set() }, myRequestIds)
       : new Map<string, RelatedRideLabel[]>();
+    // REQ §13.202: the rides of someone who named me their editor (their rows reach here only with that option on) — muted, "נסיעה של X".
+    const ownerNameById = new Map(requests.flatMap((row) => (row.editorOf ? [[row.id, row.editorOf] as const] : [])));
+    for (const ride of ridesQuery.data ?? []) {
+      if (!ride.id || isMyBoardRide(ride, profileId, myRequestIds)) continue;
+      const owners = [...new Set(servedOf(ride).flatMap((entry) => (entry.request_id && ownerNameById.has(entry.request_id) ? [ownerNameById.get(entry.request_id)!] : [])))];
+      if (owners.length) related.set(ride.id, [...(related.get(ride.id) ?? []), ...owners.map((name) => ({ kind: "editor" as const, name }))]);
+    }
     const carNameById = new Map((carsQuery.data ?? []).map((car) => [car.id, car.name]));
     const filedFor = new Map<string, string>();
     for (const ride of ridesQuery.data ?? []) {
@@ -269,7 +278,7 @@ export function MyWeekView({ departmentId, homeDestinationId, profileId, request
             ) : null}
             {canDragSomething ? <EditModeButton on={editMode} onChange={setEditMode} /> : null}
             {departmentId ? <LongRangeMenu departmentId={departmentId} /> : null}
-            <MyWeekDisplayMenu view="week" onViewChange={onViewChange} zoom={tableZoom} onZoomChange={setTableZoom} showKidsRides={showKidsRides} onShowKidsRidesChange={onShowKidsRidesChange} showCoParentRides={showCoParentRides} onShowCoParentRidesChange={onShowCoParentRidesChange} showFiledForOthers={showFiledForOthers} onShowFiledForOthersChange={onShowFiledForOthersChange} />
+            <MyWeekDisplayMenu view="week" onViewChange={onViewChange} zoom={tableZoom} onZoomChange={setTableZoom} showKidsRides={showKidsRides} onShowKidsRidesChange={onShowKidsRidesChange} showCoParentRides={showCoParentRides} onShowCoParentRidesChange={onShowCoParentRidesChange} showFiledForOthers={showFiledForOthers} onShowFiledForOthersChange={onShowFiledForOthersChange} showEditorRides={showEditorRides} onShowEditorRidesChange={onShowEditorRidesChange} />
           </div>
         ) : null}
       </div>

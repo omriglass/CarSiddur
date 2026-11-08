@@ -8,7 +8,7 @@ export function isFiledForOther(row: Pick<MyRequestRow, "filedById" | "requester
     && !(row.companionIds ?? []).includes(viewerId);
 }
 
-/** Ids of my requests that are my own trips (not only filed for someone else). */
-export function ownRequestIds(rows: readonly (Pick<MyRequestRow, "filedById" | "requesterId" | "companionIds"> & { id: string })[], viewerId: string | undefined): Set<string> {
-  return new Set(rows.filter((row) => !isFiledForOther(row, viewerId)).map((row) => row.id));
+/** Ids of my requests that are my own trips (not only filed for someone else, nor someone's I may edit — REQ §13.202). */
+export function ownRequestIds(rows: readonly (Pick<MyRequestRow, "filedById" | "requesterId" | "companionIds" | "editorOf"> & { id: string })[], viewerId: string | undefined): Set<string> {
+  return new Set(rows.filter((row) => !isFiledForOther(row, viewerId) && !row.editorOf).map((row) => row.id));
 }

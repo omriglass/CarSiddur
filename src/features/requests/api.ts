@@ -89,6 +89,8 @@ export interface MyRequestRow {
   filerName?: string | null;
   /** Owner 2026-10-16 (REQ §13.135): set when I am only named as a companion on someone else's request — who added me (filer, else requester). */
   companionOf?: string | null;
+  /** REQ §13.202: the request of someone who named me an editor of their rides — their name (shown with its display option). */
+  editorOf?: string | null;
   /** Profile ids of the request's companions (REQ §13.177 c: a filer riding along is not "filed for someone else"). */
   companionIds?: string[];
   preferredCarId?: string | null;
@@ -359,7 +361,7 @@ function mapOtherPeople(row: RawRequestRow): Pick<MyRequestRow, "companionNames"
   };
 }
 
-function mapRow(row: RawRequestRow, profileId?: string): MyRequestRow {
+function mapRow(row: RawRequestRow, profileId?: string, ownerIds: ReadonlySet<string> = new Set()): MyRequestRow {
   // REQ §13.109 (a): outcomes (status, reason, ride, legs) exist for the member only on published days.
   const published = isRequestDayPublished(row.window, row.depart_at, row.return_at);
   const liveLinks = published ? row.ride_requests : [];
@@ -379,7 +381,11 @@ function mapRow(row: RawRequestRow, profileId?: string): MyRequestRow {
     requesterName: row.requester?.full_name ?? null,
     filerName: row.filer?.full_name ?? null,
     companionOf: profileId && row.requester_id !== profileId && row.filed_by !== profileId
+      && (!ownerIds.has(row.requester_id ?? "") || (row.companions ?? []).some((entry) => entry.profile_id === profileId))
       ? (row.filer?.full_name ?? row.requester?.full_name ?? "")
+      : null,
+    editorOf: profileId && row.requester_id !== profileId && row.filed_by !== profileId && ownerIds.has(row.requester_id ?? "")
+      ? (row.requester?.full_name ?? "")
       : null,
     companionIds: (row.companions ?? []).flatMap((entry) => (entry.profile_id ? [entry.profile_id] : [])),
     preferredCarId: row.preferred_car_id,
@@ -727,8 +733,14 @@ export async function fetchMyRequests(profileId: string, departmentId?: string):
   const { data: companionLinks, error: companionError } = await supabase.from("request_companions").select("request_id").eq("profile_id", profileId);
   if (companionError) throw toAppError(companionError);
   const companionIds = (companionLinks ?? []).map((link) => link.request_id);
-  const mine = `requester_id.eq.${profileId},filed_by.eq.${profileId}`;
-  let query = supabase.from("requests").select(SELECT).or(companionIds.length ? `${mine},id.in.(${companionIds.join(",")})` : mine);
+  // REQ §13.202: and the requests of the people who named me an editor of their rides (RLS lets an editor read them).
+  const { data: editorLinks, error: editorError } = await supabase.from("ride_editors").select("owner_id, department_id").eq("editor_id", profileId);
+  if (editorError) throw toAppError(editorError);
+  const ownerIds = new Set((editorLinks ?? []).filter((link) => !departmentId || link.department_id === departmentId).map((link) => link.owner_id));
+  const mine = [`requester_id.eq.${profileId}`, `filed_by.eq.${profileId}`,
+    ...(companionIds.length ? [`id.in.(${companionIds.join(",")})`] : []),
+    ...(ownerIds.size ? [`requester_id.in.(${[...ownerIds].join(",")})`] : [])].join(",");
+  let query = supabase.from("requests").select(SELECT).or(mine);
   if (departmentId) query = query.eq("department_id", departmentId);
   const { data, error } = await query.order("depart_at", { ascending: true, nullsFirst: false });
   if (error) throw toAppError(error);
@@ -744,9 +756,9 @@ export async function fetchMyRequests(profileId: string, departmentId?: string):
     .filter((row) => !row.plan_b_parent_id)
     .filter((row) => !["withdrawn", "cancelled"].includes(row.status) || isDuplicateWithdrawn(row))
     // A request I am only a companion on shows while it is unplaced; once placed on a published day the ride itself lists me.
-    .filter((row) => row.requester_id === profileId || row.filed_by === profileId
+    .filter((row) => row.requester_id === profileId || row.filed_by === profileId || ownerIds.has(row.requester_id ?? "")
       || !(["assigned", "merged"].includes(row.status) && isRequestDayPublished(row.window, row.depart_at, row.return_at)))
-    .map((row) => mapRow(row, profileId));
+    .map((row) => mapRow(row, profileId, ownerIds));
 }
 
 /** REQ §13.127 (b): may the caller edit this request (requester, filer, companion, anyone on its ride, private-car owner, Sadran). */
@@ -1052,8 +1064,10 @@ export async function fetchJoinableRides(requestId: string): Promise<JoinableRid
   });
 }
 
-export async function withdrawRequest(requestId: string, expectedVersion: number): Promise<void> {
-  await rpc("withdraw_request", { p_request_id: requestId, p_expected_version: expectedVersion });
+/** `asEditor`: someone else's request I may edit as their named editor (REQ §13.202) — the owner is told. */
+export async function withdrawRequest(requestId: string, expectedVersion: number, asEditor = false): Promise<void> {
+  if (asEditor) await rpc("ride_editor_withdraw_request", { p_request_id: requestId, p_expected_version: expectedVersion });
+  else await rpc("withdraw_request", { p_request_id: requestId, p_expected_version: expectedVersion });
 }
 
 /** REQ §13.103 c: shorten the caller's own multi-day request to a consecutive sub-span. */
@@ -1089,8 +1103,11 @@ export async function cancelRide(
   rideId: string,
   reason: string,
   expectedVersion?: number,
+  asEditor = false,
 ): Promise<void> {
-  await rpc("cancel_ride", { p_ride_id: rideId, p_reason: reason, p_expected_version: expectedVersion });
+  // REQ §13.202: the ride of someone who named me an editor — cancelled as theirs, and they are told.
+  if (asEditor) await rpc("ride_editor_cancel_ride", { p_ride_id: rideId, p_reason: reason, p_expected_version: expectedVersion });
+  else await rpc("cancel_ride", { p_ride_id: rideId, p_reason: reason, p_expected_version: expectedVersion });
 }
 
 /** Read-only: the offers a cancelled ride produced (status + the winner's name when the server auto-assigned one). Members may read their department's offers; the winner's request/profile are readable once placed on a public ride. */

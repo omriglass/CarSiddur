@@ -69,6 +69,8 @@ export const NOTIFICATION_EVENT_META: Record<NotificationEvent, NotificationEven
   changelog: { category: "account", memberMutable: false, sadranRole: false, weekScoped: false },
   // REQ §13.191: the profile switch `driver_reminder` decides, not a mute.
   driver_reminder: { category: "siddur", memberMutable: false, sadranRole: false, weekScoped: true },
+  // REQ §13.202: someone named you an editor of their rides — one quiet inbox message, never pushed.
+  ride_editor_added: { category: "account", memberMutable: false, sadranRole: false, weekScoped: false },
 };
 
 /** Every mutable event, grouped by `category` — the source `muteCategories.ts` builds on. */

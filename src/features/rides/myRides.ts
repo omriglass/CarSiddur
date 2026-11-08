@@ -33,8 +33,9 @@ export function isRideOfMine(ride: RideShape, profileId: string | undefined, myR
 }
 
 export interface RelatedRideLabel {
-  kind: "child" | "guardian";
-  /** The child's / the other guardian's display name. */
+  /** "editor": the ride of someone who named me an editor of their rides (REQ §13.202). */
+  kind: "child" | "guardian" | "editor";
+  /** The child's / the other guardian's / the owner's display name. */
   name: string;
 }
 

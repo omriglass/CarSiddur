@@ -145,8 +145,8 @@ export function useWithdrawRequestMutation() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ requestId, expectedVersion }: { requestId: string; expectedVersion: number }) =>
-      withdrawRequest(requestId, expectedVersion),
+    mutationFn: ({ requestId, expectedVersion, asEditor }: { requestId: string; expectedVersion: number; asEditor?: boolean }) =>
+      withdrawRequest(requestId, expectedVersion, asEditor),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: requestsKeys.mine(profileId) });
       queryClient.invalidateQueries({ queryKey: siddurKeys.all });
@@ -215,11 +215,13 @@ export function useCancelRideMutation() {
       rideId,
       reason,
       expectedVersion,
+      asEditor,
     }: {
       rideId: string;
       reason: string;
       expectedVersion?: number;
-    }) => cancelRide(rideId, reason, expectedVersion),
+      asEditor?: boolean;
+    }) => cancelRide(rideId, reason, expectedVersion, asEditor),
     onSuccess: (_data, { rideId }) => {
       pollFreedSlotThanks(rideId);
       queryClient.invalidateQueries({ queryKey: requestsKeys.mine(profileId) });

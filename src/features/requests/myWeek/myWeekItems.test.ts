@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { BoardRide } from "@/features/siddur/api";
+import { tv } from "@/i18n/he";
 
 import type { MyRequestRow, TemplateSuggestion } from "../api";
 import { weekDayKeys } from "./dayColumns";
@@ -68,6 +69,11 @@ describe("requestBlocks", () => {
     const [entry] = requestBlocks([request({})], week, null, NOW);
     expect(entry?.block).toMatchObject({ id: "request:r1", carId: "2026-10-12", startMinutes: 480, endMinutes: 720, kind: "request" });
     expect(entry?.target).toMatchObject({ type: "request" });
+  });
+
+  it("names the owner of a request I may edit as their editor (REQ §13.202)", () => {
+    const [entry] = requestBlocks([request({ editorOf: "דנה" })], week, null, NOW);
+    expect(entry?.block.label).toContain(tv("myWeek.kidRideOf", { name: "דנה" }));
   });
 
   it("drops a request on a day already gone, keeping today onward (owner 2026-10-13)", () => {

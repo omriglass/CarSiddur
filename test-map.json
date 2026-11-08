@@ -543,7 +543,12 @@
         "e2e/my-rides-options.spec.ts",
         "src/features/requests/filedForOther.ts",
         "src/features/requests/filedForOther.test.ts",
-        "src/features/rides/myRides.ts"
+        "src/features/rides/myRides.ts",
+        "e2e/ride-editors.spec.ts",
+        "src/features/member/components/RideEditorsCard.tsx",
+        "src/features/member/components/RideEditorsCard.test.tsx",
+        "supabase/migrations/**/*ride_editor*",
+        "supabase/tests/ride_editors.sql"
       ],
       "vitest": [
         "src/features/requests/myWeek/assignLanes.test.ts",

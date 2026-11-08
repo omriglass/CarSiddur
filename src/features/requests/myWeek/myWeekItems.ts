@@ -187,6 +187,8 @@ export function requestBlocks(
   servedRequestIds: ReadonlySet<string> = new Set(),
   /** REQ §13.177 (c): the requester's name when I only filed the request for them ("הוגשה עבור X" before the label). */
   filedForNameOf: (row: MyRequestRow) => string | undefined = () => undefined,
+  /** REQ §13.202: the owner's name for a request of someone who named me their editor ("נסיעה של X" before the label). */
+  ownerNameOf: (row: MyRequestRow) => string | undefined = (row) => row.editorOf ?? undefined,
 ): MyWeekBlock[] {
   const out: MyWeekBlock[] = [];
   // Owner 2026-10-13: a request on a day already gone is no useful information — only today onward (rides stay).
@@ -197,9 +199,12 @@ export function requestBlocks(
     const span = requestSpan(row);
     if (!kind || !span) continue;
     const filedForName = filedForNameOf(row);
+    const ownerName = ownerNameOf(row);
     const label = filedForName !== undefined
       ? `${tv("request.filedFor", { name: filedForName })} · ${originDestinationLabel(row, homeDestinationId)}`
-      : originDestinationLabel(row, homeDestinationId);
+      : ownerName !== undefined
+        ? `${tv("myWeek.kidRideOf", { name: ownerName })} · ${originDestinationLabel(row, homeDestinationId)}`
+        : originDestinationLabel(row, homeDestinationId);
     const description = [...requestDetailLines(row), kind === "proposal" ? null : waitingFallbackLine(row)].filter(Boolean).join("\n") || undefined;
     daySegments(span.start, span.end, dayKeys).forEach((segment, index) => {
       if (segment.dayKey < today) return;
