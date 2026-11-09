@@ -1090,6 +1090,9 @@ export const heMember = {
     recapPickupHomeBy: "איסוף, בבית עד {{time}}",
     recapPickupLeave: "איסוף משם {{time}}",
     carAlsoLuggage: "+ תא מטען גדול",
+    carAlsoLuggageRemove: "בלי תא מטען גדול",
+    /** REQ §13.206 (b): a private car is never refused for luggage / towing. */
+    privateCarNeedsNote: "הרכב הפרטי שלך ישובץ גם בלי תא מטען גדול או וו גרירה — ודא/י שהוא מתאים.",
     carSummaryAny: "רכב לא משנה",
     carSummaryLuggage: "תא מטען גדול",
     carSummarySpecific: "רכב {{name}}",

@@ -194,17 +194,15 @@ begin
   assert not (select payload ? 'allow_small_trunk' from public.proposals p where p.id=prop), 'a non-Sadran proposal never keeps the flag';
   delete from public.proposals where request_id=q1;
 
-  -- ======== (6) place_on_own_car: the owner's own car, no large trunk ========
+  -- ======== (6) place_on_own_car: the owner's own car, no large trunk - REQ §13.206 (b): a private car meets every
+  -- car need, so it is placed at once, nothing asked, nothing waived ========
   dt:=((w+2)+time '09:00') at time zone 'Asia/Jerusalem';
   insert into public.requests(department_id,week_start,requester_id,filed_by,destination_id,ride_type_id,depart_at,return_at,trip_shape,status,origin_id,trip_type,status_reason,has_luggage)
     values(dept,w,m2,m2,dest,typ,dt,dt+interval '3 hours','round_trip','waitlisted',home,'round_trip','WAITLISTED_NO_CAR',true) returning id into q2;
   perform pg_temp.as_user(m2);
-  d:=pg_temp.expect_err(format($q$select public.place_on_own_car(%L,%L)$q$, q2, car43),'needs_large_trunk');
-  assert d::jsonb->>'car_name' is not null, 'own-car refusal names the car';
-  perform pg_temp.as_user(m2);
-  res:=public.place_on_own_car(q2, car43, true);
-  assert res->>'status'='assigned', format('place_on_own_car with allow_small_trunk assigns, got %s',res);
-  assert (select luggage_waived_at is not null and luggage_waived_by=m2 from public.requests where id=q2), 'the owner waived their own request';
+  res:=public.place_on_own_car(q2, car43);
+  assert res->>'status'='assigned', format('place_on_own_car takes luggage on the private car without a flag, got %s',res);
+  assert (select luggage_waived_at is null from public.requests where id=q2), 'nothing is waived on a private car';
   delete from public.ride_requests where request_id=q2; delete from public.rides where car_id=car43 and week_start=w; delete from public.requests where id=q2;
   delete from public.requests where id=q1;
 

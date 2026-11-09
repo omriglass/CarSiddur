@@ -344,6 +344,7 @@ export function buildChecks(opts) {
       where r.status <> 'cancelled' and not r.planning_conflict
         and (not r.auto_relocation or r.driver_id is not null)
         and r.flag_reason is distinct from 'car_chain_broken'
+        and c.type = 'shared'   -- REQ §13.206: nothing tracks where a private car is
         and x.loc is distinct from r.origin_id
         and not public.ride_is_reservation(r.id)
       order by r.starts_at, r.id`,

@@ -635,6 +635,8 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
               !!r.id && !!r.car_id && !!r.starts_at && !!r.ends_at && !!r.origin_id && !!r.destination_id && !mergeGuestRideIds.has(r.id),
           );
           const weekDays = buildWeek(weekStart, daySettings.day_end_time).days;
+          // REQ §13.206: nothing tracks where a private car is - its rides never break a location chain.
+          const privateCarIds = new Set((carsQuery.data ?? []).filter((c) => c.type === "temporary").map((c) => c.id));
           return scanBoardConflicts({
             rides: validRides.map((r) => ({
               id: r.id,
@@ -644,7 +646,7 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
               originId: r.origin_id,
               destinationId: r.destination_id,
               turnaroundMinutes: r.turnaround_override_minutes ?? undefined,
-              locationNeutral: isReservation(r),
+              locationNeutral: isReservation(r) || privateCarIds.has(r.car_id),
               seriesId: r.series_id ?? undefined,
             })),
             carIds: [...new Set([...validRides.map((r) => r.car_id), ...(carsQuery.data ?? []).map((c) => c.id)])],

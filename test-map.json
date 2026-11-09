@@ -147,6 +147,7 @@
         "e2e/request-window.spec.ts",
         "e2e/request-edit.spec.ts",
         "e2e/anyone-edits-rides.spec.ts",
+        "e2e/own-car-one-way.spec.ts",
         "e2e/plan-b-form.spec.ts",
         "e2e/plan-b-cycle.spec.ts",
         "e2e/request-form.ts",

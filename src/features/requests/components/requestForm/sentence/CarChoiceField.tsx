@@ -15,7 +15,7 @@ import { applyCarChoice, carChoiceOf, hasCarAndLuggage, type CarChoice } from ".
 interface CarChoiceFieldProps {
   form: UseFormReturn<RequestFormValues>;
   control: Control<RequestFormValues>;
-  preferredCars: { id: string; name: string }[];
+  preferredCars: { id: string; name: string; isPrivate?: boolean }[];
   initialPreferredCarName: string | null | undefined;
   error?: string;
 }
@@ -24,6 +24,8 @@ export function CarChoiceField({ form, control, preferredCars, initialPreferredC
   const values = useWatch({ control });
   const current = { luggage: values.luggage ?? false, preferredCarId: values.preferredCarId ?? "", preferSpecificCar: values.preferSpecificCar };
   const choice = carChoiceOf(current);
+  // REQ §13.206 (b): my private car meets every car need - nothing refuses it, the form only notes it.
+  const privateChosen = preferredCars.some((car) => car.isPrivate && car.id === current.preferredCarId);
   const options: { value: CarChoice; label: string }[] = [
     { value: "any", label: he.requestSentence.carAny },
     { value: "luggage", label: he.requestSentence.carLuggage },
@@ -64,7 +66,24 @@ export function CarChoiceField({ form, control, preferredCars, initialPreferredC
       {values.towHitch ? <p className="text-xs text-muted-foreground">{t("request.towHint")}</p> : null}
       {choice === "specific" ? (
         <div className="space-y-1">
-          {hasCarAndLuggage(current) ? <p className="text-xs font-medium">{he.requestSentence.carAlsoLuggage}</p> : null}
+          {/* Production 2026-11-09: luggage kept from an earlier choice was invisible under "רכב מסוים" - it can be removed here. */}
+          {hasCarAndLuggage(current) ? (
+            <p className="flex items-center gap-1 text-xs font-medium">
+              {he.requestSentence.carAlsoLuggage}
+              <button
+                type="button"
+                className="inline-flex min-h-8 min-w-8 items-center justify-center rounded-full text-muted-foreground hover:bg-accent"
+                aria-label={he.requestSentence.carAlsoLuggageRemove}
+                data-testid="car-also-luggage-remove"
+                onClick={() => form.setValue("luggage", false, { shouldDirty: true })}
+              >
+                ✕
+              </button>
+            </p>
+          ) : null}
+          {privateChosen && (values.luggage || values.towHitch) ? (
+            <p className="text-xs text-muted-foreground" data-testid="private-car-needs-note">{he.requestSentence.privateCarNeedsNote}</p>
+          ) : null}
           <CarPreferenceFields
             control={control}
             variant="weekly"

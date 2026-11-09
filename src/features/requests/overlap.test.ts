@@ -17,7 +17,8 @@ describe("canPlaceOnOwnCar", () => {
   it("needs an own car and an unserved round trip", () => {
     expect(canPlaceOnOwnCar(row, 1)).toBe(true);
     expect(canPlaceOnOwnCar(row, 0)).toBe(false);
-    expect(canPlaceOnOwnCar({ ...row, tripType: "one_way" }, 1)).toBe(false);
+    expect(canPlaceOnOwnCar({ ...row, tripType: "one_way" }, 1)).toBe(true);
+    expect(canPlaceOnOwnCar({ ...row, tripType: "drop_off" }, 1)).toBe(false);
     expect(canPlaceOnOwnCar({ ...row, status: "assigned" }, 1)).toBe(false);
   });
 });

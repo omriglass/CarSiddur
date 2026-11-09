@@ -94,7 +94,7 @@ export interface SentenceFieldsProps {
   errors: FieldErrors<RequestFormValues>;
   destinations: { id: string; name: string; aliases: string[]; zone: string; travel_minutes?: number | null; is_drop_point?: boolean }[];
   rideTypes: { id: string; name_he: string; code?: string | null }[];
-  preferredCars: { id: string; name: string }[];
+  preferredCars: { id: string; name: string; isPrivate?: boolean }[];
   initialPreferredCarName: string | null | undefined;
   members: { id: string; name: string; doesNotDrive?: boolean }[];
   /**

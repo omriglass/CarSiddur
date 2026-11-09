@@ -705,17 +705,18 @@ export function RequestForm({
   const sharedPreferredCars = (carsQuery.data ?? []).filter((car) => car.type === "shared" && car.status === "active");
   // REQ §13.128: my own active private cars are choosable for a round trip (also when "אני" is out and
   // the borrower drives it), never in ask-to-join. The server places the request straight on that car.
+  // REQ §13.206: a one-way trip too (the car is left at the destination); never a drop-off.
   const myPrivateCars = (myPrivateCarsQuery.data ?? []).filter((car) => car.status === "active");
-  const offerPrivateCars = tripType === "round_trip" && !quickContext;
+  const offerPrivateCars = (tripType === "round_trip" || tripType === "one_way") && !quickContext;
   const preferredCars = offerPrivateCars
     ? [
         ...sharedPreferredCars,
-        ...myPrivateCars.map((car) => ({ id: car.id, name: tv("request.myPrivateCar", { name: car.name }) })),
+        ...myPrivateCars.map((car) => ({ id: car.id, name: tv("request.myPrivateCar", { name: car.name }), isPrivate: true })),
       ]
     : sharedPreferredCars;
   const preferredCarId = values.preferredCarId ?? "";
   useEffect(() => {
-    // The private car only applies to a round trip: clear it when the trip type moves away.
+    // The private car only applies to a round trip or a one-way trip: clear it on a drop-off.
     if (!offerPrivateCars && preferredCarId && myPrivateCars.some((car) => car.id === preferredCarId)) {
       form.setValue("preferredCarId", "", { shouldDirty: true });
       form.setValue("preferSpecificCar", false, { shouldDirty: true });

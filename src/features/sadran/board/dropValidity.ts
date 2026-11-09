@@ -159,7 +159,8 @@ export function luggageCountOf(ride: BoardRide): number {
 export function luggageWarns(ctx: Pick<BoardDropContext, "cars">, carId: string, incoming: number): boolean {
   if (incoming <= 0) return false;
   const car = ctx.cars.find((c) => c.id === carId);
-  return !car || !car.features.includes("large_trunk");
+  // REQ §13.206 (b): a private car meets every car need - its owner knows what it carries.
+  return !car || (car.type !== "temporary" && !car.features.includes("large_trunk"));
 }
 
 /** REQ §13.200: how many of `ride`'s served requests still need a towing car (towing that was not waived by hand). */
@@ -175,6 +176,7 @@ export function towCountOf(ride: BoardRide): number {
 export function towWarns(ctx: Pick<BoardDropContext, "cars">, carId: string, incoming: number, existing = 0): boolean {
   if (incoming <= 0) return false;
   const car = ctx.cars.find((c) => c.id === carId);
+  if (car?.type === "temporary") return false;   // REQ §13.206 (b)
   return !car || !car.features.includes("tow_hitch") || incoming + existing > 1;
 }
 

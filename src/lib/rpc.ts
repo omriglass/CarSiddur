@@ -128,6 +128,7 @@ export type ErrorCode =
   | "private_car_owner_only"
   | "own_car_not_free"
   | "own_car_round_trip_only"
+  | "own_car_one_way_place"
   | "proposal_already_sent"
   | "proposal_not_draft"
   | "proposal_replacement_answered"
@@ -302,6 +303,7 @@ const MESSAGE_TO_CODE: Record<string, ErrorCode> = {
   private_car_owner_only: "private_car_owner_only",
   own_car_not_free: "own_car_not_free",
   own_car_round_trip_only: "own_car_round_trip_only",
+  own_car_one_way_place: "own_car_one_way_place",
   proposal_already_sent: "proposal_already_sent",
   proposal_not_draft: "proposal_not_draft",
   proposal_replacement_answered: "proposal_replacement_answered",
@@ -474,6 +476,7 @@ const CODE_TO_MESSAGE: Record<ErrorCode, string> = {
   private_car_owner_only: he.errors.privateCarOwnerOnly,
   own_car_not_free: he.errors.ownCarNotFree,
   own_car_round_trip_only: he.errors.ownCarRoundTripOnly,
+  own_car_one_way_place: he.errors.ownCarOneWayPlace,
   proposal_already_sent: he.sadranProposal.alreadySent,
   proposal_not_draft: he.sadranProposal.noLongerDraft,
   proposal_replacement_answered: he.sadranProposal.replacementAnswered,

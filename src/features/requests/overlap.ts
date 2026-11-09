@@ -21,7 +21,8 @@ export function canPlaceOnOwnCar(
   row: Pick<MyRequestRow, "status" | "tripType" | "ride">,
   ownCarCount: number,
 ): boolean {
-  return ownCarCount > 0 && !row.ride && row.tripType === "round_trip" && ["waitlisted", "denied", "external"].includes(row.status);
+  // REQ §13.206: a one-way trip goes on my private car too (a drop-off never does).
+  return ownCarCount > 0 && !row.ride && (row.tripType === "round_trip" || row.tripType === "one_way") && ["waitlisted", "denied", "external"].includes(row.status);
 }
 
 /** REQ §13.101 e (QM4). */

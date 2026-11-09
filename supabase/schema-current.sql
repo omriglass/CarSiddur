@@ -7344,7 +7344,7 @@ CREATE OR REPLACE FUNCTION "public"."assert_ride_seats_fit"("v_ride" "uuid") RET
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
-declare r record; v_mode text; v_ids uuid[]; v_holder uuid; v_hitch boolean; v_lug_ok boolean;
+declare r record; v_mode text; v_ids uuid[]; v_holder uuid; v_hitch boolean; v_lug_ok boolean; v_private boolean;
 begin
   v_mode := coalesce(current_setting('app.small_trunk', true), '');
   for r in
@@ -7372,6 +7372,7 @@ begin
     if not public.car_meets_needs(r.car_id, r.lug::int, r.tow::int) then
       v_lug_ok := public.car_takes_luggage(r.car_id, r.lug::int);
       v_hitch := exists (select 1 from public.cars c where c.id = r.car_id and 'tow_hitch' = any(c.features));
+      v_private := exists (select 1 from public.cars c where c.id = r.car_id and c.type = 'temporary');
       -- the towing request that already holds the one hitch (the oldest on the ride): the others are the ones in question
       select q.id into v_holder
       from public.ride_requests rr join public.requests q on q.id = rr.request_id
@@ -7383,7 +7384,7 @@ begin
       where rr.ride_id = v_ride and q.luggage_waived_at is null
         and ((r.leg_side = 'out' and rr.covers_out) or (r.leg_side = 'return' and rr.covers_return))
         and ((q.has_luggage and not v_lug_ok)
-             or (q.needs_tow_hitch and (not v_hitch or q.id is distinct from v_holder)));
+             or (q.needs_tow_hitch and not v_private and (not v_hitch or q.id is distinct from v_holder)));
       if v_mode = 'allow' then
         -- the person placing by hand accepted a car without what these requests need (large trunk / hitch)
         update public.requests set luggage_waived_at = now(), luggage_waived_by = (select auth.uid())
@@ -8235,12 +8236,14 @@ CREATE OR REPLACE FUNCTION "public"."car_location_at"("_car" "uuid", "_at" times
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
-  select coalesce(
-    (select r.destination_id from public.rides r
-      where r.car_id = _car and r.status <> 'cancelled' and r.starts_at <= _at
-        and not public.ride_is_reservation(r.id)
-      order by r.starts_at desc limit 1),
-    public.car_base_location(_car));
+  select case when exists (select 1 from public.cars c where c.id = _car and c.type = 'temporary')
+    then public.car_base_location(_car)
+    else coalesce(
+      (select r.destination_id from public.rides r
+        where r.car_id = _car and r.status <> 'cancelled' and r.starts_at <= _at
+          and not public.ride_is_reservation(r.id)
+        order by r.starts_at desc limit 1),
+      public.car_base_location(_car)) end;
 $$;
 
 
@@ -8251,12 +8254,14 @@ CREATE OR REPLACE FUNCTION "public"."car_location_excluding"("_car" "uuid", "_at
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
-  select coalesce(
-    (select r.destination_id from public.rides r
-      where r.car_id = _car and r.status <> 'cancelled' and r.starts_at <= _at and r.id is distinct from _exclude
-        and not public.ride_is_reservation(r.id)
-      order by r.starts_at desc limit 1),
-    public.car_base_location(_car));
+  select case when exists (select 1 from public.cars c where c.id = _car and c.type = 'temporary')
+    then public.car_base_location(_car)
+    else coalesce(
+      (select r.destination_id from public.rides r
+        where r.car_id = _car and r.status <> 'cancelled' and r.starts_at <= _at and r.id is distinct from _exclude
+          and not public.ride_is_reservation(r.id)
+        order by r.starts_at desc limit 1),
+      public.car_base_location(_car)) end;
 $$;
 
 
@@ -8282,6 +8287,7 @@ CREATE OR REPLACE FUNCTION "public"."car_meets_needs"("_car" "uuid", "_luggage" 
     AS $$
   select public.car_takes_luggage(_car, _luggage)
      and (coalesce(_tow, 0) <= 0
+          or exists (select 1 from public.cars c where c.id = _car and c.type = 'temporary')
           or (_tow <= 1 and exists (select 1 from public.cars c where c.id = _car and 'tow_hitch' = any(c.features))));
 $$;
 
@@ -8391,7 +8397,7 @@ CREATE OR REPLACE FUNCTION "public"."car_takes_luggage"("_car" "uuid", "_count" 
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
   select coalesce(_count, 0) <= 0
-    or exists (select 1 from public.cars c where c.id = _car and 'large_trunk' = any(c.features));
+    or exists (select 1 from public.cars c where c.id = _car and ('large_trunk' = any(c.features) or c.type = 'temporary'));
 $$;
 
 
@@ -11032,7 +11038,7 @@ CREATE OR REPLACE FUNCTION "public"."flag_car_chain_breaks"("p_car" "uuid", "p_w
     AS $$
 declare r record; v_expected uuid; v_n int := 0; v_dept uuid;
 begin
-  select department_id into v_dept from public.cars where id = p_car;
+  select department_id into v_dept from public.cars where id = p_car and type = 'shared';
   if v_dept is null then return 0; end if;
   for r in
     select rd.* from public.rides rd
@@ -13952,7 +13958,7 @@ CREATE OR REPLACE FUNCTION "public"."place_on_own_car"("p_request_id" "uuid", "p
     AS $$
 declare
   v_req public.requests%rowtype; v_actor uuid := (select auth.uid()); v_car public.cars%rowtype;
-  v_ride uuid; v_by text; v_prop uuid; v_phase public.week_phase; v_turnaround int;
+  v_ride uuid; v_by text; v_prop uuid; v_phase public.week_phase; v_turnaround int; v_end timestamptz;
 begin
   perform public._small_trunk_mode(p_allow_small_trunk);   -- REQ §13.111 (a)
   select * into v_req from public.requests where id = p_request_id for update;
@@ -13970,17 +13976,27 @@ begin
                 where rr.request_id = p_request_id and r.status <> 'cancelled') then
     raise exception 'request_not_editable' using errcode = 'P0001';
   end if;
-  if v_req.trip_type <> 'round_trip' or v_req.depart_at is null or v_req.return_at is null or v_req.origin_id is null then
+  -- REQ §13.206: a one-way trip between two list places goes on my car too (it is left at the destination).
+  if v_req.trip_type = 'one_way' then
+    if v_req.depart_at is null or v_req.origin_id is null or v_req.destination_id is null then
+      raise exception 'own_car_one_way_place' using errcode = 'P0001';
+    end if;
+    v_end := greatest(public._round_up_ride_end(v_req.depart_at,
+      v_req.depart_at + make_interval(mins => greatest(coalesce(public.request_leg_route_minutes(p_request_id, 'out'), 30), 0))),
+      v_req.depart_at + interval '15 minutes');
+  elsif v_req.trip_type <> 'round_trip' or v_req.depart_at is null or v_req.return_at is null or v_req.origin_id is null then
     raise exception 'own_car_round_trip_only' using errcode = 'P0001';
+  else
+    v_end := v_req.return_at;
   end if;
   if v_req.depart_at < now() then raise exception 'ride_in_past' using errcode = 'P0001'; end if;
   select phase into v_phase from public.weeks where department_id = v_req.department_id and week_start = v_req.week_start;
   if v_phase is null or v_phase in ('archived', 'upcoming') then raise exception 'week_archived' using errcode = 'P0001'; end if;
   v_turnaround := coalesce(public.required_turnaround_minutes(v_req.department_id, v_req.week_start), 30);
   if exists (select 1 from public.rides r where r.car_id = p_car_id and r.status <> 'cancelled' and not r.draft_hold
-             and tstzrange(r.starts_at, r.blocked_until, '[)') && tstzrange(v_req.depart_at, v_req.return_at + make_interval(mins => v_turnaround), '[)'))
+             and tstzrange(r.starts_at, r.blocked_until, '[)') && tstzrange(v_req.depart_at, v_end + make_interval(mins => v_turnaround), '[)'))
      or exists (select 1 from public.car_maintenance_blocks b where b.car_id = p_car_id
-             and tstzrange(b.starts_at, b.ends_at, '[)') && tstzrange(v_req.depart_at, v_req.return_at, '[)')) then
+             and tstzrange(b.starts_at, b.ends_at, '[)') && tstzrange(v_req.depart_at, v_end, '[)')) then
     raise exception 'own_car_not_free' using errcode = 'P0001';
   end if;
 
@@ -14172,12 +14188,16 @@ begin
     if v_driver is null then raise exception 'no_eligible_driver' using errcode = 'P0001'; end if;
     v_travel := greatest(coalesce(public.request_leg_route_minutes(q.id, 'out'), 30), 0);
     v_end := greatest(public._round_up_ride_end(v_dep, v_dep + make_interval(mins => v_travel)), v_dep + interval '15 minutes');
-    if public.car_location_at(v_car, v_dep) is distinct from q.origin_id then
+    -- REQ §13.206: nothing tracks where a private car is (its owner takes care of it) - the location rules below
+    -- are for shared cars only.
+    if exists(select 1 from public.cars where id = v_car and type = 'shared')
+       and public.car_location_at(v_car, v_dep) is distinct from q.origin_id then
       raise exception 'car_not_at_leg_origin' using errcode = 'P0001';
     end if;
     -- REQ §13.93 (CH1, owner 2026-11-07): a Sadran who saw "לשבץ בכל זאת?" (payload `allow_chain_break`) may leave the
     -- car where its next ride does not start; the board's chain-break warning stays as the reminder.
-    if coalesce(public.car_next_ride_origin(v_car, v_end), q.destination_id) <> q.destination_id
+    if exists(select 1 from public.cars where id = v_car and type = 'shared')
+       and coalesce(public.car_next_ride_origin(v_car, v_end), q.destination_id) <> q.destination_id
        and not (v_manual and exists(select 1 from public.proposals pp
          where pp.id::text = nullif(current_setting('app.applying_proposal', true), '')
            and pp.created_via = 'sadran' and coalesce((pp.payload ->> 'allow_chain_break')::boolean, false))) then
@@ -19812,7 +19832,7 @@ CREATE OR REPLACE FUNCTION "public"."rides_temp_car_never_relays"() RETURNS "tri
 declare v_type public.car_type;
 begin
   select c.type into v_type from public.cars c where c.id = new.car_id;
-  if v_type = 'temporary' and new.origin_id <> new.destination_id then
+  if v_type = 'temporary' and new.origin_id <> new.destination_id and new.pin_reason is distinct from 'OWN_CAR' then
     raise exception 'temporary_car_never_relays' using errcode = 'P0001';
   end if;
   return new;
@@ -22389,7 +22409,7 @@ declare
   v_on_behalf boolean;
   v_member_flow boolean;
   -- REQ §13.135 (c): a private car chosen in the form (the car's owner is the filer, the requester or who filed it).
-  v_own_car uuid; v_own_turnaround int; v_own_by text;
+  v_own_car uuid; v_own_turnaround int; v_own_by text; v_own_end timestamptz;
   v_hold_group uuid;
   -- REQ §13.169 (b): an edit may move the request to another rider (who drives); (c) a save from the request form.
   v_requester_changed boolean := false;
@@ -23026,7 +23046,9 @@ begin
 
   -- REQ §13.135 (c): a private car chosen in the form takes the round trip at once, in any week phase (never another
   -- car instead); a busy car refuses the submit so the member can pick other times.
-  if v_preferred_car_id is not null and v_trip_type = 'round_trip' and v_series_id is null and v_join_ride_id is null
+  -- REQ §13.206: a one-way trip too - the ride ends after the route time and leaves the car at the destination, so
+  -- both ends must be list places (place_request_on_car then also checks the car stands at the origin).
+  if v_preferred_car_id is not null and v_trip_type in ('round_trip', 'one_way') and v_series_id is null and v_join_ride_id is null
      and coalesce((payload->>'reserve_missing_driver')::boolean, false) = false
      and exists (select 1 from public.cars c join public.requests q on q.id = v_request_id
                  where c.id = v_preferred_car_id and c.type = 'temporary' and c.status = 'active'
@@ -23034,11 +23056,21 @@ begin
     v_own_car := v_preferred_car_id;
     if v_depart_at < now() then raise exception 'ride_in_past' using errcode = 'P0001'; end if;
     v_own_turnaround := coalesce(public.required_turnaround_minutes(v_department_id, v_week_start), 30);
+    v_own_end := v_return_at;
+    if v_trip_type = 'one_way' then
+      if v_depart_at is null or exists (select 1 from public.requests q where q.id = v_request_id
+                                         and (q.origin_id is null or q.destination_id is null)) then
+        raise exception 'own_car_one_way_place' using errcode = 'P0001';
+      end if;
+      v_own_end := greatest(public._round_up_ride_end(v_depart_at,
+        v_depart_at + make_interval(mins => greatest(coalesce(public.request_leg_route_minutes(v_request_id, 'out'), 30), 0))),
+        v_depart_at + interval '15 minutes');
+    end if;
     if exists (select 1 from public.rides r where r.car_id = v_own_car and r.status <> 'cancelled'
                and not exists (select 1 from public.ride_requests rr where rr.ride_id = r.id and rr.request_id = v_request_id)
-               and tstzrange(r.starts_at, r.blocked_until, '[)') && tstzrange(v_depart_at, v_return_at + make_interval(mins => v_own_turnaround), '[)'))
+               and tstzrange(r.starts_at, r.blocked_until, '[)') && tstzrange(v_depart_at, v_own_end + make_interval(mins => v_own_turnaround), '[)'))
        or exists (select 1 from public.car_maintenance_blocks b where b.car_id = v_own_car
-               and tstzrange(b.starts_at, b.ends_at, '[)') && tstzrange(v_depart_at, v_return_at, '[)')) then
+               and tstzrange(b.starts_at, b.ends_at, '[)') && tstzrange(v_depart_at, v_own_end, '[)')) then
       raise exception 'own_car_not_free' using errcode = 'P0001';
     end if;
   end if;
@@ -23121,7 +23153,8 @@ begin
     end if;
     -- REQ §13.127 (c): an edited round trip that was booked on a private car goes back on that car when it still
     -- fits (try_auto_approve only knows shared cars); place_request_on_car checks the owner's consent.
-    if v_published_edit and v_trip_type = 'round_trip' and v_old_edit_car is not null
+    -- REQ §13.206: so does a one-way trip.
+    if v_published_edit and v_old_edit_car is not null
        and exists (select 1 from public.cars c where c.id = v_old_edit_car and c.type = 'temporary') then
       v_edit_prev_sys := coalesce(nullif(current_setting('app.system_status_transition', true), ''), 'off');
       perform set_config('app.system_status_transition', 'on', true);

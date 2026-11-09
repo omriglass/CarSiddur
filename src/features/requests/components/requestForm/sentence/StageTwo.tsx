@@ -20,7 +20,7 @@ interface StageTwoProps {
   form: UseFormReturn<RequestFormValues>;
   errors: FieldErrors<RequestFormValues>;
   rideTypes: { id: string; name_he: string; code?: string | null }[];
-  preferredCars: { id: string; name: string }[];
+  preferredCars: { id: string; name: string; isPrivate?: boolean }[];
   initialPreferredCarName: string | null | undefined;
   /** Weekly variant, single-day request only. */
   showRepeatWeekly: boolean;

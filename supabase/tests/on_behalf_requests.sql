@@ -185,6 +185,46 @@ begin
   assert (res->>'car_id') is distinct from tc::text, format('TEST 10 FAILED: a member took someone else''s private car, got %s', res);
   raise notice 'TEST 10 PASSED: the private car chosen in the form takes the ride (own / lent), busy refuses, others never take it';
 
+  -- TEST 10b (REQ §13.206, production 2026-11-09): a one-way trip on my own private car - from the form it goes
+  -- straight on the car and leaves it at the destination; a busy car and a free-text place refuse; a waitlisted
+  -- one-way goes on the car from "שבץ על הרכב שלי" (place_on_own_car), from where the car now stands
+  declare v_home uuid; v_ow uuid;
+  begin
+    select home_destination_id into v_home from public.departments where id = dept;
+    perform set_config('request.jwt.claims',jsonb_build_object('sub',m1,'role','authenticated')::text,true);
+    res := public.submit_request(base||jsonb_build_object('trip_type','one_way','preferred_car_id',tc,'origin_id',v_home,
+      'depart_at',dt2+interval '1 day 4 hours'));
+    assert res->>'status' = 'assigned' and (res->>'car_id')::uuid = tc, format('TEST 10b FAILED: one-way on own car from the form, got %s', res);
+    assert (select r.destination_id = haifa and r.driver_id = m1 and r.ends_at > r.starts_at from public.rides r where r.id = (res->>'ride_id')::uuid),
+      'TEST 10b FAILED: the ride leaves the car at the destination, the owner drives';
+    begin
+      perform public.submit_request(base||jsonb_build_object('trip_type','one_way','preferred_car_id',tc,'origin_id',v_home,
+        'depart_at',dt2+interval '1 day 4 hours'));
+      raise exception 'TEST 10b FAILED: a busy private car took a second one-way';
+    exception when raise_exception then if sqlerrm <> 'own_car_not_free' then raise; end if;
+    end;
+    begin
+      perform public.submit_request(base - 'destination_id' || jsonb_build_object('trip_type','one_way','preferred_car_id',tc,
+        'origin_id',v_home,'destination_text','somewhere','depart_at',dt2+interval '1 day 6 hours'));
+      raise exception 'TEST 10b FAILED: a free-text one-way went on the private car';
+    exception when raise_exception then if sqlerrm <> 'own_car_one_way_place' then raise; end if;
+    end;
+    res := public.submit_request(base||jsonb_build_object('trip_type','one_way','origin_id',haifa,'destination_id',v_home,
+      'depart_at',dt2+interval '1 day 7 hours'));
+    v_ow := (res->>'request_id')::uuid;
+    -- no shared car stands in Haifa: it waits
+    assert res->>'status' is distinct from 'assigned', format('TEST 10b FAILED: setup, the way back should wait, got %s', res);
+    res := public.place_on_own_car(v_ow, tc);
+    assert res->>'status' = 'assigned' and (res->>'car_id')::uuid = tc, format('TEST 10b FAILED: waitlisted one-way onto own car, got %s', res);
+    assert (select r.origin_id = haifa and r.destination_id = v_home from public.rides r where r.id = (res->>'ride_id')::uuid),
+      'TEST 10b FAILED: the way back starts where the car stands';
+    -- (b) large luggage and towing never refuse a private car
+    res := public.submit_request(base||jsonb_build_object('preferred_car_id',tc,'has_luggage',true,'needs_tow_hitch',true,
+      'depart_at',dt2+interval '1 day 10 hours','return_at',dt2+interval '1 day 11 hours'));
+    assert res->>'status' = 'assigned' and (res->>'car_id')::uuid = tc, format('TEST 10b FAILED: luggage + towing on the private car, got %s', res);
+  end;
+  raise notice 'TEST 10b PASSED: a one-way trip goes on my private car (form / שבץ על הרכב שלי), busy and free-text refuse; luggage/towing never refuse it';
+
   -- TEST 12 (REQ §13.129 a): the owner moves someone else's ride (unrelated) onto the private car; the requester is told
   declare v_r record; v_q uuid; v_shared uuid; n int;
   begin
