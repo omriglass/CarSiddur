@@ -24,6 +24,7 @@ interface SharedChannel {
   listeners: Set<ChannelHandlers>;
   status: "connecting" | "live" | "failed";
   detail?: string;
+  transient?: boolean;
   lingerTimer?: ReturnType<typeof setTimeout>;
 }
 
@@ -41,6 +42,24 @@ function seqOf(payload: unknown): number | null {
 function tabOf(payload: unknown): string | null {
   const tab = (payload as { tab?: unknown } | null | undefined)?.tab;
   return typeof tab === "string" ? tab : null;
+}
+
+/**
+ * A network drop rather than a server answer: the socket's own error/close event, a missed heartbeat,
+ * a join timeout or close. These happen whenever a phone sleeps, a PWA goes to the background or the
+ * network switches (production 2026-11: ~25 a day, none a refusal) and heal on the next retry. A
+ * server reply refusing the join (RLS, auth, limits) is not one.
+ */
+export function isTransportDrop(status: string, error?: Error): boolean {
+  if (status !== "CHANNEL_ERROR") return true;
+  const message = error?.message ?? "";
+  return (
+    message === "" ||
+    message.startsWith("channel error: ") ||
+    message.startsWith("socket closed: ") ||
+    message === "heartbeat timeout" ||
+    (typeof Event !== "undefined" && error?.cause instanceof Event)
+  );
 }
 
 function open(topic: string): SharedChannel {
@@ -67,9 +86,10 @@ function open(topic: string): SharedChannel {
         // CHANNEL_ERROR (refused by RLS, rate/connection limits), TIMED_OUT, CLOSED by the server.
         entry.status = "failed";
         entry.detail = error?.message ? `${status}: ${error.message}` : status;
+        entry.transient = isTransportDrop(status, error);
         shared.delete(topic);
         void supabase.removeChannel(channel);
-        for (const listener of [...entry.listeners]) listener.onStatus("failed", entry.detail);
+        for (const listener of [...entry.listeners]) listener.onStatus("failed", entry.detail, entry.transient);
       });
     });
   shared.set(topic, entry);

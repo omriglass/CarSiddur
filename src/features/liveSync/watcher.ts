@@ -11,6 +11,9 @@
  * open phone re-read at the same instant. 30 s after the tab is hidden, its channels are closed (a
  * forgotten tab does not hold one of the plan's 200 connections); on visible the check runs at once
  * and the channels reopen. A refused/failed channel retries with exponential backoff (5 s → 5 min).
+ * Reported (once per page session): a server refusal at once; a network drop only when the channel
+ * is still down after `REPORT_AFTER_FAILURES` attempts in a row while visible and online (drops that
+ * heal on a retry are routine on phones — production 2026-11).
  *
  * No React, no Supabase: everything external comes in through `WatcherDeps`, so the timings are
  * unit-tested with fake timers (`watcher.test.ts`).
@@ -30,8 +33,8 @@ export type ChannelStatus = "live" | "failed";
 export interface ChannelHandlers {
   /** A broadcast arrived: the topic's counter is now `seq`; `tab` = the page that made the change (O28-8). */
   onChange(seq: number | null, tab?: string | null): void;
-  /** Joined, or refused / errored / timed out / closed by the server. */
-  onStatus(status: ChannelStatus, detail?: string): void;
+  /** Joined, or refused / errored / timed out / closed. `transient` = a network drop, not a server refusal. */
+  onStatus(status: ChannelStatus, detail?: string, transient?: boolean): void;
 }
 
 export interface WatchChange {
@@ -51,8 +54,13 @@ export interface WatcherDeps {
   ownChangeRefreshed?(week: string): boolean;
   isVisible(): boolean;
   random(): number;
-  /** Called at most once per page session for a refused/failed channel (the caller reports it). */
-  reportRefusal?(detail: string): void;
+  /**
+   * Called at most once per page session: `refused` = the server refused the join; `down` = network
+   * drops kept the channel down for `REPORT_AFTER_FAILURES` attempts in a row (the caller reports it).
+   */
+  reportRefusal?(detail: string, kind: "refused" | "down"): void;
+  /** Is the browser online? Absent = assumed online. A drop while offline is never reported. */
+  isOnline?(): boolean;
   /** Every live channel of the screen joined (true) or not (false); for the test hook / diagnostics. */
   onLiveState?(live: boolean): void;
 }
@@ -73,6 +81,8 @@ export const OWN_CHANGE_GRACE_MS = 3_000;
 export const MEMBER_JITTER_MS = 3_000;
 export const RETRY_BASE_MS = 5_000;
 export const RETRY_MAX_MS = 5 * 60_000;
+/** Failed joins in a row (0 s, 5 s, 15 s, 35 s with the backoff) before a network drop is reported. */
+export const REPORT_AFTER_FAILURES = 4;
 
 type Timer = ReturnType<typeof setTimeout>;
 
@@ -305,7 +315,7 @@ export class ChangeWatcher {
         }
         this.queueInvalidate([week], false, BROADCAST_DEBOUNCE_MS);
       },
-      onStatus: (status, detail) => {
+      onStatus: (status, detail, transient) => {
         if (!current || this.stopped || channel.status === "closed") return;
         const before = this.pollInterval();
         if (status === "live") {
@@ -318,7 +328,11 @@ export class ChangeWatcher {
           channel.status = "failed";
           channel.wasDown = true;
           this.closeChannel(channel);
-          this.reportOnce(detail ?? "failed");
+          const failures = channel.attempts + 1;
+          if (!transient) this.reportOnce(detail ?? "failed", "refused");
+          else if (failures >= REPORT_AFTER_FAILURES && (this.deps.isOnline?.() ?? true) && this.deps.isVisible()) {
+            this.reportOnce(`${detail ?? "failed"} (${failures} attempts)`, "down");
+          }
           this.scheduleRetry(week, channel);
         }
         if (this.pollInterval() !== before) this.schedulePoll();
@@ -360,10 +374,10 @@ export class ChangeWatcher {
     }, delay);
   }
 
-  private reportOnce(detail: string): void {
+  private reportOnce(detail: string, kind: "refused" | "down"): void {
     if (refusalReported) return;
     refusalReported = true;
-    this.deps.reportRefusal?.(detail);
+    this.deps.reportRefusal?.(detail, kind);
   }
 
   private closeChannel(channel: Channel): void {

@@ -8,6 +8,7 @@ import {
   LIVE_POLL_MS,
   MEMBER_JITTER_MS,
   OWN_CHANGE_GRACE_MS,
+  REPORT_AFTER_FAILURES,
   RETRY_BASE_MS,
   resetWatcherSession,
   type ChannelHandlers,
@@ -30,7 +31,7 @@ interface Harness {
   reports: string[];
 }
 
-function harness(options: { realtime?: boolean; random?: number; pending?: Promise<unknown> } = {}): Harness {
+function harness(options: { realtime?: boolean; random?: number; pending?: Promise<unknown>; online?: () => boolean } = {}): Harness {
   let row: SeqRow = { weekStart: WEEK, seq: 1, publicSeq: 1, deptSeq: 1 };
   let visible = true;
   const invalidated: WatchChange[] = [];
@@ -45,7 +46,8 @@ function harness(options: { realtime?: boolean; random?: number; pending?: Promi
     },
     isVisible: () => visible,
     random: () => options.random ?? 0,
-    reportRefusal: (detail) => reports.push(detail),
+    reportRefusal: (detail, kind) => reports.push(kind === "refused" ? detail : `${kind}: ${detail}`),
+    isOnline: options.online,
   };
   if (options.realtime !== false) {
     deps.subscribe = (_dept, week, _scope, handlers) => {
@@ -374,6 +376,47 @@ describe("ChangeWatcher live channels", () => {
     await flush();
     expect(h.fetchSeqs.mock.calls.length).toBe(before + 1);
     expect(watcher.pollInterval()).toBe(LIVE_POLL_MS);
+    watcher.stop();
+  });
+
+  it("does not report a network drop that heals on a retry", async () => {
+    const h = harness();
+    const watcher = new ChangeWatcher(target("public"), h.deps);
+    watcher.start();
+    await flush();
+    ch(h, 0).handlers.onStatus("failed", "CHANNEL_ERROR: socket closed: 1006", true);
+    await vi.advanceTimersByTimeAsync(RETRY_BASE_MS);
+    ch(h, 1).handlers.onStatus("failed", "CHANNEL_ERROR: channel error: transport failure", true);
+    await vi.advanceTimersByTimeAsync(RETRY_BASE_MS * 2);
+    ch(h, 2).handlers.onStatus("live");
+    expect(h.reports).toEqual([]);
+    watcher.stop();
+  });
+
+  it("reports a network drop once the channel stays down for REPORT_AFTER_FAILURES attempts", async () => {
+    const h = harness();
+    const watcher = new ChangeWatcher(target("public"), h.deps);
+    watcher.start();
+    await flush();
+    for (let i = 0; i < REPORT_AFTER_FAILURES; i++) {
+      expect(h.reports).toEqual([]);
+      ch(h, i).handlers.onStatus("failed", "CHANNEL_ERROR: channel error: transport failure", true);
+      await vi.advanceTimersByTimeAsync(RETRY_BASE_MS * 2 ** i);
+    }
+    expect(h.reports).toEqual([`down: CHANNEL_ERROR: channel error: transport failure (${REPORT_AFTER_FAILURES} attempts)`]);
+    watcher.stop();
+  });
+
+  it("never reports a network drop while the browser is offline", async () => {
+    const h = harness({ online: () => false });
+    const watcher = new ChangeWatcher(target("public"), h.deps);
+    watcher.start();
+    await flush();
+    for (let i = 0; i < REPORT_AFTER_FAILURES + 1; i++) {
+      ch(h, i).handlers.onStatus("failed", "CHANNEL_ERROR: socket closed: 1006", true);
+      await vi.advanceTimersByTimeAsync(RETRY_BASE_MS * 2 ** i);
+    }
+    expect(h.reports).toEqual([]);
     watcher.stop();
   });
 

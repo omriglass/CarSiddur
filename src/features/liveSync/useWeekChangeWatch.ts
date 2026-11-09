@@ -73,8 +73,10 @@ export function useWeekChangeWatch(
               handlers.onChange(seq, tab);
             },
           }),
-        // Once per page session (watcher.ts): shows on /admin/errors when the plan's connection limit is hit.
-        reportRefusal: (detail) => reportClientError(errorToReport(`realtime_channel_refused: ${detail}`, "liveSync")),
+        // Once per page session (watcher.ts): shows on /admin/errors when the plan's connection limit is hit
+        // (`refused`) or the channel stays down through several retries (`down`); routine drops are not reported.
+        reportRefusal: (detail, kind) => reportClientError(errorToReport(`realtime_channel_${kind}: ${detail}`, "liveSync")),
+        isOnline: () => navigator.onLine,
         onLiveState: markLive,
         invalidate: (change) => invalidateWatchedChange(client, departmentId, scope, change),
         isOwnTab: (tab) => tab === tabId(),
