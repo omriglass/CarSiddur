@@ -21,6 +21,8 @@ test("a waitlisted new request asks the driver in the way to leave later; accept
   const admin = await publishedFixtureWeek(WEEK);
   await admin.auth.signOut();
   const contexts: { close: () => Promise<void> }[] = [];
+  // Global setup puts every seeded user on the classic form; restore whatever was there, not the sentence form.
+  const { data: before } = await service.from("profiles").select("classic_request_form").eq("email", SEEDED_USERS.member1.email).single();
   await setClassicForm(SEEDED_USERS.member1.email, true);
   try {
     // member2 drives car 41 09:00–17:00 alone (askable); the other shared cars are held all day by reservations (not askable).
@@ -85,7 +87,7 @@ test("a waitlisted new request asks the driver in the way to leave later; accept
     expect(told!.some((n) => (n.data as { variant?: string }).variant === "ride_shorten_accepted")).toBe(true);
   } finally {
     for (const context of contexts) await context.close().catch(() => undefined);
-    await setClassicForm(SEEDED_USERS.member1.email, false);
+    await setClassicForm(SEEDED_USERS.member1.email, before?.classic_request_form ?? true);
     await service.from("ride_change_requests").delete().eq("department_id", NEVO_DEPARTMENT_ID).eq("week_start", WEEK);
     const { data: rides } = await service.from("rides").select("id").eq("department_id", NEVO_DEPARTMENT_ID).eq("week_start", WEEK);
     if (rides?.length) await service.from("ride_requests").delete().in("ride_id", rides.map((r) => r.id));

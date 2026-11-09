@@ -4,7 +4,6 @@ import path from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 
 import { paths } from "../src/app/routes";
-import { CUSTOM_THEME_ID, THEMES } from "../src/themes/registry";
 import { getWeekStart, NEVO_DEPARTMENT_ID, SEEDED_USERS, signIn } from "./helpers";
 
 // Themes (REQ §13.196, TODO TH4): every theme × light/dark on the screens members and the Sadran read most —
@@ -20,8 +19,28 @@ const BAD_CUSTOM = {
   dark: { background: "#000000", card: "#000000", primary: "#000000", foreground: "#000000" },
 };
 
+/**
+ * The registry's ids, read from its source: importing it would pull in the presets' image assets (a PNG emblem),
+ * which Playwright's loader cannot import.
+ */
+function themeIds(): string[] {
+  const dir = path.join("src", "themes");
+  const registry = fs.readFileSync(path.join(dir, "registry.ts"), "utf8");
+  const list = /export const THEMES[^=]*=\s*\[([^\]]*)\]/.exec(registry)?.[1] ?? "";
+  const ids = list.split(",").map((name) => name.trim()).filter(Boolean).map((name) => {
+    const preset = fs.readFileSync(path.join(dir, "presets", `${name}.ts`), "utf8");
+    const id = /^\s*id:\s*"([^"]+)"/m.exec(preset)?.[1];
+    if (!id) throw new Error(`no id in presets/${name}.ts`);
+    return id;
+  });
+  if (!ids.length) throw new Error("no themes found in src/themes/registry.ts");
+  const custom = /export const CUSTOM_THEME_ID = "([^"]+)"/.exec(registry)?.[1];
+  if (!custom) throw new Error("no CUSTOM_THEME_ID in src/themes/registry.ts");
+  return [...ids, custom];
+}
+
 type Look = { id: string; mode: "light" | "dark" };
-const LOOKS: Look[] = [...THEMES.map((t) => t.id), CUSTOM_THEME_ID].flatMap((id) => [
+const LOOKS: Look[] = themeIds().flatMap((id) => [
   { id, mode: "light" as const },
   { id, mode: "dark" as const },
 ]);
