@@ -889,7 +889,7 @@ export function RequestForm({
       if (mode === "edit" && !isSeriesSubmit(formValues) && !seriesEdit) {
         try {
           const probe = await probeSubmitRequest(buildPayload(formValues, {}));
-          if (probe?.unchanged) {
+          if (probe?.unchanged && !peopleDiffer(formValues)) {
             finishUnchanged();
             return;
           }
@@ -965,6 +965,18 @@ export function RequestForm({
     if (mode !== "edit") return ids.length > 0;
     const before = companionsQuery.data;
     return !before || before.length !== ids.length || !ids.every((id) => before.includes(id));
+  }
+  /**
+   * The server's `unchanged` sees only the request row; companions and named children are saved by their own RPCs
+   * afterwards, and a named child is not in the payload's seat counts — so adding one (or swapping a companion) is a
+   * change the server cannot see (owner 2026-11-09: a child could not be added to a ride).
+   */
+  function peopleDiffer(values: RequestFormValues): boolean {
+    if (mode !== "edit") return false;
+    const before = requestChildrenQuery.data;
+    const kids = values.children;
+    const childrenDiffer = !before || before.length !== kids.length || !kids.every((id) => before.includes(id));
+    return childrenDiffer || companionsChanged(whoOf(values).companions);
   }
   /** `set_request_children` also re-adds the children's seats, which the payload's counts leave out — so any named child needs it. */
   function childrenChanged(ids: readonly string[]): boolean {
@@ -1048,7 +1060,7 @@ export function RequestForm({
       if (!isSeriesRequest && !options.confirmLose && !options.confirmRelease && !waitlist && mode === "edit" && initial?.status === "assigned") {
         try {
           const probe = await probeSubmitRequest(payload);
-          if (probe?.unchanged) {
+          if (probe?.unchanged && !peopleDiffer(formValues)) {
             finishUnchanged();
             return;
           }
@@ -1099,7 +1111,7 @@ export function RequestForm({
       const requestId = result?.request_id ?? initial?.id;
 
       // R11B1: the server found nothing to change — no release/overlap questions, no outcome toast.
-      if (result?.unchanged) {
+      if (result?.unchanged && !peopleDiffer(formValues)) {
         finishUnchanged();
         return;
       }

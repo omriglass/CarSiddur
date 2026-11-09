@@ -45,6 +45,37 @@ test.describe("request edits", { tag: ["@request-form"] }, () => {
     }
   });
 
+  // Owner 2026-11-09: a named child is not in the payload's seat counts, so adding one leaves the request row as it was —
+  // the server answers `unchanged`, and the child must still be saved (it was dropped with "no changes").
+  test("adding a child to a request saves the child although the request row is unchanged", async ({ page }) => {
+    const service = serviceRoleClient();
+    const week = await memberOpenWeek();
+    let requestId: string | undefined;
+    const { data: child, error } = await service.from("children").insert({ department_id: NEVO_DEPARTMENT_ID, full_name: "ילדת בדיקה" }).select("id").single();
+    if (error) throw error;
+    try {
+      await service.from("child_guardians").insert({ child_id: child!.id, profile_id: PROFILE_IDS.member1 });
+      requestId = await insertRequest(service, dayOfWeek(week.weekStart, 5), {
+        week: week.weekStart, requester: PROFILE_IDS.member1, depart: "09:00", return: "12:00", destinationId: PLACES.haifa.id,
+      });
+      await signIn(page, SEEDED_USERS.member1);
+      await page.goto(paths.requests.edit(requestId));
+      const sentence = page.getByTestId("request-sentence");
+      await expect(sentence.getByTestId("chip-destination")).toContainText(PLACES.haifa.name);
+      await sentence.getByTestId("chip-who").click();
+      await page.getByTestId(`who-child-${child!.id}`).click();
+      await page.getByRole("button", { name: he.requestSentence.sheetDone }).click();
+      await expect(sentence.getByTestId("chip-who")).toContainText("ילדת בדיקה");
+      await saveEditedRequest(page);
+      await expect(page.getByText(he.request.noChanges)).toHaveCount(0);
+      await expect.poll(async () => (await service.from("request_children").select("child_id").eq("request_id", requestId!)).data?.map((row) => row.child_id)).toEqual([child!.id]);
+    } finally {
+      if (requestId) await deleteRequests(service, [requestId]);
+      await service.from("children").delete().eq("id", child!.id);
+      await week.cleanup();
+    }
+  });
+
   test("published day: a note-only edit keeps the booking, a time change no car takes is refused", async ({ page }) => {
     const service = serviceRoleClient();
     const week = FIXTURE_WEEKS.publishedEdit;
