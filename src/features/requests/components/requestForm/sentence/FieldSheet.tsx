@@ -1,6 +1,7 @@
 // UX_FLOWS §3.4a: the bottom sheet every sentence chip opens. `PortalSheetContent` makes the
 // popovers of the fields inside (TimeField15, CompanionPicker) scroll on touch (UX_FLOWS §18
-// "Item 4"); focus returns to the chip on close (Radix).
+// "Item 4"); focus returns to the chip on close (Radix). `scroll-pb-20`: a focused field is scrolled above the sticky
+// "אישור" footer, never under it (owner 2026-11-09).
 import type { ReactNode } from "react";
 
 import { PortalSheetContent } from "@/components/PortalSheetContent";
@@ -26,7 +27,7 @@ export function FieldSheet({ open, onOpenChange, title, children, hideFooter, te
     <Sheet open={open} onOpenChange={onOpenChange}>
       <PortalSheetContent
         side="bottom"
-        className={`max-h-[85dvh] overflow-y-auto overscroll-contain rounded-t-xl p-4 pt-3 ${CENTERED_ON_DESKTOP}`}
+        className={`max-h-[85dvh] scroll-pb-20 overflow-y-auto overscroll-contain rounded-t-xl p-4 pt-3 ${CENTERED_ON_DESKTOP}`}
         data-testid={testId}
         onOpenAutoFocus={(event) => event.preventDefault()}
       >

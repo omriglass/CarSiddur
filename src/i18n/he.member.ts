@@ -987,7 +987,13 @@ export const heMember = {
     flexSameLink: "אותו דבר לשני הצדדים",
     flexEarlier: "מוקדם יותר",
     flexLater: "מאוחר יותר",
-    whoAddMember: "+ חבר/ה",
+    whoAddMember: "+ חבר/ה או ילד/ה",
+    /** Owner 2026-11-09: the rare third way to add — an unnamed child, then its seat. */
+    whoAddChildGuest: "+ ילד/ה אורח/ת",
+    whoChildGuestQuestion: "מושב בטיחות או בוסטר?",
+    whoUnnamedAdultChip: "מבוגר/ת בלי שם",
+    whoChildSeatChip: "ילד/ה · מושב בטיחות",
+    whoBoosterChip: "ילד/ה · בוסטר",
     whoExtraAdults: "+ מבוגר/ת (בלי שם)",
     whoExtraAdultsMore: "עוד מבוגר/ת",
     whoExtraAdultsLess: "פחות מבוגרים",
@@ -1005,14 +1011,14 @@ export const heMember = {
     whoMoreChildOne: "עוד ילד/ה",
     whoChildOne: "ילד/ה",
     whoChildMany: "{{n}} ילדים",
-    whoAddGuest: "+ אורח/ת",
+    whoAddGuest: "+ אורח/ת מבוגר/ת",
     whoMemberSearch: "חיפוש חבר/ה או ילד/ה",
     /** REQ §13.127 (a): "אני" taken out — a department member must be named. */
     whoNeedMember: "יש לבחור לפחות חבר/ה אחד/ת מהמחלקה",
     /** The "אני" chip toggle's accessible hint. */
     whoMeToggle: "אני נוסע/ת ברכב",
     whoDriver: "מי נוהג/ת?",
-    whoGuestPlaceholder: "שם האורח/ת",
+    whoGuestPlaceholder: "שם האורח/ת (לא חובה)",
     whoGuestAdd: "הוספה",
     whoNoMembers: "לא נמצאו חברים",
     /** Unit after the travel minutes next to a place in the place sheets (replaces the zone code). */

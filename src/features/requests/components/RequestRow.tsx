@@ -120,6 +120,8 @@ export function RequestRow({
   rides,
   onOpenRide,
 }: RequestRowProps) {
+  // REQ §13.202 (j): a request I see only because my child is on it is read-only.
+  const viewOnly = readOnly || (!!row.childOf && !row.editorOf);
   // R11U2: every other person on the request — member companions, named children, guests, then the unnamed counts.
   const others = whoText([...(row.companionNames ?? []), ...(row.childNames ?? []), ...(row.guestNames ?? [])], row.extraAdults ?? 0, row.unnamedChildren ?? 0);
   // REQ §13.127 (d): who filed it / who it is for. Repeating, duplicate restore, freed-slot opt-out and
@@ -193,6 +195,7 @@ export function RequestRow({
       {row.preferredCarName ? <p className="text-xs text-muted-foreground">{he.request.preferredCar}: {row.preferredCarName}</p> : null}
       {filedLine ? <p className="text-xs text-muted-foreground" data-testid="request-filed-line"><bdi>{filedLine}</bdi></p> : null}
       {row.editorOf ? <p className="text-xs text-muted-foreground" data-testid="request-editor-line"><bdi>{tv("request.editorOf", { name: row.editorOf })}</bdi></p> : null}
+      {row.childOf && !row.editorOf ? <p className="text-xs text-muted-foreground" data-testid="request-child-line"><bdi>{tv("myWeek.kidRideOf", { name: row.childOf })}</bdi></p> : null}
       {row.companionOf ? <p className="text-xs text-muted-foreground" data-testid="request-companion-line"><bdi>{tv("request.companionAddedBy", { name: row.companionOf })}</bdi></p> : null}
       {others ? (
         <p className="text-xs text-muted-foreground" data-testid="request-other-people">{tv("ridePublicDetails.companions", { names: others })}</p>
@@ -210,7 +213,7 @@ export function RequestRow({
       {knownStatusReason(row.statusReason) ? (
         <p className="text-xs text-muted-foreground">{knownStatusReason(row.statusReason)}</p>
       ) : null}
-      {!readOnly && !notRequester && !row.servedByAlternative && FREED_SLOT_ELIGIBLE_STATUSES.has(row.status) && onOptOutChange ? (
+      {!viewOnly && !notRequester && !row.servedByAlternative && FREED_SLOT_ELIGIBLE_STATUSES.has(row.status) && onOptOutChange ? (
         <label className="flex items-center gap-2 text-xs text-muted-foreground">
           <input
             type="checkbox"
@@ -221,7 +224,7 @@ export function RequestRow({
           {he.proposalScreen.optOutFreedSlots}
         </label>
       ) : null}
-      {readOnly ? null : (
+      {viewOnly ? null : (
         <div className="flex flex-wrap gap-2 pt-1">
           {row.status === "proposed" && row.pendingProposal && isAwaitingAnswer(row.pendingProposal) ? (
             <OpenProposalButton proposalId={row.pendingProposal.id} size="sm" />

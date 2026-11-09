@@ -11711,6 +11711,20 @@ $$;
 ALTER FUNCTION "public"."is_day_public"("p_department_id" "uuid", "p_week_start" "date", "p_day" "date") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."is_guardian_on_request"("p_request" "uuid") RETURNS boolean
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  select exists (
+    select 1 from public.request_children rc
+    join public.child_guardians g on g.child_id = rc.child_id and g.profile_id = (select auth.uid())
+    where rc.request_id = p_request);
+$$;
+
+
+ALTER FUNCTION "public"."is_guardian_on_request"("p_request" "uuid") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."is_proposal_party"("_proposal_id" "uuid") RETURNS boolean
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -31435,6 +31449,10 @@ CREATE POLICY "request_children_select" ON "public"."request_children" FOR SELEC
 
 
 
+CREATE POLICY "request_children_select_child_guardian" ON "public"."request_children" FOR SELECT TO "authenticated" USING ("public"."is_guardian_on_request"("request_id"));
+
+
+
 CREATE POLICY "request_children_select_ride_editor" ON "public"."request_children" FOR SELECT TO "authenticated" USING ((EXISTS ( SELECT 1
    FROM "public"."requests" "q"
   WHERE (("q"."id" = "request_children"."request_id") AND "public"."is_ride_editor_of"("q"."department_id", "q"."requester_id")))));
@@ -31478,6 +31496,10 @@ CREATE POLICY "request_companions_select" ON "public"."request_companions" FOR S
 
 
 
+CREATE POLICY "request_companions_select_child_guardian" ON "public"."request_companions" FOR SELECT TO "authenticated" USING ("public"."is_guardian_on_request"("request_id"));
+
+
+
 CREATE POLICY "request_companions_select_ride_editor" ON "public"."request_companions" FOR SELECT TO "authenticated" USING ((EXISTS ( SELECT 1
    FROM "public"."requests" "q"
   WHERE (("q"."id" = "request_companions"."request_id") AND "public"."is_ride_editor_of"("q"."department_id", "q"."requester_id")))));
@@ -31490,6 +31512,10 @@ ALTER TABLE "public"."request_stops" ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "request_stops_select" ON "public"."request_stops" FOR SELECT TO "authenticated" USING ((EXISTS ( SELECT 1
    FROM "public"."requests" "q"
   WHERE (("q"."id" = "request_stops"."request_id") AND (("q"."requester_id" = ( SELECT "auth"."uid"() AS "uid")) OR ("q"."filed_by" = ( SELECT "auth"."uid"() AS "uid")) OR "public"."is_request_companion"("q"."id") OR "public"."is_sadran"("q"."department_id", "q"."week_start") OR "public"."is_admin"() OR ("public"."is_approved"() AND "public"."is_week_public"("q"."department_id", "q"."week_start") AND "public"."request_served_by_public_ride"("q"."id")))))));
+
+
+
+CREATE POLICY "request_stops_select_child_guardian" ON "public"."request_stops" FOR SELECT TO "authenticated" USING ("public"."is_guardian_on_request"("request_id"));
 
 
 
@@ -31522,6 +31548,10 @@ ALTER TABLE "public"."requests" ENABLE ROW LEVEL SECURITY;
 
 
 CREATE POLICY "requests_select" ON "public"."requests" FOR SELECT TO "authenticated" USING ((("requester_id" = ( SELECT "auth"."uid"() AS "uid")) OR ("filed_by" = ( SELECT "auth"."uid"() AS "uid")) OR ( SELECT "public"."is_admin"() AS "is_admin") OR "public"."is_sadran"("department_id", "week_start") OR "public"."is_request_companion"("id") OR (( SELECT "public"."is_approved"() AS "is_approved") AND "public"."is_week_public"("department_id", "week_start") AND "public"."request_served_by_public_ride"("id"))));
+
+
+
+CREATE POLICY "requests_select_child_guardian" ON "public"."requests" FOR SELECT TO "authenticated" USING ((( SELECT "public"."is_approved"() AS "is_approved") AND "public"."is_guardian_on_request"("id")));
 
 
 
@@ -33479,6 +33509,12 @@ GRANT ALL ON FUNCTION "public"."is_car_responsible"("_car_id" "uuid") TO "servic
 REVOKE ALL ON FUNCTION "public"."is_day_public"("p_department_id" "uuid", "p_week_start" "date", "p_day" "date") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."is_day_public"("p_department_id" "uuid", "p_week_start" "date", "p_day" "date") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."is_day_public"("p_department_id" "uuid", "p_week_start" "date", "p_day" "date") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."is_guardian_on_request"("p_request" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."is_guardian_on_request"("p_request" "uuid") TO "service_role";
+GRANT ALL ON FUNCTION "public"."is_guardian_on_request"("p_request" "uuid") TO "authenticated";
 
 
 

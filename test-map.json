@@ -549,6 +549,7 @@
         "src/features/member/components/RideEditorsCard.test.tsx",
         "supabase/migrations/**/*ride_editor*",
         "supabase/migrations/**/*co_parents_edit_rides*",
+        "supabase/migrations/**/*guardian_reads_child_requests*",
         "supabase/tests/ride_editors.sql"
       ],
       "vitest": [

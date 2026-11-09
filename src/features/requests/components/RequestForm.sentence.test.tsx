@@ -367,13 +367,13 @@ describe("RequestForm time window (REQ §13.112 c)", () => {
 });
 
 describe("RequestForm unnamed children (REQ §13.112 d)", () => {
-  it("'+ ילד/ה': a child seat and a booster update the chip ('אני ו־2 ילדים') and the filed seat counts", async () => {
+  it("'+ ילד/ה אורח/ת': a child seat and a booster update the chip ('אני ו־2 ילדים') and the filed seat counts", async () => {
     show();
     pickSentenceDestination();
     fireEvent.click(screen.getByTestId("chip-who"));
-    fireEvent.click(screen.getByRole("button", { name: he.requestSentence.whoChildSeatsMore }));
+    fireEvent.click(screen.getByTestId("who-add-child-guest")); fireEvent.click(screen.getByTestId("who-child-guest-seat"));
     expect(screen.getByTestId("chip-who")).toHaveTextContent(`${he.requestSentence.me} ${he.requestSentence.and}${he.requestSentence.whoMoreChildOne}`);
-    fireEvent.click(screen.getByRole("button", { name: he.requestSentence.whoBoostersMore }));
+    fireEvent.click(screen.getByTestId("who-add-child-guest")); fireEvent.click(screen.getByTestId("who-child-guest-booster"));
     expect(screen.getByTestId("chip-who")).toHaveTextContent(`${he.requestSentence.me} ${he.requestSentence.andNumber}${he.requestSentence.whoChildMany.replace("{{n}}", "2")}`);
     expect(screen.getByText(he.requestSentence.needsPlural)).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: he.requestSentence.sheetDone }));
@@ -389,9 +389,8 @@ describe("RequestForm unnamed children (REQ §13.112 d)", () => {
     fireEvent.click(screen.getByTestId("chip-who"));
     fireEvent.click(screen.getByTestId("who-add-member"));
     fireEvent.click(screen.getByText("Dana"));
-    const more = screen.getByRole("button", { name: he.requestSentence.whoChildSeatsMore });
-    fireEvent.click(more);
-    fireEvent.click(more);
+    fireEvent.click(screen.getByTestId("who-add-child-guest")); fireEvent.click(screen.getByTestId("who-child-guest-seat"));
+    fireEvent.click(screen.getByTestId("who-add-child-guest")); fireEvent.click(screen.getByTestId("who-child-guest-seat"));
     expect(screen.getByTestId("chip-who")).toHaveTextContent(`${he.requestSentence.me}, Dana ${he.requestSentence.andNumber}${he.requestSentence.whoChildMany.replace("{{n}}", "2")}`);
   });
 });
@@ -408,13 +407,15 @@ describe("RequestForm classic layout", () => {
     for (const key of ["depart_anchor", "arrive_by", "return_anchor", "leave_dest_at", "duration_locked"]) expect(key in payload).toBe(false);
   });
 
-  it("unnamed adults: the who sheet stepper updates the chip and the filed adult count (R9M1)", async () => {
+  it("unnamed adults: an adult guest with no name updates the chip and the filed adult count (R9M1, owner 2026-11-09)", async () => {
     show();
     pickSentenceDestination();
     fireEvent.click(screen.getByTestId("chip-who"));
-    const more = screen.getByRole("button", { name: he.requestSentence.whoExtraAdultsMore });
-    fireEvent.click(more);
-    fireEvent.click(more);
+    for (let i = 0; i < 2; i += 1) {
+      fireEvent.click(screen.getByTestId("who-add-guest"));
+      fireEvent.click(screen.getByRole("button", { name: he.requestSentence.whoGuestAdd }));
+    }
+    expect(screen.getAllByTestId("who-unnamed-adult")).toHaveLength(2);
     expect(screen.getByTestId("chip-who")).toHaveTextContent(`${he.requestSentence.me} ${he.requestSentence.and}עוד 2`);
     fireEvent.click(screen.getByRole("button", { name: he.requestSentence.sheetDone }));
 
@@ -443,5 +444,26 @@ describe("RequestForm classic layout", () => {
     await goToStageTwo();
     fireEvent.click(screen.getByRole("button", { name: he.action.submitRequest }));
     await waitFor(() => expect(toast.success).toHaveBeenCalledWith(he.request.submitSent));
+  });
+
+  it("who sheet: a typed guest is added when the field is left, a child guest asks for its seat (owner 2026-11-09)", async () => {
+    show();
+    pickSentenceDestination();
+    fireEvent.click(screen.getByTestId("chip-who"));
+    fireEvent.click(screen.getByTestId("who-add-guest"));
+    const input = screen.getByLabelText(he.requestSentence.whoGuestPlaceholder);
+    fireEvent.change(input, { target: { value: "Dana" } });
+    fireEvent.blur(input);
+    expect(screen.getByRole("button", { name: "Dana ×" })).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("who-add-child-guest"));
+    expect(screen.getByTestId("who-child-guest")).toHaveTextContent(he.requestSentence.whoChildGuestQuestion);
+    fireEvent.click(screen.getByTestId("who-child-guest-booster"));
+    expect(screen.getAllByTestId("who-booster")).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: he.requestSentence.sheetDone }));
+
+    await goToStageTwo();
+    fireEvent.click(screen.getByRole("button", { name: he.action.submitRequest }));
+    await waitFor(() => expect(mocks.submit).toHaveBeenCalledOnce());
+    expect(mocks.submit.mock.calls[0]![0]).toMatchObject({ adults: 2, boosters: 1 });
   });
 });

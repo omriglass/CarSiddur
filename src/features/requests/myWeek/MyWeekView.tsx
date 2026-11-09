@@ -220,6 +220,7 @@ export function MyWeekView({ departmentId, homeDestinationId, profileId, request
    */
   function canMoveRequest(row: MyRequestRow): boolean {
     const anchor = row.departAt ?? row.returnAt;
+    if (row.childOf && !row.editorOf) return false; // REQ §13.202 (j): read-only
     if (!acceptsRequests || !anchor || row.seriesId || row.durationLocked) return false;
     if (row.departAt && row.returnAt && dateKey(row.departAt) !== dateKey(row.returnAt)) return false;
     return dateKey(anchor) >= today;

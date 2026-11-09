@@ -66,9 +66,12 @@ test.describe("request sentence overlay", { tag: ["@request-form"] }, () => {
           await page.getByPlaceholder(he.requestSentence.whoMemberSearch).fill(SEEDED_USERS.member1.fullName);
           await page.getByRole("option", { name: SEEDED_USERS.member1.fullName }).click();
           await expect(page.getByTestId(`who-member-${PROFILE_IDS.member1}`)).toHaveAttribute("aria-pressed", "true");
-          await who.getByRole("button", { name: he.requestSentence.whoExtraAdultsMore, exact: true }).click();
-          await who.getByRole("button", { name: he.requestSentence.whoChildSeatsMore, exact: true }).click();
-          await who.getByRole("button", { name: he.requestSentence.whoBoostersMore, exact: true }).click();
+          await who.getByTestId("who-add-guest").click();
+          await who.getByRole("button", { name: he.requestSentence.whoGuestAdd, exact: true }).click();
+          await who.getByTestId("who-add-child-guest").click();
+          await who.getByTestId("who-child-guest-seat").click();
+          await who.getByTestId("who-add-child-guest").click();
+          await who.getByTestId("who-child-guest-booster").click();
           await page.getByRole("button", { name: he.requestSentence.sheetDone, exact: true }).click();
           await expect(page.getByTestId("chip-who")).toContainText(SEEDED_USERS.member1.fullName);
 

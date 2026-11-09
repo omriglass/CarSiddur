@@ -81,6 +81,13 @@ describe("requestBlocks", () => {
     expect(requestBlocks([request({})], week, null, NOW)[0]?.block.othersRequest).toBeUndefined();
   });
 
+  it("a request only my child ties me to is the child's, muted and not the teal editable look (REQ §13.202 j)", () => {
+    const [entry] = requestBlocks([request({ childOf: "נועה" })], week, null, NOW);
+    expect(entry?.block.label).toContain(tv("myWeek.kidRideOf", { name: "נועה" }));
+    expect(entry?.block).toMatchObject({ muted: true });
+    expect(entry?.block.othersRequest).toBeUndefined();
+  });
+
   it("lists who rides on a request block (owner 2026-11-09)", () => {
     const [entry] = requestBlocks([request({ companionNames: ["אבי"], childNames: ["נועה"], extraAdults: 1 })], week, null, NOW);
     expect(entry?.block.passengerSummary).toContain("אבי");

@@ -267,7 +267,8 @@ export function HomePage() {
     .filter((row) => displayPrefs.showFiledForOthers || !isFiledForOther(row, viewerId))
     // REQ §13.202: the requests of the people who named me their editor, only with that option on; a co-parent's
     // (item i) with the co-parent option.
-    .filter((row) => !row.editorOf || editorRowShown(row))
+    // (j): a request my child is on, whoever filed it, with "הצגת נסיעות הילדים".
+    .filter((row) => (!row.editorOf && !row.childOf) || (!!row.editorOf && editorRowShown(row)) || (!!row.childOf && displayPrefs.showKidsRides))
     .sort((a, b) => requestStart(a) - requestStart(b) || a.id.localeCompare(b.id));
 
   const upcomingRides = upcomingRidesQuery.data ?? [];
@@ -315,7 +316,7 @@ export function HomePage() {
   // reaches (I drive someone else's request, a reservation names me) is its own item in its week.
   // Owner 2026-10-16: read-only rides of my children (display option), muted and named, listed with mine.
   // An owner's request (REQ §13.202) is not mine: their ride stays a family ride, joined to their row when it shows.
-  const myRequestIds = new Set((requestsQuery.data ?? []).filter((request) => !request.editorOf).map((request) => request.id));
+  const myRequestIds = new Set((requestsQuery.data ?? []).filter((request) => !request.editorOf && !request.childOf).map((request) => request.id));
   const relatedByRide = showFamilyRides && !weekView
     ? selectRelatedRides(kidsRidesQuery.data ?? [], { profileId: viewerId, childIds: myChildIds, guardianIds }, myRequestIds)
     : new Map<string, { kind: "child" | "guardian"; name: string }[]>();

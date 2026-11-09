@@ -200,7 +200,9 @@ export function requestBlocks(
     const span = requestSpan(row);
     if (!kind || !span) continue;
     const filedForName = filedForNameOf(row);
-    const ownerName = ownerNameOf(row);
+    // REQ §13.202 (j): a request only my child ties me to is "נסיעה של <child>", drawn muted (read-only).
+    const childOnly = !!row.childOf && !row.editorOf;
+    const ownerName = childOnly ? row.childOf! : ownerNameOf(row);
     const label = filedForName !== undefined
       ? `${tv("request.filedFor", { name: filedForName })} · ${originDestinationLabel(row, homeDestinationId)}`
       : ownerName !== undefined
@@ -221,7 +223,8 @@ export function requestBlocks(
           label,
           description,
           passengerSummary: others ? tv("ridePublicDetails.companions", { names: others }) : undefined,
-          othersRequest: ownerName !== undefined || undefined,
+          othersRequest: (!childOnly && ownerName !== undefined) || undefined,
+          muted: childOnly || undefined,
           kind,
           seriesIndex: row.seriesIndex,
           seriesCount: row.seriesCount,

@@ -93,6 +93,8 @@ export interface MyRequestRow {
   editorOf?: string | null;
   /** How I may edit it: they named me (`named`, the editors display option) and/or we share a child (`coParent`, the co-parent option) — REQ §13.202 (i). */
   editorVia?: { named: boolean; coParent: boolean } | null;
+  /** REQ §13.202 (j): a request someone else filed with my child on it (not mine, not one I ride on) — the child's name(s); read-only unless `editorOf`. */
+  childOf?: string | null;
   /** Profile ids of the request's companions (REQ §13.177 c: a filer riding along is not "filed for someone else"). */
   companionIds?: string[];
   preferredCarId?: string | null;
@@ -202,7 +204,7 @@ const SELECT = `
   proposals(id, type, reason:payload->>reason, expires_at, status, parties:proposal_parties(profile_id, response)),
   adults, child_seats, boosters, guest_passenger_names, ride_description,
   companions:request_companions(profile_id, profile:profiles(full_name)),
-  request_children(child:children(full_name, birth_year))
+  request_children(child_id, child:children(full_name, birth_year))
 `;
 
 /** `request_alternatives(...)` embed: one row per request, so PostgREST returns an object (an array is tolerated). */
@@ -318,7 +320,7 @@ interface RawRequestRow {
     status: ProposalStatus;
     parties: { profile_id: string; response: "pending" | "accepted" | "declined" }[] | null;
   }[];
-  request_children: { child: { full_name: string; birth_year: number | null } | null }[];
+  request_children: { child_id?: string; child: { full_name: string; birth_year: number | null } | null }[];
   adults?: number;
   child_seats?: number;
   boosters?: number;
@@ -363,8 +365,12 @@ function mapOtherPeople(row: RawRequestRow): Pick<MyRequestRow, "companionNames"
   };
 }
 
-function mapRow(row: RawRequestRow, profileId?: string, owners: ReadonlyMap<string, { named: boolean; coParent: boolean }> = new Map()): MyRequestRow {
+function mapRow(row: RawRequestRow, profileId?: string, owners: ReadonlyMap<string, { named: boolean; coParent: boolean }> = new Map(), myChildIds: ReadonlySet<string> = new Set()): MyRequestRow {
   const ownerIds = new Set(owners.keys());
+  // An owner's request (REQ §13.202) with my child on it is also my child's — it shows with either option.
+  const tiedToMe = !profileId || row.requester_id === profileId || row.filed_by === profileId
+    || (row.companions ?? []).some((entry) => entry.profile_id === profileId);
+  const myChildNames = row.request_children.flatMap((entry) => (entry.child_id && myChildIds.has(entry.child_id) && entry.child ? [entry.child.full_name] : []));
   // REQ §13.109 (a): outcomes (status, reason, ride, legs) exist for the member only on published days.
   const published = isRequestDayPublished(row.window, row.depart_at, row.return_at);
   const liveLinks = published ? row.ride_requests : [];
@@ -384,12 +390,13 @@ function mapRow(row: RawRequestRow, profileId?: string, owners: ReadonlyMap<stri
     requesterName: row.requester?.full_name ?? null,
     filerName: row.filer?.full_name ?? null,
     companionOf: profileId && row.requester_id !== profileId && row.filed_by !== profileId
-      && (!ownerIds.has(row.requester_id ?? "") || (row.companions ?? []).some((entry) => entry.profile_id === profileId))
+      && ((!ownerIds.has(row.requester_id ?? "") && !myChildNames.length) || (row.companions ?? []).some((entry) => entry.profile_id === profileId))
       ? (row.filer?.full_name ?? row.requester?.full_name ?? "")
       : null,
     editorOf: profileId && row.requester_id !== profileId && row.filed_by !== profileId && ownerIds.has(row.requester_id ?? "")
       ? (row.requester?.full_name ?? "")
       : null,
+    childOf: !tiedToMe && myChildNames.length ? myChildNames.join(", ") : null,
     editorVia: profileId && row.requester_id !== profileId && row.filed_by !== profileId ? owners.get(row.requester_id ?? "") ?? null : null,
     companionIds: (row.companions ?? []).flatMap((entry) => (entry.profile_id ? [entry.profile_id] : [])),
     preferredCarId: row.preferred_car_id,
@@ -746,8 +753,17 @@ export async function fetchMyRequests(profileId: string, departmentId?: string):
     owners.set(link.person_id, { named: link.named || !!seen?.named, coParent: link.co_parent || !!seen?.coParent });
   }
   const ownerIds = new Set(owners.keys());
+  // REQ §13.202 (j): and the requests my children are on, whoever filed them (RLS lets a guardian read them).
+  const { data: guarded, error: guardedError } = await supabase.from("child_guardians").select("child_id").eq("profile_id", profileId);
+  if (guardedError) throw toAppError(guardedError);
+  const myChildIds = new Set((guarded ?? []).map((row) => row.child_id));
+  const { data: childLinks, error: childLinkError } = myChildIds.size
+    ? await supabase.from("request_children").select("request_id").in("child_id", [...myChildIds])
+    : { data: [] as { request_id: string }[], error: null };
+  if (childLinkError) throw toAppError(childLinkError);
+  const linkedIds = [...new Set([...companionIds, ...(childLinks ?? []).map((link) => link.request_id)])];
   const mine = [`requester_id.eq.${profileId}`, `filed_by.eq.${profileId}`,
-    ...(companionIds.length ? [`id.in.(${companionIds.join(",")})`] : []),
+    ...(linkedIds.length ? [`id.in.(${linkedIds.join(",")})`] : []),
     ...(ownerIds.size ? [`requester_id.in.(${[...ownerIds].join(",")})`] : [])].join(",");
   let query = supabase.from("requests").select(SELECT).or(mine);
   if (departmentId) query = query.eq("department_id", departmentId);
@@ -767,7 +783,7 @@ export async function fetchMyRequests(profileId: string, departmentId?: string):
     // A request I am only a companion on shows while it is unplaced; once placed on a published day the ride itself lists me.
     .filter((row) => row.requester_id === profileId || row.filed_by === profileId || ownerIds.has(row.requester_id ?? "")
       || !(["assigned", "merged"].includes(row.status) && isRequestDayPublished(row.window, row.depart_at, row.return_at)))
-    .map((row) => mapRow(row, profileId, owners));
+    .map((row) => mapRow(row, profileId, owners, myChildIds));
 }
 
 /** REQ §13.127 (b): may the caller edit this request (requester, filer, companion, anyone on its ride, private-car owner, Sadran). */

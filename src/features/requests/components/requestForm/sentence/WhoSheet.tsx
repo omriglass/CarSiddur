@@ -1,9 +1,11 @@
 // UX_FLOWS §3.4a "Who sheet": the body of the "מי נוסע?" sheet, built like the destination sheet —
 // toggle chips first ("אני" always on, the member's OWN children (guardian), recent companions,
-// whoever is already picked), then "+ חבר/ה" (inline search over members AND every child of the
-// department), "+ אורח/ת" (a guest name), the unnamed-adults stepper (R9M1) and the unnamed-children steppers
-// ("+ ילד/ה", REQ §13.112 d). Writes the classic `companions` / `children` / `extraAdults` / `legacyChildSeats` /
-// `boosters` / `guestNames` fields, so seat counting is untouched.
+// whoever is already picked, each guest — named or not — with ×), then three ways to add (owner 2026-11-09):
+// "+ חבר/ה או ילד/ה" (inline search over members AND every child of the department), "+ אורח/ת מבוגר/ת" (a name,
+// optional — none is an unnamed adult, R9M1) and, smaller since it is rare, "+ ילד/ה אורח/ת" (a child seat or a
+// booster, REQ §13.112 d). The open panel sits right under them, above the sheet's "אישור". Writes the classic
+// `companions` / `children` / `extraAdults` / `legacyChildSeats` / `boosters` / `guestNames` fields, so seat counting
+// is untouched.
 import { X } from "lucide-react";
 import { useState } from "react";
 import type { UseFormReturn } from "react-hook-form";
@@ -15,8 +17,6 @@ import { he } from "@/i18n/he";
 import { guestPassengerNames } from "../../../quickRequest";
 import type { RequestFormValues } from "../../../schema";
 import { FieldError } from "../FieldError";
-import { AdultsStepper } from "../AdultsStepper";
-import { UnnamedChildrenSteppers } from "../UnnamedChildrenSteppers";
 import { InlineSearchList } from "./InlineSearchList";
 import { PillChip } from "./PillChip";
 
@@ -55,7 +55,7 @@ function toggle(list: readonly string[], id: string): string[] {
 }
 
 export function WhoSheet({ form, members, includeMe, allowOnBehalf, requesterName, driverOptions = [], driverId = null, childOptions, recentCompanionIds, companions, children, guestNames, extraAdults, unnamedChildSeats, boosters, guestNamesError, companionsError, onChildAdded }: WhoSheetProps) {
-  const [mode, setMode] = useState<"member" | "guest" | null>(null);
+  const [mode, setMode] = useState<"member" | "guest" | "childGuest" | null>(null);
   const [guestDraft, setGuestDraft] = useState("");
   const guests = guestPassengerNames(guestNames);
   const memberById = new Map(members.map((member) => [member.id, member]));
@@ -75,11 +75,17 @@ export function WhoSheet({ form, members, includeMe, allowOnBehalf, requesterNam
     form.setValue("companions", next, { shouldDirty: true, shouldValidate: true });
   }
 
+  /** A typed name is a named guest; an empty one an unnamed adult. */
   function addGuest() {
     const name = guestDraft.trim();
-    if (!name) return;
-    form.setValue("guestNames", [...guests, name].join("\n"), { shouldDirty: true, shouldValidate: true });
+    if (name) form.setValue("guestNames", [...guests, name].join("\n"), { shouldDirty: true, shouldValidate: true });
+    else form.setValue("extraAdults", extraAdults + 1, { shouldDirty: true, shouldValidate: true });
     setGuestDraft("");
+    setMode(null);
+  }
+
+  function addChildGuest(seat: "legacyChildSeats" | "boosters") {
+    form.setValue(seat, (seat === "boosters" ? boosters : unnamedChildSeats) + 1, { shouldDirty: true, shouldValidate: true });
     setMode(null);
   }
 
@@ -123,45 +129,36 @@ export function WhoSheet({ form, members, includeMe, allowOnBehalf, requesterNam
             <X className="size-3" aria-hidden="true" />
           </PillChip>
         ))}
+        {Array.from({ length: extraAdults }, (_, index) => (
+          <PillChip key={`adult:${index}`} pressed aria-label={`${he.requestSentence.whoUnnamedAdultChip} ×`} data-testid="who-unnamed-adult"
+            onClick={() => form.setValue("extraAdults", extraAdults - 1, { shouldDirty: true, shouldValidate: true })}>
+            {he.requestSentence.whoUnnamedAdultChip}
+            <X className="size-3" aria-hidden="true" />
+          </PillChip>
+        ))}
+        {Array.from({ length: unnamedChildSeats }, (_, index) => (
+          <PillChip key={`seat:${index}`} pressed aria-label={`${he.requestSentence.whoChildSeatChip} ×`} data-testid="who-child-seat"
+            onClick={() => form.setValue("legacyChildSeats", unnamedChildSeats - 1, { shouldDirty: true, shouldValidate: true })}>
+            {he.requestSentence.whoChildSeatChip}
+            <X className="size-3" aria-hidden="true" />
+          </PillChip>
+        ))}
+        {Array.from({ length: boosters }, (_, index) => (
+          <PillChip key={`booster:${index}`} pressed aria-label={`${he.requestSentence.whoBoosterChip} ×`} data-testid="who-booster"
+            onClick={() => form.setValue("boosters", boosters - 1, { shouldDirty: true, shouldValidate: true })}>
+            {he.requestSentence.whoBoosterChip}
+            <X className="size-3" aria-hidden="true" />
+          </PillChip>
+        ))}
+      </div>
+
+      <div className="flex flex-wrap items-center gap-1.5">
         <PillChip dashed onClick={() => setMode(mode === "member" ? null : "member")} data-testid="who-add-member">{he.requestSentence.whoAddMember}</PillChip>
         <PillChip dashed onClick={() => setMode(mode === "guest" ? null : "guest")} data-testid="who-add-guest">{he.requestSentence.whoAddGuest}</PillChip>
+        <button type="button" className="px-1 text-xs text-muted-foreground underline underline-offset-2" onClick={() => setMode(mode === "childGuest" ? null : "childGuest")} data-testid="who-add-child-guest">
+          {he.requestSentence.whoAddChildGuest}
+        </button>
       </div>
-
-      {driverOptions.length > 1 ? (
-        <div className="space-y-1.5" data-testid="who-driver">
-          <p className="text-sm">{he.requestSentence.whoDriver}</p>
-          <div className="flex flex-wrap gap-1.5">
-            {driverOptions.map((option) => (
-              <PillChip
-                key={option.id}
-                pressed={option.id === driverId}
-                onClick={() => form.setValue("driverId", option.id, { shouldDirty: true, shouldValidate: true })}
-                data-testid={`who-driver-${option.id}`}
-              >
-                {option.name}
-              </PillChip>
-            ))}
-          </div>
-        </div>
-      ) : null}
-
-      <div className="flex items-center justify-between gap-3" data-testid="who-extra-adults">
-        <span className="text-sm">{he.requestSentence.whoExtraAdults}</span>
-        <AdultsStepper
-          value={extraAdults}
-          onChange={(next) => form.setValue("extraAdults", next, { shouldDirty: true, shouldValidate: true })}
-          moreLabel={he.requestSentence.whoExtraAdultsMore}
-          lessLabel={he.requestSentence.whoExtraAdultsLess}
-          testId="who-extra-adults-stepper"
-        />
-      </div>
-
-      <UnnamedChildrenSteppers
-        childSeats={unnamedChildSeats}
-        boosters={boosters}
-        onChildSeatsChange={(next) => form.setValue("legacyChildSeats", next, { shouldDirty: true, shouldValidate: true })}
-        onBoostersChange={(next) => form.setValue("boosters", next, { shouldDirty: true, shouldValidate: true })}
-      />
 
       {mode === "member" ? (
         <InlineSearchList
@@ -198,6 +195,8 @@ export function WhoSheet({ form, members, includeMe, allowOnBehalf, requesterNam
             autoFocus
             value={guestDraft}
             onChange={(event) => setGuestDraft(event.target.value)}
+            // Owner 2026-11-09: a typed name is never lost — leaving the field (e.g. for "אישור") adds it.
+            onBlur={(event) => { if (guestDraft.trim() && !event.currentTarget.form?.contains(event.relatedTarget as Node | null)) addGuest(); }}
             placeholder={he.requestSentence.whoGuestPlaceholder}
             aria-label={he.requestSentence.whoGuestPlaceholder}
             maxLength={100}
@@ -206,6 +205,35 @@ export function WhoSheet({ form, members, includeMe, allowOnBehalf, requesterNam
           <Button type="submit" variant="secondary" className="h-10 shrink-0">{he.requestSentence.whoGuestAdd}</Button>
         </form>
       ) : null}
+
+      {mode === "childGuest" ? (
+        <div className="space-y-1.5" data-testid="who-child-guest">
+          <p className="text-sm">{he.requestSentence.whoChildGuestQuestion}</p>
+          <div className="flex flex-wrap gap-1.5">
+            <PillChip onClick={() => addChildGuest("legacyChildSeats")} data-testid="who-child-guest-seat">{he.requestSentence.whoChildSeats}</PillChip>
+            <PillChip onClick={() => addChildGuest("boosters")} data-testid="who-child-guest-booster">{he.requestSentence.whoBoosters}</PillChip>
+          </div>
+        </div>
+      ) : null}
+
+      {driverOptions.length > 1 ? (
+        <div className="space-y-1.5" data-testid="who-driver">
+          <p className="text-sm">{he.requestSentence.whoDriver}</p>
+          <div className="flex flex-wrap gap-1.5">
+            {driverOptions.map((option) => (
+              <PillChip
+                key={option.id}
+                pressed={option.id === driverId}
+                onClick={() => form.setValue("driverId", option.id, { shouldDirty: true, shouldValidate: true })}
+                data-testid={`who-driver-${option.id}`}
+              >
+                {option.name}
+              </PillChip>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
       <FieldError message={guestNamesError} />
       <FieldError message={companionsError} />
     </div>

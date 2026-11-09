@@ -6694,6 +6694,7 @@ export type Database = {
         Args: { p_day: string; p_department_id: string; p_week_start: string }
         Returns: boolean
       }
+      is_guardian_on_request: { Args: { p_request: string }; Returns: boolean }
       is_proposal_party: { Args: { _proposal_id: string }; Returns: boolean }
       is_quarter_hour: { Args: { _t: string }; Returns: boolean }
       is_request_companion: { Args: { _request_id: string }; Returns: boolean }

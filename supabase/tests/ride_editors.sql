@@ -123,6 +123,22 @@ begin
     assert exists (select 1 from public.my_ride_editor_links() l where l.person_id = owner and l.direction = 'granted' and l.co_parent and not l.named), 'listed as granted (co-parent)';
     assert exists (select 1 from public.my_ride_editor_links() l where l.person_id = owner and l.direction = 'mine' and l.co_parent), 'listed as mine (co-parent)';
     assert not exists (select 1 from public.notifications where recipient_id = coparent and event = 'ride_editor_added'), 'no message for a co-parent';
+    -- (j) a guardian reads (never edits) a request someone else filed with their child on it
+    insert into public.requests(department_id, week_start, requester_id, filed_by, destination_id, ride_type_id, depart_at, return_at, status, origin_id)
+    values ('00000000-0000-0000-0000-000000000001', w, '00000000-0000-0000-0000-000000000102', '00000000-0000-0000-0000-000000000102', '00000000-0000-0000-0000-000000000011',
+      '00000000-0000-0000-0000-000000000021', pg_temp.at(4, '08:00'), pg_temp.at(4, '12:00'), 'submitted', '00000000-0000-0000-0000-000000000010') returning id into q;
+    insert into public.request_children(request_id, child_id) values (q, kid);
+    insert into re_ids values ('kid_request', q);
+    execute 'set local role authenticated';
+    assert exists (select 1 from public.requests where id = (select id from re_ids where k = 'kid_request')), 'guardian reads the child''s request';
+    assert exists (select 1 from public.request_children where request_id = (select id from re_ids where k = 'kid_request')), 'and who is on it';
+    execute 'reset role';
+    assert not public.request_related(q, coparent), 'reading is not editing';
+    perform pg_temp.as_user('00000000-0000-0000-0000-000000000104');
+    execute 'set local role authenticated';
+    assert not exists (select 1 from public.requests where id = (select id from re_ids where k = 'kid_request')), 'not for someone who is not a guardian';
+    execute 'reset role';
+    perform pg_temp.as_user(coparent);
     delete from public.child_guardians where child_id = kid and profile_id = coparent;
     assert not public._is_ride_editor('00000000-0000-0000-0000-000000000001', owner, coparent), 'rights end with the shared child';
   end;
