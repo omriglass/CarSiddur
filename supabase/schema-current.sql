@@ -2410,7 +2410,7 @@ begin
   v_change := case
     when v_variant in ('merged', 'merged_no_driver', 'merged_split', 'joined_ride', 'placed_by_sadran', 'driver_assigned',
       'passenger_added_you', 'reservation_added', 'alternative_applied', 'own_car_placed') then 'joins'
-    when v_variant in ('ride_cancelled', 'passenger_removed_you', 'driver_unassigned', 'driver_replaced_you', 'child_removed',
+    when v_variant in ('ride_cancelled', 'passenger_removed_you', 'companion_split', 'driver_unassigned', 'driver_replaced_you', 'child_removed',
       'join_ride_cancelled', 'driver_cancelled', 'driver_cancelled_plain', 'unassigned_by_sadran') then 'leaves'
     else 'changes' end;
   if v_kind <> 'other' and not exists (select 1 from public.held_notices h
@@ -3055,7 +3055,7 @@ begin
     'driver_assigned_passenger', 'driver_cancelled', 'driver_cancelled_plain', 'driver_changed_passenger',
     'driver_replaced_you', 'driver_unassigned', 'car_changed', 'time_changed', 'edit_applied', 'edit_waitlisted',
     'alternative_applied', 'own_car_placed', 'passenger_added_you', 'passenger_joined', 'passenger_left', 'passenger_left_many',
-    'passenger_removed_request', 'passenger_removed_you', 'passengers_added', 'passengers_removed',
+    'passenger_removed_request', 'passenger_removed_you', 'companion_split', 'passengers_added', 'passengers_removed',
     'reservation_added', 'ride_cancelled', 'unassigned_by_sadran', 'child_removed', 'join_ride_cancelled', 'join_asked'
   ) then
     return false;
@@ -21997,6 +21997,81 @@ end $$;
 ALTER FUNCTION "public"."solver_state_fingerprint"("p_department_id" "uuid", "p_week_start" "date") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."split_ride_companion"("p_ride_id" "uuid", "p_expected_version" integer, "p_request_id" "uuid", "p_profile_id" "uuid") RETURNS "uuid"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  v_ride public.rides%rowtype;
+  v_req public.requests%rowtype;
+  v_actor uuid := (select auth.uid());
+  v_new uuid;
+  v_actor_name text; v_name text; v_route text; v_version int; v_prev_sys text;
+begin
+  select * into v_ride from public.rides where id = p_ride_id for update;
+  if not found or v_ride.status = 'cancelled' then raise exception 'ride_not_found' using errcode = 'P0001'; end if;
+  if not public.can_manage_week(v_ride.department_id, v_ride.week_start) then raise exception 'not_authorized' using errcode = 'P0001'; end if;
+  if p_expected_version is null or v_ride.version <> p_expected_version then perform public.raise_stale_version(); end if;
+  if exists (select 1 from public.weeks w where w.department_id = v_ride.department_id and w.week_start = v_ride.week_start and w.phase = 'archived') then
+    raise exception 'week_archived' using errcode = 'P0001';
+  end if;
+
+  select * into v_req from public.requests q where q.id = p_request_id;
+  if v_req.id is null or v_req.department_id <> v_ride.department_id
+     or not exists (select 1 from public.ride_requests rr where rr.ride_id = p_ride_id and rr.request_id = p_request_id) then
+    raise exception 'request_not_on_ride' using errcode = 'P0001';
+  end if;
+  if not exists (select 1 from public.request_companions c where c.request_id = p_request_id and c.profile_id = p_profile_id) then
+    raise exception 'invalid_ride_passenger' using errcode = 'P0001';
+  end if;
+  if p_profile_id is not distinct from v_ride.driver_id then raise exception 'ride_driver_not_removable' using errcode = 'P0001'; end if;
+
+  perform set_config('app.audit_reason', 'split_ride_companion', true);
+  delete from public.request_companions where request_id = p_request_id and profile_id = p_profile_id;
+  update public.requests set updated_at = now() where id = p_request_id;
+
+  -- x's own request: the trip as asked (not the ride's widened window), without the other rider's people, luggage,
+  -- towing, plan B, private note or series.
+  insert into public.requests (department_id, week_start, requester_id, filed_by, destination_id, destination_text, ride_type_id,
+    trip_shape, trip_type, depart_at, return_at, one_way_car_mode, needs_car_at_destination, keep_car_at_destination,
+    adults, child_seats, boosters, has_luggage, needs_tow_hitch,
+    flex_depart_early, flex_depart_late, flex_return_early, flex_return_late,
+    origin_id, origin_text, depart_anchor, arrive_by, return_anchor, leave_dest_at, duration_locked,
+    submitted_at, status, status_reason)
+  values (v_req.department_id, v_req.week_start, p_profile_id, v_actor, v_req.destination_id, v_req.destination_text, v_req.ride_type_id,
+    v_req.trip_shape, v_req.trip_type, v_req.depart_at, v_req.return_at, v_req.one_way_car_mode, v_req.needs_car_at_destination, v_req.keep_car_at_destination,
+    1, 0, 0, false, false,
+    v_req.flex_depart_early, v_req.flex_depart_late, v_req.flex_return_early, v_req.flex_return_late,
+    v_req.origin_id, v_req.origin_text, v_req.depart_anchor, v_req.arrive_by, v_req.return_anchor, v_req.leave_dest_at, v_req.duration_locked,
+    now(), 'submitted', 'SPLIT_BY_SADRAN')
+  returning id into v_new;
+  insert into public.request_stops (request_id, department_id, leg, position, place_id, place_text)
+  select v_new, s.department_id, s.leg, s.position, s.place_id, s.place_text from public.request_stops s where s.request_id = p_request_id;
+
+  update public.rides set updated_at = now() where id = p_ride_id returning version into v_version;
+
+  select full_name into v_actor_name from public.profiles where id = v_actor;
+  select full_name into v_name from public.profiles where id = p_profile_id;
+  v_route := public.route_label(v_req.department_id, v_req.origin_id, v_req.origin_text, v_req.destination_id, v_req.destination_text);
+  if p_profile_id is distinct from v_actor then
+    perform public.enqueue_notification(p_profile_id, 'outcome_changed', v_ride.department_id, v_ride.week_start,
+      jsonb_build_object('byName', coalesce(v_actor_name, ''), 'route', coalesce(v_route, ''), 'day', public.day_date_label(v_ride.starts_at)),
+      jsonb_build_object('variant', 'companion_split', 'request_id', v_new),
+      format('companion_split:%s:%s', p_ride_id, v_new));
+  end if;
+  if v_ride.driver_id is not null and v_ride.driver_id is distinct from v_actor then
+    perform public.enqueue_notification(v_ride.driver_id, 'outcome_changed', v_ride.department_id, v_ride.week_start,
+      jsonb_build_object('byName', coalesce(v_actor_name, ''), 'names', coalesce(v_name, ''), 'day', public.day_date_label(v_ride.starts_at)),
+      jsonb_build_object('variant', 'passengers_removed', 'ride_id', p_ride_id),
+      format('passengers_removed:%s:%s:%s', p_ride_id, v_version, v_ride.driver_id));
+  end if;
+  return v_new;
+end $$;
+
+
+ALTER FUNCTION "public"."split_ride_companion"("p_ride_id" "uuid", "p_expected_version" integer, "p_request_id" "uuid", "p_profile_id" "uuid") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."stop_request_template"("p_template_id" "uuid") RETURNS "void"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -34878,6 +34953,12 @@ GRANT ALL ON FUNCTION "public"."solver_policy_same_department"() TO "service_rol
 REVOKE ALL ON FUNCTION "public"."solver_state_fingerprint"("p_department_id" "uuid", "p_week_start" "date") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."solver_state_fingerprint"("p_department_id" "uuid", "p_week_start" "date") TO "service_role";
 GRANT ALL ON FUNCTION "public"."solver_state_fingerprint"("p_department_id" "uuid", "p_week_start" "date") TO "authenticated";
+
+
+
+REVOKE ALL ON FUNCTION "public"."split_ride_companion"("p_ride_id" "uuid", "p_expected_version" integer, "p_request_id" "uuid", "p_profile_id" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."split_ride_companion"("p_ride_id" "uuid", "p_expected_version" integer, "p_request_id" "uuid", "p_profile_id" "uuid") TO "service_role";
+GRANT ALL ON FUNCTION "public"."split_ride_companion"("p_ride_id" "uuid", "p_expected_version" integer, "p_request_id" "uuid", "p_profile_id" "uuid") TO "authenticated";
 
 
 

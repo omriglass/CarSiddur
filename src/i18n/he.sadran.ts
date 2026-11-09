@@ -893,6 +893,20 @@ export const heSadran = {
     removeFromRide: "הוצא מהנסיעה",
     dragChip: "גררו אל רשימת הלא-משובצים או אל רכב אחר כדי להוציא מהנסיעה",
     removeAria: "הוצא/י את {{name}} מהנסיעה",
+    /** Owner 2026-11-09: a passenger who rides on someone's request in a merged ride - three ways out. */
+    passengersHeading: "נוסעים",
+    passengerWith: "{{name}} · עם {{owner}}",
+    passengerAria: "הוצאת {{name}} מהנסיעה",
+    splitTitle: "להוציא את {{name}}?",
+    splitRemoveOnly: "להוציא רק את {{name}} מהנסיעה",
+    splitRemoveOnlyHelp: "{{name}} לא נוסע/ת יותר; {{owner}} ממשיך/ה בנסיעה.",
+    splitWithOwner: "לפצל את הנסיעה של {{name}} ו{{owner}} מהנסיעה של {{host}}",
+    splitWithOwnerHelp: "הבקשה של {{owner}} חוזרת לרשימת הממתינים, ו{{name}} איתה.",
+    splitAlone: "לפצל רק את {{name}}",
+    splitAloneHelp: "בקשה חדשה ל{{name}} עם הפרטים של {{owner}}, ו{{name}} נוסע/ת בה לבד; היא מחכה לשיבוץ.",
+    splitConfirm: "המשך",
+    passengerRemoved: "{{name}} הוצא/ה מהנסיעה",
+    splitAloneDone: "{{name}} פוצל/ה מהנסיעה של {{host}} — הבקשה שלו/ה מחכה לשיבוץ",
     /** Owner 2026-11-09: taking a merged guest out says whose ride it was split from (the request waits on the unassigned list). */
     removed: "הנסיעה של {{name}} פוצלה מהנסיעה של {{host}}",
     /** REQ §13.161 (c): the merge popup's one result block. */

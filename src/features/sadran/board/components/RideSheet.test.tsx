@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-import { tv } from "@/i18n/he";
+import { he, tv } from "@/i18n/he";
 
 import type { BoardRide } from "../../api";
 
@@ -20,6 +20,11 @@ vi.mock("./PlanSwitchButton", () => ({ PlanSwitchButton: () => <div /> }));
 vi.mock("./WithdrawDuplicateAction", () => ({ WithdrawDuplicateAction: () => <button type="button" data-testid="withdraw-duplicate" /> }));
 vi.mock("./RideDriverPicker", () => ({ RideDriverPicker: () => <div data-testid="stub-driver-picker" /> }));
 vi.mock("./RideCancelDialog", () => ({ RideCancelDialog: () => null }));
+const succeed = (_vars: unknown, options?: { onSuccess?: () => void }) => options?.onSuccess?.();
+const removePassenger = vi.fn(succeed);
+const splitCompanion = vi.fn(succeed);
+vi.mock("@/features/rides/hooks", () => ({ useRemoveRidePassengerMutation: () => ({ mutate: removePassenger, isPending: false }) }));
+vi.mock("../../hooks", () => ({ useSplitRideCompanionMutation: () => ({ mutate: splitCompanion, isPending: false }) }));
 
 const ride = {
   id: "r1", version: 1, status: "confirmed", car_id: "c1", starts_at: "2044-01-04T05:00:00Z", ends_at: "2044-01-04T09:00:00Z",
@@ -82,5 +87,36 @@ describe("RideSheet tabs (REQ §13.201)", () => {
     expect(remove).toHaveBeenCalledWith("q2", "Gil");
     fireEvent.mouseDown(screen.getByTestId("ride-sheet-tab-people"), { button: 0, ctrlKey: false });
     expect(screen.queryByTestId("ride-added-people")).not.toBeInTheDocument();
+  });
+
+  it("a passenger on a merged ride asks how to leave: only x, x with the guest, or x alone (owner 2026-11-09)", () => {
+    const base = (ride.served as unknown as Record<string, unknown>[])[0]!;
+    const guest = { ...base, request_id: "q2", role: "passenger", requester: "Gil", child_names: [], companions: [{ profile_id: "x", name: "Xena" }] };
+    const host = { ...base, companions: [{ profile_id: "y", name: "Yael" }] };
+    const mergedRide = { ...ride, served: [host, guest] } as unknown as BoardRide;
+    const splitGuest = vi.fn();
+    render(
+      <RideSheet ride={mergedRide} onRemoveAddedPerson={vi.fn()} onSplitGuest={splitGuest} cars={[]} driverName="Noga" homeDestinationId="home" onOpenChange={vi.fn()} onSave={vi.fn()}
+        onTogglePin={vi.fn()} onCancel={vi.fn()} requests={[request] as never} departmentId="dept" weekStart="2044-01-02" driverCandidates={[]} />,
+    );
+    fireEvent.mouseDown(screen.getByTestId("ride-sheet-tab-merged"), { button: 0, ctrlKey: false });
+    expect(screen.getAllByTestId("ride-merged-passenger").map((chip) => chip.textContent)).toEqual([
+      expect.stringContaining(tv("mergedRide.passengerWith", { name: "Yael", owner: "Noga" })),
+      expect.stringContaining(tv("mergedRide.passengerWith", { name: "Xena", owner: "Gil" })),
+    ]);
+
+    // the host's passenger: no "x and the host" option
+    fireEvent.click(screen.getByRole("button", { name: tv("mergedRide.passengerAria", { name: "Yael" }) }));
+    expect(screen.getByTestId("merged-passenger-removeOnly")).toBeInTheDocument();
+    expect(screen.queryByTestId("merged-passenger-withOwner")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: he.mergedRide.splitConfirm }));
+    expect(removePassenger).toHaveBeenCalledWith(expect.objectContaining({ rideId: "r1", key: "comp:q1:y" }), expect.anything());
+
+    // the guest's passenger: all three; "alone" splits x into a request of their own
+    fireEvent.click(screen.getByRole("button", { name: tv("mergedRide.passengerAria", { name: "Xena" }) }));
+    expect(screen.getByTestId("merged-passenger-withOwner")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("merged-passenger-alone"));
+    fireEvent.click(screen.getByRole("button", { name: he.mergedRide.splitConfirm }));
+    expect(splitCompanion).toHaveBeenCalledWith(expect.objectContaining({ rideId: "r1", requestId: "q2", profileId: "x", expectedVersion: 1 }), expect.anything());
   });
 });

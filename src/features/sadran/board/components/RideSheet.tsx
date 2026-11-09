@@ -2,6 +2,10 @@ import { fromZonedTime } from "date-fns-tz";
 import { useState } from "react";
 
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
+import { useRemoveRidePassengerMutation } from "@/features/rides/hooks";
+import { useSplitRideCompanionMutation } from "../../hooks";
+import { MergedPassengerDialog, type MergedPassengerChoice, type MergedPassengerTarget } from "./MergedPassengerDialog";
 import { ridePublicDetails } from "@/lib/ridePublicDetails";
 import { ridePassengerSummary } from "@/lib/ridePassengerSummary";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -92,6 +96,8 @@ interface RideSheetProps {
   onSaveRoute?: (values: RouteEditValues) => void;
   /** REQ §13.94 (G10): "הוצא מהנסיעה" for an added person of a merged ride. */
   onRemoveAddedPerson?: (requestId: string, name: string) => void;
+  /** Owner 2026-11-09: take a merged guest out without asking again (the passenger dialog already asked). */
+  onSplitGuest?: (requestId: string, name: string) => void;
   /** REQ §13.101 (c): department members for the volunteer-driver picker; omit to hide it. */
   driverCandidates?: readonly DriverCandidate[];
   /** R8U2: a merge proposal waiting for the guest's answer on this ride; the ride stays editable, this links to the proposal. */
@@ -108,7 +114,7 @@ interface RideSheetProps {
  * fallback for reassigning a car via the "העבר לרכב" select below instead of
  * dragging.
  */
-export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenChange, onSave, onTogglePin, onCancel, onUnassign, onJoinLegs, saving, tightSchedule, onClaimDriver, coordinatorNotes, isPlanning, requests = [], departmentId, weekStart, destinations, onSaveRoute, onRemoveAddedPerson, driverCandidates, otherRides = [], pendingMerge, pendingDraft }: RideSheetProps) {
+export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenChange, onSave, onTogglePin, onCancel, onUnassign, onJoinLegs, saving, tightSchedule, onClaimDriver, coordinatorNotes, isPlanning, requests = [], departmentId, weekStart, destinations, onSaveRoute, onRemoveAddedPerson, onSplitGuest, driverCandidates, otherRides = [], pendingMerge, pendingDraft }: RideSheetProps) {
   // Bug-fix pass (owner bug #2): the previous re-sync condition compared
   // `ride.car_id !== carId` to detect "a different ride opened" — but that's
   // exactly as true the moment the Sadran picks a *different* car for the
@@ -180,6 +186,32 @@ export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenCha
   );
 
   const cancelled = ride?.status === "cancelled";
+  const [passengerTarget, setPassengerTarget] = useState<MergedPassengerTarget | null>(null);
+  const removePassengerMutation = useRemoveRidePassengerMutation();
+  const splitCompanionMutation = useSplitRideCompanionMutation();
+  const hostName = baseEntry?.requester ?? driverName ?? ride?.driver_name ?? "";
+  // Owner 2026-11-09: the named companions riding on each request of a merged ride (the driver is not one of them).
+  const mergedPassengers: MergedPassengerTarget[] = servedEntries.flatMap((entry) => (entry.request_id ? (entry.companions ?? [])
+    .filter((person) => person.profile_id !== ride?.driver_id)
+    .map((person) => ({ requestId: entry.request_id as string, profileId: person.profile_id, name: person.name, owner: entry.requester ?? "",
+      ownerIsGuest: entry.request_id !== baseEntry?.request_id })) : []));
+
+  function choosePassengerExit(choice: MergedPassengerChoice, target: MergedPassengerTarget) {
+    if (!ride?.id || ride.version == null || !departmentId || !weekStart) return;
+    const done = () => setPassengerTarget(null);
+    if (choice === "withOwner") {
+      done();
+      onSplitGuest?.(target.requestId, target.owner);
+    } else if (choice === "removeOnly") {
+      removePassengerMutation.mutate({ rideId: ride.id, expectedVersion: ride.version, key: `comp:${target.requestId}:${target.profileId}`, departmentId, weekStart }, {
+        onSuccess: () => { done(); toast.success(tv("mergedRide.passengerRemoved", { name: target.name })); },
+      });
+    } else {
+      splitCompanionMutation.mutate({ rideId: ride.id, expectedVersion: ride.version, requestId: target.requestId, profileId: target.profileId, departmentId, weekStart }, {
+        onSuccess: () => { done(); toast.success(tv("mergedRide.splitAloneDone", { name: target.name, host: hostName })); },
+      });
+    }
+  }
   const merged = addedPeople.length > 0 && !reservation;
   const personBlocks = ride ? <RidePersonBlocks blocks={buildPersonBlocks({ ride, served: servedEntries, homeDestinationId, requests: personExtras })} /> : null;
 
@@ -358,7 +390,27 @@ export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenCha
                       </div>
                     ) : null}
 
+                    {!isPlanning && !cancelled && mergedPassengers.length ? (
+                      <div className="space-y-1" data-testid="ride-merged-passengers">
+                        <span className="font-medium">{he.mergedRide.passengersHeading}</span>
+                        <ul className="flex flex-wrap gap-2">
+                          {mergedPassengers.map((target) => (
+                            <li key={`${target.requestId}:${target.profileId}`} className="inline-flex items-center gap-1 rounded-full border bg-muted ps-3 text-xs" data-testid="ride-merged-passenger" data-profile-id={target.profileId}>
+                              <span>{tv("mergedRide.passengerWith", { name: target.name, owner: target.owner })}</span>
+                              <Button type="button" variant="ghost" size="sm" className="min-h-11 text-destructive" disabled={saving}
+                                aria-label={tv("mergedRide.passengerAria", { name: target.name })}
+                                onClick={() => setPassengerTarget(target)}>
+                                {he.mergedRide.removeFromRide}
+                              </Button>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : null}
+
                     {personBlocks}
+                    <MergedPassengerDialog target={passengerTarget} host={hostName} busy={removePassengerMutation.isPending || splitCompanionMutation.isPending}
+                      onOpenChange={(open) => { if (!open) setPassengerTarget(null); }} onChoose={choosePassengerExit} />
                   </TabsContent>
                 ) : null}
 

@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { he } from "../src/i18n/he";
+import { he, tv } from "../src/i18n/he";
 import { newSignedInPage, NEVO_DEPARTMENT_ID, SEEDED_USERS, serviceRoleClient, scrollGridColumnTo, openRideDetails, openRideSheetTab } from "./helpers";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -208,6 +208,46 @@ test("the sheet button \"הוצא מהנסיעה\" remains the fallback (phone l
     expect(request!.status).toBe("submitted");
     const { data: links } = await service.from("ride_requests").select("request_id").eq("ride_id", rideId);
     expect(links!.map((link) => link.request_id)).not.toContain(guestRequestId);
+  } finally {
+    for (const context of contexts) await context.close().catch(() => undefined);
+    await cleanup(service);
+  }
+});
+
+// Owner 2026-11-09: a passenger riding on the guest's request is taken out by "פיצול X בלבד": a request of their own
+// with the guest's trip, riding alone and waiting; the guest stays merged.
+test("a merged guest's passenger split off alone gets their own waiting request (split_ride_companion)", { tag: ["@board", "@proposals"] }, async ({ browser }) => {
+  test.slow();
+  const service = serviceRoleClient();
+  await ensureUnpublishedWeek(service, WEEK);
+  await cleanup(service);
+  const contexts: { close: () => Promise<void> }[] = [];
+  const PASSENGER = "00000000-0000-0000-0000-000000000101";
+  try {
+    const { rideId, guestRequestId } = await fixture(service, "merged");
+    await service.from("requests").update({ adults: 2 }).eq("id", guestRequestId);
+    const { error } = await service.from("request_companions").insert({ request_id: guestRequestId, profile_id: PASSENGER });
+    if (error) throw error;
+    const sadran = await newSignedInPage(browser, SEEDED_USERS.sadran);
+    contexts.push(sadran.context);
+    const page = sadran.page;
+    await page.setViewportSize({ width: 1600, height: 1100 });
+    await page.goto(boardUrl);
+    await openRideDetails(page, page.locator(`button[data-ride-id="${rideId}"]:visible`));
+    await openRideSheetTab(page, "merged");
+    await page.getByRole("button", { name: tv("mergedRide.passengerAria", { name: SEEDED_USERS.admin.fullName }) }).click();
+    await expect(page.getByTestId("merged-passenger-withOwner")).toBeVisible();
+    await page.getByTestId("merged-passenger-alone").click();
+    await page.getByRole("button", { name: he.mergedRide.splitConfirm, exact: true }).click();
+    await expect(page.getByText(tv("mergedRide.splitAloneDone", { name: SEEDED_USERS.admin.fullName, host: SEEDED_USERS.member1.fullName }))).toBeVisible();
+
+    const { data: split } = await service.from("requests").select("status, depart_at, filed_by, adults").eq("week_start", WEEK).eq("requester_id", PASSENGER).single();
+    expect(split).toMatchObject({ status: "submitted", filed_by: "00000000-0000-0000-0000-000000000102", adults: 1 });
+    expect(new Date(split!.depart_at!).toISOString()).toBe(new Date(at("07:00")).toISOString());
+    const { data: links } = await service.from("ride_requests").select("request_id").eq("ride_id", rideId);
+    expect(links!.map((link) => link.request_id)).toContain(guestRequestId);
+    const { count } = await service.from("request_companions").select("profile_id", { count: "exact", head: true }).eq("request_id", guestRequestId);
+    expect(count).toBe(0);
   } finally {
     for (const context of contexts) await context.close().catch(() => undefined);
     await cleanup(service);

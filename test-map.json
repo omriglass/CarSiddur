@@ -845,6 +845,10 @@
         "supabase/migrations/**/*ride_people*",
         "supabase/migrations/**/*unified_ride_people*",
         "supabase/tests/ride_passengers.sql",
+        "supabase/migrations/**/*split_ride_companion*",
+        "supabase/tests/split_ride_companion.sql",
+        "src/features/sadran/board/components/MergedPassengerDialog.tsx",
+        "e2e/merged-ride.spec.ts",
         "e2e/board.spec.ts",
         "src/features/rides/components/RidePublicNotesEditor.tsx",
         "src/features/rides/api.ts",
@@ -859,7 +863,8 @@
         "src/features/sadran/board/reservationPeople.test.ts"
       ],
       "sql": [
-        "ride_passengers.sql"
+        "ride_passengers.sql",
+        "split_ride_companion.sql"
       ],
       "playwrightTags": [
         "@ride-passengers"
@@ -889,6 +894,7 @@
         "supabase/tests/selected_day_publication.sql",
         "supabase/tests/board_drafts.sql",
         "supabase/tests/merged_rides.sql",
+        "supabase/tests/split_ride_companion.sql",
         "supabase/tests/merge_open_merges_seats.sql",
         "supabase/tests/proposals_copy_and_series_span.sql",
         "supabase/tests/qa_run2_proposals.sql",
@@ -910,6 +916,7 @@
         "selected_day_publication.sql",
         "board_drafts.sql",
         "merged_rides.sql",
+        "split_ride_companion.sql",
         "merge_open_merges_seats.sql",
         "proposals_copy_and_series_span.sql",
         "qa_run2_proposals.sql",

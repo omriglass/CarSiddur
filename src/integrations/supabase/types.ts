@@ -7719,6 +7719,15 @@ export type Database = {
         Args: { p_department_id: string; p_week_start: string }
         Returns: string
       }
+      split_ride_companion: {
+        Args: {
+          p_expected_version: number
+          p_profile_id: string
+          p_request_id: string
+          p_ride_id: string
+        }
+        Returns: string
+      }
       stop_request_template: {
         Args: { p_template_id: string }
         Returns: undefined

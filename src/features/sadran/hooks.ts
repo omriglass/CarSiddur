@@ -332,6 +332,18 @@ export function useUnmergeRequestMutation() {
   });
 }
 
+/** Owner 2026-11-09: "פיצול X בלבד" - a companion of a request on a merged ride gets a request of their own (`split_ride_companion`). */
+export function useSplitRideCompanionMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ rideId, expectedVersion, requestId, profileId }: {
+      rideId: string; expectedVersion: number; requestId: string; profileId: string; departmentId: string; weekStart: string;
+    }) => api.splitRideCompanion(rideId, expectedVersion, requestId, profileId),
+    onSuccess: (_data, { departmentId, weekStart, rideId }) => invalidateBoard(queryClient, departmentId, weekStart, [rideId]),
+    onError: showErrorToast,
+  });
+}
+
 /** REQ §13.95 (H3): "סוג נסיעה" - applied directly by the Sadran, no draft/proposal. */
 export function useSetRequestTripTypeMutation() {
   const queryClient = useQueryClient();

@@ -629,6 +629,11 @@ export async function joinDropOffLegs(requestId: string, rideId: string, expecte
  * host window shrinks to its base route, the request returns to `submitted` (unmet) and the
  * person is notified. `p_expected_version` is the ride's.
  */
+/** Owner 2026-11-09: "split only x" - a named companion gets a request of their own with that request's details, waiting. */
+export async function splitRideCompanion(rideId: string, expectedVersion: number, requestId: string, profileId: string): Promise<string> {
+  return rpc("split_ride_companion", { p_ride_id: rideId, p_expected_version: expectedVersion, p_request_id: requestId, p_profile_id: profileId });
+}
+
 export async function unmergeRequest(rideId: string, requestId: string, expectedVersion: number): Promise<void> {
   await rpc("unmerge_request", { p_ride_id: rideId, p_request_id: requestId, p_expected_version: expectedVersion });
 }

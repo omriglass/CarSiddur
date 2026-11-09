@@ -885,6 +885,7 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
         destinations={(board.destinationsQuery.data ?? []).map((d) => ({ id: d.id, name: d.name, aliases: d.aliases, zone: d.zone }))}
         onSaveRoute={(values) => { if (selectedRide) void dnd.saveRideRoute(selectedRide, values); }}
         onRemoveAddedPerson={(requestId, name) => { if (selectedRide?.id) void dnd.askAndRemoveAddedPerson(selectedRide.id, requestId, name); }}
+        onSplitGuest={(requestId, name) => { if (selectedRide?.id) void dnd.removeAddedPerson(selectedRide.id, requestId, name); }}
         onOpenChange={(open) => !open && dnd.setSelectedRideId(null)}
         saving={dnd.editRideMutation.isPending || dnd.claimDriverMutation.isPending}
         tightSchedule={!!selectedRide?.id && board.tightRideIds.has(selectedRide.id)}
