@@ -88,6 +88,7 @@ test('member can switch to another department for read-only viewing', { tag: ["@
     await page.goto('/requests/new');
     await expect(page.getByText(he.departmentContext.noMembership)).toBeVisible();
     await page.goto('/profile');
+    await page.getByTestId('temp-car-add').click();
     await expect(page.getByRole('button', { name: he.action.registerTempCar, exact: true })).toBeDisabled();
     const home = await fixture.service.from('departments').select('name').eq('id', NEVO_DEPARTMENT_ID).single();
     if (home.error) throw home.error;
@@ -105,6 +106,7 @@ test('member can switch to another department for read-only viewing', { tag: ["@
     await expect(page.getByText(he.departmentContext.viewOnly, { exact: true })).toHaveCount(0);
     await page.goto('/profile');
     const carName = `Context temporary car ${Date.now()}`;
+    await page.getByTestId('temp-car-add').click();
     await page.getByLabel(he.profileExtra.tempCarNickname, { exact: true }).fill(carName);
     await page.getByLabel(he.profileExtra.tempCarPlate, { exact: true }).fill(String(Date.now()).slice(-7));
     await page.getByRole('button', { name: he.action.registerTempCar, exact: true }).click();

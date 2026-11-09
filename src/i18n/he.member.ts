@@ -705,6 +705,7 @@ export const heMember = {
     tempCarPlate: "מספר רישוי",
     tempCarSeats: "תצורת מושבים",
     tempCarActiveUntil: "פעיל עד",
+    tempCarAdd: "+ הוספת רכב",
     tempCarAddAnother: "+ רכב נוסף",
     tempCarNone: "עדיין לא נרשם רכב פרטי.",
     tempCarRevoked: "הוצא משימוש על ידי המנהל/ת",

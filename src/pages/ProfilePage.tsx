@@ -274,12 +274,13 @@ export function ProfilePage() {
                 ))}
               </ul>
             )}
-            {hasCars && !addingCar ? (
-              <Button size="sm" variant="outline" onClick={() => setAddingCar(true)}>
-                {he.profileExtra.tempCarAddAnother}
+            {/* Owner 2026-11-09: the form opens from the button, with or without a car already registered. */}
+            {!addingCar ? (
+              <Button size="sm" variant="outline" onClick={() => setAddingCar(true)} data-testid="temp-car-add">
+                {hasCars ? he.profileExtra.tempCarAddAnother : he.profileExtra.tempCarAdd}
               </Button>
             ) : null}
-            {!hasCars || addingCar ? (
+            {addingCar ? (
               <div className="space-y-2 border-t pt-3">
                 <div className="space-y-1">
                   <Label htmlFor="temporary-car-name">{he.profileExtra.tempCarNickname}</Label>
