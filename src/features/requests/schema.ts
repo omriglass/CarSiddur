@@ -491,3 +491,14 @@ export const joinableRideRowSchema = z.object({
 });
 
 export type JoinableRideRowRaw = z.infer<typeof joinableRideRowSchema>;
+
+/** REQ §13.204: one event of `request_history(request)` — `data` depends on `kind` (see the migration). */
+export const requestHistoryEventSchema = z.object({
+  at: z.string(),
+  kind: z.string(),
+  actor: z.string().nullable(),
+  actor_role: z.string().nullable(),
+  data: z.record(z.string(), z.unknown()),
+});
+
+export type RequestHistoryEvent = z.infer<typeof requestHistoryEventSchema>;

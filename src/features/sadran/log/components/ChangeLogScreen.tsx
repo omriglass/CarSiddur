@@ -21,9 +21,9 @@ import { formatTime } from "@/lib/time";
 import { cn } from "@/lib/utils";
 
 import { useAllWeekRides, useAuditLog, useCarsForDepartment, useProposalsForWeek, useWeekRequestsWithNames } from "../../hooks";
-import { requestDeltas } from "../../requestDelta";
-import { requestHistory } from "../auditSentences";
-import { changeLogRows, closedReasonOf, filterChangeLogRows, groupRowsByDay, isClosedBySadran, isWaitingRow, type ChangeLogRow } from "../changeLogRows";
+import { requestDelta, requestDeltas } from "../../requestDelta";
+import { RequestTimeline } from "@/features/requests/components/RequestHistoryDialog";
+import { changeLogRows, closedReasonOf, filterChangeLogRows, groupRowsByDay, isClosedBySadran, isWaitingRow, memberSearchRows, type ChangeLogRow } from "../changeLogRows";
 import { RestoreClosedAction } from "./RestoreClosedAction";
 
 interface ChangeLogScreenProps {
@@ -60,7 +60,13 @@ export function ChangeLogScreen({ departmentId, weekStart }: ChangeLogScreenProp
     () => requestDeltas(requests.data ?? [], rides.data ?? [], proposals.data ?? [], { homeName }),
     [requests.data, rides.data, proposals.data, homeName],
   );
-  const allRows = useMemo(() => changeLogRows(requests.data ?? [], deltas, onlyBeyondFlex), [requests.data, deltas, onlyBeyondFlex]);
+  // REQ §13.204 (b): typing a name lists all of that member's requests this week, any status
+  const searching = query.trim() !== "";
+  const allRows = useMemo(() => searching
+    ? memberSearchRows(requests.data ?? [], (request) => deltas.get(request.id)
+        ?? requestDelta(request, rides.data ?? [], proposals.data ?? [], { homeName }), query)
+    : changeLogRows(requests.data ?? [], deltas, onlyBeyondFlex),
+  [searching, query, requests.data, rides.data, proposals.data, homeName, deltas, onlyBeyondFlex]);
   const days = useMemo(() => [...new Set(allRows.map((row) => row.day))], [allRows]);
   const dayFilter = day && days.includes(day) ? day : null;
   const rows = filterChangeLogRows(allRows, { day: dayFilter, query, waitlistOnly });
@@ -81,6 +87,7 @@ export function ChangeLogScreen({ departmentId, weekStart }: ChangeLogScreenProp
 
       <div className="space-y-2">
         <Input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder={he.sadranLog.searchPlaceholder} aria-label={he.sadranLog.searchPlaceholder} className="min-h-11 md:max-w-xs" />
+        {searching ? <p className="text-xs text-muted-foreground" data-testid="change-log-search-all">{he.sadranLog.searchAllHint}</p> : null}
         <div className="flex flex-wrap gap-1.5" role="group">
           <DayPill active={!day} onClick={() => setDay(null)}>{he.sadranLog.allWeek}</DayPill>
           {days.map((value) => <DayPill key={value} active={day === value} onClick={() => setDay(value)}>{formatDayDate(value)}</DayPill>)}
@@ -92,7 +99,7 @@ export function ChangeLogScreen({ departmentId, weekStart }: ChangeLogScreenProp
             </DayPill>
           </div>
         ) : null}
-        <div className="flex min-h-11 items-center gap-2">
+        <div className={cn("flex min-h-11 items-center gap-2", searching && "hidden")}>
           <Switch id="change-log-beyond-flex" checked={onlyBeyondFlex} onCheckedChange={setOnlyBeyondFlex} />
           <Label htmlFor="change-log-beyond-flex" className="text-sm font-normal">
             {he.sadranLog.onlyBeyondFlex} · {rows.length === 1 ? he.sadranLog.requestCountOne : tv("sadranLog.requestCount", { count: String(rows.length) })}
@@ -122,7 +129,7 @@ export function ChangeLogScreen({ departmentId, weekStart }: ChangeLogScreenProp
                           <GotLines row={row} carName={carName} labelled closedReason={closedReasonOf(audit.data ?? [], row.request.id)} />
                         </dl>
                         <ClosedRestore row={row} departmentId={departmentId} weekStart={weekStart} />
-                        <RequestHistory row={row} audit={audit.data ?? []} proposals={proposals.data ?? []} />
+                        <RequestHistory requestId={row.request.id} />
                       </CardContent>
                     </Card>
                   ))}
@@ -153,7 +160,7 @@ export function ChangeLogScreen({ departmentId, weekStart }: ChangeLogScreenProp
                       </td>
                       <td className="space-y-0.5 px-1.5 py-2">
                         <GotLines row={row} carName={carName} closedReason={closedReasonOf(audit.data ?? [], row.request.id)} />
-                        <RequestHistory row={row} audit={audit.data ?? []} proposals={proposals.data ?? []} />
+                        <RequestHistory requestId={row.request.id} />
                       </td>
                       <td className="space-y-1 px-1.5 py-2"><StateCell row={row} /><ClosedRestore row={row} departmentId={departmentId} weekStart={weekStart} /></td>
                     </tr>
@@ -232,25 +239,13 @@ function GotLines({ row, carName, labelled = false, closedReason = null }: { row
   );
 }
 
-/** "איך הגענו לכאן (n)": the request's, its rides' and its proposals' audit rows as short sentences. */
-function RequestHistory({ row, audit, proposals }: { row: ChangeLogRow; audit: Parameters<typeof requestHistory>[0]; proposals: readonly { id: string; request_id: string }[] }) {
-  const lines = requestHistory(audit, {
-    requestId: row.request.id,
-    rideIds: row.delta.rideIds,
-    proposalIds: proposals.filter((proposal) => proposal.request_id === row.request.id).map((proposal) => proposal.id),
-  });
+/** "how did we get here": the request's whole story from `request_history` (REQ §13.204 b), fetched when opened. */
+function RequestHistory({ requestId }: { requestId: string }) {
+  const [open, setOpen] = useState(false);
   return (
-    <details className="text-xs text-muted-foreground">
-      <summary className="min-h-6 cursor-pointer text-primary">{tv("sadranLog.historyToggle", { count: String(lines.length) })}</summary>
-      {lines.length === 0 ? <p>{he.sadranLog.historyEmpty}</p> : (
-        <ul className="mt-1 list-disc space-y-0.5 ps-4">
-          {lines.map((line) => (
-            <li key={line.id}>
-              <span dir="ltr">{formatDayDate(line.at)} {formatTime(new Date(line.at))}</span> {line.actor}: {line.what}
-            </li>
-          ))}
-        </ul>
-      )}
+    <details className="text-xs" onToggle={(event) => setOpen(event.currentTarget.open)} data-testid="change-log-history">
+      <summary className="min-h-6 cursor-pointer text-primary">{he.sadranLog.historyToggleOpen}</summary>
+      <div className="mt-1">{open ? <RequestTimeline requestId={requestId} /> : null}</div>
     </details>
   );
 }

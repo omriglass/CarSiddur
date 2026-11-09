@@ -19,10 +19,11 @@ import { PlanSwitchButton } from "./PlanSwitchButton";
 import { TripTypeChange } from "./TripTypeChange";
 import { WithdrawDuplicateAction } from "./WithdrawDuplicateAction";
 import { CloseRequestAction } from "./CloseRequestAction";
+import { RequestHistoryDialog } from "@/features/requests/components/RequestHistoryDialog";
 
 import type { WeekRequestRow } from "../../api";
 
-type Dialogs = "tripType" | "plan" | "duplicate" | "fewerDays" | "close" | null;
+type Dialogs = "tripType" | "plan" | "duplicate" | "fewerDays" | "close" | "history" | null;
 
 export interface UnmetCardMenuProps {
   request: WeekRequestRow;
@@ -86,6 +87,8 @@ export function UnmetCardMenu({ request, destinationName, proposalOut, tripTypeS
           {fewerDays && !proposalOut && request.series_id ? <DropdownMenuItem className="min-h-11" data-testid="unmet-fewer-days" onSelect={open("fewerDays")}>{he.fewerDays.action}</DropdownMenuItem> : null}
           {/* REQ §13.162 (b): close a request that is no longer needed (proposals out are withdrawn with it). */}
           {tripTypeScope ? <DropdownMenuItem className="min-h-11 text-destructive" data-testid="unmet-close-request" onSelect={open("close")}>{he.closeRequest.menuItem}</DropdownMenuItem> : null}
+          {/* REQ §13.204 (c): the request's whole story */}
+          <DropdownMenuItem className="min-h-11" data-testid="unmet-history" onSelect={open("history")}>{he.requestHistory.openSadran}</DropdownMenuItem>
           <DropdownMenuSeparator />
           {menuOpen ? <WhatsappItem request={request} destinationName={destinationName} /> : null}
         </DropdownMenuContent>
@@ -105,6 +108,7 @@ export function UnmetCardMenu({ request, destinationName, proposalOut, tripTypeS
         <CloseRequestAction requestId={request.id} version={request.version} name={name} departmentId={tripTypeScope.departmentId} weekStart={tripTypeScope.weekStart}
           series={!!request.series_id} open onOpenChange={closer("close")} />
       ) : null}
+      {dialog === "history" ? <RequestHistoryDialog requestId={request.id} subtitle={name} open onOpenChange={closer("history")} /> : null}
       {fewerDays && dialog === "fewerDays" ? <FewerDaysAction request={request} support={fewerDays} open onOpenChange={closer("fewerDays")} /> : null}
     </>
   );

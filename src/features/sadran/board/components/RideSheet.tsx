@@ -45,6 +45,7 @@ import { RideRouteEditor } from "./RideRouteEditor";
 import { PlanSwitchButton } from "./PlanSwitchButton";
 import { TripTypeChange } from "./TripTypeChange";
 import { WithdrawDuplicateAction } from "./WithdrawDuplicateAction";
+import { RequestHistoryDialog } from "@/features/requests/components/RequestHistoryDialog";
 import { busyDriverIds, personDayEntries } from "../driverBusy";
 import { RideDriverPicker, type DriverCandidate } from "./RideDriverPicker";
 import { RideCancelDialog } from "./RideCancelDialog";
@@ -128,6 +129,7 @@ export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenCha
   // same one, resets the local fields), not on whether `carId` happens to
   // differ from the ride's persisted value.
   const [nowMs] = useState(() => Date.now());
+  const [historyFor, setHistoryFor] = useState<{ id: string; name: string } | null>(null);
   const joinable = ride ? joinableDropOffLegs(ride, otherRides) : null;
   const [lastRideId, setLastRideId] = useState<string | null>(ride?.id ?? null);
   const [carId, setCarId] = useState(ride?.car_id ?? "");
@@ -294,6 +296,13 @@ export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenCha
                                 weekStart={weekStart}
                                 disabled={saving}
                               />
+                            ) : null}
+                            {/* REQ §13.204 (c): the request's whole story */}
+                            {entry.request_id ? (
+                              <Button type="button" variant="link" size="sm" className="h-auto min-h-8 px-0 text-xs" data-testid="ride-sheet-request-history"
+                                onClick={() => setHistoryFor({ id: entry.request_id as string, name: entry.requester ?? entryRequest?.requester_full_name ?? "" })}>
+                                {he.requestHistory.openSadran}
+                              </Button>
                             ) : null}
                             {entryRequest && departmentId && weekStart && !isPlanning && !cancelled ? (
                               <PlanSwitchButton request={entryRequest} name={entry.requester ?? entryRequest.requester_full_name ?? ""} departmentId={departmentId} weekStart={weekStart} disabled={saving} />
@@ -589,6 +598,7 @@ export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenCha
             </div>
           </>
         ) : null}
+        {historyFor ? <RequestHistoryDialog requestId={historyFor.id} subtitle={historyFor.name} open onOpenChange={(value) => { if (!value) setHistoryFor(null); }} /> : null}
       </PortalSheetContent>
     </Sheet>
   );

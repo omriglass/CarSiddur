@@ -40,6 +40,23 @@ export function changeLogRows(requests: readonly WeekRequestRow[], deltas: Reado
   return rows.sort((a, b) => (askedAt(a.request) ?? "").localeCompare(askedAt(b.request) ?? "") || a.request.id.localeCompare(b.request.id));
 }
 
+/**
+ * REQ §13.204 (b): a name search lists every request of the matching members this week, whatever happened to it —
+ * placed as asked, withdrawn, closed — so "I had a request on Monday" is answered from here (none = none was filed).
+ */
+export function memberSearchRows(requests: readonly WeekRequestRow[], deltaOf: (request: WeekRequestRow) => RequestDelta, query: string): ChangeLogRow[] {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return [];
+  const rows: ChangeLogRow[] = [];
+  for (const request of requests) {
+    const asked = askedAt(request);
+    if (!asked || request.status === "draft" || !(request.requester_full_name ?? "").toLowerCase().includes(needle)) continue;
+    const delta = deltaOf(request);
+    rows.push({ request, delta, day: dateKey(asked), rideId: delta.rideIds[0] ?? null });
+  }
+  return rows.sort((a, b) => (askedAt(a.request) ?? "").localeCompare(askedAt(b.request) ?? "") || a.request.id.localeCompare(b.request.id));
+}
+
 /** O29-2 (4): a request still waiting - no ride, not refused, closed or answered externally. */
 export function isWaitingRow(row: Pick<ChangeLogRow, "delta">): boolean {
   return row.delta.state === "unplaced";

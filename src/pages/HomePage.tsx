@@ -26,6 +26,8 @@ import { CarNowButton } from "@/features/requests/components/CarNowButton";
 import { isFiledForOther } from "@/features/requests/filedForOther";
 import { NewRequestButton } from "@/features/requests/components/NewRequestButton";
 import { RequestRow } from "@/features/requests/components/RequestRow";
+import { ClosedRequestsList } from "@/features/requests/components/ClosedRequestsList";
+import { closedByWeek, weekGroupKey } from "@/features/requests/closedByWeek";
 import { ShortenSeriesDialog } from "@/features/requests/components/ShortenSeriesDialog";
 import { TemplateSuggestions } from "@/features/requests/components/TemplateSuggestions";
 import {
@@ -33,13 +35,14 @@ import {
   usePlaceOnOwnCarMutation,
   useRestoreDuplicateMutation,
   useMyFreedSlotOffers,
+  useMyClosedRequests,
   useMyRequests,
   useSetFreedSlotOptOutMutation,
   useWithdrawAllRequestsMutation,
   useWithdrawFreedSlotClaimMutation,
   useWithdrawRequestMutation,
 } from "@/features/requests/hooks";
-import type { MyRequestRow } from "@/features/requests/api";
+import type { ClosedRequestRow, MyRequestRow } from "@/features/requests/api";
 import { canEditRequest, isPublishedDayWindow } from "@/features/requests/window";
 import {
   confirmDialogDescription,
@@ -129,6 +132,8 @@ export function HomePage() {
   // ל<destination>" display (`active.departments` already lists every active department).
   const homeDestinationIds = Object.fromEntries(active.departments.map((d) => [d.id, d.home_destination_id]));
   const requestsQuery = useMyRequests();
+  // REQ §13.204 (d): closed requests of this week and later, listed under their week
+  const closedQuery = useMyClosedRequests(dateKey(weekStartFor(new Date())));
   // A manager reads draft rides that never move the public counter: no return-to-tab gating for them (lib/counterGate.ts).
   const sadranAnywhere = useIsSadranAnywhere();
   const upcomingRidesQuery = useMyUpcomingRides();
@@ -323,6 +328,7 @@ export function HomePage() {
   const relatedRides = (kidsRidesQuery.data ?? []).filter((ride) => !!ride.id && relatedByRide.has(ride.id) && !upcomingRides.some((mine) => mine.id === ride.id));
   const listedRides = [...upcomingRides, ...relatedRides];
   const rideRequestIds = (ride: BoardRide) => servedOf(ride).flatMap((entry) => (entry.request_id ? [entry.request_id] : []));
+  const closedWeeks = closedByWeek(closedQuery.data ?? []);
   const tripWeeks = buildTripWeeks(toDisplayRows(requests.filter((r) => !unservedIds.has(r.id))), unserved, listedRides, rideRequestIds);
   const unservedRides = ridesByRequestRow(unserved, upcomingRides, rideRequestIds);
   const rideCardOf = (ride: (typeof upcomingRides)[number]) => {
@@ -699,11 +705,19 @@ export function HomePage() {
                     />
                   );
                 })}
+                <ClosedInWeek rows={closedWeeks.get(weekKey)} />
                 </>}
               </div>
             );
           })
         )}
+        {/* REQ §13.204 (d): a week whose requests all closed still shows them */}
+        {[...closedWeeks].filter(([key]) => !tripWeeks.some((group) => weekGroupKey(group.weekStart, group.departmentId) === key)).map(([key, rows]) => (
+          <div key={key} className="space-y-2" data-week-start={key.split(":")[0]}>
+            <p className="flex min-h-11 items-center font-medium"><span dir="ltr">{formatWeekRangeLabel(key.split(":")[0] ?? "")}</span></p>
+            <ClosedInWeek rows={rows} />
+          </div>
+        ))}
       </section> : null}
 
       <div className="border-t pt-4 text-center">
@@ -814,5 +828,16 @@ export function HomePage() {
         onConfirm={() => void runConfirmAction()}
       />
     </div>
+  );
+}
+
+/** REQ §13.204 (d): a week's closed requests, folded under its rides. */
+function ClosedInWeek({ rows }: { rows: readonly ClosedRequestRow[] | undefined }) {
+  if (!rows?.length) return null;
+  return (
+    <details className="text-sm" data-testid="my-week-closed">
+      <summary className="min-h-11 cursor-pointer content-center text-muted-foreground">{tv("requestHistory.closedInWeek", { count: String(rows.length) })}</summary>
+      <ClosedRequestsList rows={rows} />
+    </details>
   );
 }

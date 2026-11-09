@@ -7291,6 +7291,7 @@ export type Database = {
         Args: { p_request_id: string }
         Returns: boolean
       }
+      request_history: { Args: { p_request: string }; Returns: Json }
       request_leg_route_km: {
         Args: {
           p_leg: Database["public"]["Enums"]["ride_leg"]

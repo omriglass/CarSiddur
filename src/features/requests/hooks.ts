@@ -46,6 +46,8 @@ import {
   type RoutePreviewPoint,
   type SubmitRequestPayload,
   type SubmitRequestResult,
+  fetchMyClosedRequests,
+  fetchRequestHistory,
 } from "./api";
 import { movedRequestPayload, type RequestMove } from "./myWeek/requestMove";
 import { requestsKeys } from "./queryKeys";
@@ -509,4 +511,26 @@ export type RequestFormLayout = "sentence" | "classic";
 export function useRequestFormLayout(): RequestFormLayout {
   const profileQuery = useProfile();
   return profileQuery.data?.classic_request_form ? "classic" : "sentence";
+}
+
+/** REQ §13.204: one request's story — fetched when it is opened (`enabled`), never for every row. */
+export function useRequestHistory(requestId: string | undefined, enabled = true) {
+  return useQuery({
+    queryKey: requestsKeys.history(requestId),
+    queryFn: () => fetchRequestHistory(requestId as string),
+    enabled: !!requestId && enabled,
+    staleTime: 15_000,
+  });
+}
+
+/** REQ §13.204 (d): my withdrawn / cancelled / closed requests in the active department (`fromWeek` and later, or all). */
+export function useMyClosedRequests(fromWeek?: string) {
+  const { departmentId } = useActiveDepartment();
+  const profileId = useSession().session?.user.id;
+  return useQuery({
+    queryKey: requestsKeys.closed(profileId, departmentId, fromWeek),
+    queryFn: () => fetchMyClosedRequests(profileId as string, departmentId ?? null, fromWeek),
+    enabled: !!profileId && !!departmentId,
+    staleTime: 30_000,
+  });
 }

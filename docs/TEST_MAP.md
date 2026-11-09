@@ -719,6 +719,30 @@ migrations matching `*maintenance*`; `supabase/tests/scheduled_maintenance.sql`;
 
 **REQ**: §13.4, §13.79.
 
+### request-history — Request history: the Sadran traces a request, members see closed requests and what happened
+
+**Paths**: `src/features/requests/requestTimeline.ts`, `closedByWeek.ts`, `components/RequestHistoryDialog.tsx`,
+`components/ClosedRequestsList.tsx`, `src/pages/MyHistoryPage.tsx`, `src/features/sadran/log/**`; migration
+`*request_history*`; `supabase/tests/request_history.sql`; `e2e/request-history.spec.ts` (REQ §13.204 b–d).
+
+**Automated**:
+- Vitest: `npx vitest run src/features/requests/requestTimeline.test.ts src/features/requests/closedByWeek.test.ts src/features/sadran/log`
+- SQL: `request_history.sql` (filed / placed / moved / car changed / taken off / closed with reason; the note never comes back; another member refused), `department_isolation.sql` (cross-department refused)
+- Playwright: `npx playwright test --grep "@request-history"` — `request-history.spec.ts`
+
+**QA script**:
+1. As the Sadran open the change log and type a member's name. Expected: every request of theirs this week —
+   placed as asked, withdrawn, closed — the flexibility switch hides while searching.
+2. Open "איך הגענו לכאן" on a row: lines with day, time and who — filed, waiting list with its reason, placed on a
+   car with hours, moved / car changed, notices sent.
+3. Board: an unplaced card's ⋮ → "היסטוריית הבקשה", and a ride's sheet → סיכום → "היסטוריית הבקשה" under a request
+   open the same story.
+4. As a member withdraw a request. Expected: on `/my` its week ends with a folded "בקשות שנסגרו (1)"; the row is
+   struck through with "הוסרה על ידך"; "מה קרה?" shows filing and withdrawal with your name.
+5. `/my` → היסטוריה: "בקשות שנסגרו" by week on top, past rides below, each with "מה קרה?".
+6. A request the Sadran closed with a reason: the member's "מה קרה?" shows the reason; the note to the Sadran
+   never appears.
+
 ## Known coverage gaps (do not silently "fix" — flag to QA as manual-only)
 
 Carried over from `docs/E2E_AUDIT_2026-09-14.md`, still true as of this writing:

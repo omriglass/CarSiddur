@@ -274,6 +274,8 @@ begin
   -- REQ §13.153: request_notes filters (never raises) — another department's note never comes back
   update public.requests set notes = 'B private note' where id = req_b;
   assert not exists (select 1 from public.request_notes(array[req_b])), 'requests.request_notes: FAILED cross-department note returned';
+  -- REQ §13.204: another department's request history is refused
+  perform pg_temp.expect_refused('requests.request_history', format('select public.request_history(%L)', req_b));
   perform pg_temp.expect_refused('requests.route_minutes_preview_place', format('select public.route_minutes_preview(%L, jsonb_build_array(jsonb_build_object(''place_id'', %L), jsonb_build_object(''place_id'', %L)))', dept_a, home_b, other_dest_b));
 
   -- members / admin (is_admin()-gated, sadran_a is not admin) ---------------
@@ -429,7 +431,7 @@ declare
     'publish_scores_fingerprint','solver_state_fingerprint','sadran_contact_of','fairness_stats','department_stats','joinable_rides_for_request',
     'planning_month','typical_usage','save_reservation',
     'create_policy_version','set_policy_active','policy_week_alignment','resolve_waitlist_group','cancel_waitlist_group','join_waitlist_discussion','waitlist_group_holds','siddur_waitlist','place_waiting_request',
-    'place_travel_for_week','car_start_locations','set_my_default_origin','route_minutes_preview','request_notes',
+    'place_travel_for_week','car_start_locations','set_my_default_origin','route_minutes_preview','request_notes','request_history',
     'my_co_guardians','set_ride_driver','withdraw_duplicate_request','restore_duplicate_request','close_request','restore_closed_request','sadran_cancel_ride','place_on_own_car','child_request_overlaps',
     'mark_car_move','shorten_series','join_drop_off_legs','place_series_on_car',
     'create_car_maintenance','update_car_maintenance','delete_car_maintenance','report_car_issue_unsafe_maintenance'

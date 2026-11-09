@@ -9,7 +9,7 @@ import { siddurCarName } from "@/lib/siddurCarName";
 
 import { splitMemberProposals } from "./pendingProposal";
 import { extraAdultsFromStored, unnamedChildSeatsFromStored } from "./seatCounts";
-import { joinableRideRowSchema, templateSuggestionRowSchema, type TemplateSuggestionRow } from "./schema";
+import { joinableRideRowSchema, requestHistoryEventSchema, templateSuggestionRowSchema, type RequestHistoryEvent, type TemplateSuggestionRow } from "./schema";
 
 import type { DestinationValue } from "@/components/DestinationCombobox";
 import type { Json } from "@/integrations/supabase/types";
@@ -1462,4 +1462,57 @@ export interface RoutePreviewPoint {
  */
 export async function fetchRouteMinutesPreview(departmentId: string, points: readonly RoutePreviewPoint[]): Promise<number> {
   return rpc("route_minutes_preview", { p_department_id: departmentId, p_points: points as unknown as Json });
+}
+
+/** REQ §13.204: one request's story (`request_history`), oldest first; events of unknown shape are dropped. */
+export async function fetchRequestHistory(requestId: string): Promise<RequestHistoryEvent[]> {
+  const raw = await rpc("request_history", { p_request: requestId });
+  return (Array.isArray(raw) ? raw : []).flatMap((item) => {
+    const parsed = requestHistoryEventSchema.safeParse(item);
+    return parsed.success ? [parsed.data] : [];
+  });
+}
+
+export interface ClosedRequestRow {
+  id: string;
+  departmentId: string;
+  weekStart: string;
+  status: "withdrawn" | "cancelled";
+  statusReason: string | null;
+  departAt: string | null;
+  returnAt: string | null;
+  destination: string;
+  /** Filed by me for someone else, or by someone else for me. */
+  requesterName: string | null;
+  updatedAt: string;
+}
+
+/**
+ * REQ §13.204 (d): my withdrawn / cancelled / closed requests (requester or filer) — the member feed leaves them out.
+ * `fromWeek` limits them to that week and later; a duplicate the Sadran withdrew stays in the feed (it has its own row)
+ * and a plan-B pickup leg goes with its parent.
+ */
+export async function fetchMyClosedRequests(profileId: string, departmentId: string | null, fromWeek?: string): Promise<ClosedRequestRow[]> {
+  let query = supabase.from("requests")
+    .select("id, department_id, week_start, requester_id, status, status_reason, depart_at, return_at, destination_text, plan_b_parent_id, updated_at, requester:profiles!requests_requester_id_fkey(full_name), destination:destinations!requests_destination_id_fkey(name)")
+    .or(`requester_id.eq.${profileId},filed_by.eq.${profileId}`)
+    .in("status", ["withdrawn", "cancelled"])
+    .is("plan_b_parent_id", null)
+    .neq("status_reason", "DUPLICATE_WITHDRAWN");
+  if (departmentId) query = query.eq("department_id", departmentId);
+  if (fromWeek) query = query.gte("week_start", fromWeek);
+  const { data, error } = await query.order("depart_at", { ascending: true, nullsFirst: false });
+  if (error) throw toAppError(error);
+  return (data ?? []).map((row) => ({
+    id: row.id,
+    departmentId: row.department_id,
+    weekStart: row.week_start,
+    status: row.status as ClosedRequestRow["status"],
+    statusReason: row.status_reason,
+    departAt: row.depart_at,
+    returnAt: row.return_at,
+    destination: row.destination?.name ?? row.destination_text ?? "",
+    requesterName: row.requester_id === profileId ? null : row.requester?.full_name ?? null,
+    updatedAt: row.updated_at,
+  }));
 }

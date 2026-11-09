@@ -1533,6 +1533,48 @@
         "Confirm cross-department reads stay scoped to published data only (REQ §13.52)",
         "Confirm phone numbers only reach the client via phone_of()/profile_phones() (REQ §13.79)"
       ]
+    },
+    {
+      "id": "request-history",
+      "title": "Request history: the Sadran traces a request, members see closed requests and what happened",
+      "paths": [
+        "src/features/requests/requestTimeline.ts",
+        "src/features/requests/requestTimeline.test.ts",
+        "src/features/requests/closedByWeek.ts",
+        "src/features/requests/closedByWeek.test.ts",
+        "src/features/requests/components/RequestHistoryDialog.tsx",
+        "src/features/requests/components/ClosedRequestsList.tsx",
+        "src/pages/MyHistoryPage.tsx",
+        "src/features/sadran/log/**",
+        "supabase/migrations/**/*request_history*",
+        "supabase/tests/request_history.sql",
+        "e2e/request-history.spec.ts"
+      ],
+      "vitest": [
+        "src/features/requests/requestTimeline.test.ts",
+        "src/features/requests/closedByWeek.test.ts",
+        "src/features/sadran/log/changeLogRows.test.ts"
+      ],
+      "sql": [
+        "request_history.sql",
+        "department_isolation.sql"
+      ],
+      "playwrightTags": [
+        "@request-history"
+      ],
+      "reqRefs": [
+        "13.204",
+        "13.161",
+        "13.91"
+      ],
+      "qaChecklist": [
+        "As the Sadran open the change log (יומן שינויים) and type a member's name: every request of theirs this week is listed, also placed-as-asked, withdrawn and closed ones; the flexibility switch hides while searching",
+        "Open \"איך הגענו לכאן\" on a row: lines with day, time and who — filed, waiting list with its reason, placed on a car with hours, moved / car changed, notices sent",
+        "On the board: an unplaced card's ⋮ -> \"היסטוריית הבקשה\", and a ride's sheet -> סיכום -> \"היסטוריית הבקשה\" under a request open the same story",
+        "As a member withdraw a request: on /my its week ends with a folded \"בקשות שנסגרו (1)\"; open it -> the row is struck through with \"הוסרה על ידך\"; \"מה קרה?\" shows filing and withdrawal with your name",
+        "/my -> היסטוריה: \"בקשות שנסגרו\" by week on top, past rides below, each with \"מה קרה?\"",
+        "A request closed by the Sadran with a reason: the member's \"מה קרה?\" shows the reason; the private note to the Sadran never appears"
+      ]
     }
   ],
   "migrationContentRules": [

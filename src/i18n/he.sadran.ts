@@ -516,10 +516,6 @@ export const heSadran = {
     entityProposal: "הצעה",
     entityCar: "רכב",
     entityDestination: "יעד",
-    actorMember: "חבר/ה",
-    actorSadran: "סדרן/ית",
-    actorSystem: "מערכת",
-    actorAdmin: "מנהל/ת",
     empty: "אין רשומות ליומן השבוע",
     searchPlaceholder: "חיפוש לפי שם",
     /** REQ §13.161 (d): the change log shows requested vs got, one row per request. */
@@ -544,30 +540,12 @@ export const heSadran = {
     peopleMissing: "חסר/ה: {{names}}",
     ridesWith: "נוסע/ת אצל {{name}}",
     openOnBoard: "פתיחה בלוח",
-    historyToggle: "איך הגענו לכאן ({{count}})",
-    historyEmpty: "אין היסטוריה לבקשה",
+    /** REQ §13.204 (b): the request's whole story, loaded when opened. */
+    historyToggleOpen: "איך הגענו לכאן",
+    /** REQ §13.204 (b): a name search shows every request of that member this week. */
+    searchAllHint: "מוצגות כל הבקשות של מי שנמצא/ה השבוע, כולל בקשות שהוסרו או נסגרו",
     carChange: "{{asked}} ← {{got}}",
     /** Audit rows worded as short sentences (the screen prefixes time and actor). */
-    sentence: {
-      requestInsert: "הבקשה הוגשה",
-      requestUpdate: "הבקשה עודכנה",
-      requestStatus: "מצב הבקשה: {{status}}",
-      requestTimes: "זמני הבקשה שונו",
-      rideInsert: "נוצרה נסיעה",
-      rideDelete: "נסיעה הוסרה",
-      rideUpdate: "הנסיעה עודכנה",
-      rideMoved: "הנסיעה הוזזה",
-      rideCar: "הרכב הוחלף",
-      rideDriver: "הנהג/ת הוחלף/ה",
-      proposalDraft: "נוצרה טיוטת הצעה",
-      proposalSent: "ההצעה נשלחה",
-      proposalAccepted: "ההצעה אושרה",
-      proposalDeclined: "ההצעה נדחתה",
-      proposalApplied: "ההצעה הוחלה",
-      proposalWithdrawn: "ההצעה בוטלה",
-      proposalExpired: "ההצעה פגה",
-      proposalOther: "ההצעה עודכנה",
-    },
   },
   /** REQ §13.161 (a): the delta line on a board ride block / card (requested -> got). */
   rideDelta: {

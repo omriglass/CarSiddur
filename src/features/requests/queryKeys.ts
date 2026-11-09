@@ -10,4 +10,9 @@ export const requestsKeys = {
   /** `route_minutes_preview` for an unsaved request leg (REQ §13.110 b). */
   routeMinutes: (departmentId: string | undefined, points: unknown) => ["requests", "routeMinutes", departmentId, points] as const,
   templateSuggestions: (profileId: string | undefined) => ["requests", "templateSuggestions", profileId] as const,
+  /** REQ §13.204: one request's story (`request_history`). */
+  history: (requestId: string | undefined) => ["requests", "history", requestId] as const,
+  /** REQ §13.204 (d): my withdrawn / cancelled / closed requests (`fromWeek` and later, or all). */
+  closed: (profileId: string | undefined, departmentId: string | null | undefined, fromWeek: string | undefined) =>
+    ["requests", "closed", profileId, departmentId, fromWeek] as const,
 };
