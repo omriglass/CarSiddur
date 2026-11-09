@@ -58,12 +58,15 @@ export function RideDriverPicker({ rideId, version, needsDriver, volunteerName, 
   const [driverId, setDriverId] = useState("");
   const [confirming, setConfirming] = useState(false);
   const [query, setQuery] = useState("");
+  // Owner 2026-11-09: a ride that has a driver shows one line until the Sadran asks to replace them (rarely needed).
+  const [expanded, setExpanded] = useState(false);
   // A new ride or ride version (someone assigned/replaced the driver) starts with an empty choice. Derived during render, not via a
   // `key` on the element: a keyed picker inside the sheet was rendered twice when a Select in the sheet opened.
   const [seen, setSeen] = useState(`${rideId}:${version}`);
   if (seen !== `${rideId}:${version}`) {
     setSeen(`${rideId}:${version}`);
     setDriverId("");
+    setExpanded(false);
   }
   const mutation = useSetRideDriverMutation();
   const recordUndo = useRecordBoardUndo();
@@ -107,6 +110,24 @@ export function RideDriverPicker({ rideId, version, needsDriver, volunteerName, 
     void recordUndo(he.sadranBoard.undoLabel.driver, () => mutation.mutateAsync({ rideId, driverId: null, expectedVersion: version, departmentId, weekStart }, {
       onSuccess: () => { toast.success(he.rideDriver.unassigned); onDone?.(); },
     })).catch(() => undefined);
+  }
+
+  if (!needsDriver && !expanded) {
+    return (
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border p-3" data-testid="ride-driver-picker">
+        <p>{tv(ownRequest ? "rideDriver.currentOwn" : "rideDriver.current", { name: volunteerName ?? "" })}</p>
+        <div className="flex flex-wrap gap-2">
+          <Button type="button" variant="outline" className="min-h-11" disabled={disabled} onClick={() => setExpanded(true)} data-testid="ride-driver-expand">
+            {he.rideDriver.expand}
+          </Button>
+          {ownRequest ? null : (
+            <Button type="button" variant="outline" className="min-h-11" disabled={disabled || mutation.isPending} onClick={unassign} data-testid="ride-driver-unassign">
+              {he.rideDriver.unassign}
+            </Button>
+          )}
+        </div>
+      </div>
+    );
   }
 
   return (

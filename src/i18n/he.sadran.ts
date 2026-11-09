@@ -331,7 +331,7 @@ export const heSadran = {
     seriesLine: "בקשה רב-יומית · יום {{index}} מתוך {{count}}",
     /** REQ §13.201: the ride sheet's four tabs and the summary's one line per request. */
     tabsLabel: "חלקי פרטי הנסיעה",
-    tabs: { summary: "סיכום", people: "אנשים", route: "יעדים", actions: "פעולות" },
+    tabs: { summary: "סיכום", merged: "נסיעות מאוחדות", people: "אנשים", route: "יעדים", actions: "פעולות" },
     summaryLine: "{{name}} {{route}} ב־{{time}}",
     summaryWith: "{{line}} · עם {{names}}",
     noRoute: "אין מסלול לערוך בנסיעה הזאת.",
@@ -835,6 +835,9 @@ export const heSadran = {
     /** R6B15: the day is not published, so nobody is told yet. */
     assignedUnpublished: "{{name}} שובץ/ה כנהג/ת — נשמר (הנוסעים יעודכנו עם פרסום הסידור)",
     current: "נהג/ת מתנדב/ת: {{name}}",
+    /** Owner 2026-11-09: a ride with a driver shows one line; the picker opens only from "החלפת נהג/ת…". */
+    currentOwn: "נהג/ת: {{name}}",
+    expand: "החלפת נהג/ת…",
     unassign: "הסר/י נהג/ת",
     /** R8U1: replacing the volunteer in one step. */
     replaceLabel: "החלפת הנהג/ת המתנדב/ת",
@@ -890,7 +893,8 @@ export const heSadran = {
     removeFromRide: "הוצא מהנסיעה",
     dragChip: "גררו אל רשימת הלא-משובצים או אל רכב אחר כדי להוציא מהנסיעה",
     removeAria: "הוצא/י את {{name}} מהנסיעה",
-    removed: "{{name}} הוצא/ה מהנסיעה — הבקשה חזרה לרשימה",
+    /** Owner 2026-11-09: taking a merged guest out says whose ride it was split from (the request waits on the unassigned list). */
+    removed: "הנסיעה של {{name}} פוצלה מהנסיעה של {{host}}",
     /** REQ §13.161 (c): the merge popup's one result block. */
     resultHeading: "התוצאה",
     resultCar: "{{car}} · {{driver}} נוהג/ת",

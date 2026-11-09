@@ -1,5 +1,7 @@
 import { fromZonedTime } from "date-fns-tz";
 import { useState } from "react";
+
+import { cn } from "@/lib/utils";
 import { ridePublicDetails } from "@/lib/ridePublicDetails";
 import { ridePassengerSummary } from "@/lib/ridePassengerSummary";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -54,7 +56,8 @@ export interface RideSheetSaveInput {
   endsAt: string;
 }
 
-const RIDE_SHEET_TABS = ["summary", "people", "route", "actions"] as const;
+/** Owner 2026-11-09: "נסיעות מאוחדות" sits between סיכום and אנשים, and only on a ride that has merged guests. */
+const RIDE_SHEET_TABS = ["summary", "merged", "people", "route", "actions"] as const;
 type RideSheetTab = (typeof RIDE_SHEET_TABS)[number];
 
 interface RideSheetProps {
@@ -177,6 +180,8 @@ export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenCha
   );
 
   const cancelled = ride?.status === "cancelled";
+  const merged = addedPeople.length > 0 && !reservation;
+  const personBlocks = ride ? <RidePersonBlocks blocks={buildPersonBlocks({ ride, served: servedEntries, homeDestinationId, requests: personExtras })} /> : null;
 
   /** REQ §13.201: one line per served request - "name route ב־time", plus the people who ride with them (once). */
   function summaryLineOf(entry: ReturnType<typeof servedOf>[number]): string {
@@ -219,8 +224,8 @@ export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenCha
               </div> : null}
 
               <Tabs value={tab} onValueChange={(value) => setTab(value as RideSheetTab)}>
-                <TabsList className="grid h-auto w-full grid-cols-4" aria-label={he.sadranRideSheet.tabsLabel}>
-                  {RIDE_SHEET_TABS.map((id) => (
+                <TabsList className={cn("grid h-auto w-full", merged ? "grid-cols-5" : "grid-cols-4")} aria-label={he.sadranRideSheet.tabsLabel}>
+                  {RIDE_SHEET_TABS.filter((id) => id !== "merged" || merged).map((id) => (
                     <TabsTrigger key={id} value={id} className="min-h-11 whitespace-normal px-1 text-xs sm:text-sm" data-testid={`ride-sheet-tab-${id}`}>
                       {he.sadranRideSheet.tabs[id]}
                     </TabsTrigger>
@@ -330,6 +335,33 @@ export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenCha
                   ) : ride.notes ? <p className="whitespace-pre-wrap break-words">{ride.notes}</p> : null}
                 </TabsContent>
 
+                {/* ── נסיעות מאוחדות ── who was merged in, how each one's hours changed, and taking them back out. */}
+                {merged ? (
+                  <TabsContent value="merged" className="space-y-4" data-testid="ride-sheet-merged">
+                    {/* REQ §13.94 (G10): people added to this ride by a merge - take them back out
+                        (a draft/sent merge is discarded/withdrawn, an applied one un-merged). */}
+                    {onRemoveAddedPerson && !isPlanning && addedPeople.length ? (
+                      <div className="space-y-1" data-testid="ride-added-people">
+                        <span className="font-medium">{he.mergedRide.addedPeople}</span>
+                        <ul className="flex flex-wrap gap-2">
+                          {addedPeople.map((entry) => (
+                            <li key={entry.request_id} className="inline-flex items-center gap-1 rounded-full border bg-muted ps-3 text-xs" data-testid="ride-added-person" data-request-id={entry.request_id ?? undefined}>
+                              <span>{entry.requester ?? ""}</span>
+                              <Button type="button" variant="ghost" size="sm" className="min-h-11 text-destructive" disabled={saving}
+                                aria-label={tv("mergedRide.removeAria", { name: entry.requester ?? "" })}
+                                onClick={() => onRemoveAddedPerson(entry.request_id as string, entry.requester ?? "")}>
+                                {he.mergedRide.removeFromRide}
+                              </Button>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : null}
+
+                    {personBlocks}
+                  </TabsContent>
+                ) : null}
+
                 {/* ── אנשים ── */}
                 <TabsContent value="people" className="space-y-4">
                   {driverCandidates && !isPlanning && !reservation && ride.id && ride.version != null && !cancelled
@@ -354,26 +386,6 @@ export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenCha
                     />
                   ) : null}
 
-                  {/* REQ §13.94 (G10): people added to this ride by a merge - take them back out
-                      (a draft/sent merge is discarded/withdrawn, an applied one un-merged). */}
-                  {onRemoveAddedPerson && !isPlanning && addedPeople.length ? (
-                    <div className="space-y-1" data-testid="ride-added-people">
-                      <span className="font-medium">{he.mergedRide.addedPeople}</span>
-                      <ul className="flex flex-wrap gap-2">
-                        {addedPeople.map((entry) => (
-                          <li key={entry.request_id} className="inline-flex items-center gap-1 rounded-full border bg-muted ps-3 text-xs" data-testid="ride-added-person" data-request-id={entry.request_id ?? undefined}>
-                            <span>{entry.requester ?? ""}</span>
-                            <Button type="button" variant="ghost" size="sm" className="min-h-11 text-destructive" disabled={saving}
-                              aria-label={tv("mergedRide.removeAria", { name: entry.requester ?? "" })}
-                              onClick={() => onRemoveAddedPerson(entry.request_id as string, entry.requester ?? "")}>
-                              {he.mergedRide.removeFromRide}
-                            </Button>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  ) : null}
-
                   {/* F3 (20260914120000_ride_passengers.sql): editing named people on an
                       existing manual reservation, same editability gate as the notes editor
                       (not planning, not cancelled, still in the future). */}
@@ -391,9 +403,7 @@ export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenCha
 
                   {/* "+ נוסעים" (REQ §13.85): appends, works on any confirmed, uncancelled ride. Same unified
                       `people` list the siddur's `RideDetailSheet` renders. */}
-                  {needsPersonBlocks(ride, servedEntries) ? (
-                    <RidePersonBlocks blocks={buildPersonBlocks({ ride, served: servedEntries, homeDestinationId, requests: personExtras })} />
-                  ) : null}
+                  {!merged && needsPersonBlocks(ride, servedEntries) ? personBlocks : null}
                   <RidePassengersList
                     rideId={ride.id}
                     expectedVersion={ride.version}

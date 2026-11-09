@@ -24,9 +24,21 @@ describe("RideDriverPicker (R8U1: replace a volunteer in one step)", () => {
     expect(screen.queryByTestId("ride-driver-unassign")).not.toBeInTheDocument();
   });
 
-  it("a ride with a volunteer shows the volunteer, a remove button AND a replace picker", () => {
+  it("a ride with a driver is one line until \"החלפת נהג/ת…\" is clicked (owner 2026-11-09)", () => {
+    render(<RideDriverPicker {...base} needsDriver={false} volunteerName="V" volunteerId="v" ownRequest />);
+    expect(screen.getByText("נהג/ת: V")).toBeInTheDocument();
+    expect(screen.queryByTestId("ride-driver-list")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("ride-driver-search")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("ride-driver-unassign")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("ride-driver-expand"));
+    expect(screen.getByTestId("ride-driver-list")).toBeInTheDocument();
+  });
+
+  it("a ride with a volunteer shows the volunteer, a remove button AND, once asked, a replace picker", () => {
     render(<RideDriverPicker {...base} needsDriver={false} volunteerName="V" volunteerId="v" />);
     expect(screen.getByText(/V/)).toBeInTheDocument();
+    expect(screen.queryByTestId("ride-driver-list")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("ride-driver-expand"));
     expect(screen.getByText(he.rideDriver.replaceLabel)).toBeInTheDocument();
     expect(screen.getByTestId("ride-driver-list")).toBeInTheDocument();
     expect(screen.queryByTestId("ride-driver-assign")).not.toBeInTheDocument();

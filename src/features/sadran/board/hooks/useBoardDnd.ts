@@ -371,7 +371,7 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
       else if (ride?.version != null) await recordUndo(U.unmerge, () => unmergeRequestMutation.mutateAsync({ rideId, requestId, expectedVersion: ride.version!, departmentId, weekStart }));
       else return false;
       setSelectedRideId(null);
-      toast.success(tv("mergedRide.removed", { name }));
+      toast.success(tv("mergedRide.removed", { name, host: rideTitleName(ride) }));
       return true;
     } catch { /* toast shown by the mutation */ return false; }
   }

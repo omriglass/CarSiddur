@@ -194,11 +194,13 @@ test("the sheet button \"הוצא מהנסיעה\" remains the fallback (phone l
     const block = page.locator(`button[data-ride-id="${rideId}"]:visible`);
     await openRideDetails(page, block);
     const sheet = page.getByRole("dialog");
-    await openRideSheetTab(page, "people");
+    await openRideSheetTab(page, "merged");
     await expect(sheet.getByTestId("ride-added-person")).toHaveCount(1);
     await sheet.getByTestId("ride-added-person").getByRole("button").click();
     await page.getByRole("button", { name: he.dropAsk.split.confirm, exact: true }).click();
     await expect(sheet).not.toBeVisible();
+    // Owner 2026-11-09: the toast says whose ride it was split from.
+    await expect(page.getByText(/^הנסיעה של .+ פוצלה מהנסיעה של .+$/)).toBeVisible();
 
     // `unmerge_request`: the guest's request is submitted again and listed as unmet.
     await expect(page.locator(`[data-request-id="${guestRequestId}"]:visible`).first()).toBeVisible();

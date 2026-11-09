@@ -1,6 +1,8 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
+import { tv } from "@/i18n/he";
+
 import type { BoardRide } from "../../api";
 
 import { RideSheet } from "./RideSheet";
@@ -29,9 +31,9 @@ const ride = {
 
 const request = { id: "q1", version: 1, depart_at: "2044-01-04T05:00:00Z", return_at: "2044-01-04T09:00:00Z", requester_full_name: "Noga" };
 
-function renderSheet() {
+function renderSheet(theRide: BoardRide = ride, onRemoveAddedPerson?: (requestId: string, name: string) => void) {
   return render(
-    <RideSheet ride={ride} cars={[]} driverName="Noga" homeDestinationId="home" onOpenChange={vi.fn()} onSave={vi.fn()} onTogglePin={vi.fn()} onCancel={vi.fn()}
+    <RideSheet ride={theRide} onRemoveAddedPerson={onRemoveAddedPerson} cars={[]} driverName="Noga" homeDestinationId="home" onOpenChange={vi.fn()} onSave={vi.fn()} onTogglePin={vi.fn()} onCancel={vi.fn()}
       requests={[request] as never} departmentId="dept" weekStart="2044-01-02" driverCandidates={[]} />,
   );
 }
@@ -61,5 +63,24 @@ describe("RideSheet tabs (REQ §13.201)", () => {
     open("actions");
     expect(screen.getByTestId("ride-sheet-cancel")).toBeInTheDocument();
     expect(screen.getByTestId("withdraw-duplicate")).toBeInTheDocument();
+  });
+
+  it("a ride without merged guests has no \"נסיעות מאוחדות\" tab", () => {
+    renderSheet();
+    expect(screen.queryByTestId("ride-sheet-tab-merged")).not.toBeInTheDocument();
+  });
+
+  it("a merged ride gets \"נסיעות מאוחדות\" between סיכום and אנשים, holding the remove button (owner 2026-11-09)", () => {
+    const guest = { ...(ride.served as unknown as Record<string, unknown>[])[0], request_id: "q2", role: "passenger", requester: "Gil", child_names: [] };
+    const mergedRide = { ...ride, served: [...(ride.served as unknown as unknown[]), guest] } as unknown as BoardRide;
+    const remove = vi.fn();
+    renderSheet(mergedRide, remove);
+    const tabs = screen.getAllByRole("tab").map((tab) => tab.getAttribute("data-testid"));
+    expect(tabs.slice(0, 3)).toEqual(["ride-sheet-tab-summary", "ride-sheet-tab-merged", "ride-sheet-tab-people"]);
+    fireEvent.mouseDown(screen.getByTestId("ride-sheet-tab-merged"), { button: 0, ctrlKey: false });
+    fireEvent.click(screen.getByRole("button", { name: tv("mergedRide.removeAria", { name: "Gil" }) }));
+    expect(remove).toHaveBeenCalledWith("q2", "Gil");
+    fireEvent.mouseDown(screen.getByTestId("ride-sheet-tab-people"), { button: 0, ctrlKey: false });
+    expect(screen.queryByTestId("ride-added-people")).not.toBeInTheDocument();
   });
 });

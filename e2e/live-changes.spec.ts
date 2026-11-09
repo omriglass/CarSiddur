@@ -130,6 +130,9 @@ test("the ride sheet replaces a volunteer driver in one step (R8U1)", { tag: ["@
       await openRideSheetTab(page, "people");
       const picker = page.getByTestId("ride-driver-picker");
       await expect(picker).toBeVisible();
+      // A ride that has a driver shows one line until "החלפת נהג/ת…" (owner 2026-11-09).
+      const expand = picker.getByTestId("ride-driver-expand");
+      if (await expand.isVisible()) await expand.click();
       await picker.getByTestId("ride-driver-option").nth(index).click();
       await picker.getByTestId(button).click();
     };
@@ -141,6 +144,8 @@ test("the ride sheet replaces a volunteer driver in one step (R8U1)", { tag: ["@
     await openRideDetails(page, page.locator(`button[data-ride-id="${ride.id}"]:visible`));
     await openRideSheetTab(page, "people");
     await expect(page.getByTestId("ride-driver-unassign")).toBeVisible();
+    await expect(page.getByTestId("ride-driver-list")).toHaveCount(0);
+    await page.getByTestId("ride-driver-expand").click();
     await expect(page.getByText(he.rideDriver.replaceLabel)).toBeVisible();
     await page.keyboard.press("Escape");
     await pick(0, "ride-driver-assign");
