@@ -108,6 +108,24 @@ begin
   perform public.set_ride_editors('00000000-0000-0000-0000-000000000001', array[editor]);
   update public.department_members set removed_at = now() where profile_id = editor and department_id = '00000000-0000-0000-0000-000000000001';
   assert not public._is_ride_editor('00000000-0000-0000-0000-000000000001', owner, editor), 'removed member is not an editor';
+
+  -- (8) REQ §13.202 (i): sharing a child is enough, both ways, in that child's department only; it ends with the link
+  declare kid uuid; coparent uuid := '00000000-0000-0000-0000-000000000101';
+  begin
+    assert not public._is_ride_editor('00000000-0000-0000-0000-000000000001', owner, coparent), 'no child yet';
+    insert into public.children(department_id, full_name) values ('00000000-0000-0000-0000-000000000001', 'ילד משותף') returning id into kid;
+    insert into public.child_guardians(child_id, profile_id) values (kid, owner), (kid, coparent);
+    assert public._is_ride_editor('00000000-0000-0000-0000-000000000001', owner, coparent), 'co-parent edits mine';
+    assert public._is_ride_editor('00000000-0000-0000-0000-000000000001', coparent, owner), 'and I edit theirs';
+    assert public.request_related(q2, coparent), 'co-parent is related to my requests';
+    assert not public._is_ride_editor('00000000-0000-0000-0000-000000000002', owner, coparent), 'only in the child''s department';
+    perform pg_temp.as_user(coparent);
+    assert exists (select 1 from public.my_ride_editor_links() l where l.person_id = owner and l.direction = 'granted' and l.co_parent and not l.named), 'listed as granted (co-parent)';
+    assert exists (select 1 from public.my_ride_editor_links() l where l.person_id = owner and l.direction = 'mine' and l.co_parent), 'listed as mine (co-parent)';
+    assert not exists (select 1 from public.notifications where recipient_id = coparent and event = 'ride_editor_added'), 'no message for a co-parent';
+    delete from public.child_guardians where child_id = kid and profile_id = coparent;
+    assert not public._is_ride_editor('00000000-0000-0000-0000-000000000001', owner, coparent), 'rights end with the shared child';
+  end;
   raise notice 'ride_editors.sql: all assertions passed';
 end $$;
 

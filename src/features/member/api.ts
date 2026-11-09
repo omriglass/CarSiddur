@@ -26,6 +26,10 @@ export async function fetchGuardedChildren(profileId: string, referenceYear = ne
 export interface RideEditorLink {
   departmentId: string;
   person: { id: string; name: string };
+  /** On the list (`ride_editors`); a co-parent who was also named is both. */
+  named: boolean;
+  /** REQ §13.202 (i): through a child we share — not removable, nothing sent. */
+  coParent: boolean;
 }
 
 export interface RideEditors {
@@ -35,20 +39,16 @@ export interface RideEditors {
   grantedToMe: RideEditorLink[];
 }
 
-/** `ride_editors` rows where I am the owner or the editor (RLS shows only those). */
-export async function fetchRideEditors(profileId: string): Promise<RideEditors> {
-  const { data, error } = await supabase
-    .from("ride_editors")
-    .select("department_id, owner_id, editor_id, owner:profiles!ride_editors_owner_id_fkey(id, full_name), editor:profiles!ride_editors_editor_id_fkey(id, full_name)");
-  if (error) throw toAppError(error);
-  const rows = (data ?? []) as unknown as { department_id: string; owner_id: string; editor_id: string;
-    owner: { id: string; full_name: string } | null; editor: { id: string; full_name: string } | null }[];
-  const link = (departmentId: string, person: { id: string; full_name: string } | null): RideEditorLink[] =>
-    person ? [{ departmentId, person: { id: person.id, name: person.full_name } }] : [];
+/** My editor links both ways (`my_ride_editor_links`): the people I named or share a child with, and those who named me or share one. */
+export async function fetchRideEditors(): Promise<RideEditors> {
+  const rows = await rpc("my_ride_editor_links", undefined as never);
+  const link = (row: (typeof rows)[number]): RideEditorLink => ({
+    departmentId: row.department_id, person: { id: row.person_id, name: row.person_name }, named: row.named, coParent: row.co_parent,
+  });
   const byName = (a: RideEditorLink, b: RideEditorLink) => a.person.name.localeCompare(b.person.name, "he");
   return {
-    mine: rows.filter((row) => row.owner_id === profileId).flatMap((row) => link(row.department_id, row.editor)).sort(byName),
-    grantedToMe: rows.filter((row) => row.editor_id === profileId).flatMap((row) => link(row.department_id, row.owner)).sort(byName),
+    mine: (rows ?? []).filter((row) => row.direction === "mine").map(link).sort(byName),
+    grantedToMe: (rows ?? []).filter((row) => row.direction === "granted").map(link).sort(byName),
   };
 }
 

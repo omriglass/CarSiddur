@@ -150,7 +150,9 @@ export function HomePage() {
   const displayPrefs = useMyDisplayPrefs();
   // REQ §13.202: the eye menu offers "rides of who let me edit" only to someone who was named an editor.
   const rideEditorsQuery = useRideEditorsQuery();
-  const isRideEditor = (rideEditorsQuery.data?.grantedToMe.length ?? 0) > 0;
+  const isRideEditor = (rideEditorsQuery.data?.grantedToMe ?? []).some((link) => link.named);
+  const editorRowShown = (row: { editorVia?: { named: boolean; coParent: boolean } | null }) =>
+    (displayPrefs.showEditorRides && !!row.editorVia?.named) || (displayPrefs.showCoParentRides && !!row.editorVia?.coParent);
   const [searchParams, setSearchParams] = useSearchParams();
   // `?view=week|list` wins for this visit; otherwise the last choice made on this device (list by default).
   const weekView = (searchParams.get("view") ?? displayPrefs.view) === "week";
@@ -263,8 +265,9 @@ export function HomePage() {
     })
     // REQ §13.177 (c): what I filed for someone else shows only with its display option on.
     .filter((row) => displayPrefs.showFiledForOthers || !isFiledForOther(row, viewerId))
-    // REQ §13.202: the requests of the people who named me their editor, only with that option on.
-    .filter((row) => displayPrefs.showEditorRides || !row.editorOf)
+    // REQ §13.202: the requests of the people who named me their editor, only with that option on; a co-parent's
+    // (item i) with the co-parent option.
+    .filter((row) => !row.editorOf || editorRowShown(row))
     .sort((a, b) => requestStart(a) - requestStart(b) || a.id.localeCompare(b.id));
 
   const upcomingRides = upcomingRidesQuery.data ?? [];
@@ -311,7 +314,8 @@ export function HomePage() {
   // Owner 2026-10-13: one item per trip — a request carries the rides serving it; a ride none of my requests
   // reaches (I drive someone else's request, a reservation names me) is its own item in its week.
   // Owner 2026-10-16: read-only rides of my children (display option), muted and named, listed with mine.
-  const myRequestIds = new Set((requestsQuery.data ?? []).map((request) => request.id));
+  // An owner's request (REQ §13.202) is not mine: their ride stays a family ride, joined to their row when it shows.
+  const myRequestIds = new Set((requestsQuery.data ?? []).filter((request) => !request.editorOf).map((request) => request.id));
   const relatedByRide = showFamilyRides && !weekView
     ? selectRelatedRides(kidsRidesQuery.data ?? [], { profileId: viewerId, childIds: myChildIds, guardianIds }, myRequestIds)
     : new Map<string, { kind: "child" | "guardian"; name: string }[]>();

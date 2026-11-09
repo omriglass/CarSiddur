@@ -91,6 +91,8 @@ export interface MyRequestRow {
   companionOf?: string | null;
   /** REQ §13.202: the request of someone who named me an editor of their rides — their name (shown with its display option). */
   editorOf?: string | null;
+  /** How I may edit it: they named me (`named`, the editors display option) and/or we share a child (`coParent`, the co-parent option) — REQ §13.202 (i). */
+  editorVia?: { named: boolean; coParent: boolean } | null;
   /** Profile ids of the request's companions (REQ §13.177 c: a filer riding along is not "filed for someone else"). */
   companionIds?: string[];
   preferredCarId?: string | null;
@@ -361,7 +363,8 @@ function mapOtherPeople(row: RawRequestRow): Pick<MyRequestRow, "companionNames"
   };
 }
 
-function mapRow(row: RawRequestRow, profileId?: string, ownerIds: ReadonlySet<string> = new Set()): MyRequestRow {
+function mapRow(row: RawRequestRow, profileId?: string, owners: ReadonlyMap<string, { named: boolean; coParent: boolean }> = new Map()): MyRequestRow {
+  const ownerIds = new Set(owners.keys());
   // REQ §13.109 (a): outcomes (status, reason, ride, legs) exist for the member only on published days.
   const published = isRequestDayPublished(row.window, row.depart_at, row.return_at);
   const liveLinks = published ? row.ride_requests : [];
@@ -387,6 +390,7 @@ function mapRow(row: RawRequestRow, profileId?: string, ownerIds: ReadonlySet<st
     editorOf: profileId && row.requester_id !== profileId && row.filed_by !== profileId && ownerIds.has(row.requester_id ?? "")
       ? (row.requester?.full_name ?? "")
       : null,
+    editorVia: profileId && row.requester_id !== profileId && row.filed_by !== profileId ? owners.get(row.requester_id ?? "") ?? null : null,
     companionIds: (row.companions ?? []).flatMap((entry) => (entry.profile_id ? [entry.profile_id] : [])),
     preferredCarId: row.preferred_car_id,
     preferredCarName: row.preferred_car?.name ?? null,
@@ -733,10 +737,15 @@ export async function fetchMyRequests(profileId: string, departmentId?: string):
   const { data: companionLinks, error: companionError } = await supabase.from("request_companions").select("request_id").eq("profile_id", profileId);
   if (companionError) throw toAppError(companionError);
   const companionIds = (companionLinks ?? []).map((link) => link.request_id);
-  // REQ §13.202: and the requests of the people who named me an editor of their rides (RLS lets an editor read them).
-  const { data: editorLinks, error: editorError } = await supabase.from("ride_editors").select("owner_id, department_id").eq("editor_id", profileId);
-  if (editorError) throw toAppError(editorError);
-  const ownerIds = new Set((editorLinks ?? []).filter((link) => !departmentId || link.department_id === departmentId).map((link) => link.owner_id));
+  // REQ §13.202: and the requests of the people who named me an editor of their rides or share a child with me (RLS lets them read).
+  const links = await rpc("my_ride_editor_links", undefined as never);
+  const owners = new Map<string, { named: boolean; coParent: boolean }>();
+  for (const link of links ?? []) {
+    if (link.direction !== "granted" || (departmentId && link.department_id !== departmentId)) continue;
+    const seen = owners.get(link.person_id);
+    owners.set(link.person_id, { named: link.named || !!seen?.named, coParent: link.co_parent || !!seen?.coParent });
+  }
+  const ownerIds = new Set(owners.keys());
   const mine = [`requester_id.eq.${profileId}`, `filed_by.eq.${profileId}`,
     ...(companionIds.length ? [`id.in.(${companionIds.join(",")})`] : []),
     ...(ownerIds.size ? [`requester_id.in.(${[...ownerIds].join(",")})`] : [])].join(",");
@@ -758,7 +767,7 @@ export async function fetchMyRequests(profileId: string, departmentId?: string):
     // A request I am only a companion on shows while it is unplaced; once placed on a published day the ride itself lists me.
     .filter((row) => row.requester_id === profileId || row.filed_by === profileId || ownerIds.has(row.requester_id ?? "")
       || !(["assigned", "merged"].includes(row.status) && isRequestDayPublished(row.window, row.depart_at, row.return_at)))
-    .map((row) => mapRow(row, profileId, ownerIds));
+    .map((row) => mapRow(row, profileId, owners));
 }
 
 /** REQ §13.127 (b): may the caller edit this request (requester, filer, companion, anyone on its ride, private-car owner, Sadran). */

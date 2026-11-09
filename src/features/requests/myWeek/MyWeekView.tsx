@@ -146,12 +146,15 @@ export function MyWeekView({ departmentId, homeDestinationId, profileId, request
     const related = (showKidsRides || showCoParentRides) && (childIds?.size || guardianIds?.size)
       ? selectRelatedRides(ridesQuery.data ?? [], { profileId, childIds: childIds ?? new Set(), guardianIds: guardianIds ?? new Set() }, myRequestIds)
       : new Map<string, RelatedRideLabel[]>();
-    // REQ §13.202: the rides of someone who named me their editor (their rows reach here only with that option on) — muted, "נסיעה של X".
+    // REQ §13.202: the rides of someone who named me their editor or shares a child with me (their rows reach here only with its option on) — muted, "נסיעה של X".
     const ownerNameById = new Map(requests.flatMap((row) => (row.editorOf ? [[row.id, row.editorOf] as const] : [])));
     for (const ride of ridesQuery.data ?? []) {
       if (!ride.id || isMyBoardRide(ride, profileId, myRequestIds)) continue;
       const owners = [...new Set(servedOf(ride).flatMap((entry) => (entry.request_id && ownerNameById.has(entry.request_id) ? [ownerNameById.get(entry.request_id)!] : [])))];
-      if (owners.length) related.set(ride.id, [...(related.get(ride.id) ?? []), ...owners.map((name) => ({ kind: "editor" as const, name }))]);
+      // A co-parent's ride may already carry their name as a family ride (REQ §13.202 i): one label per name.
+      const named = new Set((related.get(ride.id) ?? []).map((label) => label.name));
+      const fresh = owners.filter((name) => !named.has(name));
+      if (fresh.length) related.set(ride.id, [...(related.get(ride.id) ?? []), ...fresh.map((name) => ({ kind: "editor" as const, name }))]);
     }
     const carNameById = new Map((carsQuery.data ?? []).map((car) => [car.id, car.name]));
     const filedFor = new Map<string, string>();

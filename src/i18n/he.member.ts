@@ -657,11 +657,12 @@ export const heMember = {
     parentOfTitle: "הורה של",
     /** REQ §13.202: the "ride editors" card in פרטים אישיים. */
     rideEditorsTitle: "מי יכול/ה לערוך את הנסיעות שלי",
-    rideEditorsHint: "מי שמופיע/ה כאן יכול/ה לערוך ולבטל את הבקשות והנסיעות שלך, ואת/ה מקבל/ת הודעה על כל שינוי.",
+    rideEditorsHint: "מי שמופיע/ה כאן יכול/ה לערוך ולבטל את הבקשות והנסיעות שלך, ואת/ה מקבל/ת הודעה על כל שינוי. הורה משותף של ילד/ה יכול/ה תמיד.",
     rideEditorsPicker: "חברים/ות שיכולים/ות לערוך",
     rideEditorsSave: "שמירה",
     rideEditorsSaved: "הרשימה נשמרה",
     rideEditorsGrantedTitle: "אני יכול/ה לערוך את הנסיעות של",
+    rideEditorsCoParent: "{{name}} · הורה משותף",
     childWithAge: "{{name}} (גיל: {{age}} שנים)",
     email: "אימייל",
     displayName: "שם לתצוגה (כינוי / שם בעברית)",

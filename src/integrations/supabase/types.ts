@@ -6120,6 +6120,10 @@ export type Database = {
         Args: { h: Database["public"]["Tables"]["held_notices"]["Row"] }
         Returns: undefined
       }
+      _shares_child: {
+        Args: { p_a: string; p_b: string; p_department: string }
+        Returns: boolean
+      }
       _shift_place_on_car: { Args: { p_proposal_id: string }; Returns: string }
       _short_turnaround_info: {
         Args: { p_car: string; p_end: string; p_exclude: string }
@@ -6857,6 +6861,17 @@ export type Database = {
           child_id: string
           display_name: string
           profile_id: string
+        }[]
+      }
+      my_ride_editor_links: {
+        Args: never
+        Returns: {
+          co_parent: boolean
+          department_id: string
+          direction: string
+          named: boolean
+          person_id: string
+          person_name: string
         }[]
       }
       my_ride_parts: {

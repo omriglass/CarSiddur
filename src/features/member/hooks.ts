@@ -22,7 +22,7 @@ export function useRideEditorsQuery() {
   const profileId = session?.user.id;
   return useQuery({
     queryKey: memberKeys.rideEditors(profileId),
-    queryFn: () => fetchRideEditors(profileId as string),
+    queryFn: () => fetchRideEditors(),
     enabled: !!profileId,
   });
 }
