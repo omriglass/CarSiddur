@@ -4131,7 +4131,11 @@ begin
         select q.requester_id as x
         union select rc.profile_id from public.request_companions rc where rc.request_id = q.id
         union select r.driver_id from public.ride_requests rr join public.rides r on r.id = rr.ride_id
-          where v_public and rr.request_id = q.id and r.status <> 'cancelled' and r.driver_id is not null) s
+          where v_public and rr.request_id = q.id and r.status <> 'cancelled' and r.driver_id is not null
+        -- REQ §13.205: people added to the ride ("add passengers") ride on it too
+        union select rp.person_id from public.ride_requests rr join public.rides r on r.id = rr.ride_id
+          join public.ride_passengers rp on rp.ride_id = r.id
+          where v_public and rr.request_id = q.id and r.status <> 'cancelled' and rp.person_id is not null) s
         where x is not null), '[]'::jsonb));
 end $$;
 
@@ -10395,7 +10399,11 @@ begin
       and exists (select 1 from public.cars c where c.id = (p_ride->>'car_id')::uuid and c.type = 'temporary' and c.owner_id = (select auth.uid()));
     -- REQ §13.127: the driver, or anyone related to the ride (who filed it, a passenger, the private car's owner);
     -- REQ §13.129 (a): or the owner of the private car the ride moves onto.
-    if v_id is null or not (v_existing.driver_id is not distinct from (select auth.uid()) or public.ride_related(v_id, (select auth.uid())) or v_owner_move)
+    -- REQ §13.205 (b): with the department's "anyone edits rides" switch on (REQ §13.169), a member related to its requests
+    -- (request_related: every approved member then) moves and resizes it like their own.
+    if v_id is null or not (v_existing.driver_id is not distinct from (select auth.uid()) or public.ride_related(v_id, (select auth.uid())) or v_owner_move
+         or (exists (select 1 from public.department_settings s where s.department_id = v_dept and s.anyone_edits_rides)
+             and exists (select 1 from public.ride_requests rr where rr.ride_id = v_id and public.request_related(rr.request_id, (select auth.uid())))))
        or not public.is_week_public(v_dept,v_week) then raise exception 'not_authorized'; end if;
     -- REQ §13.128 (a): editable until the ride's day is over (the day itself is fixed below), not only until it starts.
     if (v_existing.starts_at at time zone 'Asia/Jerusalem')::date < (now() at time zone 'Asia/Jerusalem')::date then
@@ -22363,6 +22371,9 @@ declare
   v_confirm boolean := coalesce((payload ->> 'confirm_release')::boolean, false);
   v_booking jsonb;
   v_probe jsonb;
+  v_carry_from uuid;   -- REQ §13.205: the driver's ride whose added passengers go along to the new one
+  v_carry_to uuid;
+  v_carry_failed boolean := false;
   v_overlaps jsonb := '[]'::jsonb;
   v_probe_only boolean := coalesce((payload ->> 'probe_only')::boolean, false);
   v_late_variant text;
@@ -22599,6 +22610,16 @@ begin
       if (v_booking ->> 'has_booking')::boolean and coalesce(current_setting('app.edit_probe_inner', true), 'off') <> 'on' then
         -- Probe: run the whole edit (release + new placement) in a subtransaction. A clean move onto a
         -- free car is kept (with others on the ride only once the member confirmed); anything else is rolled back.
+        -- REQ §13.205 (owner 2026-11-09, production: a driver shortened his ride and the member who had joined it with
+        -- "add passengers" was dropped): when the member drives their own ride and nobody else's request is on it — only people
+        -- added to it — those people go along to wherever the new hours are placed; no question asked.
+        select r.id into v_carry_from
+        from public.ride_requests rr join public.rides r on r.id = rr.ride_id
+        where rr.request_id = v_request_id and r.status not in ('cancelled', 'draft') and r.driver_id = v_existing.requester_id
+          and exists (select 1 from public.ride_passengers rp where rp.ride_id = r.id)
+          and not exists (select 1 from public.ride_requests x where x.ride_id = r.id and x.request_id <> v_request_id)
+          and (select count(*) from public.ride_requests y join public.rides ry on ry.id = y.ride_id
+               where y.request_id = v_request_id and ry.status not in ('cancelled', 'draft')) = 1;
         begin
           perform set_config('app.edit_probe_inner', 'on', true);
           v_probe := public.submit_request(payload || jsonb_build_object('confirm_release', true));
@@ -22607,6 +22628,31 @@ begin
           if coalesce(v_probe ->> 'status', '') = 'assigned' and coalesce((v_probe ->> 'overlap_unasked')::boolean, false) then
             perform public._ask_request_overlap(v_requester_id, v_depart_at, v_return_at, v_request_id);
           end if;
+          if v_carry_from is not null and coalesce(v_probe ->> 'status', '') = 'assigned' then
+            select r.id into v_carry_to
+            from public.ride_requests rr join public.rides r on r.id = rr.ride_id
+            where rr.request_id = v_request_id and r.status not in ('cancelled', 'draft') and r.id <> v_carry_from
+            order by r.starts_at limit 1;
+            -- the new ride must seat the request and everyone added (the request's own seats are on its row)
+            if v_carry_to is null or not public.car_fits((select car_id from public.rides where id = v_carry_to),
+                 (select coalesce(q.adults, 1) from public.requests q where q.id = v_request_id)::int
+                   + (select count(*) from public.ride_passengers rp where rp.ride_id = v_carry_from and rp.seat_kind = 'adult')::int,
+                 (select coalesce(q.child_seats, 0) from public.requests q where q.id = v_request_id)::int
+                   + (select count(*) from public.ride_passengers rp where rp.ride_id = v_carry_from and rp.seat_kind = 'child_seat')::int,
+                 (select coalesce(q.boosters, 0) from public.requests q where q.id = v_request_id)::int
+                   + (select count(*) from public.ride_passengers rp where rp.ride_id = v_carry_from and rp.seat_kind = 'booster')::int) then
+              v_carry_failed := true;
+              raise exception 'release_probe_rollback' using errcode = 'PXRP1';
+            end if;
+            update public.ride_passengers set ride_id = v_carry_to where ride_id = v_carry_from;
+            -- they were told the old ride was cancelled a moment ago; they are not losing it (the edit notice tells them
+            -- the new hours), so that notice is taken back before it is delivered (its outbox rows go with it)
+            delete from public.notifications n
+            where n.event = 'outcome_changed' and n.data ->> 'variant' = 'ride_cancelled' and n.data ->> 'ride_id' = v_carry_from::text
+              and n.recipient_id in (select rp.person_id from public.ride_passengers rp where rp.ride_id = v_carry_to);
+            perform set_config('app.edit_probe_inner', 'off', true);
+            return v_probe;
+          end if;
           if coalesce(v_probe ->> 'status', '') = 'assigned' and (v_confirm or not (v_booking ->> 'drives_others')::boolean) then
             return v_probe;
           end if;
@@ -22614,7 +22660,7 @@ begin
         exception when sqlstate 'PXRP1' then
           null;
         end;
-        if coalesce(v_probe ->> 'status', '') = 'assigned' then
+        if coalesce(v_probe ->> 'status', '') = 'assigned' and not v_carry_failed then
           -- the new hours fit a car, but the member drives others who would be left without a driver: ask
           return jsonb_build_object('needs_confirmation', 'release_to_waitlist', 'unchanged', false,
             'drives_others', true, 'would_place', true,

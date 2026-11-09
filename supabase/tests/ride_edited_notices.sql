@@ -145,3 +145,55 @@ begin
   set constraints all immediate;
 end $$;
 rollback;
+
+-- REQ §13.205 (b): with the switch on, a member drags / resizes someone else's ride on the siddur (edit_ride member
+-- branch); with it off they may not.
+begin;
+do $$
+declare
+  dept uuid:='00000000-0000-0000-0000-000000000001';
+  sadran uuid:='00000000-0000-0000-0000-000000000102';
+  m1 uuid:='00000000-0000-0000-0000-000000000103';
+  m2 uuid:='00000000-0000-0000-0000-000000000104';
+  home uuid:='00000000-0000-0000-0000-000000000010';
+  dest uuid:='00000000-0000-0000-0000-000000000011';
+  typ uuid:='00000000-0000-0000-0000-000000000021';
+  car uuid:='00000000-0000-0000-0000-000000000041';
+  w date:=public.current_week_start()+1379;
+  pub uuid; dt timestamptz; q uuid; rid uuid; ok boolean;
+  input jsonb;
+begin
+  insert into public.weeks(department_id,week_start,phase,open_at,close_at,publish_at)
+  values(dept,w,'solving',now()-interval '9 days',now()-interval '8 days',now()-interval '7 days');
+  insert into public.siddur_versions(department_id,week_start,snapshot,published_by) values(dept,w,'{}',sadran) returning id into pub;
+  perform set_config('app.in_publish','on',true);
+  update public.weeks set phase='published',published_version_id=pub,published_days=array[w,w+1,w+2,w+3,w+4,w+5,w+6] where department_id=dept and week_start=w;
+  perform set_config('app.in_publish','off',true);
+  dt:=((w+2)+time '10:00') at time zone 'Asia/Jerusalem';
+  perform set_config('request.jwt.claims',jsonb_build_object('sub',sadran,'role','authenticated')::text,true);
+  insert into public.requests(department_id,week_start,requester_id,filed_by,destination_id,ride_type_id,depart_at,return_at,trip_shape,status,origin_id,trip_type,adults)
+    values(dept,w,m1,m1,dest,typ,dt,dt+interval '2 hours','round_trip','assigned',home,'round_trip',1) returning id into q;
+  insert into public.rides(department_id,week_start,car_id,starts_at,ends_at,origin_id,destination_id,driver_id,status,created_by)
+    values(dept,w,car,dt,dt+interval '2 hours',home,home,m1,'confirmed',sadran) returning id into rid;
+  insert into public.ride_requests(ride_id,request_id,role,leg,car_mode) values(rid,q,'driver','both','keep');
+  input:=jsonb_build_object('id',rid,'department_id',dept,'week_start',w,'car_id',car,'starts_at',dt,
+    'ends_at',dt+interval '1 hour','origin_id',home,'destination_id',home,'driver_id',m1,'agreed',true);
+
+  update public.department_settings set anyone_edits_rides = false where department_id = dept;
+  perform set_config('request.jwt.claims',jsonb_build_object('sub',m2,'role','authenticated')::text,true);
+  begin
+    perform public.edit_ride(input,(select version from public.rides where id=rid));
+    ok := true;
+  exception when others then
+    ok := false;
+  end;
+  assert not ok, 'switch off: another member may not resize the ride';
+
+  perform set_config('request.jwt.claims',jsonb_build_object('sub',sadran,'role','authenticated')::text,true);
+  update public.department_settings set anyone_edits_rides = true where department_id = dept;
+  perform set_config('request.jwt.claims',jsonb_build_object('sub',m2,'role','authenticated')::text,true);
+  perform public.edit_ride(input,(select version from public.rides where id=rid));
+  assert (select ends_at from public.rides where id=rid)=dt+interval '1 hour', 'switch on: another member resizes the ride';
+  raise notice 'ride_edited_notices.sql: anyone edits rides drags (REQ §13.205 b) passed';
+end $$;
+rollback;

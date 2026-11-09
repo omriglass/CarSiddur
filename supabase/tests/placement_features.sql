@@ -527,4 +527,73 @@ begin
 
   raise notice 'placement_features.sql: overlap_confirmed assertions passed';
 end $$;
+
+-- REQ §13.205 (owner 2026-11-09, production): a driver shortens their own ride on a published day; the member who
+-- joined it with add_ride_passengers comes along to the new ride (no question, no "cancelled" notice to them); the
+-- edit notice reaches them. When the new car cannot seat them, nothing changes.
+do $$
+declare
+  dept uuid:='00000000-0000-0000-0000-000000000001';
+  sadran uuid:='00000000-0000-0000-0000-000000000102';
+  m1 uuid:='00000000-0000-0000-0000-000000000103';
+  m2 uuid:='00000000-0000-0000-0000-000000000104';
+  home uuid:='00000000-0000-0000-0000-000000000010';
+  dest uuid:='00000000-0000-0000-0000-000000000011';
+  typ uuid:='00000000-0000-0000-0000-000000000021';
+  car41 uuid:='00000000-0000-0000-0000-000000000041';
+  w date:=public.current_week_start()+1218;
+  dt timestamptz; pub uuid; res jsonb; q1 uuid; rid uuid; new_rid uuid;
+begin
+  insert into public.weeks(department_id,week_start,phase,open_at,close_at,publish_at)
+  values(dept,w,'solving',now()-interval '9 days',now()-interval '8 days',now()-interval '7 days');
+  insert into public.siddur_versions(department_id,week_start,snapshot,published_by) values(dept,w,'{}',sadran) returning id into pub;
+  perform set_config('app.in_publish','on',true);
+  update public.weeks set phase='published',published_version_id=pub,published_days=array[w,w+1,w+2,w+3,w+4,w+5,w+6] where department_id=dept and week_start=w;
+  perform set_config('app.in_publish','off',true);
+
+  dt:=((w+1)+time '15:00') at time zone 'Asia/Jerusalem';
+  perform set_config('request.jwt.claims',jsonb_build_object('sub',sadran,'role','authenticated')::text,true);
+  insert into public.requests(department_id,week_start,requester_id,filed_by,destination_id,ride_type_id,depart_at,return_at,trip_shape,status,origin_id,trip_type,adults)
+    values(dept,w,m1,m1,dest,typ,dt,dt+interval '6 hours','round_trip','assigned',home,'round_trip',1) returning id into q1;
+  insert into public.rides(department_id,week_start,car_id,starts_at,ends_at,origin_id,destination_id,driver_id,status,created_by)
+    values(dept,w,car41,dt,dt+interval '6 hours',home,home,m1,'confirmed',sadran) returning id into rid;
+  insert into public.ride_requests(ride_id,request_id,role,leg,car_mode) values(rid,q1,'driver','both','keep');
+  -- m2 joins the ride themselves ("+ נוסעים")
+  perform set_config('request.jwt.claims',jsonb_build_object('sub',m2,'role','authenticated')::text,true);
+  perform public.add_ride_passengers(rid,(select version from public.rides where id=rid),jsonb_build_array(jsonb_build_object('person_id',m2,'display_name','חברה שנייה','seat_kind','adult')));
+  delete from public.notifications where week_start=w;
+
+  -- the driver shortens the return by three hours (through the request form, so riders are told)
+  perform set_config('request.jwt.claims',jsonb_build_object('sub',m1,'role','authenticated')::text,true);
+  perform set_config('request.headers','{"x-request-form":"1"}',true);
+  res:=public.submit_request(jsonb_build_object('request_id',q1,'expected_version',(select version from public.requests where id=q1),
+    'department_id',dept,'week_start',w,'destination_id',dest,'ride_type_id',typ,
+    'depart_at',dt,'return_at',dt+interval '3 hours','trip_type','round_trip','adults',1));
+  assert res->>'status'='assigned' and not (res ? 'needs_confirmation'), format('shorten with an added passenger: placed without asking, got %s',res);
+  select r.id into new_rid from public.ride_requests rr join public.rides r on r.id=rr.ride_id where rr.request_id=q1 and r.status<>'cancelled';
+  assert exists(select 1 from public.ride_passengers where ride_id=new_rid and person_id=m2), 'the added passenger comes along to the new ride';
+  assert not exists(select 1 from public.ride_passengers rp join public.rides r on r.id=rp.ride_id where rp.person_id=m2 and r.week_start=w and r.status='cancelled'),
+    'nobody is left on the cancelled ride';
+  assert not exists(select 1 from public.notifications where recipient_id=m2 and week_start=w and data->>'variant'='ride_cancelled'),
+    'the passenger is not told the ride was cancelled';
+  set constraints all immediate;
+  set constraints all deferred;
+  assert exists(select 1 from public.notifications where recipient_id=m2 and event='ride_edited'),
+    'the passenger hears the new hours (ride_edited)';
+  perform set_config('request.headers','',true);
+
+  -- a car that cannot seat them: the edit changes nothing
+  perform set_config('request.jwt.claims',jsonb_build_object('sub',sadran,'role','authenticated')::text,true);
+  insert into public.ride_passengers(ride_id,department_id,week_start,display_name,seat_kind,added_by)
+    select new_rid,dept,w,'guest '||g,'adult',m1 from generate_series(1,8) g;
+  perform set_config('request.jwt.claims',jsonb_build_object('sub',m1,'role','authenticated')::text,true);
+  res:=public.submit_request(jsonb_build_object('request_id',q1,'expected_version',(select version from public.requests where id=q1),
+    'department_id',dept,'week_start',w,'destination_id',dest,'ride_type_id',typ,
+    'depart_at',dt,'return_at',dt+interval '2 hours','trip_type','round_trip','adults',1));
+  assert res->>'edit_refused'='riders' and not (res ? 'needs_confirmation'), format('too many to seat: refused, got %s',res);
+  assert (select status::text from public.rides where id=new_rid)='confirmed'
+    and (select count(*) from public.ride_passengers where ride_id=new_rid)=9, 'a refused edit changes nothing';
+
+  raise notice 'placement_features.sql: an edit carries added passengers (REQ §13.205) assertions passed';
+end $$;
 rollback;

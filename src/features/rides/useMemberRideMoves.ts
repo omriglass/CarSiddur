@@ -79,7 +79,9 @@ export function useMemberRideMoves({ departmentId, weekStart, week, profileId, m
     if (!(week?.published_days?.includes(dateKey(ride.starts_at)) ?? true)) return false;
     if (!rideMovableByMember(ride)) return false;
     const car = carsQuery.data?.find((c) => c.id === ride.car_id);
-    const related = isRideRelated({ ride, profileId, myRequestIds: myRequestIds ?? new Set(), carOwnerId: car?.type === "temporary" ? car.owner_id : null });
+    const related = isRideRelated({ ride, profileId, myRequestIds: myRequestIds ?? new Set(), carOwnerId: car?.type === "temporary" ? car.owner_id : null })
+      // REQ §13.205 (b): with the department's "anyone edits rides" switch on, any member moves any shared-car ride it serves
+      || (!!settingsQuery.data?.anyone_edits_rides && car?.type !== "temporary" && servedOf(ride).some((entry) => !!entry.request_id));
     return related && isRideDayEditable(ride.starts_at, now)
       && !pendingChanges.some((c) => c.ride_id === rideId);
   }
