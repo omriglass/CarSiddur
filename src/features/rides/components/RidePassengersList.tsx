@@ -23,6 +23,9 @@ interface RidePassengersListProps {
   /** The ride's own `department_id`/`week_start` — scopes cache invalidation after a removal. */
   departmentId?: string | null;
   weekStart?: string | null;
+  /** A merged ride on the board: requester and companion rows have no ✕ - removing a requester here withdraws
+   * the request, so they leave through "הוצא מהנסיעה" in נסיעות מאוחדות instead (owner 2026-11-09). */
+  requestRowsLocked?: boolean;
 }
 
 /**
@@ -33,7 +36,7 @@ interface RidePassengersListProps {
  * `v_board_rides.people` (`../ridePeople.ts`). Replaces the previous `source: 'added'`-only
  * list this component used to render.
  */
-export function RidePassengersList({ rideId, expectedVersion, people, served, canManagePeople = false, rideCancelled = false, departmentId, weekStart }: RidePassengersListProps) {
+export function RidePassengersList({ rideId, expectedVersion, people, served, canManagePeople = false, rideCancelled = false, departmentId, weekStart, requestRowsLocked = false }: RidePassengersListProps) {
   const mutation = useRemoveRidePassengerMutation();
   if (!people.length) return null;
 
@@ -43,7 +46,8 @@ export function RidePassengersList({ rideId, expectedVersion, people, served, ca
       <ul className="space-y-0.5">
         {people.map((person) => {
           const removable = rideId != null && expectedVersion != null &&
-            canRemoveRidePerson(person, { canManagePeople, rideCancelled });
+            canRemoveRidePerson(person, { canManagePeople, rideCancelled }) &&
+            !(requestRowsLocked && (person.source === "requester" || person.source === "companion"));
           return (
             <li key={person.key} className="flex items-center justify-between gap-2">
               <span>

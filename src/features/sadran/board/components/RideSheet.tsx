@@ -465,6 +465,7 @@ export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenCha
                     rideCancelled={cancelled}
                     departmentId={departmentId}
                     weekStart={weekStart}
+                    requestRowsLocked={merged}
                   />
                   {!isPlanning && ride.id && ride.version != null && !cancelled && departmentId && weekStart ? (
                     <AddPassengersDialog

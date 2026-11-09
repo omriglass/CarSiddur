@@ -22028,7 +22028,8 @@ begin
 
   perform set_config('app.audit_reason', 'split_ride_companion', true);
   delete from public.request_companions where request_id = p_request_id and profile_id = p_profile_id;
-  update public.requests set updated_at = now() where id = p_request_id;
+  -- x's seat moves with them (a companion is one of the request's adults)
+  update public.requests set adults = greatest(adults - 1, 1), updated_at = now() where id = p_request_id;
 
   -- x's own request: the trip as asked (not the ride's widened window), without the other rider's people, luggage,
   -- towing, plan B, private note or series.
