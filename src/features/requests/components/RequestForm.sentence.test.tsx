@@ -417,7 +417,7 @@ describe("RequestForm classic layout", () => {
     }
     expect(screen.getAllByTestId("who-unnamed-adult")).toHaveLength(2);
     expect(screen.getByTestId("chip-who")).toHaveTextContent(`${he.requestSentence.me} ${he.requestSentence.and}עוד 2`);
-    fireEvent.click(screen.getByRole("button", { name: he.requestSentence.sheetDone }));
+    fireEvent.click(await screen.findByRole("button", { name: he.requestSentence.sheetDone }));
 
     await goToStageTwo();
     fireEvent.click(screen.getByRole("button", { name: he.action.submitRequest }));
@@ -459,7 +459,7 @@ describe("RequestForm classic layout", () => {
     expect(screen.getByTestId("who-child-guest")).toHaveTextContent(he.requestSentence.whoChildGuestQuestion);
     fireEvent.click(screen.getByTestId("who-child-guest-booster"));
     expect(screen.getAllByTestId("who-booster")).toHaveLength(1);
-    fireEvent.click(screen.getByRole("button", { name: he.requestSentence.sheetDone }));
+    fireEvent.click(await screen.findByRole("button", { name: he.requestSentence.sheetDone }));
 
     await goToStageTwo();
     fireEvent.click(screen.getByRole("button", { name: he.action.submitRequest }));

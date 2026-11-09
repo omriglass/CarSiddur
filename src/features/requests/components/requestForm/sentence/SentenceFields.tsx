@@ -688,7 +688,7 @@ export function SentenceFields(props: SentenceFieldsProps) {
         </div>
       ) : null}
 
-      <FieldSheet open={sheet === "who"} onOpenChange={(open) => !open && setSheet(null)} title={he.requestSentence.sheet.who} testId="who-dialog">
+      <FieldSheet open={sheet === "who"} onOpenChange={(open) => !open && setSheet(null)} title={he.requestSentence.sheet.who} testId="who-dialog" typingFocus>
         <WhoSheet
           form={form}
           members={members}
