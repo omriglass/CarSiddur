@@ -16259,8 +16259,14 @@ begin
         public.day_date_label(coalesce(x.starts_at, s.line_dt)) as line_day,
         public.request_route_label(s.id) as route,
         case
-          when x.id is null then case when s.prev_status is distinct from s.status::text
-                                      then public._frag('publish.removed') else '' end
+          -- REQ §13.204 (a): "removed" only for a request the previous publish showed placed; one that became
+          -- waitlisted since gets "on the waiting list"; one filed since the previous publish has no line (its
+          -- member was told at filing) - was: every new waitlisted request read publish.removed.
+          when x.id is null then case
+            when s.prev_status in ('assigned', 'merged') then public._frag('publish.removed')
+            when s.prev_status is not null and s.prev_status is distinct from s.status::text and s.status = 'waitlisted'
+              then public._frag('publish.now_waitlisted')
+            else '' end
           when pv.elem is null or s.prev_status is distinct from s.status::text then
             public._frag('publish.new_ride', jsonb_build_object('car', coalesce((select cc.name from public.cars cc where cc.id = x.car_id), ''),
               'depart', public._hhmm(x.starts_at), 'return', public._hhmm(x.ends_at)))

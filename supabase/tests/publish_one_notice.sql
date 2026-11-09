@@ -178,4 +178,76 @@ begin
   end loop;
   raise notice 'publish_one_notice.sql (driving / companion rides): all assertions passed';
 end $$;
+
+-- REQ §13.204 (a), production 2026-11-09: a republish says "removed" (publish.removed) only to a member the previous publish showed
+-- placed; a request filed since (waitlisted at once) gets no line (another week, its own fixtures).
+reset role;
+do $$
+declare dept uuid:='00000000-0000-0000-0000-000000000001'; manager uuid:='00000000-0000-0000-0000-000000000102';
+  m2 uuid:='00000000-0000-0000-0000-000000000104';
+  home uuid:='00000000-0000-0000-0000-000000000010'; dest uuid:='00000000-0000-0000-0000-000000000011';
+  typ uuid:='00000000-0000-0000-0000-000000000021'; car uuid:='00000000-0000-0000-0000-000000000041';
+  w date:=public.current_week_start()+252; dt timestamptz; q uuid; r uuid;
+begin
+  insert into public.weeks(department_id,week_start,phase,open_at,close_at,publish_at)
+    values(dept,w,'open',now()-interval '1 day',now()+interval '1 day',now()+interval '2 days');
+  dt:=((w+1)+time '12:00') at time zone 'Asia/Jerusalem';
+  insert into public.requests(department_id,week_start,requester_id,filed_by,destination_id,origin_id,ride_type_id,trip_shape,trip_type,depart_at,return_at,status)
+    values(dept,w,m2,m2,dest,home,typ,'round_trip','round_trip',dt,dt+interval '2 hours','assigned') returning id into q;
+  insert into public.rides(department_id,week_start,car_id,starts_at,ends_at,origin_id,destination_id,driver_id,status,created_by)
+    values(dept,w,car,dt,dt+interval '2 hours',home,home,m2,'draft',manager) returning id into r;
+  insert into public.ride_requests(ride_id,request_id,role,leg,car_mode) values(r,q,'driver','both','keep');
+  insert into pon_ids values('rm_q',q),('rm_r',r);
+end $$;
+set constraints all immediate;
+set constraints all deferred;
+set local role authenticated;
+do $$
+declare dept uuid:='00000000-0000-0000-0000-000000000001'; w date:=public.current_week_start()+252;
+begin
+  perform public.publish_siddur(dept,w,'[]'::jsonb,public.publish_scores_fingerprint(dept,w),'[]'::jsonb,array[w+1],true);
+end $$;
+reset role;
+do $$
+declare dept uuid:='00000000-0000-0000-0000-000000000001'; w date:=public.current_week_start()+252;
+  m1 uuid:='00000000-0000-0000-0000-000000000103';
+  home uuid:='00000000-0000-0000-0000-000000000010'; dest uuid:='00000000-0000-0000-0000-000000000011';
+  typ uuid:='00000000-0000-0000-0000-000000000021'; dt timestamptz:=((w+1)+time '15:00') at time zone 'Asia/Jerusalem';
+begin
+  perform set_config('app.suppress_notifications','on',true);
+  -- m1 files after the publish and goes straight to the waiting list; m2's ride is cancelled, m2 back to waiting
+  insert into public.requests(department_id,week_start,requester_id,filed_by,destination_id,origin_id,ride_type_id,trip_shape,trip_type,depart_at,return_at,status,status_reason)
+    values(dept,w,m1,m1,dest,home,typ,'round_trip','round_trip',dt,dt+interval '2 hours','waitlisted','WAITLISTED_NO_CAR');
+  update public.rides set status='cancelled', cancelled_at=now(), cancelled_by='00000000-0000-0000-0000-000000000102', cancel_reason='test' where id=(select id from pon_ids where k='rm_r');
+  update public.requests set status='waitlisted', status_reason='WAITLISTED_NO_CAR' where id=(select id from pon_ids where k='rm_q');
+  -- no shared car is free that afternoon, so the republish places nobody
+  insert into public.car_maintenance_blocks(car_id, starts_at, ends_at, reason, created_by)
+    select c.id, ((w+1)+time '11:00') at time zone 'Asia/Jerusalem', ((w+1)+time '19:00') at time zone 'Asia/Jerusalem', 'test',
+      '00000000-0000-0000-0000-000000000102'
+    from public.cars c where c.department_id=dept and c.type='shared' and c.status='active';
+  perform set_config('app.suppress_notifications','off',true);
+  delete from public.notifications where week_start=w;
+end $$;
+set constraints all immediate;
+set constraints all deferred;
+set local role authenticated;
+do $$
+declare dept uuid:='00000000-0000-0000-0000-000000000001'; w date:=public.current_week_start()+252;
+begin
+  perform public.publish_siddur(dept,w,'[]'::jsonb,public.publish_scores_fingerprint(dept,w),'[]'::jsonb,array[w+1],true);
+end $$;
+reset role;
+do $$
+declare w date:=public.current_week_start()+252; body text;
+begin
+  select string_agg(body_he,' || ') into body from public.notifications
+  where recipient_id='00000000-0000-0000-0000-000000000103' and week_start=w and event in ('published','outcome_changed');
+  assert (select status from public.requests where requester_id='00000000-0000-0000-0000-000000000103' and week_start=w)='waitlisted', 'm1 stays waiting';
+  assert body is null or body not like '%'||public._frag('publish.removed')||'%',
+    'a request filed after the previous publish was never placed - no "removed" line: '||body;
+  select string_agg(body_he,' || ') into body from public.notifications
+  where recipient_id='00000000-0000-0000-0000-000000000104' and week_start=w and event='outcome_changed';
+  assert body like '%'||public._frag('publish.removed')||'%', 'a placed request that lost its ride is told: '||coalesce(body,'<none>');
+  raise notice 'publish_one_notice.sql (removed only when placed): all assertions passed';
+end $$;
 rollback;
