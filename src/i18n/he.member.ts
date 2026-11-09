@@ -314,7 +314,7 @@ export const heMember = {
     showKidsRides: "הצגת נסיעות הילדים",
     showCoParentRides: "הצגת נסיעות ההורה השני של הילדים",
     showFiledForOthers: "הצגת נסיעות שהגשתי עבור אחרים",
-    showEditorRides: "הצגת נסיעות של מי שנתנו לי לערוך",
+    showEditorRides: "הצגת נסיעות של אנשים שנתנו לי הרשאת עריכה",
     /** Muted tag on a read-only ride that is a child's / another guardian's, not mine. */
     kidRideOf: "נסיעה של {{name}}",
     /** One line under the week switcher: what the grid shows and how to ask for a ride. */

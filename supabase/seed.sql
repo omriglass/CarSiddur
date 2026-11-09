@@ -513,7 +513,7 @@ select t.event::public.notification_event, ch, t.variant, t.title, t.body, t.tit
 from (values
   ('ride_editor_added', null,
    '{{name}} נתן/ה לך לערוך את הנסיעות שלו/ה',
-   'מעכשיו אפשר לערוך ולבטל את הבקשות והנסיעות של {{name}}, ו{{name}} יקבל/תקבל הודעה על כל שינוי. כדי לראות אותן ב״הנסיעות שלי״, יש לסמן ״הצגת נסיעות של מי שנתנו לי לערוך״ בתפריט התצוגה.'),
+   'מעכשיו אפשר לערוך ולבטל את הבקשות והנסיעות של {{name}}, ו{{name}} יקבל/תקבל הודעה על כל שינוי. כדי לראות אותן ב״הנסיעות שלי״, יש לסמן ״הצגת נסיעות של אנשים שנתנו לי הרשאת עריכה״ בתפריט התצוגה.'),
   ('ride_edited', 'editor_withdrew', '{{byName}} הסיר/ה את הבקשה שלך', '{{route}} · {{day}}'),
   ('ride_edited', 'editor_cancelled', '{{byName}} ביטל/ה את הנסיעה שלך', '{{route}} · {{day}}')
 ) as t(event, variant, title, body)

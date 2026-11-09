@@ -16,6 +16,7 @@ import type { MyRequestRow, TemplateSuggestion } from "../api";
 import { enteredTimeLabels } from "../enteredTimes";
 import { waitingFallbackLine } from "../fallbackLine";
 import { windowSummary } from "../timeWindow";
+import { whoText } from "../whoLabel";
 import { displayStatus, originDestinationLabel } from "../myRequestsRows";
 import { isAwaitingAnswer } from "../pendingProposal";
 import { assignLanes } from "./assignLanes";
@@ -206,6 +207,8 @@ export function requestBlocks(
         ? `${tv("myWeek.kidRideOf", { name: ownerName })} · ${originDestinationLabel(row, homeDestinationId)}`
         : originDestinationLabel(row, homeDestinationId);
     const description = [...requestDetailLines(row), kind === "proposal" ? null : waitingFallbackLine(row)].filter(Boolean).join("\n") || undefined;
+    // Owner 2026-11-09: a request shows who rides, like a ride block (companions, children, guests, unnamed).
+    const others = whoText([...(row.companionNames ?? []), ...(row.childNames ?? []), ...(row.guestNames ?? [])], row.extraAdults ?? 0, row.unnamedChildren ?? 0);
     daySegments(span.start, span.end, dayKeys).forEach((segment, index) => {
       if (segment.dayKey < today) return;
       out.push({
@@ -217,6 +220,8 @@ export function requestBlocks(
           endMinutes: segment.endMinutes,
           label,
           description,
+          passengerSummary: others ? tv("ridePublicDetails.companions", { names: others }) : undefined,
+          othersRequest: ownerName !== undefined || undefined,
           kind,
           seriesIndex: row.seriesIndex,
           seriesCount: row.seriesCount,

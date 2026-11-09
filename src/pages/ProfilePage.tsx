@@ -241,39 +241,7 @@ export function ProfilePage() {
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">{he.profileExtra.defaultOriginTitle}</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {active.departmentId ? (
-              <>
-                <Label htmlFor="profile-default-origin">{he.profileExtra.defaultOriginLabel}</Label>
-                <Select
-                  value={activeMembership?.default_origin_id ?? ""}
-                  onValueChange={(next) =>
-                    setDefaultOriginMutation.mutate({ departmentId: active.departmentId as string, originId: next || null })
-                  }
-                >
-                  <SelectTrigger id="profile-default-origin">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="">{he.profileExtra.defaultOriginHome}</SelectItem>
-                    {(originDestinationsQuery.data ?? []).map((destination) => (
-                      <SelectItem key={destination.id} value={destination.id}>
-                        {destination.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <p className="text-xs text-muted-foreground">{he.profileExtra.defaultOriginHelp}</p>
-              </>
-            ) : (
-              <p className="text-sm text-muted-foreground">{he.profileExtra.defaultOriginNoDepartment}</p>
-            )}
-          </CardContent>
-        </Card>
+        <RideEditorsCard departmentId={active.departmentId ?? undefined} />
 
         <Card>
           <CardHeader>
@@ -336,10 +304,43 @@ export function ProfilePage() {
         </Card>
 
         <ParentOfCard />
-        <RideEditorsCard departmentId={active.departmentId ?? undefined} />
         </TabsContent>
 
         <TabsContent value="prefs" className="space-y-4">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">{he.profileExtra.defaultOriginTitle}</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {active.departmentId ? (
+              <>
+                <Label htmlFor="profile-default-origin">{he.profileExtra.defaultOriginLabel}</Label>
+                <Select
+                  value={activeMembership?.default_origin_id ?? ""}
+                  onValueChange={(next) =>
+                    setDefaultOriginMutation.mutate({ departmentId: active.departmentId as string, originId: next || null })
+                  }
+                >
+                  <SelectTrigger id="profile-default-origin">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">{he.profileExtra.defaultOriginHome}</SelectItem>
+                    {(originDestinationsQuery.data ?? []).map((destination) => (
+                      <SelectItem key={destination.id} value={destination.id}>
+                        {destination.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">{he.profileExtra.defaultOriginHelp}</p>
+              </>
+            ) : (
+              <p className="text-sm text-muted-foreground">{he.profileExtra.defaultOriginNoDepartment}</p>
+            )}
+          </CardContent>
+        </Card>
+
         <Card>
           <CardHeader>
             <CardTitle className="text-base">{he.profileExtra.homeWeekTitle}</CardTitle>

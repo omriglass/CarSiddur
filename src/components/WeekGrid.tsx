@@ -118,6 +118,8 @@ export interface WeekGridRide {
   isMine?: boolean;
   /** Owner 2026-10-16: a read-only ride of my child / their other guardian on "my rides" — drawn faded, never "mine". */
   muted?: boolean;
+  /** REQ §13.202: an unplaced request of someone who named me their editor ("my rides") — its own dashed teal look. */
+  othersRequest?: boolean;
   highlighted?: boolean;
   tightSchedule?: boolean;
   /** `ride_types.code` of the ride's driver request (falls back to any served request, then `"other"`) — tints the block (visual pass, `src/lib/rideTypeColors.ts`). */
@@ -1468,6 +1470,7 @@ export function WeekGrid({
                 ride.kind === "proposal" && "border-2 border-amber-500 bg-amber-500/10",
                 ride.kind === "waiting" && "border-2 border-dashed border-muted-foreground bg-muted/45",
                 ride.kind === "request" && "border-2 border-primary/60 bg-background/40",
+                ride.othersRequest && "border-2 border-dashed border-teal-600 bg-teal-500/15 dark:border-teal-400",
                 // Over a calendar the backing above provides the fill — no white fill of their own (same alpha as rides).
                 visibility && (ride.kind === "suggestion" || ride.kind === "request" || ride.kind === "waiting") && "bg-transparent",
                 ride.highlighted && "z-10 scroll-mt-24 ring-4 ring-destructive ring-offset-2",

@@ -76,6 +76,18 @@ describe("requestBlocks", () => {
     expect(entry?.block.label).toContain(tv("myWeek.kidRideOf", { name: "דנה" }));
   });
 
+  it("draws a request I may only edit in its own look; my own request not (owner 2026-11-09)", () => {
+    expect(requestBlocks([request({ editorOf: "דנה" })], week, null, NOW)[0]?.block.othersRequest).toBe(true);
+    expect(requestBlocks([request({})], week, null, NOW)[0]?.block.othersRequest).toBeUndefined();
+  });
+
+  it("lists who rides on a request block (owner 2026-11-09)", () => {
+    const [entry] = requestBlocks([request({ companionNames: ["אבי"], childNames: ["נועה"], extraAdults: 1 })], week, null, NOW);
+    expect(entry?.block.passengerSummary).toContain("אבי");
+    expect(entry?.block.passengerSummary).toContain("נועה");
+    expect(requestBlocks([request({})], week, null, NOW)[0]?.block.passengerSummary).toBeUndefined();
+  });
+
   it("drops a request on a day already gone, keeping today onward (owner 2026-10-13)", () => {
     const tuesdayMorning = Date.parse("2026-10-13T06:00:00Z");
     expect(requestBlocks([request({})], week, null, tuesdayMorning)).toEqual([]);
