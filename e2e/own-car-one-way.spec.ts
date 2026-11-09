@@ -23,7 +23,7 @@ test("a waiting one-way trip goes on my private car from /my", { tag: ["@request
   const { data: request, error } = await service.from("requests").insert({
     department_id: NEVO_DEPARTMENT_ID, week_start: WEEK, requester_id: MEMBER2, filed_by: MEMBER2,
     ride_type_id: "00000000-0000-0000-0000-000000000021", origin_id: department!.home_destination_id, destination_id: destination!.id,
-    trip_type: "one_way", trip_shape: "one_way_to", depart_at: `2041-04-08T10:00:00+03:00`, adults: 1,
+    trip_type: "one_way", trip_shape: "one_way_to", one_way_car_mode: "relay", depart_at: `2041-04-08T10:00:00+03:00`, adults: 1,
     status: "waitlisted", status_reason: "WAITLISTED_NO_CAR",
   }).select("id").single();
   if (error) throw error;
