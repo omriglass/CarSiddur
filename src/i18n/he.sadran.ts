@@ -345,6 +345,11 @@ export const heSadran = {
     helpCancel: "מבטל את הנסיעה לכל הנוסעים ושולח להם הודעה.",
     helpRemoveReservation: "שמירת הזמן נמחקת; אפשר לבטל מההודעה שמופיעה אחרי המחיקה.",
     helpCancelPlanning: "השינוי המתוכנן מבוטל והנסיעה נשארת כפי שפורסמה.",
+    /** REQ §13.207: the first action - the ride's request in the request form. */
+    editRide: "עריכת נסיעה",
+    editRideOf: "עריכת הנסיעה של {{name}}",
+    helpEditRide: "פותח את הבקשה בטופס: מקומות, שעות, סוג נסיעה, נוסעים, מי נוהג/ת והערות.",
+    helpEditReservation: "שעות ורכב של שמירת הזמן נערכים בלשונית ״סיכום״.",
   },
   sadranProposal: {
     sameTimesCar: "יש רכב פנוי בשעות שביקשת: {{car}}.",

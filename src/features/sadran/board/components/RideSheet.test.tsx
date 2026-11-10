@@ -1,4 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 
 import { he, tv } from "@/i18n/he";
@@ -20,6 +21,8 @@ vi.mock("./PlanSwitchButton", () => ({ PlanSwitchButton: () => <div /> }));
 vi.mock("./WithdrawDuplicateAction", () => ({ WithdrawDuplicateAction: () => <button type="button" data-testid="withdraw-duplicate" /> }));
 vi.mock("./RideDriverPicker", () => ({ RideDriverPicker: () => <div data-testid="stub-driver-picker" /> }));
 vi.mock("./RideCancelDialog", () => ({ RideCancelDialog: () => null }));
+const navigate = vi.fn();
+vi.mock("react-router-dom", async (importOriginal) => ({ ...(await importOriginal<typeof import("react-router-dom")>()), useNavigate: () => navigate }));
 const succeed = (_vars: unknown, options?: { onSuccess?: () => void }) => options?.onSuccess?.();
 const removePassenger = vi.fn(succeed);
 const splitCompanion = vi.fn(succeed);
@@ -40,6 +43,7 @@ function renderSheet(theRide: BoardRide = ride, onRemoveAddedPerson?: (requestId
   return render(
     <RideSheet ride={theRide} onRemoveAddedPerson={onRemoveAddedPerson} cars={[]} driverName="Noga" homeDestinationId="home" onOpenChange={vi.fn()} onSave={vi.fn()} onTogglePin={vi.fn()} onCancel={vi.fn()}
       requests={[request] as never} departmentId="dept" weekStart="2044-01-02" driverCandidates={[]} />,
+    { wrapper: MemoryRouter },
   );
 }
 
@@ -98,6 +102,7 @@ describe("RideSheet tabs (REQ §13.201)", () => {
     render(
       <RideSheet ride={mergedRide} onRemoveAddedPerson={vi.fn()} onSplitGuest={splitGuest} cars={[]} driverName="Noga" homeDestinationId="home" onOpenChange={vi.fn()} onSave={vi.fn()}
         onTogglePin={vi.fn()} onCancel={vi.fn()} requests={[request] as never} departmentId="dept" weekStart="2044-01-02" driverCandidates={[]} />,
+      { wrapper: MemoryRouter },
     );
     fireEvent.mouseDown(screen.getByTestId("ride-sheet-tab-merged"), { button: 0, ctrlKey: false });
     expect(screen.getAllByTestId("ride-merged-passenger").map((chip) => chip.textContent)).toEqual([
@@ -118,5 +123,40 @@ describe("RideSheet tabs (REQ §13.201)", () => {
     fireEvent.click(screen.getByTestId("merged-passenger-alone"));
     fireEvent.click(screen.getByRole("button", { name: he.mergedRide.splitConfirm }));
     expect(splitCompanion).toHaveBeenCalledWith(expect.objectContaining({ rideId: "r1", requestId: "q2", profileId: "x", expectedVersion: 1 }), expect.anything());
+  });
+});
+
+describe("RideSheet \"עריכת נסיעה\" (REQ §13.207)", () => {
+  const openActions = () => fireEvent.mouseDown(screen.getByTestId("ride-sheet-tab-actions"), { button: 0, ctrlKey: false });
+
+  it("is the first action and opens the ride's request in the request form over the board", () => {
+    navigate.mockClear();
+    renderSheet();
+    openActions();
+    const panel = screen.getByRole("tabpanel");
+    expect(panel.querySelector("button")).toHaveAttribute("data-testid", "ride-sheet-edit-request");
+    fireEvent.click(screen.getByRole("button", { name: he.sadranRideSheet.editRide }));
+    expect(navigate).toHaveBeenCalledWith("/requests/q1/edit", { state: { from: "/" } });
+  });
+
+  it("a merged ride has one button per request, named", () => {
+    const guest = { ...(ride.served as unknown as Record<string, unknown>[])[0], request_id: "q2", role: "passenger", requester: "Gil", child_names: [] };
+    renderSheet({ ...ride, served: [...(ride.served as unknown as unknown[]), guest] } as unknown as BoardRide, vi.fn());
+    openActions();
+    expect(screen.getAllByTestId("ride-sheet-edit-request").map((button) => button.textContent)).toEqual([
+      tv("sadranRideSheet.editRideOf", { name: "Noga" }), tv("sadranRideSheet.editRideOf", { name: "Gil" }),
+    ]);
+  });
+
+  it("a reservation goes to the summary's hours and car; a cancelled ride has none", () => {
+    const reservation = { ...ride, served: [], pin_reason: "SADRAN_MANUAL" } as unknown as BoardRide;
+    const { unmount } = renderSheet(reservation);
+    openActions();
+    fireEvent.click(screen.getByTestId("ride-sheet-edit-reservation"));
+    expect(screen.getByTestId("ride-car-select")).toBeInTheDocument();
+    unmount();
+    renderSheet({ ...ride, status: "cancelled" } as unknown as BoardRide);
+    openActions();
+    expect(screen.queryByTestId("ride-sheet-edit")).not.toBeInTheDocument();
   });
 });

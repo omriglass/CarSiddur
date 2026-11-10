@@ -380,6 +380,44 @@ test.describe.serial("board (bug-fix pass regression, fake-week data)", { tag: [
     expect(after?.is_pinned).toBe(true);
   });
 
+  test("\"עריכת נסיעה\" opens the ride's request in the request form over the board (REQ §13.207)", async ({ page }) => {
+    await signIn(page);
+    const weekUrl = await goToOpenWeek(page);
+    await page.goto(`${weekUrl}/board`);
+    await expect(page.getByRole("heading", { name: "לוח הסידור" })).toBeVisible();
+    const weekStart = weekUrl.match(/(\d{4}-\d{2}-\d{2})$/)?.[1] ?? "";
+    // Runs alone too: fill the week so there is a placed request to open.
+    await fillRemaining(page);
+    const { data: links } = await serviceRoleClient()
+      .from("ride_requests")
+      .select("ride_id, request_id, rides!inner(department_id, week_start, status)")
+      .eq("rides.department_id", NEVO_DEPARTMENT_ID)
+      .eq("rides.week_start", weekStart)
+      .neq("rides.status", "cancelled")
+      .limit(1);
+    const link = links?.[0];
+    expect(link).toBeTruthy();
+
+    const rideLocator = page.locator(`button[data-ride-id="${link?.ride_id}"]:visible`);
+    for (const dayIndex of [0, 1, 2, 3, 4, 5, 6]) {
+      if (await rideLocator.isVisible()) break;
+      const radio = page.getByRole("radio").nth(dayIndex);
+      await radio.click();
+      await expect(radio).toHaveAttribute("aria-checked", "true");
+    }
+    await expect(rideLocator).toBeVisible({ timeout: 10_000 });
+    await expect(async () => {
+      if (!(await page.getByRole("heading", { name: "פרטי הנסיעה" }).isVisible())) await openRideDetails(page, rideLocator);
+      await page.getByTestId("ride-sheet-tab-actions").click({ timeout: 5_000 });
+      await page.locator(`[data-testid="ride-sheet-edit-request"][data-request-id="${link?.request_id}"]`).click({ timeout: 5_000 });
+    }).toPass({ timeout: 40_000 });
+    await expect(page).toHaveURL(new RegExp(`/requests/${link?.request_id}/edit$`));
+    await expect(page.getByRole("heading", { name: he.screen.request.edit })).toBeVisible();
+    // Back from the form lands on the board again.
+    await page.goBack();
+    await expect(page.getByRole("heading", { name: "לוח הסידור" })).toBeVisible();
+  });
+
   // Vertical-board redesign (UX_FLOWS.md §20 item 4): moving a ride between
   // cars is now a *horizontal* pointer drag (car columns side by side, time
   // flows top→bottom). Dropping at the exact same on-screen y as the ride's

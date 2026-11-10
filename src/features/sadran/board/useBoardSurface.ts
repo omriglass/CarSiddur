@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { useBlocker } from "react-router-dom";
 
+import { readOverlayFrom } from "@/app/overlayState";
 import { paths } from "@/app/routes";
 import { setAppSurface } from "@/lib/appSurface";
 
@@ -18,7 +19,9 @@ export function useBoardSurface(): void {
  */
 export function useUnsentLeaveGuard(departmentId: string, weekStart: string, pending: number) {
   const weekBase = paths.sadran.board(departmentId, weekStart).replace(/\/board$/, "");
-  const blocker = useBlocker(({ nextLocation }) => pending > 0 && !nextLocation.pathname.startsWith(weekBase));
+  // REQ §13.207: opening a request in the form from the board ("עריכת נסיעה", "עריכת הבקשה") comes back here - not leaving.
+  const blocker = useBlocker(({ nextLocation }) => pending > 0 && !nextLocation.pathname.startsWith(weekBase)
+    && !readOverlayFrom(nextLocation.state)?.startsWith(weekBase));
   useEffect(() => {
     if (pending === 0) return undefined;
     const onBeforeUnload = (event: BeforeUnloadEvent) => event.preventDefault();

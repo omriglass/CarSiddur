@@ -1,6 +1,9 @@
 import { fromZonedTime } from "date-fns-tz";
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 
+import { useRequestLinkProps } from "@/app/overlayState";
+import { paths } from "@/app/routes";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { useRemoveRidePassengerMutation } from "@/features/rides/hooks";
@@ -137,6 +140,8 @@ export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenCha
   const [endTime, setEndTime] = useState(ride?.ends_at ? formatTime(new Date(ride.ends_at)) : "09:00");
   const [showCancelDialog, setShowCancelDialog] = useState(false);
   const [tab, setTab] = useState<RideSheetTab>("summary");
+  const navigate = useNavigate();
+  const requestLink = useRequestLinkProps();
 
   if ((ride?.id ?? null) !== lastRideId) {
     // Derived during render, no effect needed (same convention as
@@ -215,6 +220,14 @@ export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenCha
     }
   }
   const merged = addedPeople.length > 0 && !reservation;
+  // REQ §13.207: "עריכת נסיעה" opens each served request in the request form over the board (as the unplaced card's
+  // "עריכת הבקשה" does); a reservation has no request, so it goes to the summary's hours and car.
+  const editTargets = isPlanning || cancelled || reservation ? []
+    : servedEntries.filter((entry, index, all) => !!entry.request_id && all.findIndex((other) => other.request_id === entry.request_id) === index);
+  function openRequestEdit(requestId: string) {
+    onOpenChange(false);
+    navigate(paths.requests.edit(requestId), { state: requestLink.state });
+  }
   const personBlocks = ride ? <RidePersonBlocks blocks={buildPersonBlocks({ ride, served: servedEntries, homeDestinationId, requests: personExtras })} /> : null;
 
   /** REQ §13.201: one line per served request - "name route ב־time", plus the people who ride with them (once). */
@@ -514,6 +527,25 @@ export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenCha
 
                 {/* ── פעולות ── */}
                 <TabsContent value="actions" className="space-y-4">
+                  {editTargets.length ? (
+                    <div className="space-y-2" data-testid="ride-sheet-edit">
+                      {editTargets.map((entry) => {
+                        const name = entry.requester ?? requests.find((request) => request.id === entry.request_id)?.requester_full_name ?? "";
+                        return (
+                          <Button key={entry.request_id} className="w-full" disabled={saving} data-testid="ride-sheet-edit-request" data-request-id={entry.request_id ?? undefined}
+                            onClick={() => openRequestEdit(entry.request_id as string)}>
+                            {editTargets.length > 1 && name ? tv("sadranRideSheet.editRideOf", { name }) : he.sadranRideSheet.editRide}
+                          </Button>
+                        );
+                      })}
+                      <p className="text-xs text-muted-foreground">{he.sadranRideSheet.helpEditRide}</p>
+                    </div>
+                  ) : reservation && !isPlanning && !cancelled ? (
+                    <div className="space-y-1" data-testid="ride-sheet-edit">
+                      <Button className="w-full" onClick={() => setTab("summary")} data-testid="ride-sheet-edit-reservation">{he.sadranRideSheet.editRide}</Button>
+                      <p className="text-xs text-muted-foreground">{he.sadranRideSheet.helpEditReservation}</p>
+                    </div>
+                  ) : null}
                   {!isPlanning ? (
                     <div className="space-y-1">
                       <Button variant="outline" className="w-full" onClick={() => onTogglePin(!ride.is_pinned, ride.is_pinned ? null : "SADRAN_MANUAL")}>
