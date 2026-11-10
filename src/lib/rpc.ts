@@ -728,11 +728,29 @@ type Functions = Database["public"]["Functions"];
  * `stale_version` conflicts via `lib/errors.ts`" — this is that module,
  * named `rpc.ts` because it wraps `supabase.rpc()` directly).
  */
+/**
+ * A refusal that is really a question (REQ §13.176 `person_busy`): asks the person and returns the arguments to call
+ * again with, or `null` (not a question it knows, no way to confirm it, or a "no" - then it marks the error `declined`).
+ * Registered by `lib/personBusy.ts`, so a call that no `api.ts` wrapper confirms still asks instead of only toasting.
+ */
+export type RpcRefusalAsker = (name: string, args: unknown, error: AppError) => Promise<unknown | null>;
+
+let refusalAsker: RpcRefusalAsker | null = null;
+
+export function registerRpcRefusalAsker(asker: RpcRefusalAsker | null): void {
+  refusalAsker = asker;
+}
+
 export async function rpc<Name extends keyof Functions & string>(
   name: Name,
   args: Functions[Name]["Args"],
 ): Promise<Functions[Name]["Returns"]> {
   const { data, error } = await supabase.rpc(name, args as never);
-  if (error) throw toAppError(error);
+  if (error) {
+    const appError = toAppError(error);
+    const retryArgs = refusalAsker ? await refusalAsker(name, args, appError) : null;
+    if (retryArgs) return rpc(name, retryArgs as Functions[Name]["Args"]);
+    throw appError;
+  }
   return data as Functions[Name]["Returns"];
 }

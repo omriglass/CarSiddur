@@ -129,3 +129,31 @@ test("a guest leaves someone's ride with one button; the ride goes on", { tag: [
     await cleanup(WEEK);
   }
 });
+
+test("entering the waiting list while driving a ride then asks first and goes ahead (owner 2026-11-10, Agata)", { tag: ["@siddur", "@waitlist"] }, async ({ browser }) => {
+  test.slow();
+  const WEEK = "2041-04-21";
+  const DESTINATION = "E2E waitlist over my ride";
+  const { service } = await fixture(WEEK);
+  const member1 = await newSignedInPage(browser, SEEDED_USERS.member1);
+  try {
+    const page = member1.page;
+    await page.goto(`/requests/new?week=${WEEK}&day=${WEEK}&time=10%3A00&end=12%3A00&waitlist=1`);
+    await page.getByRole("combobox").first().click();
+    await page.getByPlaceholder("לאן?").fill(DESTINATION);
+    await page.getByText(`"${DESTINATION}" — יעד חופשי`).click();
+    await page.getByRole("radiogroup", { name: "סוג נסיעה" }).getByRole("radio").first().click();
+    await page.getByRole("button", { name: he.action.submitWaitlist, exact: true }).click();
+    const keepBoth = page.getByRole("dialog", { name: he.request.overlapTitle }).getByRole("button", { name: he.request.overlapKeepBoth });
+    await keepBoth.waitFor({ state: "visible", timeout: 3_000 }).then(() => keepBoth.click(), () => undefined);
+    // the server's "already on a ride then" question - before 2026-11-10 only a toast promising it
+    const question = page.getByRole("dialog").filter({ hasText: he.personBusy.title });
+    await expect(question).toBeVisible();
+    await question.getByRole("button", { name: he.personBusy.confirm }).click();
+    await expect.poll(async () => (await service.from("requests").select("status").eq("destination_text", DESTINATION).eq("week_start", WEEK)).data?.map((r) => r.status) ?? [])
+      .toEqual([expect.stringMatching(/^(assigned|waitlisted)$/)]);
+  } finally {
+    await member1.context.close().catch(() => undefined);
+    await cleanup(WEEK);
+  }
+});

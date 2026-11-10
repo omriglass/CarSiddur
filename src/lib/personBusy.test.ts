@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { he } from "@/i18n/he";
 
-import { parsePersonBusyDetail, personBusyBody, withPersonBusyRetry } from "./personBusy";
+import { askPersonBusyRefusal, parsePersonBusyDetail, personBusyBody, personBusyConfirmedArgs, withPersonBusyRetry } from "./personBusy";
 import { AppError } from "./rpc";
 import { formatTime } from "./time";
 
@@ -57,6 +57,44 @@ describe("withPersonBusyRetry", () => {
     const other = new AppError("stale_version", "x");
     const ask = vi.fn(async () => true);
     await expect(withPersonBusyRetry(async () => { throw other; }, ask)).rejects.toBe(other);
+    expect(ask).not.toHaveBeenCalled();
+  });
+});
+
+describe("the question asked from rpc() for any confirmable call (owner 2026-11-10)", () => {
+  it("finds the call's confirm flag: p_allow_busy, or overlap_confirmed in payload / p_payload", () => {
+    expect(personBusyConfirmedArgs({ p_ride_id: "r", p_allow_busy: false })).toEqual({ p_ride_id: "r", p_allow_busy: true });
+    expect(personBusyConfirmedArgs({ payload: { a: 1 } })).toEqual({ payload: { a: 1, overlap_confirmed: true } });
+    expect(personBusyConfirmedArgs({ p_payload: { waitlist: true } })).toEqual({ p_payload: { waitlist: true, overlap_confirmed: true } });
+  });
+
+  it("has nothing to confirm when the flag is already on or the call has none", () => {
+    expect(personBusyConfirmedArgs({ p_allow_busy: true })).toBeNull();
+    expect(personBusyConfirmedArgs({ payload: { overlap_confirmed: true } })).toBeNull();
+    expect(personBusyConfirmedArgs({ p_ride_id: "r" })).toBeNull();
+    expect(personBusyConfirmedArgs(undefined)).toBeNull();
+  });
+
+  it("a yes returns the confirmed arguments; a no marks the refusal declined (no toast)", async () => {
+    expect(await askPersonBusyRefusal("enter_waiting_list", { p_payload: {} }, refusal(), () => Promise.resolve(true)))
+      .toEqual({ p_payload: { overlap_confirmed: true } });
+    const declined = refusal();
+    expect(await askPersonBusyRefusal("enter_waiting_list", { p_payload: {} }, declined, () => Promise.resolve(false))).toBeNull();
+    expect(declined.declined).toBe(true);
+  });
+
+  it("asks nothing for other refusals or calls it cannot confirm", async () => {
+    const ask = vi.fn(() => Promise.resolve(true));
+    expect(await askPersonBusyRefusal("x", { p_payload: {} }, new AppError("unknown", "x"), ask)).toBeNull();
+    expect(await askPersonBusyRefusal("x", { p_ride_id: "r" }, refusal(), ask)).toBeNull();
+    expect(ask).not.toHaveBeenCalled();
+  });
+
+  it("withPersonBusyRetry never asks again after a no given in rpc()", async () => {
+    const declined = refusal();
+    declined.declined = true;
+    const ask = vi.fn(() => Promise.resolve(true));
+    await expect(withPersonBusyRetry(() => Promise.reject(declined), ask)).rejects.toBe(declined);
     expect(ask).not.toHaveBeenCalled();
   });
 });

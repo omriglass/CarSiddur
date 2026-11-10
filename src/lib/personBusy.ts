@@ -7,7 +7,7 @@ import { z } from "zod";
 
 import { he, tv } from "@/i18n/he";
 
-import { AppError } from "./rpc";
+import { AppError, registerRpcRefusalAsker } from "./rpc";
 import { formatTime } from "./time";
 
 const rideSchema = z.object({
@@ -95,7 +95,8 @@ export async function withPersonBusyRetry<T>(call: (allowBusy: boolean) => Promi
   try {
     return await call(false);
   } catch (error) {
-    if (!isPersonBusy(error)) throw error;
+    // Already answered "no" to the question `rpc()` asked (`askPersonBusyRefusal`) - never ask twice.
+    if (!isPersonBusy(error) || error.declined) throw error;
     if (!(await ask(parsePersonBusyDetail(error.detail)))) {
       error.declined = true;
       throw error;
@@ -103,3 +104,38 @@ export async function withPersonBusyRetry<T>(call: (allowBusy: boolean) => Promi
     return call(true);
   }
 }
+
+/**
+ * The same call's arguments with its "go ahead" flag on - `p_allow_busy`, or `overlap_confirmed` inside a
+ * `payload`/`p_payload` object (`submit_request`, `enter_waiting_list`) - or `null` when the call has no such flag
+ * or already carries it.
+ */
+export function personBusyConfirmedArgs(args: unknown): Record<string, unknown> | null {
+  if (!args || typeof args !== "object" || Array.isArray(args)) return null;
+  const record = args as Record<string, unknown>;
+  if ("p_allow_busy" in record) return record.p_allow_busy === true ? null : { ...record, p_allow_busy: true };
+  for (const key of ["payload", "p_payload"]) {
+    const payload = record[key];
+    if (payload && typeof payload === "object" && !Array.isArray(payload)) {
+      if ((payload as Record<string, unknown>).overlap_confirmed === true) return null;
+      return { ...record, [key]: { ...(payload as Record<string, unknown>), overlap_confirmed: true } };
+    }
+  }
+  return null;
+}
+
+/**
+ * Owner 2026-11-10 (production: Agata's waiting-list entry only toasted "אפשר להמשיך בכל זאת באישור מפורש"): any
+ * `person_busy` refusal of a call that can be confirmed asks here, in `rpc()`, whether or not its `api.ts` wrapper
+ * uses `withPersonBusyRetry` - a yes calls again with the flag, a no ends silently.
+ */
+export async function askPersonBusyRefusal(_name: string, args: unknown, error: AppError, ask: PersonBusyAsker = askPersonBusy): Promise<Record<string, unknown> | null> {
+  if (!isPersonBusy(error)) return null;
+  const confirmed = personBusyConfirmedArgs(args);
+  if (!confirmed) return null;
+  if (await ask(parsePersonBusyDetail(error.detail))) return confirmed;
+  error.declined = true;
+  return null;
+}
+
+registerRpcRefusalAsker(askPersonBusyRefusal);

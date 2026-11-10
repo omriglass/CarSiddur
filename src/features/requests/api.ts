@@ -984,10 +984,12 @@ export async function fetchChildRequestOverlaps(args: {
 export async function submitRequest(payload: SubmitRequestPayload): Promise<Json> {
   // Owner 2026-11-10 (production: a member with a הקפצה that day could not enter the waiting list for a car - the
   // toast promised a confirmation that never came): the waiting-list entry asks the same questions as submit_request.
+  // REQ §13.190 too: when only the car's next ride is too close, the member is asked instead of quietly waiting.
   if (payload.waitlist) {
-    return withPersonBusyRetry((allowBusy) => withSmallTrunkRetry((allowSmallTrunk) => rpc("enter_waiting_list", {
-      p_payload: { ...payload, ...(allowSmallTrunk ? { allow_small_trunk: true } : {}), ...(allowBusy ? { overlap_confirmed: true } : {}) } as unknown as Json,
+    const enter = (extra: Record<string, boolean>) => withPersonBusyRetry((allowBusy) => withSmallTrunkRetry((allowSmallTrunk) => rpc("enter_waiting_list", {
+      p_payload: { ...payload, short_turnaround_ask: true, ...extra, ...(allowSmallTrunk ? { allow_small_trunk: true } : {}), ...(allowBusy ? { overlap_confirmed: true } : {}) } as unknown as Json,
     })));
+    return settleShortTurnaround(await enter({}), () => enter({ allow_short_turnaround: true }));
   }
   // REQ §13.111 (a): `needs_large_trunk` (quick / car-now, ask-to-join) asks the shared dialog and retries with the flag;
   // REQ §13.176: so does `person_busy` (an overlap with the member's own ride or request), retried as `overlap_confirmed`.
