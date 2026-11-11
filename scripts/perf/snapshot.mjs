@@ -32,13 +32,16 @@ function fail(message) {
 }
 
 function takeSnapshot() {
-  const res = spawnSync("npx", ["supabase", "db", "query", "--linked", "-f", SQL_FILE], {
+  const res = spawnSync("npx", ["supabase", "db", "query", "--linked", "-o", "json", "-f", SQL_FILE], {
     cwd: ROOT, encoding: "utf8", maxBuffer: 64 * 1024 * 1024,
   });
-  const start = res.stdout.indexOf("{");
+  // Plain `-o json` prints an array of rows; under an AI agent the CLI wraps it as { boundary, rows }.
+  const starts = [res.stdout.indexOf("["), res.stdout.indexOf("{")].filter((i) => i >= 0);
+  const start = starts.length ? Math.min(...starts) : -1;
   if (res.status !== 0 || start < 0) throw new Error((res.stderr || res.stdout).slice(-2000));
-  const body = JSON.parse(res.stdout.slice(start, res.stdout.lastIndexOf("}") + 1));
-  const snap = body.rows?.[0]?.snapshot;
+  const close = res.stdout[start] === "[" ? "]" : "}";
+  const body = JSON.parse(res.stdout.slice(start, res.stdout.lastIndexOf(close) + 1));
+  const snap = (Array.isArray(body) ? body : body.rows)?.[0]?.snapshot;
   if (!snap) throw new Error("no snapshot row");
   return typeof snap === "string" ? JSON.parse(snap) : snap;
 }
