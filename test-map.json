@@ -369,6 +369,8 @@
         "supabase/migrations/**/*v_board_rides*",
         "supabase/migrations/**/*my_upcoming_rides*",
         "supabase/tests/my_upcoming_rides.sql",
+        "supabase/migrations/**/*board_rows*",
+        "supabase/tests/_board_rows_oracle.sql",
         "supabase/migrations/**/*week_board_rides*",
         "supabase/tests/week_board_rides.sql",
         "e2e/siddur-mobile.spec.ts",

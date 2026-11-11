@@ -216,7 +216,7 @@ scripts/
   e2e-isolated.mjs             `npm run e2e:isolated` — snapshot the tree, run Playwright on :8091 with E2E_SUPABASE_WORKDIR at the snapshot
   db-schema.mjs                `npm run db:schema` — writes supabase/schema-current.sql
   test-pairing-parity.mjs      SQL side of the one-way pairing golden cases (called by test-db.mjs)
-  test-db.mjs                  SQL regression runner with explicit database-container selection
+  test-db.mjs                  SQL regression runner with explicit database-container selection; appends `supabase/tests/_board_rows_oracle.sql` to every suite before its rollback (PF1: `board_rows()` must equal `v_board_rides` — a new view column goes into both in the same migration)
   fake-week.mjs                `npm run db:fake` — generates fake members/requests via submit_request for manual local testing
   impact.mjs                   `npm run impact` — change→tests→QA impact tool; matches `git diff` paths against test-map.json's per-area globs (hand-rolled `**`/`*` matcher, no new dependency)
   release.mjs                  `npm run release` — preflight, check, backup, migrations, edge functions, release tag; refuses remote/destructive steps without `--yes-remote`

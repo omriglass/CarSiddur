@@ -473,6 +473,10 @@ declare
     -- O28-8: the week's ride rows read as the owner, only when the caller manages that week and is a member of its
     -- department (else nothing; week_board_rides.sql holds it to v_board_rides and checks it returns nothing to others).
     'week_board_rides_managed:self-only',
+    -- PF1: board-ride rows for a list of ride ids, read as the owner; returns a ride only to an approved member of its
+    -- department / an admin, under rides_select's own rule. _board_rows_oracle.sql (run after every suite) compares it
+    -- with v_board_rides per viewer and requires nothing at all for a person outside the department.
+    'board_rows:self-only',
     -- REQ §13.127: "may I open this request in the edit form" for the caller only (request_related / can_manage_week of the
     -- request's own week); returns a boolean, writes nothing.
     'can_edit_request:self-only',
