@@ -2590,10 +2590,11 @@ ALTER FUNCTION "public"."_member_merge_check"("p_ride_id" "uuid", "p_source_ride
 
 
 CREATE OR REPLACE FUNCTION "public"."_merge_check"("p_ride_id" "uuid", "p_request_id" "uuid", "p_leg" "public"."ride_leg" DEFAULT 'both'::"public"."ride_leg") RETURNS "jsonb"
-    LANGUAGE "plpgsql" SECURITY DEFINER
+    LANGUAGE "plpgsql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
 declare
+  v_seat text;
   v_ride public.rides%rowtype;
   v_lim_min int; v_lim_km numeric;
   v_leg text; v_before numeric; v_after numeric; v_refused text; v_km_before numeric; v_km_after numeric;
@@ -2780,37 +2781,26 @@ begin
   -- two merge drafts that each fit alone can no longer stack past the car's seats. A guest whose row cannot be
   -- written for any other reason is skipped (its own sub-block), never a reason to skip the seat check.
   if v_err is null then
-    begin
-      delete from public.ride_requests where request_id = p_request_id and ride_id <> p_ride_id;
-      insert into public.ride_requests (ride_id, request_id, role, leg, car_mode)
-      values (p_ride_id, p_request_id, 'passenger', p_leg, 'passenger');
-      for v_other in
-        select p.request_id,
-               case when bool_or(coalesce(l->>'leg', 'both') in ('out', 'both')) and bool_or(coalesce(l->>'leg', 'both') in ('return', 'both')) then 'both'
-                    when bool_or(coalesce(l->>'leg', 'both') in ('out', 'both')) then 'out' else 'return' end as leg
-        from public.proposals p
-        cross join lateral jsonb_array_elements(coalesce(p.payload -> 'legs', '[]'::jsonb)) l
-        where p.type = 'merge' and p.status in ('draft', 'sent', 'accepted')
-          and p.request_id is not null and p.request_id <> p_request_id
-          and (l->>'ride_id')::uuid = p_ride_id and coalesce(l->>'role', 'passenger') <> 'driver'
-          and p.id::text is distinct from nullif(current_setting('app.applying_proposal', true), '')
-          and not exists (select 1 from public.ride_requests x where x.ride_id = p_ride_id and x.request_id = p.request_id)
-        group by p.request_id
-        order by p.request_id
-      loop
-        begin
-          delete from public.ride_requests where request_id = v_other.request_id and ride_id <> p_ride_id;
-          insert into public.ride_requests (ride_id, request_id, role, leg, car_mode)
-          values (p_ride_id, v_other.request_id, 'passenger', v_other.leg::public.ride_leg, 'passenger');
-        exception when others then null;
-        end;
-      end loop;
-      perform public.assert_ride_seats_fit(p_ride_id);
-      raise exception 'merge_probe_ok' using errcode = 'P0001';
-    exception when others then
-      if sqlerrm in ('seat_config_violation', 'luggage_capacity_violation') then v_err := sqlerrm;
-      elsif sqlerrm = 'needs_large_trunk' then v_err := 'merge_luggage_needs_large_trunk'; end if;
-    end;
+    -- PF1 (2026-11-11): the seat check reads; it no longer writes the guests and rolls back. Same verdicts
+    -- (ride_seats_verdict mirrors assert_ride_seats_fit over the ride's rows plus the proposed guests).
+    v_seat := public.ride_seats_verdict(p_ride_id,
+      jsonb_build_array(jsonb_build_object('request_id', p_request_id, 'leg', p_leg))
+      || coalesce((
+        select jsonb_agg(jsonb_build_object('request_id', o.request_id, 'leg', o.leg) order by o.request_id)
+        from (
+          select p.request_id,
+                 case when bool_or(coalesce(l->>'leg', 'both') in ('out', 'both')) and bool_or(coalesce(l->>'leg', 'both') in ('return', 'both')) then 'both'
+                      when bool_or(coalesce(l->>'leg', 'both') in ('out', 'both')) then 'out' else 'return' end as leg
+          from public.proposals p
+          cross join lateral jsonb_array_elements(coalesce(p.payload -> 'legs', '[]'::jsonb)) l
+          where p.type = 'merge' and p.status in ('draft', 'sent', 'accepted')
+            and p.request_id is not null and p.request_id <> p_request_id
+            and (l->>'ride_id')::uuid = p_ride_id and coalesce(l->>'role', 'passenger') <> 'driver'
+            and p.id::text is distinct from nullif(current_setting('app.applying_proposal', true), '')
+          group by p.request_id
+        ) o), '[]'::jsonb));
+    if v_seat in ('seat_config_violation', 'luggage_capacity_violation') then v_err := v_seat;
+    elsif v_seat = 'needs_large_trunk' then v_err := 'merge_luggage_needs_large_trunk'; end if;
   end if;
 
   -- R12B4 (REQ §13.119): warning only - the guest's person (requester) is already driving or riding another live
@@ -19534,6 +19524,69 @@ end $$;
 ALTER FUNCTION "public"."ride_seat_fit_check_ride"() OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."ride_seats_verdict"("p_ride_id" "uuid", "p_guests" "jsonb") RETURNS "text"
+    LANGUAGE "plpgsql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  r record;
+  v_mode text := coalesce(current_setting('app.small_trunk', true), '');
+begin
+  for r in
+    with ride as (
+      select rd.id, rd.car_id, rd.driver_id from public.rides rd where rd.id = p_ride_id and rd.status <> 'cancelled'
+    ),
+    seated as (
+      select rr.request_id, rr.role::text as role, rr.covers_out, rr.covers_return
+      from public.ride_requests rr where rr.ride_id = p_ride_id
+      union all
+      select g.request_id, 'passenger', g.leg in ('out', 'both'), g.leg in ('return', 'both')
+      from (
+        select distinct on ((e->>'request_id')::uuid) (e->>'request_id')::uuid as request_id, coalesce(e->>'leg', 'both') as leg
+        from jsonb_array_elements(coalesce(p_guests, '[]'::jsonb)) e
+        order by (e->>'request_id')::uuid
+      ) g
+      where not exists (select 1 from public.ride_requests x where x.ride_id = p_ride_id and x.request_id = g.request_id)
+        and exists (select 1 from public.requests q where q.id = g.request_id)
+    )
+    select legs.leg_side, ride.car_id,
+           sum(q.adults)
+             + case when (select coalesce(bool_or(x.role = 'driver'), false) from seated x) or coalesce(bool_or(q.requester_id = ride.driver_id), false) then 0 else 1 end as a,
+           sum(q.child_seats) as c, sum(q.boosters) as b,
+           count(*) filter (where q.has_luggage and q.luggage_waived_at is null) as lug,
+           count(*) filter (where q.needs_tow_hitch and q.luggage_waived_at is null) as tow
+    from ride
+    cross join (values ('out'), ('return')) as legs(leg_side)
+    join seated s on (legs.leg_side = 'out' and s.covers_out) or (legs.leg_side = 'return' and s.covers_return)
+    join public.requests q on q.id = s.request_id
+    group by legs.leg_side, ride.car_id
+    order by legs.leg_side
+  loop
+    if not public.car_fits(r.car_id, r.a::int, r.c::int, r.b::int) then
+      return 'seat_config_violation';
+    end if;
+    if not public.car_meets_needs(r.car_id, r.lug::int, r.tow::int) then
+      if v_mode = 'allow' then
+        null;   -- the person placing by hand accepted the car; the real write records the waiver
+      elsif v_mode = 'ask' then
+        return 'needs_large_trunk';
+      else
+        return 'luggage_capacity_violation';
+      end if;
+    end if;
+  end loop;
+  return null;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."ride_seats_verdict"("p_ride_id" "uuid", "p_guests" "jsonb") OWNER TO "postgres";
+
+
+COMMENT ON FUNCTION "public"."ride_seats_verdict"("p_ride_id" "uuid", "p_guests" "jsonb") IS 'Read-only twin of assert_ride_seats_fit() for a ride plus proposed guests [{request_id, leg}]: null = fits, else seat_config_violation / luggage_capacity_violation / needs_large_trunk. Internal (PF1).';
+
+
+
 CREATE OR REPLACE FUNCTION "public"."ride_shorten_options"("p_ride_id" "uuid", "p_car_id" "uuid", "p_starts_at" timestamp with time zone, "p_ends_at" timestamp with time zone) RETURNS "jsonb"
     LANGUAGE "plpgsql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -34856,6 +34909,11 @@ GRANT ALL ON FUNCTION "public"."ride_seat_fit_check"() TO "service_role";
 REVOKE ALL ON FUNCTION "public"."ride_seat_fit_check_ride"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."ride_seat_fit_check_ride"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."ride_seat_fit_check_ride"() TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."ride_seats_verdict"("p_ride_id" "uuid", "p_guests" "jsonb") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."ride_seats_verdict"("p_ride_id" "uuid", "p_guests" "jsonb") TO "service_role";
 
 
 

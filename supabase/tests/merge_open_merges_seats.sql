@@ -69,6 +69,31 @@ begin
   res:=public._merge_check(rA,q3,'both');
   assert (res->>'ok')::boolean, format('(c) with the first draft gone the second fits, got %s', res);
 
+  -- ===== (d) PF1: the seat check reads only, and agrees with the real write ================================
+  declare v_audit bigint; v_pure text; v_real text; g uuid; l text;
+  begin
+    assert (select provolatile from pg_proc where oid='public._merge_check(uuid,uuid,public.ride_leg)'::regprocedure)='s',
+      '(d) _merge_check is STABLE: it cannot write';
+    select count(*) into v_audit from public.audit_log;
+    perform public._merge_check(rA,q3,'both'); perform public._merge_check(rA,q2,'out');
+    assert (select count(*) from public.audit_log)=v_audit, '(d) a merge check leaves no audit rows';
+    foreach g in array array[q2,q3] loop
+      foreach l in array array['out','return','both'] loop
+        v_pure:=public.ride_seats_verdict(rA,jsonb_build_array(jsonb_build_object('request_id',g,'leg',l)));
+        v_real:=null;
+        begin
+          delete from public.ride_requests where request_id=g and ride_id<>rA;
+          insert into public.ride_requests(ride_id,request_id,role,leg,car_mode) values (rA,g,'passenger',l::public.ride_leg,'passenger');
+          perform public.assert_ride_seats_fit(rA);
+          raise exception 'probe_ok';
+        exception when others then
+          if sqlerrm in ('seat_config_violation','luggage_capacity_violation','needs_large_trunk') then v_real:=sqlerrm; end if;
+        end;
+        assert v_pure is not distinct from v_real, format('(d) ride_seats_verdict = the real write for %s %s: %s vs %s', g, l, v_pure, v_real);
+      end loop;
+    end loop;
+  end;
+
   set constraints all immediate;
   raise notice 'merge_open_merges_seats.sql: all R16B8 assertions passed';
 end $$;

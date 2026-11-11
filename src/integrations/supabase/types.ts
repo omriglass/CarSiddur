@@ -7500,6 +7500,10 @@ export type Database = {
           route: Json
         }[]
       }
+      ride_seats_verdict: {
+        Args: { p_guests: Json; p_ride_id: string }
+        Returns: string
+      }
       ride_shorten_options: {
         Args: {
           p_car_id: string
