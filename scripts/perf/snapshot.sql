@@ -21,13 +21,12 @@ select jsonb_build_object(
   'longest_active_ms', (select coalesce(max(extract(epoch from now() - query_start) * 1000)::bigint, 0)
              from pg_stat_activity where state = 'active' and backend_type = 'client backend' and pid <> pg_backend_pid()),
   'statements', (select coalesce(jsonb_agg(s), '[]'::jsonb) from (
-           -- Rank without the query texts (sorting them spills ~10 MB to disk at work_mem 2 MB), then fetch the 80 texts.
-           select t.queryid::text as id, left(regexp_replace(q.query, '\s+', ' ', 'g'), 160) as query,
-                  t.calls, round(t.total_exec_time::numeric, 1) as total_ms,
+           -- No query texts here: pg_stat_statements(true) materializes every text (~10 MB in production, more
+           -- than work_mem), so each snapshot wrote a temp file. texts.sql reads them, rarely (snapshot.mjs).
+           select t.queryid::text as id, t.calls, round(t.total_exec_time::numeric, 1) as total_ms,
                   round(t.max_exec_time::numeric, 1) as max_ms,
                   t.shared_blks_hit as hit, t.shared_blks_read as read, t.temp_blks_written as temp
-             from (select * from extensions.pg_stat_statements(false) order by total_exec_time desc limit 80) t
-             join extensions.pg_stat_statements(true) q using (userid, dbid, queryid, toplevel)
-            order by t.total_exec_time desc) s),
+             from extensions.pg_stat_statements(false) t
+            order by t.total_exec_time desc limit 80) s),
   'client_errors_1h', (select count(*) from public.client_errors where created_at > now() - interval '1 hour')
 ) as snapshot;
