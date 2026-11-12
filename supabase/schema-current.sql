@@ -1217,6 +1217,17 @@ end $$;
 ALTER FUNCTION "public"."_board_rows_build"("p_ride_ids" "uuid"[], "p_leg_depts" "uuid"[]) OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."_board_week_lock"("p_department_id" "uuid", "p_week_start" "date") RETURNS "void"
+    LANGUAGE "sql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  select pg_advisory_xact_lock(hashtextextended('board_week:' || p_department_id::text || ':' || p_week_start::text, 0));
+$$;
+
+
+ALTER FUNCTION "public"."_board_week_lock"("p_department_id" "uuid", "p_week_start" "date") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."_can_edit_car_maintenance"("p_car_id" "uuid") RETURNS boolean
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -5258,6 +5269,8 @@ declare
   v_res jsonb;
   v_out jsonb := '[]'::jsonb;
 begin
+  -- PF1 B3: the whole batch under the week's board lock, so a second "send all" finds what the first left.
+  perform public._board_week_lock(p_department_id, p_week_start);
   for v_p in
     select p.id, p.request_id, (coalesce(q.depart_at, q.return_at) at time zone 'Asia/Jerusalem')::date as day
     from public.proposals p
@@ -6473,6 +6486,9 @@ declare
 begin
   select * into v_p from public.proposals where id = p_proposal_id;
   if not found then raise exception 'proposal_not_found' using errcode = 'P0001'; end if;
+  -- PF1 B3: one board write per department week at a time; the proposal is read again under the lock.
+  perform public._board_week_lock(v_p.department_id, v_p.week_start);
+  select * into v_p from public.proposals where id = p_proposal_id;
   if not public.can_manage_week(v_p.department_id, v_p.week_start) then
     raise exception 'not_authorized' using errcode = 'P0001';
   end if;
@@ -9404,6 +9420,11 @@ declare
 begin
   select * into v_req from public.requests where id = p_request_id;
   if v_req is null then raise exception 'request_not_found' using errcode = 'P0001'; end if;
+  -- PF1 B3: board writes of one department week run one at a time; the request is read again under the lock.
+  if p_created_via = 'sadran' then
+    perform public._board_week_lock(v_req.department_id, v_req.week_start);
+    select * into v_req from public.requests where id = p_request_id;
+  end if;
 
   if p_created_via is null or p_created_via not in ('sadran','ask_to_join') then raise exception 'not_authorized'; end if;
   if p_created_via = 'sadran' and not public.can_manage_week(v_req.department_id, v_req.week_start) then
@@ -9590,6 +9611,15 @@ begin
   -- published or has passed (expire_proposals(), 20260910090000, decides that).
   -- REQ §13.94 (board drafts): one open draft per request. A new Sadran draft supersedes the
   -- older one (it becomes `withdrawn`; the status guard leaves the request alone for drafts).
+  -- DD1: the same draft asked for again (a repeated tap while the app is slow) is the draft that already exists.
+  if p_created_via = 'sadran' then
+    select pr.id into v_proposal_id from public.proposals pr
+    where pr.request_id = p_request_id and pr.status = 'draft' and pr.created_via = 'sadran' and pr.type = p_type
+      and pr.ride_id is not distinct from p_ride_id and pr.payload = p_payload
+      and pr.reason_he is not distinct from p_reason_he and pr.created_by = (select auth.uid())
+    order by pr.created_at desc, pr.id limit 1;
+    if v_proposal_id is not null then return v_proposal_id; end if;
+  end if;
   if p_created_via = 'sadran' then
     perform set_config('app.audit_reason', 'create_proposal_supersede_draft', true);
     update public.proposals set status = 'withdrawn'
@@ -21074,6 +21104,10 @@ declare
 begin
   select request_id into v_request_id from public.proposals where id=p_proposal_id;
   if v_request_id is null then raise exception 'proposal_not_found'; end if;
+  -- PF1 B3: a Sadran's send waits for other board writes of the week (an ask-to-join is sent from inside the member's
+  -- own submit, which already holds row locks — it must not wait here).
+  perform public._board_week_lock(p.department_id, p.week_start) from public.proposals p
+  where p.id = p_proposal_id and p.created_via = 'sadran';
   -- This order is also used by answer_proposal: request, proposals, then parties.
   select * into v_request from public.requests where id=v_request_id for update;
   perform 1 from public.proposals where request_id=v_request_id order by id for update;
@@ -32462,6 +32496,11 @@ GRANT ALL ON TABLE "public"."v_board_rides" TO "service_role";
 
 REVOKE ALL ON FUNCTION "public"."_board_rows_build"("p_ride_ids" "uuid"[], "p_leg_depts" "uuid"[]) FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."_board_rows_build"("p_ride_ids" "uuid"[], "p_leg_depts" "uuid"[]) TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."_board_week_lock"("p_department_id" "uuid", "p_week_start" "date") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_board_week_lock"("p_department_id" "uuid", "p_week_start" "date") TO "service_role";
 
 
 

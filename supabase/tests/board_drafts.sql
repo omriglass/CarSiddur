@@ -44,6 +44,11 @@ begin
   assert (select status='withdrawn' from public.proposals where id=dShift1), 'older draft must be superseded (withdrawn)';
   assert (select status='draft' from public.proposals where id=dShift2), 'newer draft stays draft';
   assert (select status='assigned' from public.requests where id=qA), 'superseding a draft must not touch the request status';
+  -- DD1 (PF1 B3): the identical draft asked for again is the same draft, not a second one.
+  assert public.create_proposal(qA,rA,'shift',jsonb_build_object('depart_at',dt+interval '30 minutes','return_at',dt+interval '2 hours 30 minutes'),'s2') = dShift2,
+    'an identical draft must return the existing draft';
+  assert (select count(*)=2 from public.proposals where request_id=qA), 'a repeated identical create must not add a row';
+  assert (select status='draft' from public.proposals where id=dShift2), 'the existing draft stays a draft';
   dOrigin:=public.create_proposal(qB,null,'origin',jsonb_build_object('origin_id',dest,'car_id',carA),'o1');
   assert (select status='draft' from public.proposals where id=dOrigin), 'origin draft must stay draft';
   dMerge:=public.create_proposal(qB,rA,'merge',jsonb_build_object('ride_id',rA,'starts_at',dt,

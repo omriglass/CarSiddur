@@ -12,7 +12,7 @@
     "vite.config.ts",
     "vitest.config.ts",
     "playwright.config.ts",
-    "scripts/impact.mjs",
+    "scripts/perf/**", "scripts/impact.mjs",
     "scripts/impact.test.mjs",
     "scripts/release.mjs",
     "scripts/check-migrations.mjs",

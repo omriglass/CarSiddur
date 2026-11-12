@@ -5522,6 +5522,10 @@ export type Database = {
           isSetofReturn: true
         }
       }
+      _board_week_lock: {
+        Args: { p_department_id: string; p_week_start: string }
+        Returns: undefined
+      }
       _can_edit_car_maintenance: {
         Args: { p_car_id: string }
         Returns: boolean

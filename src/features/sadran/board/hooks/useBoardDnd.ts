@@ -218,6 +218,7 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
     setChainBreakAsk(null);
   }
   const undoVersions = useRef(new Map<string, number>());
+  const draftInFlight = useRef(false);
 
   // Reservation dialog's optional people picker (F3, docs/TODO.md, owner A5 2026-09-14):
   // department members (first picked = driver) + the department's children, same source
@@ -257,6 +258,14 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
    * stays on the board. Resolves the new proposal's id (`null` when it could not be saved). `quiet`: no success toast.
    */
   async function saveDraft(prefill: ComposerPrefill, quiet = false): Promise<string | null> {
+    // DD1: the buttons are disabled only once the mutation is pending, and a preview is awaited before it —
+    // a second tap in that gap must not file a second draft.
+    if (draftInFlight.current) return null;
+    draftInFlight.current = true;
+    try { return await saveDraftNow(prefill, quiet); } finally { draftInFlight.current = false; }
+  }
+
+  async function saveDraftNow(prefill: ComposerPrefill, quiet: boolean): Promise<string | null> {
     // R5B5: the draft's stored text reads the server's merge preview, like the popup and the composer.
     const serverMerge = prefill.type === "merge" && prefill.rideId
       ? await fetchMergePreview(prefill.rideId, prefill.requestId, mergePayloadLeg(prefill.payload, requestsData.find((r) => r.id === prefill.requestId) ?? { trip_shape: "round_trip" })).catch(() => null)
@@ -287,9 +296,13 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
 
   /** "כן, כבר סיכמנו" (REQ §13.138 a, b): the draft is saved and applied at once, with no proposal. */
   async function agreeChoice(prefill: ComposerPrefill) {
-    const id = await saveDraft(prefill, true);
-    if (!id) return;
-    await agreeProposalById(id);
+    if (draftInFlight.current) return;
+    draftInFlight.current = true;
+    try {
+      const id = await saveDraftNow(prefill, true);
+      if (!id) return;
+      await agreeProposalById(id);
+    } finally { draftInFlight.current = false; }
   }
 
   function composeFromChoice() {
