@@ -1,7 +1,7 @@
 import { useActiveDepartment } from "@/features/auth/useActiveDepartment";
 import { useQuery } from "@tanstack/react-query";
 
-import { fetchCanManageWeek } from "@/features/auth/api";
+import { canManageWeek, fetchDepartmentAccess } from "@/features/auth/api";
 import { useMyDepartments } from "@/features/auth/useMyDepartments";
 import { useSession } from "@/features/auth/useSession";
 import { fetchWeeks } from "@/features/siddur/api";
@@ -22,7 +22,7 @@ const PHASE_PRIORITY: Record<string, number> = { open: 0, solving: 1, published:
  * Resolves which `(departmentId, weekStart)` the bare `/sadran` route should
  * redirect to: the first department I'm Sadran of, preferring its currently
  * open or in-progress week over a live one. Mirrors `useIsSadranAnywhere`'s resolution
- * (`can_manage_week` RPC) rather than reimplementing it.
+ * (`my_department_access`) rather than reimplementing it.
  */
 export function useDefaultSadranWeek() {
   const { session } = useSession();
@@ -39,12 +39,9 @@ export function useDefaultSadranWeek() {
         const candidates = weeks
           .filter((w) => w.phase in PHASE_PRIORITY && !isPastWeek(w, dateKey(new Date())))
           .sort((a, b) => (PHASE_PRIORITY[a.phase] ?? 99) - (PHASE_PRIORITY[b.phase] ?? 99));
-        for (const week of candidates) {
-          const allowed = await fetchCanManageWeek(departmentId, week.week_start);
-          if (allowed) {
-            return { departmentId, weekStart: week.week_start };
-          }
-        }
+        const access = candidates.length ? await fetchDepartmentAccess(departmentId) : undefined;
+        const week = candidates.find((w) => canManageWeek(access, w.week_start));
+        if (week) return { departmentId, weekStart: week.week_start };
       }
       return null;
     },

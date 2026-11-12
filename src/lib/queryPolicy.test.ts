@@ -44,12 +44,12 @@ function checkFactory(name: string, factory: Builders, expected: Record<string, 
 
 describe("query cache policy: key factories", () => {
   checkFactory("authKeys", authKeys, {
-    profile: "catalog", myDepartments: "permissions", isSadran: "permissions", isSadranAnywhere: "permissions",
+    profile: "catalog", myDepartments: "permissions", departmentAccess: "permissions",
     departmentMembers: "permissions", pushSubscriptionCount: "live",
   });
   checkFactory("carsOverviewKeys", carsOverviewKeys, { department: "catalog", checklists: "catalog" });
   checkFactory("contextKeys", contextKeys, { departments: "permissions" });
-  checkFactory("operationsKeys", operationsKeys, { access: "permissions", departments: "permissions" });
+  checkFactory("operationsKeys", operationsKeys, { departments: "permissions" });
   checkFactory("fleetKeys", fleetKeys, {
     cars: "catalog", destinations: "catalog", rideTypes: "catalog", seatConfigs: "catalog", turnaroundMinutes: "catalog",
     myTemporaryCars: "live", maintenanceBlocks: "live",
@@ -83,7 +83,7 @@ describe("query cache policy: key factories", () => {
 describe("query cache policy: freshness", () => {
   it("uses the tier's staleTime and treats everything but live as stable", () => {
     for (const [key, tier] of [
-      [["auth", "isSadran", "u", "d", "w"], "permissions"],
+      [["auth", "access", "u", "d"], "permissions"],
       [["siddur", "weeks", "d"], "weeks"],
       [["sadran", "d", "2026-10-25", "weekRow"], "weeks"],
       [["fleet", "cars", "d"], "catalog"],

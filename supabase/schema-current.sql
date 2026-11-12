@@ -13326,6 +13326,22 @@ $$;
 ALTER FUNCTION "public"."my_companion_request_ids"() OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."my_department_access"("p_department_id" "uuid") RETURNS "jsonb"
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  select jsonb_build_object(
+    'operations', public.can_manage_operations(p_department_id),
+    'any_open_week', public.can_manage_any_open_week(p_department_id),
+    'weeks', coalesce((select jsonb_agg(w.week_start order by w.week_start)
+                         from public.my_sadran_weeks() w
+                        where w.department_id = p_department_id and w.week_start is not null), '[]'::jsonb));
+$$;
+
+
+ALTER FUNCTION "public"."my_department_access"("p_department_id" "uuid") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."my_department_ids"() RETURNS SETOF "uuid"
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -34672,6 +34688,12 @@ GRANT ALL ON FUNCTION "public"."my_co_guardians"("p_department_id" "uuid") TO "a
 REVOKE ALL ON FUNCTION "public"."my_companion_request_ids"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."my_companion_request_ids"() TO "service_role";
 GRANT ALL ON FUNCTION "public"."my_companion_request_ids"() TO "authenticated";
+
+
+
+REVOKE ALL ON FUNCTION "public"."my_department_access"("p_department_id" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."my_department_access"("p_department_id" "uuid") TO "service_role";
+GRANT ALL ON FUNCTION "public"."my_department_access"("p_department_id" "uuid") TO "authenticated";
 
 
 

@@ -42,7 +42,7 @@ export const NOT_MOVED_BY_WEEK_CHANGES = new Set<unknown>(["fairnessStats", "car
 
 export type QueryTier = "permissions" | "weeks" | "catalog" | "live";
 
-const AUTH_PERMISSIONS = new Set(["departments", "isSadran", "isSadranAnywhere", "departmentMembers"]);
+const AUTH_PERMISSIONS = new Set(["departments", "access", "departmentMembers"]);
 const FLEET_CATALOG = new Set(["cars", "destinations", "rideTypes", "seatConfigs", "turnaroundMinutes"]);
 /** `["sadran", <tag>, ...]`: department-independent tags. */
 const SADRAN_GLOBAL_CATALOG = new Set(["destinations", "rideTypes", "whatsappTemplates"]);

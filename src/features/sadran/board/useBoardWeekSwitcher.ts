@@ -4,8 +4,8 @@ import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 
 import { paths } from "@/app/routes";
-import { fetchCanManageWeek } from "@/features/auth/api";
-import { authKeys } from "@/features/auth/queryKeys";
+import { canManageWeek } from "@/features/auth/api";
+import { fetchDepartmentAccessCached } from "@/features/auth/useIsSadran";
 import { useActiveDepartment } from "@/features/auth/useActiveDepartment";
 import { useMyDepartments } from "@/features/auth/useMyDepartments";
 import { useSession } from "@/features/auth/useSession";
@@ -39,10 +39,7 @@ export function useBoardWeekSwitcher(departmentId: string, weekStart: string) {
 
   async function canManage(department: string, week: string) {
     if (!profileId) return false;
-    return queryClient.fetchQuery({
-      queryKey: authKeys.isSadran(profileId, department, week),
-      queryFn: () => fetchCanManageWeek(department, week),
-    });
+    return canManageWeek(await fetchDepartmentAccessCached(queryClient, profileId, department), week);
   }
 
   const availableWeeksQuery = useQuery({

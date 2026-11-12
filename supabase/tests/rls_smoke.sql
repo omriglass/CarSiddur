@@ -917,4 +917,33 @@ begin
   raise notice 'TEST 21 PASSED: every browser-callable definer function shows its permission check (% reviewed)', cardinality(names);
 end $$;
 
+-- ---------------------------------------------------------------------------
+-- TEST 22 (PF1 / DC2a): my_department_access() gives the browser the same answers as the helpers it replaces,
+-- for every profile, department and week (weeks that exist and weeks someone is assigned to).
+-- ---------------------------------------------------------------------------
+do $$
+declare m record; d record; a jsonb; bad int; checked int := 0;
+begin
+  for m in select id from public.profiles loop
+    perform set_config('request.jwt.claims', jsonb_build_object('sub', m.id, 'role', 'authenticated')::text, true);
+    for d in select id from public.departments loop
+      a := public.my_department_access(d.id);
+      assert (a ->> 'operations')::boolean = public.can_manage_operations(d.id),
+        format('TEST 22 FAILED: operations differs for %s in %s', m.id, d.id);
+      assert (a ->> 'any_open_week')::boolean = public.can_manage_any_open_week(d.id),
+        format('TEST 22 FAILED: any_open_week differs for %s in %s', m.id, d.id);
+      select count(*) into bad from (
+        select week_start from public.weeks where department_id = d.id
+        union select week_start from public.sadran_assignments where department_id = d.id and week_start is not null
+        union select date '2099-01-04') w
+      where ((a ->> 'operations')::boolean or a -> 'weeks' ? w.week_start::text)
+            is distinct from public.can_manage_week(d.id, w.week_start);
+      assert bad = 0, format('TEST 22 FAILED: week access differs for %s in %s', m.id, d.id);
+      checked := checked + 1;
+    end loop;
+  end loop;
+  perform set_config('request.jwt.claims', '', true);
+  raise notice 'TEST 22 PASSED: my_department_access equals the helpers for % profile x department pairs', checked;
+end $$;
+
 rollback;

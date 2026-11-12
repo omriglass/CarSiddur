@@ -17,10 +17,9 @@ export const authKeys = {
   all: ["auth"] as const,
   profile: (profileId: string | undefined) => ["auth", "profile", profileId] as const,
   myDepartments: (profileId: string | undefined) => ["auth", "departments", profileId] as const,
-  isSadran: (profileId: string | undefined, departmentId: string, weekStart: string) =>
-    ["auth", "isSadran", profileId, departmentId, weekStart] as const,
-  isSadranAnywhere: (profileId: string | undefined, departmentIds: readonly string[]) =>
-    ["auth", "isSadranAnywhere", profileId, ...departmentIds] as const,
+  /** What I may manage in a department (`my_department_access`): every permission hook reads this one entry. */
+  departmentAccess: (profileId: string | undefined, departmentId: string | undefined) =>
+    ["auth", "access", profileId, departmentId] as const,
   departmentMembers: (departmentId: string | undefined, includeSelf = false) =>
     ["auth", "departmentMembers", departmentId, ...(includeSelf ? ["withSelf"] : [])] as const,
   pushSubscriptionCount: (profileId: string | undefined) =>

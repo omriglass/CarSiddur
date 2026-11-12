@@ -1282,6 +1282,8 @@ Rows whose parent is already gone (a cascade) count as Sadran-only; the parent's
 | `can_manage_week(department_id, week_start)` | `(select is_admin()) or` the `is_sadran` form |
 | `is_guardian_on_request(id)`, `is_request_companion(id)`, `is_proposal_party(id)` | `id in (select … my_guarded_request_ids() / my_companion_request_ids() / my_proposal_ids())` |
 
+The browser asks what it may manage in a department with one call, `my_department_access(dept)` → `{operations, any_open_week, weeks}` (PF1 DC2a, `20261112190000`): `can_manage_operations`, `can_manage_any_open_week`, and the weeks the caller is assigned to, so that `can_manage_week(dept, w)` = `operations` or `w` in `weeks` (`rls_smoke.sql` TEST 22). One cache entry (`authKeys.departmentAccess`) feeds `useIsSadran`, `useIsSadranAnywhere`, `useCanManageOperations` and the board's week switcher.
+
 The `my_*` set functions are `security definer stable`, granted to `authenticated`, and return only the caller's own ids. Still per row (they depend on the row, not only on the caller): `is_week_public`, `is_day_public`, `request_served_by_public_ride`, `can_manage_car`, `is_car_responsible`.
 
 **Helpers never call other helpers** (PF1, `20261108120000`): each is one query over the tables. A nested SECURITY DEFINER call costs ~35 µs, and policies call these per row — `can_manage_week` written as `is_admin() or is_sadran()` cost ~240 µs per call against ~9 µs flat. A new or changed helper inlines the rule it needs (e.g. `p.approval_status = 'approved'` instead of `is_approved()`).

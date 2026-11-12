@@ -7002,6 +7002,7 @@ export type Database = {
         }[]
       }
       my_companion_request_ids: { Args: never; Returns: string[] }
+      my_department_access: { Args: { p_department_id: string }; Returns: Json }
       my_department_ids: { Args: never; Returns: string[] }
       my_guarded_request_ids: { Args: never; Returns: string[] }
       my_proposal_ids: { Args: never; Returns: string[] }

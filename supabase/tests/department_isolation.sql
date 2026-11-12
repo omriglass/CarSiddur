@@ -456,7 +456,7 @@ declare
     'my_car_tasks:caller_scoped', 'my_ride_editor_links:caller_scoped', 'my_ride_owners:caller_scoped',
     -- PF1 / DC1: the policies' once-per-query sets — only the caller's own departments, weeks, requests and proposals.
     'my_department_ids:caller_scoped', 'my_sadran_department_ids:caller_scoped', 'my_sadran_weeks:caller_scoped',
-    'my_guarded_request_ids:caller_scoped', 'my_companion_request_ids:caller_scoped', 'my_proposal_ids:caller_scoped',
+    'my_department_access:caller_scoped', 'my_guarded_request_ids:caller_scoped', 'my_companion_request_ids:caller_scoped', 'my_proposal_ids:caller_scoped',
     'is_guardian_on_request:read-helper',
     'can_manage_any_open_week:read-helper', 'can_manage_operations:read-helper', 'can_manage_car:read-helper', 'can_define_car_checklist:read-helper', 'is_car_admin:read-helper', 'admin_set_car_admin:admin-only', 'car_base_location:read-helper',
     'can_manage_week:read-helper', 'day_date_label:read-helper', 'is_admin:read-helper',

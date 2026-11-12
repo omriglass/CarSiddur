@@ -119,19 +119,28 @@ export async function fetchSadranimOf(departmentId: string, weekStart: string): 
   return rpc("sadranim_of", { _dept: departmentId, _week: weekStart });
 }
 
-/** Server authorization includes permanent Sadrans even when somebody else is on duty. */
-export async function fetchCanManageWeek(departmentId: string, weekStart: string): Promise<boolean> {
-  return rpc("can_manage_week", { _dept: departmentId, _week: weekStart });
+/**
+ * What I may manage in one department, in one call (`my_department_access`, PF1 DC2a) — the answers of
+ * `can_manage_operations`, `can_manage_any_open_week` and, through `canManageWeek()`, `can_manage_week` for any week.
+ */
+export interface DepartmentAccess {
+  /** Admin or a permanent Sadran of the department (`can_manage_operations`). */
+  operations: boolean;
+  /** I can manage some open/solving/published/live week of it (`can_manage_any_open_week`) — the סדרן tab. */
+  anyOpenWeek: boolean;
+  /** Weeks of this department I am assigned to (`week_start`). */
+  weeks: string[];
 }
 
-/**
- * Whether I can manage *some* open/solving/published/live week of this
- * department (or hold permanent operations rights there) — one RPC instead
- * of `useIsSadranAnywhere`'s old "fetch every open/live week start, then one
- * `can_manage_week` per week" waterfall (docs/HARDENING_2026-09.md §3 item 4).
- */
-export async function fetchCanManageAnyOpenWeek(departmentId: string): Promise<boolean> {
-  return rpc("can_manage_any_open_week", { p_department_id: departmentId });
+export async function fetchDepartmentAccess(departmentId: string): Promise<DepartmentAccess> {
+  const raw = (await rpc("my_department_access", { p_department_id: departmentId })) as
+    { operations?: boolean; any_open_week?: boolean; weeks?: string[] } | null;
+  return { operations: !!raw?.operations, anyOpenWeek: !!raw?.any_open_week, weeks: raw?.weeks ?? [] };
+}
+
+/** Server authorization includes permanent Sadrans even when somebody else is on duty (`can_manage_week`). */
+export function canManageWeek(access: DepartmentAccess | undefined, weekStart: string | undefined): boolean {
+  return !!access && !!weekStart && (access.operations || access.weeks.includes(weekStart));
 }
 
 export async function registerPushSubscription(input: {
