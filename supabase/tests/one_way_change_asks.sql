@@ -1,6 +1,6 @@
 -- OW1 (REQ §13.210): changing one's own placed ride to one way asks instead of refusing.
 --   (A) week end: the car would end the week away from its base     (B) mid-week: the car's next ride starts elsewhere
---   (C) the Sadran's set_request_trip_type asks the same way         (D) a new one-way request still follows the rule
+--   (C) the Sadran's set_request_trip_type asks the same way         (D) REQ §13.211: a new one-way request asks too (form opt-in)
 -- Transactional (begin ... rollback), like the other suites.
 begin;
 do $$
@@ -105,12 +105,35 @@ begin
   assert exists(select 1 from public.rides r join public.ride_requests rr on rr.ride_id=r.id
     where rr.request_id=q1 and r.status<>'cancelled' and r.car_id=car and r.destination_id=dest), 'C: the same car, left at the destination';
 
-  -- ---- (D) a new one-way request is not an edit: the flag opens nothing ------------------------------------
+  -- ---- (D) REQ §13.211: a NEW one-way request ------------------------------------------------------------
+  -- without the form's opt-in nothing changes: not placed, waits for the Sadran
   dt:=((w+4)+time '09:00') at time zone 'Asia/Jerusalem';
   perform set_config('request.jwt.claims',jsonb_build_object('sub',m2,'role','authenticated')::text,true);
   res:=public.submit_request(jsonb_build_object('department_id',dept,'week_start',w,'destination_id',dest,'ride_type_id',typ,
-    'depart_at',dt,'trip_type','one_way','adults',1,'allow_car_away',true));
-  assert res->>'status' is distinct from 'assigned', format('D: a new one-way request still follows the rule, got %s',res);
+    'depart_at',dt,'trip_type','one_way','adults',1));
+  assert res->>'status' is distinct from 'assigned', format('D: without the opt-in the rule holds, got %s',res);
+  -- the form opts in: asked, nothing filed
+  dt:=((w+5)+time '09:00') at time zone 'Asia/Jerusalem';
+  failed:=false;
+  begin
+    perform public.submit_request(jsonb_build_object('department_id',dept,'week_start',w,'destination_id',dest,'ride_type_id',typ,
+      'depart_at',dt,'trip_type','one_way','adults',1,'car_away_ask',true));
+  exception when others then
+    assert sqlerrm='car_stays_away', format('D: wanted car_stays_away, got %s',sqlerrm);
+    failed:=true;
+  end;
+  assert failed, 'D: a new one-way request asks';
+  assert not exists(select 1 from public.requests where requester_id=m2 and week_start=w and depart_at=dt), 'D: asking files nothing';
+  -- yes: placed, the car is left at the destination
+  res:=public.submit_request(jsonb_build_object('department_id',dept,'week_start',w,'destination_id',dest,'ride_type_id',typ,
+    'depart_at',dt,'trip_type','one_way','adults',1,'car_away_ask',true,'allow_car_away',true));
+  assert res->>'status'='assigned', format('D: confirmed, placed; got %s',res);
+  assert exists(select 1 from public.rides r where r.id=(res->>'ride_id')::uuid and r.destination_id=dest), 'D: the car is left at the destination';
+  assert coalesce(current_setting('app.car_stays_away',true),'')='', 'D: the allowance does not outlive the call';
+  -- a round trip is never asked
+  res:=public.submit_request(jsonb_build_object('department_id',dept,'week_start',w,'destination_id',dest,'ride_type_id',typ,
+    'depart_at',dt+interval '1 day','return_at',dt+interval '1 day 2 hours','trip_type','round_trip','adults',1,'car_away_ask',true));
+  assert res->>'status'='assigned', format('D: a round trip is placed as always, got %s',res);
   raise notice 'one_way_change_asks: PASSED';
 end $$;
 rollback;

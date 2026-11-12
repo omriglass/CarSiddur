@@ -1,7 +1,7 @@
 import { supabase } from "@/integrations/supabase/client";
 import { ageFromBirthYear, isAdultPassenger } from "@/lib/childAge";
 import { isActiveStop, parseRouteStops, type RouteStop } from "@/lib/routeStops";
-import { rpc, toAppError } from "@/lib/rpc";
+import { AppError, rpc, toAppError } from "@/lib/rpc";
 import { withPersonBusyRetry } from "@/lib/personBusy";
 import { askShortTurnaround, parseShortTurnaround } from "@/lib/shortTurnaround";
 import { withSmallTrunkRetry } from "@/lib/smallTrunk";
@@ -883,6 +883,8 @@ export interface SubmitRequestPayload {
   confirm_release?: boolean;
   /** OW1 (REQ §13.210): the member said yes to leaving the booked car at the destination (answer to `car_stays_away`). */
   allow_car_away?: boolean;
+  /** REQ §13.211: a new one-way request asks (`car_stays_away`) instead of quietly waiting when a car is free but would be left at the destination. */
+  car_away_ask?: boolean;
   /** R2B20 / REQ §102 f: ask the server what the edit would do without changing anything. */
   probe_only?: boolean;
   /** REQ §13.111 (a): quick / car-now - ask "לשבץ בכל זאת?" when only a car without a large trunk could take a large-luggage request. */
@@ -1002,7 +1004,16 @@ export async function submitRequest(payload: SubmitRequestPayload): Promise<Json
   const send = (extra: Record<string, boolean>) => withPersonBusyRetry((allowBusy) => withSmallTrunkRetry((allowSmallTrunk) => rpc("submit_request", {
     payload: { ...payload, short_turnaround_ask: true, ...extra, ...(allowSmallTrunk ? { allow_small_trunk: true } : {}), ...(allowBusy ? { overlap_confirmed: true } : {}) } as unknown as Json,
   })));
-  return settleShortTurnaround(await send({}), () => send({ allow_short_turnaround: true }));
+  try {
+    return await settleShortTurnaround(await send({}), () => send({ allow_short_turnaround: true }));
+  } catch (error) {
+    // REQ §13.211: a new one-way request that would leave a car at the destination - nothing was filed; the form asks
+    // with the same dialog as the edit (item 210) and sends again with `allow_car_away`, or without `car_away_ask`.
+    if (!(error instanceof AppError) || error.code !== "car_stays_away") throw error;
+    let detail: { car_name?: string; next_ride?: boolean } = {};
+    try { detail = JSON.parse(error.detail ?? "{}") as typeof detail; } catch { /* generic words */ }
+    return { ok: false, needs_confirmation: "car_stays_away", unchanged: false, car_name: detail.car_name ?? "", next_ride: !!detail.next_ride } as unknown as Json;
+  }
 }
 
 /**

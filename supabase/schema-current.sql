@@ -961,10 +961,12 @@ CREATE OR REPLACE FUNCTION "public"."_auto_approve_free_car"("p_request_id" "uui
     )
     and (not p_is_one_way or public.car_week_end_ok(c.id, p_end, q.destination_id)
          -- OW1 (REQ §13.210): the person changing their own ride to one way said yes to leaving this car there.
-         or c.id::text = nullif(current_setting('app.car_stays_away', true), ''))   -- REQ §13.136 c: no next ride -> the base
+         -- REQ §13.211: 'any' — the member filing a new one-way request said yes to leaving a car there.
+         or nullif(current_setting('app.car_stays_away', true), '') in (c.id::text, 'any'))   -- REQ §13.136 c: no next ride -> the base
     -- R15B10: a car an open contested group's member could take stays theirs; the newcomer joins the group instead.
     and not public.car_held_by_waitlist_group(c.id, q.depart_at, p_end + p_turnaround, p_request_id)
-  order by (c.id = p_pref) desc nulls last, c.id
+  -- a car the trip does not strand comes first (without the allowance every row is such a car)
+  order by (not p_is_one_way or public.car_week_end_ok(c.id, p_end, q.destination_id)) desc, (c.id = p_pref) desc nulls last, c.id
   limit 1;
 $$;
 
@@ -23741,7 +23743,33 @@ begin
       end if;
     end if;
     if v_auto_result is null then
+      -- REQ §13.211: a NEW one-way request that no car takes only because the trip would leave the car at the
+      -- destination asks the member (`car_stays_away`, nothing is filed; the form opts in with `car_away_ask`) and is
+      -- placed once they said yes (`allow_car_away`). A "no" files it the usual way, to wait for the Sadran.
+      if v_trip_type = 'one_way' and (payload ->> 'request_id') is null and coalesce((payload ->> 'allow_car_away')::boolean, false) then
+        perform set_config('app.car_stays_away', 'any', true);
+      end if;
       v_auto_result := public.try_auto_approve(v_request_id);
+      perform set_config('app.car_stays_away', '', true);
+      if v_trip_type = 'one_way' and (payload ->> 'request_id') is null and coalesce(v_auto_result ->> 'status', '') <> 'assigned'
+         and coalesce((payload ->> 'car_away_ask')::boolean, false) and not coalesce((payload ->> 'allow_car_away')::boolean, false) then
+        begin
+          perform set_config('app.car_stays_away', 'any', true);
+          perform set_config('app.system_status_transition', 'on', true);
+          update public.requests set status = 'submitted', status_reason = null where id = v_request_id;
+          v_probe_away := public.try_auto_approve(v_request_id);
+          raise exception 'release_probe_rollback' using errcode = 'PXRP1';
+        exception when sqlstate 'PXRP1' then
+          null;
+        end;
+        perform set_config('app.car_stays_away', '', true);
+        if coalesce(v_probe_away ->> 'status', '') = 'assigned' then
+          v_away_car := (v_probe_away ->> 'car_id')::uuid;
+          raise exception 'car_stays_away' using errcode = 'P0001', detail = jsonb_build_object(
+            'car_name', (select c.name from public.cars c where c.id = v_away_car),
+            'next_ride', public.car_next_ride_origin(v_away_car, v_depart_at) is not null)::text;
+        end if;
+      end if;
     end if;
     if v_waived_here and coalesce(v_auto_result ->> 'status', '') <> 'assigned' then
       update public.requests set luggage_waived_at = null, luggage_waived_by = null where id = v_request_id;

@@ -2,10 +2,10 @@ import { expect, test } from "@playwright/test";
 
 import { paths } from "../src/app/routes";
 import { he } from "../src/i18n/he";
-import { NEVO_DEPARTMENT_ID, SEEDED_USERS, serviceRoleClient, signIn } from "./helpers";
+import { NEVO_DEPARTMENT_ID, SEEDED_USERS, serviceRoleClient, signIn, submitRequestForm } from "./helpers";
 import { publishedFixtureWeek } from "./published-week";
 import {
-  dayOfWeek, deleteRequests, FIXTURE_WEEKS, fillTimeField, insertRequest, jerusalemTime, memberOpenWeek, PLACES, PROFILE_IDS,
+  chooseDestination, dayOfWeek, deleteRequests, FIXTURE_WEEKS, fillTimeField, insertRequest, jerusalemTime, memberOpenWeek, PLACES, PROFILE_IDS,
   removeWeek, saveEditedRequest, setClassicForm, sharedCarIdByName, winterAt,
 } from "./request-form";
 
@@ -86,6 +86,7 @@ test.describe("request edits", { tag: ["@request-form"] }, () => {
     let requestId: string | undefined;
     let rideId: string | undefined;
     const blockerIds: string[] = [];
+    const extraIds: string[] = [];
     try {
       const carId = await sharedCarIdByName(service, "יונדאי 1");
       requestId = await insertRequest(service, day, {
@@ -184,9 +185,31 @@ test.describe("request edits", { tag: ["@request-form"] }, () => {
         expect(rides).toHaveLength(1);
         expect(rides![0]).toMatchObject({ car_id: carId, destination_id: PLACES.haifa.id });
       });
+
+      await test.step("REQ §13.211: a new one-way request asks too, then is placed", async () => {
+        const newDay = dayOfWeek(week, 3);
+        await page.goto(paths.requests.new({ week, day: newDay, time: "09:00" }));
+        await chooseDestination(page, PLACES.haifa.name);
+        const sentence = page.getByTestId("request-sentence");
+        await sentence.getByTestId("chip-trip").click();
+        await page.getByRole("radio", { name: he.request.tripTypeOneWay, exact: true }).click();
+        const done = page.getByRole("button", { name: he.requestSentence.sheetDone, exact: true });
+        await done.waitFor({ state: "visible", timeout: 2_000 }).then(() => done.click(), () => undefined);
+        await submitRequestForm(page);
+
+        const ask = page.getByRole("dialog").filter({ hasText: he.request.carStaysAwayTitle });
+        await expect(ask).toBeVisible();
+        const filed = () => service.from("requests").select("id, status, trip_type").eq("week_start", week)
+          .eq("requester_id", PROFILE_IDS.member1).neq("id", requestId as string);
+        expect((await filed()).data).toEqual([]);
+        await ask.getByRole("button", { name: he.request.carStaysAwayConfirmNew, exact: true }).click();
+        await expect.poll(async () => (await filed()).data?.map((row) => ({ status: row.status, trip_type: row.trip_type })))
+          .toEqual([{ status: "assigned", trip_type: "one_way" }]);
+        extraIds.push(...((await filed()).data ?? []).map((row) => row.id as string));
+      });
     } finally {
       if (blockerIds.length > 0) await service.from("rides").delete().in("id", blockerIds);
-      if (requestId) await deleteRequests(service, [requestId]);
+      if (requestId) await deleteRequests(service, [requestId, ...extraIds]);
       // The empty publication snapshot is immutable, so the week row itself may stay behind; its rows are removed.
       await removeWeek(service, week);
     }

@@ -915,7 +915,7 @@ export function RequestForm({
   }
 
   /** The `submit_request` payload of validated form values (also used by the unchanged probe). */
-  function buildPayload(formValues: RequestFormValues, options: { confirmRelease?: boolean; allowCarAway?: boolean }) {
+  function buildPayload(formValues: RequestFormValues, options: { confirmRelease?: boolean; allowCarAway?: boolean; carAwayDeclined?: boolean }) {
     const isSeriesRequest = isSeriesSubmit(formValues);
     const guestNamesList = guestPassengerNames(formValues.guestNames);
     // REQ §13.93: only a הקפצה without a pickup books the quick missing-driver ride; a
@@ -953,6 +953,8 @@ export function RequestForm({
       ...(waitlist ? { waitlist: true } : {}),
       ...(options.confirmRelease ? { confirm_release: true } : {}),
       ...(options.allowCarAway ? { allow_car_away: true } : {}),
+      // REQ §13.211: a new request asks before waiting for the Sadran when a car is free but would stay at the destination.
+      ...(mode === "new" && !isSeriesRequest && !options.carAwayDeclined ? { car_away_ask: true } : {}),
       // Owner 2026-10-11: "keep both" was answered — not left for the Sadran as a duplicate.
       ...(overlapConfirmedRef.current ? { overlap_confirmed: true } : {}),
       // REQ §13.111 (a): a quick / car-now request is placed right away - the server asks before using a car with no large trunk.
@@ -1003,11 +1005,11 @@ export function RequestForm({
   }
 
   // REQ §13.169 (c): every call of one save is marked as the request form's, so the riders get one notice of it.
-  function performSubmit(formValues: RequestFormValues, options: { confirmRelease?: boolean; confirmLose?: boolean; ignoreChildOverlap?: boolean; allowCarAway?: boolean } = {}) {
+  function performSubmit(formValues: RequestFormValues, options: { confirmRelease?: boolean; confirmLose?: boolean; ignoreChildOverlap?: boolean; allowCarAway?: boolean; carAwayDeclined?: boolean } = {}) {
     return asRequestFormSave(() => performSubmitCalls(formValues, options));
   }
 
-  async function performSubmitCalls(formValues: RequestFormValues, options: { confirmRelease?: boolean; confirmLose?: boolean; ignoreChildOverlap?: boolean; allowCarAway?: boolean } = {}) {
+  async function performSubmitCalls(formValues: RequestFormValues, options: { confirmRelease?: boolean; confirmLose?: boolean; ignoreChildOverlap?: boolean; allowCarAway?: boolean; carAwayDeclined?: boolean } = {}) {
     if (quickContext && (isPast || invalidTime)) return;
     setSubmitError(null);
     // Editing a multi-day request always replaces the whole series, even when it shrinks to one day (REQ §13.142).
@@ -1728,10 +1730,20 @@ export function RequestForm({
       onOpenChange={(open) => { if (!open) setPendingCarAway(null); }}
       title={t("request.carStaysAwayTitle")}
       description={pendingCarAway
-        ? tv(pendingCarAway.nextRide ? "request.carStaysAwayNextRide" : "request.carStaysAwayWeekEnd", { car: pendingCarAway.carName })
+        ? `${tv(pendingCarAway.nextRide ? "request.carStaysAwayNextRide" : "request.carStaysAwayWeekEnd", { car: pendingCarAway.carName })} ${t(mode === "new" ? "request.carStaysAwayAskNew" : "request.carStaysAwayAskEdit")}`
         : undefined}
-      confirmLabel={t("request.carStaysAwayConfirm")}
+      confirmLabel={t(mode === "new" ? "request.carStaysAwayConfirmNew" : "request.carStaysAwayConfirm")}
       loading={submitMutation.isPending}
+      extraAction={mode === "new" ? (
+        <Button type="button" variant="outline" className="min-h-11" disabled={submitMutation.isPending} data-testid="car-away-wait"
+          onClick={() => {
+            const pending = pendingCarAway;
+            setPendingCarAway(null);
+            if (pending) void performSubmit(pending.values, { carAwayDeclined: true });
+          }}>
+          {t("request.carStaysAwayWait")}
+        </Button>
+      ) : undefined}
       onConfirm={() => {
         const pending = pendingCarAway;
         setPendingCarAway(null);

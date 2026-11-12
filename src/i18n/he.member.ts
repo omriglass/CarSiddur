@@ -124,9 +124,14 @@ export const heMember = {
     releaseAffected: "מושפעים גם: {{names}}",
     /** OW1 (REQ §13.210): a change to one way leaves the booked car at the destination — ask instead of refusing. */
     carStaysAwayTitle: "הרכב יישאר ביעד",
-    carStaysAwayNextRide: "בנסיעה לכיוון אחד {{car}} לא חוזר, והנסיעה הבאה שלו יוצאת ממקום אחר. לשנות בכל זאת?",
-    carStaysAwayWeekEnd: "בנסיעה לכיוון אחד {{car}} לא חוזר, ואין אחריה נסיעה שמחזירה אותו. לשנות בכל זאת?",
+    carStaysAwayNextRide: "בנסיעה לכיוון אחד {{car}} לא חוזר, והנסיעה הבאה שלו יוצאת ממקום אחר.",
+    carStaysAwayWeekEnd: "בנסיעה לכיוון אחד {{car}} לא חוזר, ואין אחריה נסיעה שמחזירה אותו.",
+    carStaysAwayAskEdit: "לשנות בכל זאת?",
     carStaysAwayConfirm: "לשנות בכל זאת",
+    /** REQ §13.211: the same question for a new one-way request; "no" files it to wait for the Sadran. */
+    carStaysAwayAskNew: "לשבץ בכל זאת, או להמתין לסדרן/ית?",
+    carStaysAwayConfirmNew: "לשבץ בכל זאת",
+    carStaysAwayWait: "להמתין לסדרן/ית",
     releaseKeepPassengersTitle: "הנוסעים שלך יישארו בלי נהג/ת",
     releaseKeepPassengersBody: "יש רכב פנוי בשעות החדשות, אבל הנוסעים בנסיעה הנוכחית שלך יישארו בה וימתינו לנהג/ת. להמשיך?",
     overlapRefused: "הבקשה חופפת לנסיעה או לבקשה אחרת שלך ולכן לא שובצה אוטומטית — הסדרן/ית יבדוק",
