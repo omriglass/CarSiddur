@@ -18356,7 +18356,8 @@ CREATE OR REPLACE FUNCTION "public"."request_stops_with_eta"("p_request_id" "uui
   from public.request_stops s
   join public.requests q on q.id = s.request_id
   left join public.request_stop_etas(p_request_id) e on e.leg = s.leg and e."position" = s."position"
-  where s.request_id = p_request_id;
+  where s.request_id = p_request_id
+    and ((select auth.uid()) is null or public.member_of(q.department_id) or public.is_admin());
 $$;
 
 
@@ -33834,7 +33835,6 @@ GRANT ALL ON FUNCTION "public"."assign_week_sadran"() TO "service_role";
 
 
 REVOKE ALL ON FUNCTION "public"."audit_row"() FROM PUBLIC;
-GRANT ALL ON FUNCTION "public"."audit_row"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."audit_row"() TO "service_role";
 
 
@@ -33864,7 +33864,6 @@ GRANT ALL ON FUNCTION "public"."board_rows"("p_ride_ids" "uuid"[]) TO "authentic
 
 
 REVOKE ALL ON FUNCTION "public"."bump_version"() FROM PUBLIC;
-GRANT ALL ON FUNCTION "public"."bump_version"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."bump_version"() TO "service_role";
 
 
@@ -33971,13 +33970,11 @@ GRANT ALL ON FUNCTION "public"."car_held_by_waitlist_group"("p_car_id" "uuid", "
 
 
 REVOKE ALL ON FUNCTION "public"."car_issues_protect_resolution_fields"() FROM PUBLIC;
-GRANT ALL ON FUNCTION "public"."car_issues_protect_resolution_fields"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."car_issues_protect_resolution_fields"() TO "service_role";
 
 
 
 REVOKE ALL ON FUNCTION "public"."car_issues_set_department"() FROM PUBLIC;
-GRANT ALL ON FUNCTION "public"."car_issues_set_department"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."car_issues_set_department"() TO "service_role";
 
 
@@ -33993,7 +33990,6 @@ GRANT ALL ON FUNCTION "public"."car_location_excluding"("_car" "uuid", "_at" tim
 
 
 REVOKE ALL ON FUNCTION "public"."car_maintenance_blocks_set_department"() FROM PUBLIC;
-GRANT ALL ON FUNCTION "public"."car_maintenance_blocks_set_department"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."car_maintenance_blocks_set_department"() TO "service_role";
 
 
@@ -34041,7 +34037,6 @@ GRANT ALL ON FUNCTION "public"."car_week_end_ok"("_car" "uuid", "_after" timesta
 
 
 REVOKE ALL ON FUNCTION "public"."cars_protect_owner_editable_fields"() FROM PUBLIC;
-GRANT ALL ON FUNCTION "public"."cars_protect_owner_editable_fields"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."cars_protect_owner_editable_fields"() TO "service_role";
 
 
@@ -34095,7 +34090,6 @@ GRANT ALL ON FUNCTION "public"."cleanup_removed_department_member"() TO "service
 
 
 REVOKE ALL ON FUNCTION "public"."client_errors_rate_limit"() FROM PUBLIC;
-GRANT ALL ON FUNCTION "public"."client_errors_rate_limit"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."client_errors_rate_limit"() TO "service_role";
 
 
@@ -34222,13 +34216,11 @@ GRANT ALL ON FUNCTION "public"."department_stats"("p_department_id" "uuid", "p_f
 
 
 REVOKE ALL ON FUNCTION "public"."departments_create_settings"() FROM PUBLIC;
-GRANT ALL ON FUNCTION "public"."departments_create_settings"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."departments_create_settings"() TO "service_role";
 
 
 
 REVOKE ALL ON FUNCTION "public"."destinations_normalize_name"() FROM PUBLIC;
-GRANT ALL ON FUNCTION "public"."destinations_normalize_name"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."destinations_normalize_name"() TO "service_role";
 
 
@@ -34347,7 +34339,6 @@ GRANT ALL ON FUNCTION "public"."flag_car_chain_breaks"("p_car" "uuid", "p_week" 
 
 
 REVOKE ALL ON FUNCTION "public"."flag_rides_in_maintenance"() FROM PUBLIC;
-GRANT ALL ON FUNCTION "public"."flag_rides_in_maintenance"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."flag_rides_in_maintenance"() TO "service_role";
 
 
@@ -34359,7 +34350,6 @@ GRANT ALL ON FUNCTION "public"."flush_held_notices"("p_department_id" "uuid", "p
 
 
 REVOKE ALL ON FUNCTION "public"."forbid_mutation"() FROM PUBLIC;
-GRANT ALL ON FUNCTION "public"."forbid_mutation"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."forbid_mutation"() TO "service_role";
 
 
@@ -34430,7 +34420,6 @@ GRANT ALL ON FUNCTION "public"."hand_over_own_ride"("p_ride_id" "uuid", "p_expec
 
 
 REVOKE ALL ON FUNCTION "public"."handle_new_user"() FROM PUBLIC;
-GRANT ALL ON FUNCTION "public"."handle_new_user"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."handle_new_user"() TO "service_role";
 
 
@@ -34606,7 +34595,6 @@ GRANT ALL ON FUNCTION "public"."maybe_apply_accepted_proposal"("p_proposal_id" "
 
 
 REVOKE ALL ON FUNCTION "public"."member_invites_normalize_email"() FROM PUBLIC;
-GRANT ALL ON FUNCTION "public"."member_invites_normalize_email"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."member_invites_normalize_email"() TO "service_role";
 
 
@@ -34767,7 +34755,6 @@ GRANT ALL ON FUNCTION "public"."notification_default_url"("_event" "public"."not
 
 
 REVOKE ALL ON FUNCTION "public"."notifications_protect_fields"() FROM PUBLIC;
-GRANT ALL ON FUNCTION "public"."notifications_protect_fields"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."notifications_protect_fields"() TO "service_role";
 
 
@@ -34890,7 +34877,6 @@ GRANT ALL ON FUNCTION "public"."policy_current_version_matches"() TO "service_ro
 
 
 REVOKE ALL ON FUNCTION "public"."policy_versions_assign_number"() FROM PUBLIC;
-GRANT ALL ON FUNCTION "public"."policy_versions_assign_number"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."policy_versions_assign_number"() TO "service_role";
 
 
@@ -34935,25 +34921,21 @@ GRANT ALL ON FUNCTION "public"."profiles_effective_name"() TO "service_role";
 
 
 REVOKE ALL ON FUNCTION "public"."profiles_normalize_email"() FROM PUBLIC;
-GRANT ALL ON FUNCTION "public"."profiles_normalize_email"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."profiles_normalize_email"() TO "service_role";
 
 
 
 REVOKE ALL ON FUNCTION "public"."profiles_protect_admin_fields"() FROM PUBLIC;
-GRANT ALL ON FUNCTION "public"."profiles_protect_admin_fields"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."profiles_protect_admin_fields"() TO "service_role";
 
 
 
 REVOKE ALL ON FUNCTION "public"."profiles_protect_last_admin"() FROM PUBLIC;
-GRANT ALL ON FUNCTION "public"."profiles_protect_last_admin"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."profiles_protect_last_admin"() TO "service_role";
 
 
 
 REVOKE ALL ON FUNCTION "public"."profiles_require_phone_for_approval"() FROM PUBLIC;
-GRANT ALL ON FUNCTION "public"."profiles_require_phone_for_approval"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."profiles_require_phone_for_approval"() TO "service_role";
 
 
@@ -34965,7 +34947,6 @@ GRANT ALL ON FUNCTION "public"."proposal_car_conflicts"("p_proposal_id" "uuid") 
 
 
 REVOKE ALL ON FUNCTION "public"."proposal_parties_roll_up"() FROM PUBLIC;
-GRANT ALL ON FUNCTION "public"."proposal_parties_roll_up"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."proposal_parties_roll_up"() TO "service_role";
 
 
@@ -35012,7 +34993,6 @@ GRANT ALL ON FUNCTION "public"."proposals_send_ask_to_join"() TO "service_role";
 
 
 REVOKE ALL ON FUNCTION "public"."proposals_status_guard"() FROM PUBLIC;
-GRANT ALL ON FUNCTION "public"."proposals_status_guard"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."proposals_status_guard"() TO "service_role";
 
 
@@ -35057,7 +35037,6 @@ GRANT ALL ON FUNCTION "public"."publish_siddur"("p_department_id" "uuid", "p_wee
 
 
 REVOKE ALL ON FUNCTION "public"."push_outbox_notify_dispatch"() FROM PUBLIC;
-GRANT ALL ON FUNCTION "public"."push_outbox_notify_dispatch"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."push_outbox_notify_dispatch"() TO "service_role";
 
 
@@ -35186,7 +35165,6 @@ GRANT ALL ON FUNCTION "public"."request_car_tasks"("p_car_id" "uuid", "p_kinds" 
 
 
 REVOKE ALL ON FUNCTION "public"."request_companions_not_requester"() FROM PUBLIC;
-GRANT ALL ON FUNCTION "public"."request_companions_not_requester"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."request_companions_not_requester"() TO "service_role";
 
 
@@ -35294,7 +35272,6 @@ GRANT ALL ON FUNCTION "public"."request_span"("_depart" timestamp with time zone
 
 REVOKE ALL ON FUNCTION "public"."request_stop_etas"("p_request_id" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."request_stop_etas"("p_request_id" "uuid") TO "service_role";
-GRANT ALL ON FUNCTION "public"."request_stop_etas"("p_request_id" "uuid") TO "authenticated";
 
 
 
@@ -35381,7 +35358,6 @@ GRANT ALL ON FUNCTION "public"."requests_shift_anchors"() TO "service_role";
 
 
 REVOKE ALL ON FUNCTION "public"."requests_status_guard"() FROM PUBLIC;
-GRANT ALL ON FUNCTION "public"."requests_status_guard"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."requests_status_guard"() TO "service_role";
 
 
@@ -35392,7 +35368,6 @@ GRANT ALL ON FUNCTION "public"."requests_withdraw_proposals"() TO "service_role"
 
 
 REVOKE ALL ON FUNCTION "public"."requests_within_week"() FROM PUBLIC;
-GRANT ALL ON FUNCTION "public"."requests_within_week"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."requests_within_week"() TO "service_role";
 
 
@@ -35459,13 +35434,11 @@ GRANT ALL ON FUNCTION "public"."ride_change_requests_clear_inbox"() TO "service_
 
 
 REVOKE ALL ON FUNCTION "public"."ride_changes_same_day"() FROM PUBLIC;
-GRANT ALL ON FUNCTION "public"."ride_changes_same_day"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."ride_changes_same_day"() TO "service_role";
 
 
 
 REVOKE ALL ON FUNCTION "public"."ride_driver_row_check"() FROM PUBLIC;
-GRANT ALL ON FUNCTION "public"."ride_driver_row_check"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."ride_driver_row_check"() TO "service_role";
 
 
@@ -35519,13 +35492,11 @@ GRANT ALL ON FUNCTION "public"."ride_request_ride_leg"("p_ride_id" "uuid", "p_re
 
 
 REVOKE ALL ON FUNCTION "public"."ride_requests_dept_week_match"() FROM PUBLIC;
-GRANT ALL ON FUNCTION "public"."ride_requests_dept_week_match"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."ride_requests_dept_week_match"() TO "service_role";
 
 
 
 REVOKE ALL ON FUNCTION "public"."ride_requests_leg_location"() FROM PUBLIC;
-GRANT ALL ON FUNCTION "public"."ride_requests_leg_location"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."ride_requests_leg_location"() TO "service_role";
 
 
@@ -35551,7 +35522,6 @@ GRANT ALL ON FUNCTION "public"."ride_requests_sync_coverage"() TO "service_role"
 
 
 REVOKE ALL ON FUNCTION "public"."ride_requests_sync_series"() FROM PUBLIC;
-GRANT ALL ON FUNCTION "public"."ride_requests_sync_series"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."ride_requests_sync_series"() TO "service_role";
 
 
@@ -35580,13 +35550,11 @@ GRANT ALL ON FUNCTION "public"."ride_routes_json"("p_ride_ids" "uuid"[]) TO "aut
 
 
 REVOKE ALL ON FUNCTION "public"."ride_seat_fit_check"() FROM PUBLIC;
-GRANT ALL ON FUNCTION "public"."ride_seat_fit_check"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."ride_seat_fit_check"() TO "service_role";
 
 
 
 REVOKE ALL ON FUNCTION "public"."ride_seat_fit_check_ride"() FROM PUBLIC;
-GRANT ALL ON FUNCTION "public"."ride_seat_fit_check_ride"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."ride_seat_fit_check_ride"() TO "service_role";
 
 
@@ -35609,13 +35577,11 @@ GRANT ALL ON FUNCTION "public"."ride_shorten_options_for_request"("p_request_id"
 
 
 REVOKE ALL ON FUNCTION "public"."rides_before_write"() FROM PUBLIC;
-GRANT ALL ON FUNCTION "public"."rides_before_write"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."rides_before_write"() TO "service_role";
 
 
 
 REVOKE ALL ON FUNCTION "public"."rides_car_same_department"() FROM PUBLIC;
-GRANT ALL ON FUNCTION "public"."rides_car_same_department"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."rides_car_same_department"() TO "service_role";
 
 
@@ -35636,7 +35602,6 @@ GRANT ALL ON FUNCTION "public"."rides_drop_held_joins"() TO "service_role";
 
 
 REVOKE ALL ON FUNCTION "public"."rides_location_ends"() FROM PUBLIC;
-GRANT ALL ON FUNCTION "public"."rides_location_ends"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."rides_location_ends"() TO "service_role";
 
 
@@ -35662,13 +35627,11 @@ GRANT ALL ON FUNCTION "public"."rides_sync_request_coverage"() TO "service_role"
 
 
 REVOKE ALL ON FUNCTION "public"."rides_temp_car_never_relays"() FROM PUBLIC;
-GRANT ALL ON FUNCTION "public"."rides_temp_car_never_relays"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."rides_temp_car_never_relays"() TO "service_role";
 
 
 
 REVOKE ALL ON FUNCTION "public"."rides_temp_car_owner_only"() FROM PUBLIC;
-GRANT ALL ON FUNCTION "public"."rides_temp_car_owner_only"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."rides_temp_car_owner_only"() TO "service_role";
 
 
@@ -35685,7 +35648,6 @@ GRANT ALL ON FUNCTION "public"."rides_withdraw_proposals"() TO "service_role";
 
 
 REVOKE ALL ON FUNCTION "public"."rides_within_week"() FROM PUBLIC;
-GRANT ALL ON FUNCTION "public"."rides_within_week"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."rides_within_week"() TO "service_role";
 
 
@@ -35702,7 +35664,6 @@ GRANT ALL ON FUNCTION "public"."route_minutes_preview"("p_department_id" "uuid",
 
 
 REVOKE ALL ON FUNCTION "public"."sadran_assignments_require_roster_role"() FROM PUBLIC;
-GRANT ALL ON FUNCTION "public"."sadran_assignments_require_roster_role"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."sadran_assignments_require_roster_role"() TO "service_role";
 
 
@@ -35848,7 +35809,6 @@ GRANT ALL ON FUNCTION "public"."set_ride_passengers"("p_ride_id" "uuid", "p_expe
 
 
 REVOKE ALL ON FUNCTION "public"."set_updated_at"() FROM PUBLIC;
-GRANT ALL ON FUNCTION "public"."set_updated_at"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."set_updated_at"() TO "service_role";
 
 
@@ -35887,7 +35847,6 @@ GRANT ALL ON FUNCTION "public"."shorten_series"("p_request_id" "uuid", "p_depart
 
 
 REVOKE ALL ON FUNCTION "public"."siddur_versions_assign_number"() FROM PUBLIC;
-GRANT ALL ON FUNCTION "public"."siddur_versions_assign_number"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."siddur_versions_assign_number"() TO "service_role";
 
 
@@ -36080,7 +36039,6 @@ GRANT ALL ON FUNCTION "public"."waitlist_group_member_companions"() TO "service_
 
 
 REVOKE ALL ON FUNCTION "public"."waitlist_group_membership_sync"() FROM PUBLIC;
-GRANT ALL ON FUNCTION "public"."waitlist_group_membership_sync"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."waitlist_group_membership_sync"() TO "service_role";
 
 
@@ -36151,13 +36109,11 @@ GRANT ALL ON FUNCTION "public"."weekday_short_label"("d" "date") TO "service_rol
 
 
 REVOKE ALL ON FUNCTION "public"."weeks_guard_published_version"() FROM PUBLIC;
-GRANT ALL ON FUNCTION "public"."weeks_guard_published_version"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."weeks_guard_published_version"() TO "service_role";
 
 
 
 REVOKE ALL ON FUNCTION "public"."weeks_phase_requires_published_version"() FROM PUBLIC;
-GRANT ALL ON FUNCTION "public"."weeks_phase_requires_published_version"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."weeks_phase_requires_published_version"() TO "service_role";
 
 

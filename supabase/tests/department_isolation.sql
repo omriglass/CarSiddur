@@ -141,6 +141,17 @@ begin
   assert public.is_sadran_any(dept_a), 'fixture setup: sadran_a must be a real Sadran somewhere (department A)';
   assert not public.member_of(dept_b), 'fixture setup: sadran_a must not be a member of department B';
 
+  -- PF1 / DC4: a request's stops are not readable by id from another department (20261112180000).
+  insert into public.request_stops (request_id, department_id, leg, "position", place_id)
+  values (req_b, dept_b, 'out', 1, other_dest_b);
+  assert (select count(*) = 0 from public.request_stops_with_eta(req_b)),
+    'request_stops_with_eta: FAILED cross-department read returned department B''s stops';
+  perform set_config('request.jwt.claims', jsonb_build_object('sub', member_b, 'role', 'authenticated')::text, true);
+  assert (select count(*) = 1 from public.request_stops_with_eta(req_b)),
+    'positive control FAILED: department B''s own member must read the request''s stops';
+  perform set_config('request.jwt.claims', jsonb_build_object('sub', sadran_a, 'role', 'authenticated')::text, true);
+  delete from public.request_stops where request_id = req_b;
+
   -- requests -----------------------------------------------------------
   perform pg_temp.expect_refused('requests.submit_request',
     format('select public.submit_request(%L::jsonb)', jsonb_build_object(
@@ -447,17 +458,6 @@ declare
     'my_department_ids:caller_scoped', 'my_sadran_department_ids:caller_scoped', 'my_sadran_weeks:caller_scoped',
     'my_guarded_request_ids:caller_scoped', 'my_companion_request_ids:caller_scoped', 'my_proposal_ids:caller_scoped',
     'is_guardian_on_request:read-helper',
-    'audit_row:trigger', 'car_issues_protect_resolution_fields:trigger',
-    'cars_protect_owner_editable_fields:trigger', 'client_errors_rate_limit:trigger',
-    'flag_rides_in_maintenance:trigger', 'handle_new_user:trigger',
-    'proposal_parties_roll_up:trigger', 'proposals_status_guard:trigger',
-    'ride_driver_row_check:trigger', 'ride_requests_dept_week_match:trigger',
-    'ride_requests_leg_location:trigger', 'ride_requests_sync_series:trigger',
-    'ride_seat_fit_check:trigger', 'ride_seat_fit_check_ride:trigger',
-    'rides_before_write:trigger', 'rides_car_same_department:trigger',
-    'rides_location_ends:trigger', 'rides_temp_car_never_relays:trigger',
-    'rides_temp_car_owner_only:trigger', 'sadran_assignments_require_roster_role:trigger',
-    'waitlist_group_membership_sync:trigger',
     'can_manage_any_open_week:read-helper', 'can_manage_operations:read-helper', 'can_manage_car:read-helper', 'can_define_car_checklist:read-helper', 'is_car_admin:read-helper', 'admin_set_car_admin:admin-only', 'car_base_location:read-helper',
     'can_manage_week:read-helper', 'day_date_label:read-helper', 'is_admin:read-helper',
     'is_approved:read-helper', 'is_ride_editor_of:read-helper', 'is_car_responsible:read-helper', 'is_day_public:read-helper',
@@ -468,7 +468,6 @@ declare
     -- REQ §13.93 "Multi-stop rides": per-id derived-data reader referenced directly inside
     -- `v_my_requests`/`v_board_rides` (security_invoker views), same category as
     -- request_served_by_public_ride/is_request_companion above.
-    'request_stop_etas:read-helper',
     'request_stops_with_eta:read-helper',
     'ride_request_ride_leg:read-helper',
     -- REQ §13.94: per-ride route JSON read inside `v_board_rides` (security_invoker view; rows already

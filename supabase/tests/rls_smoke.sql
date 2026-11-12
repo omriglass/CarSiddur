@@ -866,4 +866,55 @@ begin
   raise notice 'TEST 20 PASSED: once-per-query sets equal the helpers for % profiles; no per-row caller-only helper in a policy', checked;
 end $$;
 
+-- ---------------------------------------------------------------------------
+-- TEST 21 (PF1 / DC4): every browser-callable SECURITY DEFINER function shows its permission check — it calls a
+-- known guard, or it is on the reviewed list below with the reason. No trigger function is browser-callable.
+-- A new RPC that only delegates (a wrapper) is added to the list with the function that checks.
+-- ---------------------------------------------------------------------------
+do $$
+declare
+  guard constant text := '(auth\.uid\(\)|is_admin\(|is_approved\(|member_of\(|is_sadran\(|is_sadran_any\(|can_manage_week\(|can_manage_operations\(|can_manage_|request_related\(|ride_related\(|not_authorized)';
+  reviewed constant text[] := array[
+    'answer_proposal: the secret token is the permission (ARCHITECTURE §8)',
+    'car_base_location: a place id of a car; cars are readable across departments (TEST 18)',
+    'day_date_label: pure formatting',
+    'edit_ride: delegates to move_series / edit_ride_before_series',
+    'enter_waiting_list: delegates to submit_request',
+    'is_day_public: policy helper, a week''s phase only',
+    'is_week_public: policy helper, a week''s phase only',
+    'member_merge_preview: delegates to _member_merge_check',
+    'profile_phones: delegates to phone_of',
+    'report_car_issue_unsafe_to_maintenance: delegates to report_car_issue_unsafe_maintenance',
+    'request_notes: delegates to can_edit_request',
+    'request_ride_change: always refuses (REQ §13.203)',
+    'request_served_by_public_ride: policy helper, a boolean about a published ride',
+    'request_waitlist_causes: delegates to waitlist_cause (related people / the week''s Sadran)',
+    'ride_route_json: delegates to _ride_route_visible',
+    'ride_shorten_options_for_request: delegates to _ride_shorten_request',
+    'sadranim_of: policy helper, who coordinates a week',
+    'submit_series_request: delegates to submit_request / _edit_series_request'
+  ];
+  names text[] := (select array_agg(split_part(r, ':', 1)) from unnest(reviewed) r);
+  bad text;
+begin
+  select string_agg(distinct p.proname, ', ') into bad
+  from pg_proc p
+  where p.pronamespace = 'public'::regnamespace and p.prokind = 'f' and p.prosecdef
+    and p.prorettype <> 'trigger'::regtype
+    and has_function_privilege('authenticated', p.oid, 'execute')
+    and p.prosrc !~* guard and p.proname <> all(names);
+  assert bad is null, format('TEST 21 FAILED: browser-callable definer functions with no visible permission check: %s', bad);
+
+  select string_agg(n, ', ') into bad from unnest(names) n
+  where not exists (select 1 from pg_proc p where p.pronamespace = 'public'::regnamespace and p.proname = n
+                      and p.prosecdef and has_function_privilege('authenticated', p.oid, 'execute') and p.prosrc !~* guard);
+  assert bad is null, format('TEST 21 FAILED: reviewed list is stale (gone, closed, or now guarded): %s', bad);
+
+  select string_agg(p.proname, ', ') into bad from pg_proc p
+  where p.pronamespace = 'public'::regnamespace and p.prorettype = 'trigger'::regtype
+    and has_function_privilege('authenticated', p.oid, 'execute');
+  assert bad is null, format('TEST 21 FAILED: trigger functions executable by authenticated: %s', bad);
+  raise notice 'TEST 21 PASSED: every browser-callable definer function shows its permission check (% reviewed)', cardinality(names);
+end $$;
+
 rollback;
