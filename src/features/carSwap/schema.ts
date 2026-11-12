@@ -19,6 +19,8 @@ export const carSwapRideSchema = z.object({
   label: z.string().nullable(),
   /** REQ §13.186 c: the driver, else the first rider, else the first named person (absent from an older server). */
   person_name: z.string().nullable().optional(),
+  /** SW2 (REQ item 213): people on this ride who asked for its current car specifically (absent from an older server). */
+  asked_for_car: z.array(z.string()).optional(),
   series_id: z.string().nullable(),
   series_index: z.number().nullable(),
   series_count: z.number().nullable(),

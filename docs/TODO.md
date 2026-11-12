@@ -1620,7 +1620,7 @@ Rule for all of these: same behaviour, proven before and after; each starts with
 ## Owner notes 2026-11-12
 
 - LT1 — **Per-destination timing.** "I need to leave here at 15:30." At the very least, a leg of a ride can be extended: "I leave X at 8:00 but will be home only at 10:00" (although the drive is shorter), and "I leave home at 10:00 but reach the place where the car is free only at 12:00" (although it is a 30-minute drive).
-- SW2 — **Warning when swapping cars:** "X asked for this car specifically — have you checked with them?"
+- SW2 — ✅ 2026-11-12 (REQ item 213, `20261112230000`) **Warning when swapping cars:** "X asked for this car specifically — have you checked with them?" A line in the swap dialog, never a refusal.
 - CS1 — **A schedule for a shared car — when it is available.** Looks like suggestions; shown in the long-term schedule.
 - PE1 — **People who may edit my rides may edit my car as I can.** A knob on the car: anyone / only family members.
 - PR1 — ✅ 2026-11-12 **Profile: the "does not drive" help said "לא אשובץ/אשובץ כנהג/ת"**; now "לא אשובץ כנהג/ת" (`he.member.ts` `doesNotDriveHelp`).

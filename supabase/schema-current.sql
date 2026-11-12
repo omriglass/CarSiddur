@@ -1952,7 +1952,8 @@ CREATE OR REPLACE FUNCTION "public"."_day_car_swap_rides_json"("p_ride_ids" "uui
       'ride_id', rd.id, 'car_id', rd.car_id, 'starts_at', rd.starts_at, 'ends_at', rd.ends_at,
       'driver_name', p.full_name, 'label', dst.name,
       'person_name', coalesce(p.full_name, rq.full_name, rp.display_name),
-      'series_id', q.series_id, 'series_index', q.series_index, 'series_count', q.series_count
+      'series_id', q.series_id, 'series_index', q.series_index, 'series_count', q.series_count,
+      'asked_for_car', coalesce(af.names, '[]'::jsonb)
     ) order by rd.starts_at), '[]'::jsonb)
   from public.rides rd
   left join public.profiles p on p.id = rd.driver_id
@@ -1974,6 +1975,14 @@ CREATE OR REPLACE FUNCTION "public"."_day_car_swap_rides_json"("p_ride_ids" "uui
     select rp1.display_name from public.ride_passengers rp1
     where rp1.ride_id = rd.id order by rp1.created_at, rp1.id limit 1
   ) rp on true
+  left join lateral (
+    select jsonb_agg(distinct pa.full_name) as names
+    from public.ride_requests rr3
+    join public.requests q3 on q3.id = rr3.request_id
+    join public.profiles pa on pa.id = q3.requester_id
+    where rr3.ride_id = rd.id and q3.preferred_car_id = rd.car_id
+      and q3.requester_id is distinct from (select auth.uid())
+  ) af on true
   where rd.id = any(p_ride_ids);
 $$;
 

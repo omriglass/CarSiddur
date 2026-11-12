@@ -8,8 +8,6 @@
 --   submit_request      -> {ok:false, needs_confirmation:'car_stays_away', car_name, next_ride}; resubmit with allow_car_away
 --   set_request_trip_type(…, p_allow_car_away) -> raises car_next_ride_elsewhere (detail ask:'car_stays_away') unless allowed
 
-drop function if exists public.set_request_trip_type(uuid, public.trip_type, integer, boolean);
-
 CREATE OR REPLACE FUNCTION public._auto_approve_free_car(p_request_id uuid, p_end timestamp with time zone, p_after interval, p_turnaround interval, p_pref uuid, p_is_one_way boolean)
  RETURNS uuid
  LANGUAGE sql
@@ -277,6 +275,9 @@ begin
   return v_first;
 end;
 $function$;
+
+-- A new parameter is a new signature: the old one is dropped (old clients' 4-argument calls resolve to the new one).
+drop function if exists public.set_request_trip_type(uuid, public.trip_type, integer, boolean);
 
 CREATE OR REPLACE FUNCTION public.set_request_trip_type(p_request_id uuid, p_trip_type trip_type, p_expected_version integer, p_keep_car boolean DEFAULT false, p_allow_car_away boolean DEFAULT false)
  RETURNS jsonb

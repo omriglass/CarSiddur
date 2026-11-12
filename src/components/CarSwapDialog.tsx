@@ -5,7 +5,7 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { carSwapBlockerMessage, carSwapRideLabel } from "@/features/carSwap/blockerMessages";
-import { carSwapConfirmDisabled, carSwapFromOptions, carSwapSeriesRangeLabel, groupCarSwapRidesByCar } from "@/features/carSwap/dialogView";
+import { carSwapAskedForCar, carSwapConfirmDisabled, carSwapFromOptions, carSwapSeriesRangeLabel, groupCarSwapRidesByCar } from "@/features/carSwap/dialogView";
 import { useCarSwapMutation, useCarSwapPreviewQuery } from "@/features/carSwap/hooks";
 import { he, tv } from "@/i18n/he";
 import { formatDayDate } from "@/lib/dayLabels";
@@ -70,6 +70,8 @@ export function CarSwapDialog({ open, onOpenChange, departmentId, weekStart, day
   // REQ §13.186: other days' rides the "whole" mode pulls in; blockers may name them too.
   const chain = preview?.chain ?? [];
   const labelRides = preview ? [...preview.rides, ...chain] : [];
+  // SW2 (REQ item 213): people on the rides that move who asked for their current car specifically.
+  const askedForCar = preview ? carSwapAskedForCar(effectiveMode === "whole" ? labelRides : preview.rides) : [];
 
   async function handleConfirm() {
     if (!preview) return;
@@ -163,6 +165,12 @@ export function CarSwapDialog({ open, onOpenChange, departmentId, weekStart, day
                 </ul>
                 <p className="text-xs text-muted-foreground">{he.carSwap.stayingConfirm}</p>
               </div>
+            ) : null}
+
+            {askedForCar.length > 0 ? (
+              <p className="rounded-md border border-amber-500/50 bg-amber-500/5 p-2" role="alert" data-testid="car-swap-asked-for-car">
+                {tv("carSwap.askedForCar", { names: askedForCar.join(", ") })}
+              </p>
             ) : null}
 
             {chain.length > 0 && effectiveMode === "whole" ? (

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { carSwapConfirmDisabled, carSwapFromOptions, carSwapSeriesRangeLabel, groupCarSwapRidesByCar } from "./dialogView";
+import { carSwapAskedForCar, carSwapConfirmDisabled, carSwapFromOptions, carSwapSeriesRangeLabel, groupCarSwapRidesByCar } from "./dialogView";
 
 import type { CarSwapPreview, CarSwapRide, CarSwapSeries } from "./schema";
 
@@ -84,5 +84,13 @@ describe("carSwapFromOptions (REQ §13.180)", () => {
     ];
     expect(carSwapFromOptions(rides)).toEqual(["13:00", "14:30"]);
     expect(carSwapFromOptions([])).toEqual([]);
+  });
+});
+
+describe("carSwapAskedForCar (REQ item 213)", () => {
+  it("lists each person once, in ride order; rides from an older server have none", () => {
+    const rides = [ride({ ride_id: "x", asked_for_car: ["דנה"] }), ride({ ride_id: "y" }), ride({ ride_id: "z", asked_for_car: ["דנה", "יואב"] })];
+    expect(carSwapAskedForCar(rides)).toEqual(["דנה", "יואב"]);
+    expect(carSwapAskedForCar([ride({ ride_id: "y" })])).toEqual([]);
   });
 });

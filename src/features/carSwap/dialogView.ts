@@ -50,3 +50,8 @@ export function carSwapFromOptions(rides: readonly CarSwapRide[]): string[] {
   const times = [...new Set(rides.map((ride) => formatTime(new Date(ride.starts_at))))].sort();
   return times.slice(1);
 }
+
+/** SW2 (REQ item 213): everyone on the moving rides who asked for their current car specifically — once each, in ride order. */
+export function carSwapAskedForCar(rides: readonly CarSwapRide[]): string[] {
+  return [...new Set(rides.flatMap((ride) => ride.asked_for_car ?? []))];
+}

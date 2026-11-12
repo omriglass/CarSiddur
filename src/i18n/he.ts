@@ -186,6 +186,8 @@ export const he = {
     chainSummary: "ההחלפה כוללת {{rides}} נסיעות ב־{{days}} ימים. גם אלה יוחלפו:",
     blockerSwapTooLarge: "ההחלפה גדולה מדי ({{rides}} נסיעות ב־{{days}} ימים) — אפשר להחליף רק את היום הזה",
     blockerArchived: "{{ride}} בשבוע שכבר בארכיון — אפשר להחליף רק את היום הזה",
+    /** SW2 (REQ item 213). */
+    askedForCar: "ביקשו את הרכב הזה במיוחד: {{names}}. בדקת איתם?",
     noticeEndsAway: "שים/י לב: {{car}} מסיים/ת את היום ב{{place}}",
     successToast: "הרכבים הוחלפו",
     notifiedToast: "נשלחו {{count}} הודעות",

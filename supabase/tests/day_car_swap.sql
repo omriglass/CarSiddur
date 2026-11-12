@@ -73,6 +73,17 @@ begin
   assert (preview ->> 'can_swap')::boolean, format('(a) expected can_swap, got %s', preview);
   assert (preview ->> 'notify')::boolean, '(a) a published day must set notify true';
   assert jsonb_array_length(preview -> 'rides') = 2, '(a) preview must list both moved rides';
+  -- SW2 (REQ item 213): someone who asked for their current car is named — never the person swapping.
+  assert not exists (select 1 from jsonb_array_elements(preview -> 'rides') x where jsonb_array_length(x -> 'asked_for_car') > 0),
+    '(a) nobody asked for a car yet';
+  update public.requests set preferred_car_id = car_a where id = q1;
+  update public.requests set preferred_car_id = car_b where id = q2;
+  preview := public.preview_day_car_swap(dept, w, day, car_a, car_b);
+  assert (select x -> 'asked_for_car' from jsonb_array_elements(preview -> 'rides') x where x ->> 'ride_id' = r2::text)
+         = jsonb_build_array((select full_name from public.profiles where id = member2)), format('(a) member2 asked for car_b, got %s', preview -> 'rides');
+  assert (select jsonb_array_length(x -> 'asked_for_car') from jsonb_array_elements(preview -> 'rides') x where x ->> 'ride_id' = r1::text) = 0,
+    '(a) the person swapping is not warned about their own wish';
+  assert (preview ->> 'can_swap')::boolean, '(a) the warning never blocks';
 
   result := public.swap_day_cars(dept, w, day, car_a, car_b, preview ->> 'fingerprint');
   assert (result ->> 'moved_rides')::int = 2, format('(a) expected 2 moved rides, got %s', result);
