@@ -528,6 +528,10 @@ Every family refetches when the window regains focus (a resumed PWA catches up);
 
 Edits still show at once for the person who made them: `invalidateQueries` ignores `staleTime`, and any successful mutation made on an `/admin/**` page invalidates all non-30 s families (`MutationCache.onSuccess`). Other writers (the Sadran on the board, members' profile) already invalidate their own keys.
 
+**Catalogs survive a page reload (2026-11-12, PF1; `src/lib/catalogPersist.ts`).** The catalog-tier queries — and only those: never rides, requests, members or permissions — are saved on the device (`localStorage`, key `carshare.catalogCache.v1`, per member and app version) and put back before the first screen mounts (`setCatalogOwner()` from `SessionProvider`). A copy younger than the 10-minute catalog freshness is used as is (the same freshness the in-memory policy already allows); an older one (up to 7 days) is shown at once and re-read 8 s later, after the screen's own calls; another member's or another version's copy is discarded, and sign-out clears it. Measured on the debug copy: a board reload 42 → 32 API calls, a siddur reload 37 → 30.
+
+**Slow calls are recorded (2026-11-12, PF1; `src/lib/slowCalls.ts`).** The client's `fetch` wrapper times every database call; calls over 3 s are summarized into one `client_errors` row (context `perf:slow`: names, durations, calls in flight — no query strings or bodies) once the page has had no call in flight for 10 s. At most one report per 5 minutes and 6 per page, never retried, and the report's own insert is not timed — a slow moment never gets an extra call from it.
+
 Polling: only three timers remain — the unread-notification count (60 s), the Inbox's unscoped ride-change answer block (`useRideChanges` without `scoped`, 60 s; RLS limits it to what the person may see in all their departments, current week onward) and the "waiting for approval" page's profile check. Week screens do not poll their lists; they watch change counters (below). Idle screens otherwise make no requests.
 
 #### Change counters and live updates (REQ item 149)
