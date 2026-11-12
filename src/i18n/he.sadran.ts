@@ -759,6 +759,11 @@ export const heSadran = {
     title: "למשוך את הבקשה של {{name}} ככפילות?",
     description: "הבקשה תוסר מהלוח והחבר/ה יקבל/תקבל הודעה. אם זו לא כפילות, אפשר יהיה לענות שצריך את שתי הבקשות והבקשה תחזור.",
     confirm: "משוך/י ככפילות",
+    /** What goes with the request (production 2026-11-12): one line per ride that changes. */
+    effectsTitle: "שימו לב — זה גם:",
+    effectGuest: "מוריד את {{name}} מהנסיעה של {{driver}} ב{{day}} ב־{{time}}",
+    effectGuestNoDriver: "מוריד את {{name}} מהנסיעה המשותפת ב{{day}} ב־{{time}}",
+    effectOwn: "מבטל את הנסיעה של {{name}} ב{{day}} ב־{{time}}",
     done: "הבקשה של {{name}} נמשכה ככפילות",
   },
   /** REQ §13.162: is a cancelled request still needed? (ride sheet "בטל נסיעה", unmet card ⋮, change log return). */
