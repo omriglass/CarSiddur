@@ -184,6 +184,7 @@ export type ErrorCode =
   | "person_busy"
   | "ride_move_needs_agreement"
   | "car_fields_locked"
+  | "car_has_upcoming_rides"
   | "ride_week_not_public"
   | "push_unsupported"
   | "push_permission_denied"
@@ -357,6 +358,7 @@ const MESSAGE_TO_CODE: Record<string, ErrorCode> = {
   person_busy: "person_busy",
   ride_move_needs_agreement: "ride_move_needs_agreement",
   car_fields_locked: "car_fields_locked",
+  car_has_upcoming_rides: "car_has_upcoming_rides",
   ride_driver_already_assigned: "driver_assigned",
   ride_in_past: "ride_past",
   invalid_preferred_car: "preferred_car_invalid",
@@ -530,6 +532,7 @@ const CODE_TO_MESSAGE: Record<ErrorCode, string> = {
   person_busy: he.errors.personBusy,
   ride_move_needs_agreement: he.errors.rideMoveNeedsAgreement,
   car_fields_locked: he.errors.carFieldsLocked,
+  car_has_upcoming_rides: he.errors.carHasUpcomingRides,
   driver_assigned: he.rideCoordination.noLongerMissing,
   ride_past: he.rideCoordination.past,
   preferred_car_invalid: he.rideCoordination.invalidPreferredCar,

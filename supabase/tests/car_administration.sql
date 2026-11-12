@@ -233,4 +233,33 @@ begin
   assert (select count(*) from public.car_odometer_readings) = 0, 'a stranger read kilometrage history';
 end $$;
 
+-- REQ item 212: a car with an upcoming ride cannot be retired; a cancelled ride does not count.
+reset role;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000000101","role":"authenticated"}', true);
+do $$
+declare
+  dept uuid := '00000000-0000-0000-0000-000000000001';
+  car uuid := '31000000-0000-0000-0000-000000000001';
+  wk date := (date_trunc('week', (now() at time zone 'Asia/Jerusalem') + interval '1 day')::date - 1) + 7;
+  home uuid;
+  rid uuid;
+  v text;
+begin
+  select home_destination_id into home from public.departments where id = dept;
+  insert into public.weeks (department_id, week_start, phase, open_at, close_at, publish_at)
+  values (dept, wk, 'open', now() - interval '1 day', now() + interval '1 day', now() + interval '2 days') on conflict do nothing;
+  insert into public.rides (department_id, week_start, car_id, starts_at, ends_at, origin_id, destination_id, driver_id, status, created_by)
+  values (dept, wk, car, (wk + 1)::timestamp at time zone 'Asia/Jerusalem' + interval '9 hours',
+          (wk + 1)::timestamp at time zone 'Asia/Jerusalem' + interval '11 hours', home, home,
+          '00000000-0000-0000-0000-000000000104', 'confirmed', '00000000-0000-0000-0000-000000000101')
+  returning id into rid;
+  v := pg_temp.err_of(format('update public.cars set status = ''retired'' where id = %L', car));
+  assert v = 'car_has_upcoming_rides', format('retiring a car with an upcoming ride must refuse, got %s', v);
+  assert (select status from public.cars where id = car) = 'active', 'the car stayed in use';
+  update public.cars set status = 'maintenance' where id = car;   -- maintenance is not covered
+  update public.rides set status = 'cancelled', cancelled_at = now(), cancelled_by = '00000000-0000-0000-0000-000000000101', cancel_reason = 'test' where id = rid;
+  update public.cars set status = 'retired' where id = car;
+  assert (select retired_at from public.cars where id = car) is not null, 'retired once the ride is cancelled';
+end $$;
+
 rollback;

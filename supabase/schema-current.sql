@@ -8766,6 +8766,28 @@ $$;
 ALTER FUNCTION "public"."cars_protect_owner_editable_fields"() OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."cars_refuse_retire_with_rides"() RETURNS "trigger"
+    LANGUAGE "plpgsql"
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  v_count int;
+begin
+  select count(*) into v_count
+    from public.rides r
+   where r.car_id = new.id and r.status <> 'cancelled' and r.ends_at > now();
+  if v_count > 0 then
+    raise exception 'car_has_upcoming_rides'
+      using errcode = 'P0001', detail = jsonb_build_object('count', v_count)::text;
+  end if;
+  return new;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."cars_refuse_retire_with_rides"() OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."cars_track_retired_at"() RETURNS "trigger"
     LANGUAGE "plpgsql"
     SET "search_path" TO 'public', 'pg_temp'
@@ -29937,6 +29959,10 @@ CREATE OR REPLACE TRIGGER "cars_protect_owner_editable_fields" BEFORE UPDATE ON 
 
 
 
+CREATE OR REPLACE TRIGGER "cars_refuse_retire_with_rides" BEFORE UPDATE OF "status" ON "public"."cars" FOR EACH ROW WHEN ((("new"."status" = 'retired'::"public"."car_status") AND ("old"."status" IS DISTINCT FROM 'retired'::"public"."car_status"))) EXECUTE FUNCTION "public"."cars_refuse_retire_with_rides"();
+
+
+
 CREATE OR REPLACE TRIGGER "cars_responsible_changed" AFTER UPDATE OF "responsible_id" ON "public"."cars" FOR EACH ROW WHEN (("new"."responsible_id" IS DISTINCT FROM "old"."responsible_id")) EXECUTE FUNCTION "public"."car_responsible_changed"();
 
 
@@ -34125,6 +34151,11 @@ GRANT ALL ON FUNCTION "public"."car_week_end_ok"("_car" "uuid", "_after" timesta
 
 REVOKE ALL ON FUNCTION "public"."cars_protect_owner_editable_fields"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."cars_protect_owner_editable_fields"() TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."cars_refuse_retire_with_rides"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."cars_refuse_retire_with_rides"() TO "service_role";
 
 
 

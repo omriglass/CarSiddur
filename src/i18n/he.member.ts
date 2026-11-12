@@ -1223,7 +1223,7 @@ export const heMember = {
     privateStateOnNoName: "רכב פרטי (מושאל)",
     privateSwitchLabel: "רכב פרטי (מושאל)",
     privateTurnOnTitle: "הפיכת הרכב לפרטי",
-    privateTurnOnDescription: "ברכב פרטי רק הבעלים נוהג/ת בו, והוא מוסתר מהסידור בימים בלי נסיעה.",
+    privateTurnOnDescription: "זה יוציא את הרכב מהסידור, ורק את/ה תוכל/י לשבץ אנשים אליו.",
     privateOwnerLabel: "מי משתמש/ת ברכב?",
     privateOwnerPlaceholder: "בחירת חבר/ה",
     privateOwnerMe: "{{name}} (אני)",
@@ -1231,7 +1231,7 @@ export const heMember = {
     privateUpcomingWarning:
       "לרכב יש {{count}} נסיעות קרובות עם נהג/ת אחר/ת. ברכב פרטי לא ניתן לערוך או להזיז אותן עד שהרכב יחזור להיות משותף.",
     privateTurnOffTitle: "להחזיר את הרכב להיות משותף?",
-    privateTurnOffDescription: "הרכב יחזור להיות זמין לכל חברי המחלקה.",
+    privateTurnOffDescription: "זה יכניס את הרכב לסידור באופן קבוע, ואנשים ישבצו את עצמם לנסיעות עליו.",
     privateTurnOffConfirm: "החזרה לרכב משותף",
     privateSavedOn: "הרכב עכשיו פרטי",
     privateSavedOff: "הרכב חזר להיות משותף",
