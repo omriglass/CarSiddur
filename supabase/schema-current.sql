@@ -20299,6 +20299,7 @@ CREATE OR REPLACE FUNCTION "public"."rides_withdraw_proposals"() RETURNS "trigge
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
 declare v_id uuid; v_skip text := coalesce(nullif(current_setting('app.applying_proposal', true), ''), '');
+  v_reason text := current_setting('app.audit_reason', true);
 begin
   for v_id in
     select p.id from public.proposals p
@@ -20308,6 +20309,15 @@ begin
   loop
     perform public.proposal_system_withdraw(v_id, 'withdrawn_ride');
   end loop;
+  if exists (select 1 from public.proposals p
+              where p.status = 'draft' and p.id::text <> v_skip
+                and (p.ride_id = new.id or (p.payload -> 'host_versions') ? new.id::text)) then
+    perform set_config('app.audit_reason', 'draft_ride_cancelled', true);
+    update public.proposals p set status = 'withdrawn'
+     where p.status = 'draft' and p.id::text <> v_skip
+       and (p.ride_id = new.id or (p.payload -> 'host_versions') ? new.id::text);
+    perform set_config('app.audit_reason', coalesce(v_reason, ''), true);
+  end if;
   return new;
 end $$;
 

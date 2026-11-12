@@ -154,6 +154,30 @@ begin
     assert sqlerrm in ('invalid_token','proposal_not_answerable'), format('main token must be dead, got %s',sqlerrm);
   end;
 
+  -- DD2: a cancelled ride discards the drafts that refer to it (its own shift draft, a merge draft it hosts);
+  -- a draft on another ride stays.
+  declare qD uuid; qE uuid; rD uuid; rE uuid; dD uuid; dE uuid; dKeep uuid; dt3 timestamptz:=((w+3)+time '08:00') at time zone 'Asia/Jerusalem';
+  begin
+    insert into public.requests(department_id,week_start,requester_id,filed_by,destination_id,ride_type_id,depart_at,return_at,trip_shape,status)
+      values(dept,w,member,manager,dest,typ,dt3,dt3+interval '2 hours','round_trip','assigned') returning id into qD;
+    insert into public.requests(department_id,week_start,requester_id,filed_by,destination_id,ride_type_id,depart_at,return_at,trip_shape,status)
+      values(dept,w,other,manager,dest,typ,dt3,dt3+interval '2 hours','round_trip','submitted') returning id into qE;
+    insert into public.rides(department_id,week_start,car_id,starts_at,ends_at,origin_id,destination_id,driver_id,status,created_by)
+      values(dept,w,carA,dt3,dt3+interval '2 hours',home,home,member,'draft',manager) returning id into rD;
+    insert into public.ride_requests(ride_id,request_id,role,leg,car_mode) values(rD,qD,'driver','both','keep');
+    dD:=public.create_proposal(qD,rD,'shift',jsonb_build_object('depart_at',dt3+interval '15 minutes','return_at',dt3+interval '2 hours 15 minutes'),'dd2 shift');
+    dE:=public.create_proposal(qE,rD,'merge',jsonb_build_object('ride_id',rD,'starts_at',dt3,
+      'legs',jsonb_build_array(jsonb_build_object('ride_id',rD,'leg','both','car_mode','passenger'))),'dd2 merge');
+    select id into dKeep from public.proposals where status='draft' and id not in (dD,dE) limit 1;
+    assert (select count(*)=2 from public.proposals where id in (dD,dE) and status='draft'), 'DD2 setup: two drafts on the ride';
+    update public.rides set status='cancelled',cancelled_at=now(),cancelled_by=manager,cancel_reason='dd2' where id=rD;
+    assert (select count(*)=2 from public.proposals where id in (dD,dE) and status='withdrawn'),
+      'DD2: a cancelled ride must discard its drafts';
+    assert dKeep is null or (select status='draft' from public.proposals where id=dKeep), 'DD2: a draft on another ride stays';
+    assert not exists(select 1 from public.notifications where data->>'proposal_id' in (dD::text,dE::text)),
+      'DD2: discarding a draft tells nobody';
+  end;
+
   raise notice 'board_drafts.sql: all assertions passed';
 end $$;
 rollback;
