@@ -538,7 +538,7 @@ A plain list, newest first, grouped by day. Each item: icon by category, title, 
 
 Sections in cards:
 
-1. **פרטים** — name, phone (required, edit inline), Google email (read-only), child seats I usually need (default for the stepper); a **אני לא נוהג/ת** switch (REQ §88, `profiles.does_not_drive`, default off — everyone can drive unless they say otherwise) with the helper "לא אשובץ/אשובץ כנהג/ת; אפשר להביא נהג/ת אורח/ת" — the solver and Sadran then never place this member as a driver/relay, only as a passenger/chauffeur or with a guest driver on a round trip.
+1. **פרטים** — name, phone (required, edit inline), Google email (read-only), child seats I usually need (default for the stepper); a **אני לא נוהג/ת** switch (REQ §88, `profiles.does_not_drive`, default off — everyone can drive unless they say otherwise) with the helper "לא אשובץ כנהג/ת; אפשר להביא נהג/ת אורח/ת" — the solver and Sadran then never place this member as a driver/relay, only as a passenger/chauffeur or with a guest driver on a round trip.
 1a. **טופס הבקשה הקלאסי** switch (REQ §13.110 e, `profiles.classic_request_form`, default off) with the hint "הטופס הישן, שדה אחרי שדה" — on: every request form (new, edit, quick, car-now) uses the old field-by-field layout (§3.4); off: the sentence layout (§3.4a). Same data either way.
 1b. *(Removed 2026-10-16: the week/list choice is the `/my` eye menu, remembered per device — §3.3a; REQ §13.134.)*
 2. **מחלקות** — chips of my departments, star marks the default; joining another department is an Admin action ("לבקשת שינוי פנה/י למנהל/ת").

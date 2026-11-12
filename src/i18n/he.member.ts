@@ -712,7 +712,7 @@ export const heMember = {
     /** REQ §88 (owner 2026-09-15): a member marks themselves as never driving; the solver
      * and Sadran then place them only as a passenger/chauffeur, never as a driver. */
     doesNotDriveLabel: "אני לא נוהג/ת",
-    doesNotDriveHelp: "לא אשובץ/אשובץ כנהג/ת; אפשר להביא נהג/ת אורח/ת",
+    doesNotDriveHelp: "לא אשובץ כנהג/ת; אפשר להביא נהג/ת אורח/ת",
     /** REQ §13.110 (e): the member's choice of the old field-by-field request form. */
     classicRequestFormLabel: "טופס הבקשה הקלאסי",
     classicRequestFormHelp: "הטופס הישן, שדה אחרי שדה",
