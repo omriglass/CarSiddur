@@ -1,3 +1,4 @@
+import { fetchWeekPart } from "@/features/rides/api";
 import { ensureDepartmentWeeks } from "@/features/siddur/api";
 import { supabase } from "@/integrations/supabase/client";
 import { REQUEST_COLUMNS, type ReadableRequestRow } from "@/lib/requestColumns";
@@ -102,17 +103,8 @@ export interface WeekRequestRow extends RequestRow {
   stops: { leg: "out" | "return"; position: number; active?: boolean; place_id: string | null; place_text?: string | null; place?: { name: string } | null }[];
 }
 
-const WEEK_REQUEST_SELECT = `${REQUEST_COLUMNS},
-  requester:profiles!requests_requester_id_fkey(full_name, does_not_drive),
-  filer:profiles!requests_filed_by_fkey(full_name),
-  destination:destinations!requests_destination_id_fkey(name, travel_minutes),
-  origin:destinations!requests_origin_id_fkey(name),
-  ride_type:ride_types(code, name_he),
-  preferred_car:cars!requests_preferred_car_id_fkey(name),
-  companions:request_companions(profile_id, profile:profiles!request_companions_profile_id_fkey(full_name, does_not_drive)),
-  request_children(child:children(full_name)),
-  stops:request_stops(leg, position, place_id, place_text, place:destinations(name)),
-  ${REQUEST_ALTERNATIVE_EMBED}`;
+// The board's requests with their embedded names are the `requests` part of `week_parts()` (20261112233000):
+// the columns of `REQUEST_COLUMNS` plus the embedded rows of `WeekRequestJoinRow` below.
 
 interface WeekRequestJoinRow extends RequestRow {
   alternative: RequestAlternativeEmbed | null;
@@ -159,14 +151,7 @@ function flattenWeekRequest(row: WeekRequestJoinRow): WeekRequestRow {
 
 export async function fetchWeekRow(departmentId: string, weekStart: string): Promise<WeekRow | null> {
   await ensureDepartmentWeeks(departmentId);
-  const { data, error } = await supabase
-    .from("weeks")
-    .select("*")
-    .eq("department_id", departmentId)
-    .eq("week_start", weekStart)
-    .maybeSingle();
-  if (error) throw toAppError(error);
-  return data;
+  return fetchWeekPart<WeekRow | null>(departmentId, weekStart, "week");
 }
 
 // ---------------------------------------------------------------------------
@@ -235,13 +220,7 @@ export async function fetchWeekRequestsWithNames(
   departmentId: string,
   weekStart: string,
 ): Promise<WeekRequestRow[]> {
-  const { data, error } = await supabase
-    .from("requests")
-    .select(WEEK_REQUEST_SELECT)
-    .eq("department_id", departmentId)
-    .eq("week_start", weekStart);
-  if (error) throw toAppError(error);
-  const rows = (data ?? []) as unknown as Omit<WeekRequestJoinRow, "notes">[];
+  const rows = await fetchWeekPart<Omit<WeekRequestJoinRow, "notes">[]>(departmentId, weekStart, "requests");
   const notes = await fetchRequestNotes(rows);
   return rows.map((row) => flattenWeekRequest({ ...row, notes: notes.get(row.id) ?? null }));
 }
@@ -759,14 +738,7 @@ export async function setRidePassengers(rideId: string, expectedVersion: number,
 // ---------------------------------------------------------------------------
 
 export async function fetchProposalsForWeek(departmentId: string, weekStart: string): Promise<ProposalRow[]> {
-  const { data, error } = await supabase
-    .from("proposals")
-    .select("*")
-    .eq("department_id", departmentId)
-    .eq("week_start", weekStart)
-    .order("created_at", { ascending: false });
-  if (error) throw toAppError(error);
-  return data ?? [];
+  return fetchWeekPart<ProposalRow[]>(departmentId, weekStart, "proposals");
 }
 
 export async function fetchProposalParties(proposalId: string): Promise<ProposalPartyRow[]> {
@@ -974,10 +946,7 @@ export async function previewSendAll(departmentId: string, weekStart: string, da
 export type HeldNotice = Pick<Database["public"]["Tables"]["held_notices"]["Row"], "id" | "day" | "recipient_id" | "subject_kind" | "subject_id">;
 
 export async function fetchHeldNotices(departmentId: string, weekStart: string): Promise<HeldNotice[]> {
-  const { data, error } = await supabase.from("held_notices").select("id, day, recipient_id, subject_kind, subject_id")
-    .eq("department_id", departmentId).eq("week_start", weekStart);
-  if (error) throw toAppError(error);
-  return data ?? [];
+  return fetchWeekPart<HeldNotice[]>(departmentId, weekStart, "heldNotices");
 }
 
 /** REQ §13.138 (d, e): delivers the held board notices of `days` (null = all); resolves how many notices went out. */
@@ -1016,14 +985,7 @@ export type FreedOfferWithCar = FreedSlotOfferRow & {
 };
 
 export async function fetchFreedOffersForWeek(departmentId: string, weekStart: string): Promise<FreedOfferWithCar[]> {
-  const { data, error } = await supabase
-    .from("freed_slot_offers")
-    .select("*, car:cars!freed_slot_offers_car_id_fkey(name), cancelled_ride:rides!freed_slot_offers_cancelled_ride_id_fkey(starts_at, ends_at)")
-    .eq("department_id", departmentId)
-    .eq("week_start", weekStart)
-    .order("created_at", { ascending: false });
-  if (error) throw toAppError(error);
-  return (data ?? []) as unknown as FreedOfferWithCar[];
+  return fetchWeekPart<FreedOfferWithCar[]>(departmentId, weekStart, "freedOffers");
 }
 
 /** QA run 17 R17B5: rank a waiting freed car again (new waiting-list requests since it was freed). */
@@ -1218,10 +1180,7 @@ export async function publishSiddur(departmentId: string, weekStart: string, sco
 
 /** All non-cancelled rides of the week, for the board, the publish diff and blocking-conflicts checks (`week_board_rides` = the week's `v_board_rides` rows, same RLS). */
 export async function fetchAllWeekRides(departmentId: string, weekStart: string): Promise<BoardRide[]> {
-  const { data, error } = await supabase
-    .rpc("week_board_rides", { p_department_id: departmentId, p_week_start: weekStart });
-  if (error) throw toAppError(error);
-  return data ?? [];
+  return fetchWeekPart<BoardRide[]>(departmentId, weekStart, "rides");
 }
 
 // ---------------------------------------------------------------------------

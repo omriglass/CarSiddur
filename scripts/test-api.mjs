@@ -22,7 +22,9 @@
 //   maintenance (REQ 13.114) the responsible member creates / shortens a period, a plain member is refused; flagging; responsibility moves
 //   live     (REQ 13.118) a member cancelling a chauffeur ride frees its car; the Sadran replaces a volunteer driver in one step; a placed multi-day series moves to another car on every day or not at all
 //   neighbours a member reads v_ride_car_neighbours (next/previous ride on the car, tight gap) for a published ride
+//   weekparts (PF1 DC2b) last: on every week the cases above filled, week_parts() answers what the separate calls answer, for the Sadran and two members
 import { resolveApi, serviceClient, signedInClient, ADMIN_PASSWORD } from "./qa/qa-common.mjs";
+import { compareWeekParts, WEEK_PARTS } from "./qa/week-parts-oracle.mjs";
 
 const api = resolveApi();
 const svc = serviceClient(api);
@@ -748,6 +750,23 @@ try {
       const plain = await m1.rpc("edit_ride", { p_ride: payload(legs[1], from), p_expected_version: (await rideRow(legs[1].id)).version });
       check("  a plain member cannot move it", !!plain.error, errText(plain));
     }
+  });
+
+  // ---------------------------------------------------------------------------------------------- week_parts (PF1 DC2b)
+  await section("weekparts: one call answers what the separate calls answer", async () => {
+    const seen = Object.fromEntries(WEEK_PARTS.map((part) => [part, 0]));
+    const differ = [];
+    for (const wk of [...madeWeeks].sort()) {
+      for (const [who, client] of [["sadran", sadran], ["member1", m1], ["member2", m2]]) {
+        const result = await compareWeekParts(client, DEPT, wk);
+        for (const [part, n] of Object.entries(result.rows)) seen[part] += n;
+        for (const part of result.differ) differ.push(`${who} ${wk} ${part}`);
+      }
+    }
+    check(`every part equals its own call (${madeWeeks.size} weeks x 3 users)`, differ.length === 0, differ.join("; "));
+    const empty = ["rides", "requests", "proposals", "week"].filter((part) => seen[part] === 0);
+    check("  the compared weeks hold rides, requests and proposals", empty.length === 0, `no rows for: ${empty.join(", ")}`);
+    console.log(`     rows compared: ${Object.entries(seen).map(([part, n]) => `${part} ${n}`).join(", ")}`);
   });
 
 } finally {

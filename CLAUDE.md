@@ -119,6 +119,7 @@ src/
     dayLabels.ts                weekdayLabel(instant, style) — kept out of time.ts so it stays i18n-free
     enums.ts                   single TS home for SQL enum value lists (hard rule 9): one `as const satisfies readonly Enums<'x'>[]` array + derived type + zod schema + `assertSameEnum<>()` per enum actually used in TS; `enums.test.ts` checks no duplicates and array/schema parity
     rpc.ts                     typed `rpc()` wrapper, `toAppError()` (SQLSTATE → `he.errors.*`), `showErrorToast()`
+    weekPartsBatcher.ts        PF1 DC2b: week reads that start together travel as one `week_parts()` call (`fetchWeekPart` in `features/rides/api.ts`); a new week-scoped read of the board/siddur becomes a part there, not a new API call
     push.ts                    push subscription helpers
     whatsapp.ts                wa.me link builder (no Hebrew; copy comes from DB)
     notificationEvents.ts      `NOTIFICATION_EVENT_META: Record<NotificationEvent, …>` (category, memberMutable, sadranRole, weekScoped) — TS mirror of the SQL `notification_event_meta` table; mute categories and inbox tabs derive from it
@@ -254,7 +255,7 @@ scripts/
 - Every table: `id uuid pk default gen_random_uuid()`, `created_at/updated_at timestamptz not null default now()` + `set_updated_at()`. State tables also `bump_version()` (optimistic concurrency) and `audit_row()`.
 - `department_id` denormalized onto every department-scoped row; week-scoped rows carry `(department_id, week_start)` with a composite FK to `weeks`, so RLS never joins.
 - Policies use `(select auth.uid())`; helpers are `security definer stable set search_path = public, pg_temp`.
-- `requests.notes` (the note to the Sadran) is closed by column grants (REQ §13.153): browser code never `select("*")`s `requests` — use `REQUEST_COLUMNS` (`src/lib/requestColumns.ts`) and `request_notes(ids)` for the note; a new `requests` column needs `grant select (col) … to authenticated` plus an entry there (`rls_smoke.sql` TEST 19). Security-invoker SQL reading `requests` names its columns too.
+- `requests.notes` (the note to the Sadran) is closed by column grants (REQ §13.153): browser code never `select("*")`s `requests` — use `REQUEST_COLUMNS` (`src/lib/requestColumns.ts`) and `request_notes(ids)` for the note; a new `requests` column needs `grant select (col) … to authenticated` plus an entry there (`rls_smoke.sql` TEST 19) and in the `requests` part of `week_parts()` (`week_parts.sql`). Security-invoker SQL reading `requests` names its columns too.
 - Immutable history: `policy_versions`, `siddur_versions` (`forbid_mutation()`).
 
 **React / UI**

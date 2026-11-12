@@ -1,5 +1,6 @@
 import { supabase } from "@/integrations/supabase/client";
 import { AppError, rpc, toAppError } from "@/lib/rpc";
+import { fetchWeekPart } from "@/features/rides/api";
 import { isMyDraftRide } from "@/features/rides/myRides";
 import { siddurCarName } from "@/lib/siddurCarName";
 import { ensureOncePerSession } from "./ensureWeeksCache";
@@ -190,11 +191,7 @@ export async function fetchOpenAndLiveWeekStarts(departmentId: string): Promise<
  * week, read through `week_board_rides` (20261028120000, security invoker: same RLS, each table read once).
  */
 export async function fetchBoardRides(departmentId: string, weekStart: string): Promise<BoardRide[]> {
-  const { data, error } = await supabase
-    .rpc("week_board_rides", { p_department_id: departmentId, p_week_start: weekStart })
-    .order("starts_at", { ascending: true });
-  if (error) throw toAppError(error);
-  return data ?? [];
+  return fetchWeekPart<BoardRide[]>(departmentId, weekStart, "rides");
 }
 
 /** A single ride for the ride-detail sheet / "ask to join" prefill (`?ride=<id>`). */
@@ -216,13 +213,7 @@ export async function fetchCarForRide(carId: string): Promise<{ type: CarType; o
 export type CarLocation = Database["public"]["Views"]["v_car_locations"]["Row"];
 
 export async function fetchCarLocations(departmentId: string, weekStart: string): Promise<CarLocation[]> {
-  const { data, error } = await supabase
-    .from("v_car_locations")
-    .select("*")
-    .eq("department_id", departmentId)
-    .eq("week_start", weekStart);
-  if (error) throw toAppError(error);
-  return data ?? [];
+  return fetchWeekPart<CarLocation[]>(departmentId, weekStart, "carLocations");
 }
 
 /** `car_start_locations()` (REQ §13.93): where each car stands at the week's start, keyed by car id (location null-safe). */

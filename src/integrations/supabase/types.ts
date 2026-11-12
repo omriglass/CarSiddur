@@ -8275,6 +8275,14 @@ export type Database = {
           week_start: string
         }[]
       }
+      week_parts: {
+        Args: {
+          p_department_id: string
+          p_parts: string[]
+          p_week_start: string
+        }
+        Returns: Json
+      }
       week_phase_timestamps: {
         Args: {
           p_settings: Database["public"]["Tables"]["department_settings"]["Row"]

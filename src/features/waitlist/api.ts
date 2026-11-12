@@ -1,5 +1,5 @@
-import { supabase } from "@/integrations/supabase/client";
-import { rpc, toAppError } from "@/lib/rpc";
+import { fetchWeekPart } from "@/features/rides/api";
+import { rpc } from "@/lib/rpc";
 
 import { placeWaitingResultSchema, waitingRequestSchema, waitlistGroupHoldSchema, waitlistGroupRowSchema } from "./schema";
 import type { PlaceWaitingResult, WaitingRequest, WaitlistGroup, WaitlistGroupHold } from "./types";
@@ -10,14 +10,8 @@ import type { PlaceWaitingResult, WaitingRequest, WaitlistGroup, WaitlistGroupHo
  * `.rpc()` (CLAUDE.md "Structure").
  */
 export async function fetchWaitlistGroups(departmentId: string, weekStart: string): Promise<WaitlistGroup[]> {
-  const { data, error } = await supabase
-    .from("v_waitlist_groups")
-    .select("*")
-    .eq("department_id", departmentId)
-    .eq("week_start", weekStart)
-    .eq("status", "open");
-  if (error) throw toAppError(error);
-  return (data ?? []).map((row) => waitlistGroupRowSchema.parse(row));
+  const data = await fetchWeekPart<unknown[]>(departmentId, weekStart, "waitlistGroups");
+  return data.map((row) => waitlistGroupRowSchema.parse(row));
 }
 
 export interface ResolveWaitlistGroupResult {
@@ -52,14 +46,14 @@ export async function joinWaitlistDiscussion(requestId: string): Promise<{ group
 
 /** REQ §13.157: per open group, the cars it holds and each car's free gap around it. */
 export async function fetchWaitlistGroupHolds(departmentId: string, weekStart: string): Promise<WaitlistGroupHold[]> {
-  const data = await rpc("waitlist_group_holds", { p_department_id: departmentId, p_week_start: weekStart });
-  return ((data ?? []) as unknown[]).map((row) => waitlistGroupHoldSchema.parse(row));
+  const data = await fetchWeekPart<unknown[]>(departmentId, weekStart, "waitlistHolds");
+  return data.map((row) => waitlistGroupHoldSchema.parse(row));
 }
 
 /** REQ §13.182: the week's requests waiting for a car on published days (the siddur's "חסר רכב" columns). */
 export async function fetchSiddurWaitlist(departmentId: string, weekStart: string): Promise<WaitingRequest[]> {
-  const data = await rpc("siddur_waitlist", { p_department_id: departmentId, p_week_start: weekStart });
-  return (data ?? []).map((row) => waitingRequestSchema.parse(row));
+  const data = await fetchWeekPart<unknown[]>(departmentId, weekStart, "siddurWaitlist");
+  return data.map((row) => waitingRequestSchema.parse(row));
 }
 
 /** REQ §13.183: a waiting round trip dragged onto a car at new hours; `accept` = the warnings the member confirmed. */

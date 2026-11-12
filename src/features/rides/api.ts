@@ -2,6 +2,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { rpc, toAppError } from "@/lib/rpc";
 import { withPersonBusyRetry } from "@/lib/personBusy";
 import { withSmallTrunkRetry } from "@/lib/smallTrunk";
+import { createWeekPartsBatcher, type WeekPartAnswer } from "@/lib/weekPartsBatcher";
 
 import type { Database, Json } from "@/integrations/supabase/types";
 
@@ -14,6 +15,34 @@ import { parseLongDetour, type LongDetour } from "./mergeQuestions";
  * import cycle"). The only file in the `rides` feature that calls `supabase.from`/`.rpc`.
  */
 export type BoardRide = Database["public"]["Views"]["v_board_rides"]["Row"];
+
+/**
+ * The parts of one department-week `week_parts()` returns (PF1 DC2b, 20261112233000). Each is exactly the rows its
+ * former own API call returned, under the caller's RLS; `scripts/qa/week-parts-oracle.mjs` holds that.
+ */
+export type WeekPart =
+  | "week" | "rides" | "requests" | "proposals" | "freedOffers" | "heldNotices"
+  | "carLocations" | "waitlistGroups" | "waitlistHolds" | "siddurWaitlist" | "rideChanges";
+
+const weekParts = createWeekPartsBatcher({
+  fetch: async (departmentId, weekStart, parts) => {
+    const { data, error } = await supabase.rpc("week_parts", { p_department_id: departmentId, p_week_start: weekStart, p_parts: parts });
+    if (error) throw error;
+    return (data ?? {}) as unknown as Record<string, WeekPartAnswer | undefined>;
+  },
+});
+
+/**
+ * One part of a department-week. Reads that start together (a screen opening, the refresh after a change) share
+ * one API call (`src/lib/weekPartsBatcher.ts`); a part's own error rejects only that part.
+ */
+export async function fetchWeekPart<T>(departmentId: string, weekStart: string, part: WeekPart): Promise<T> {
+  try {
+    return (await weekParts.read(departmentId, weekStart, part)) as T;
+  } catch (error) {
+    throw toAppError(error);
+  }
+}
 
 export type RideChange = Database["public"]["Tables"]["ride_change_requests"]["Row"] & {
   requester: { full_name: string } | null;
@@ -71,6 +100,8 @@ export async function updateRidePublicNotes(rideId: string, expectedVersion: num
 }
 
 export async function fetchRideChanges(departmentId?: string, weekStart?: string, fromWeek?: string): Promise<RideChange[]> {
+  // One department-week (the siddur and the board): a part of the week read.
+  if (departmentId && weekStart && !fromWeek) return fetchWeekPart<RideChange[]>(departmentId, weekStart, "rideChanges");
   let query = supabase.from("ride_change_requests")
     .select("*, requester:profiles!ride_change_requests_requester_id_fkey(full_name), parties:ride_change_parties(*)")
     .eq("status", "pending");

@@ -6,7 +6,12 @@
 // RPCs, auth, and Realtime channel joins. Never points at production.
 //
 //   node scripts/perf/count-calls.mjs --email p-c0b034c5@debug.local --path /sadran/<dept>/<week>/board [--path …]
-//        [--app http://localhost:6073] [--password debug-local-1234] [--wait 20]
+//        [--app http://localhost:6073] [--password debug-local-1234] [--wait 20] [--then-exec "<shell command>"]
+//
+// --then-exec: after each path's count, runs the command (e.g. a psql update on the LOCAL copy that another
+// device's change would make) and counts again for --wait seconds: what one watched change costs this screen.
+import { execSync } from "node:child_process";
+
 import { chromium } from "@playwright/test";
 
 function args(name) {
@@ -19,6 +24,7 @@ const email = args("email")[0];
 const password = args("password")[0] ?? "debug-local-1234";
 const paths = args("path");
 const waitMs = Number(args("wait")[0] ?? "20") * 1000;
+const thenExec = args("then-exec")[0];
 if (!email || paths.length === 0) {
   console.error("usage: count-calls.mjs --email <local login> --path <app path> [--path …] [--app <url>] [--wait <s>]");
   process.exit(1);
@@ -69,6 +75,16 @@ for (const path of paths) {
   console.log(`\n${path}  — ${total} API calls, ${joins} realtime joins (settled in ${(settledMs / 1000).toFixed(1)} s, then ${waitMs / 1000} s idle)`);
   for (const [e, n] of [...counts].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))) {
     console.log(`  ${String(n).padStart(4)}  ${e}`);
+  }
+  if (thenExec) {
+    counts = new Map();
+    execSync(thenExec, { stdio: "ignore" });
+    await page.waitForTimeout(waitMs);
+    const after = [...counts.values()].reduce((a, b) => a + b, 0);
+    console.log(`  after the change — ${after} API calls in ${waitMs / 1000} s`);
+    for (const [e, n] of [...counts].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))) {
+      console.log(`  ${String(n).padStart(4)}  ${e}`);
+    }
   }
 }
 await browser.close();
