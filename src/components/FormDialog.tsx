@@ -8,6 +8,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { DIALOG_FIT, DialogBody } from "@/components/DialogBody";
 import { PortalDialogContent } from "@/components/PortalDialogContent";
 import { he } from "@/i18n/he";
 import { cn } from "@/lib/utils";
@@ -59,12 +60,14 @@ export function FormDialog({
     <Dialog open={open} onOpenChange={(next) => { if (!loading) onOpenChange(next); }}>
       {/* Taller than the screen (e.g. the member editor with one origin select per
           department) → the dialog scrolls, so the footer's buttons stay reachable. */}
-      <PortalDialogContent className={cn("max-h-[90dvh] overflow-y-auto", className)}>
+      <PortalDialogContent className={cn(DIALOG_FIT, className)}>
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
-          {description ? <DialogDescription>{description}</DialogDescription> : null}
         </DialogHeader>
-        {children}
+        <DialogBody>
+          {description ? <DialogDescription className="text-center sm:text-start">{description}</DialogDescription> : null}
+          {children}
+        </DialogBody>
         <DialogFooter>
           {footer ?? (
             <>

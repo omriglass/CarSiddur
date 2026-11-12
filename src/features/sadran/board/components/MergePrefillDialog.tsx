@@ -4,6 +4,7 @@
 // "הלוך וחזור" - preset and read-only when the request is itself one-leg), the estimated time at
 // their stop ("השעה תשתנה ל-HH:MM" when it differs from the requested one) and the three actions
 // טיוטה / הכן הצעה / ביטול.
+import { DIALOG_FIT, DialogBody } from "@/components/DialogBody";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { he, tv } from "@/i18n/he";
@@ -174,11 +175,12 @@ export function MergePrefillDialog({ prefill, carName, hostDriverName, hostLabel
   const blocked = verdict ? verdict.status !== "ok" : (!!preview && !preview.valid) || (!!pair?.preview && !pair.preview.valid);
   return (
     <Dialog open={!!prefill} onOpenChange={(open) => !open && onCancel()}>
-      <DialogContent data-testid="merge-dialog">
+      <DialogContent data-testid="merge-dialog" className={DIALOG_FIT}>
         <DialogHeader>
           <DialogTitle>{he.boardCoordination.mergeTitle}</DialogTitle>
-          <DialogDescription>{he.boardCoordination.mergeHelp}</DialogDescription>
         </DialogHeader>
+        <DialogBody>
+        <DialogDescription className="text-center sm:text-start">{he.boardCoordination.mergeHelp}</DialogDescription>
         {prefill ? (
           <div className="space-y-3 rounded-md border p-3 text-sm">
             {draftNote ? <p className="text-xs font-semibold text-maintenance" data-testid="merge-draft-note">{draftNote === "extends" ? he.mergedRide.draftExtends : he.mergedRide.draftReplaces}</p> : null}
@@ -253,6 +255,7 @@ export function MergePrefillDialog({ prefill, carName, hostDriverName, hostLabel
           </div>
         ) : null}
         <p className="font-medium" data-testid="merge-talked-title">{talkedTitle(partyNames)}</p>
+        </DialogBody>
         <div className="flex flex-col gap-2">
           <Button onClick={onAgree} disabled={busy || blocked} className="min-h-11" data-testid="merge-agreed">{he.boardDrafts.talkedYes}</Button>
           <Button variant="secondary" onClick={onDraft} disabled={busy || blocked} className="min-h-11 whitespace-normal" data-testid="merge-save-draft">{he.boardDrafts.talkedDraft}</Button>

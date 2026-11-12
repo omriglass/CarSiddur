@@ -20,7 +20,7 @@ export function MergeWaitDialog({ choice, guest, host, place, onAnswer }: {
   const stretchTo = choice.endsAt ?? choice.startsAt;
   return (
     <Dialog open onOpenChange={(open) => { if (!open) onAnswer(null); }}>
-      <DialogContent data-testid="merge-wait-dialog">
+      <DialogContent data-testid="merge-wait-dialog" className="max-h-[90dvh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{tv("mergedRide.waitTitle", { name: guest, wanted })}</DialogTitle>
           <DialogDescription>

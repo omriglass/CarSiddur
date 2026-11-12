@@ -46,7 +46,7 @@ export interface JoinableRidesDialogProps {
 export function JoinableRidesDialog({ open, onOpenChange, rides, radiusKm, onAskToJoin, onStay }: JoinableRidesDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent className="max-h-[90dvh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{he.joinableRides.title}</DialogTitle>
           <DialogDescription>{tv("joinableRides.body", { radius: String(radiusKm) })}</DialogDescription>

@@ -73,7 +73,7 @@ export function PolicyChip({ policyOptions, activePolicy, value, stale, onSelect
       </Badge>
     ) : null}
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogContent>
+      <DialogContent className="max-h-[90dvh] overflow-y-auto">
         <DialogHeader><DialogTitle>{he.sadranBoard.policyDialogTitle}</DialogTitle></DialogHeader>
         <ul className="max-h-[60dvh] space-y-2 overflow-y-auto">
           {policyOptions.map((option) => {

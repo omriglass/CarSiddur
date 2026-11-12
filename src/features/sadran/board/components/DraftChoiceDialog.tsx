@@ -25,7 +25,7 @@ export interface DraftChoiceDialogProps {
 export function DraftChoiceDialog({ choice, partyNames, onAgree, onCompose, onDraft, busy, onCancel }: DraftChoiceDialogProps) {
   return (
     <Dialog open={!!choice} onOpenChange={(open) => !open && onCancel()}>
-      <DialogContent data-testid="draft-choice-dialog">
+      <DialogContent data-testid="draft-choice-dialog" className="max-h-[90dvh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{talkedTitle(partyNames)}</DialogTitle>
           <DialogDescription>{he.boardDrafts.talkedHelp}</DialogDescription>

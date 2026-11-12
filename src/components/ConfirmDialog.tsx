@@ -10,6 +10,9 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { he } from "@/i18n/he";
+import { cn } from "@/lib/utils";
+
+import { DIALOG_FIT, DialogBody } from "./DialogBody";
 
 interface ConfirmDialogProps {
   open: boolean;
@@ -62,12 +65,16 @@ export function ConfirmDialog({
 }: ConfirmDialogProps) {
   return (
     <Dialog open={open} onOpenChange={(next) => { if (!loading) onOpenChange(next); }}>
-      <DialogContent className={className}>
+      <DialogContent className={cn(DIALOG_FIT, className)}>
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
-          {description ? <DialogDescription>{description}</DialogDescription> : null}
         </DialogHeader>
-        {children}
+        {description || children ? (
+          <DialogBody>
+            {description ? <DialogDescription className="text-center sm:text-start">{description}</DialogDescription> : null}
+            {children}
+          </DialogBody>
+        ) : null}
         <DialogFooter>
           {extraAction}
           <Button
