@@ -663,6 +663,13 @@ export function toAppError(error: unknown): AppError {
     return new AppError("network", CODE_TO_MESSAGE.network);
   }
   const pgError = error as PostgrestLikeError | null | undefined;
+  // A response cut off mid-download (production 2026-11-12, a week's rides read while leaving the page):
+  // postgrest-js fails to parse the body and hands it back as the error's `message`. That is a network
+  // failure, and the body is member data - report its length, never its text.
+  if (!pgError?.code && typeof pgError?.message === "string" && /^\s*[[{]/.test(pgError.message)) {
+    reportClientError({ message: `response body cut off (${pgError.message.length} chars)`, context: "rpc:network" });
+    return new AppError("network", CODE_TO_MESSAGE.network);
+  }
   // Message first, SQLSTATE second: `stale_input` and `stale_version` share SQLSTATE
   // P0409 (see the `ErrorCode` doc comment above), so the message-keyed table — which
   // both `P0001`-style errors and this one already rely on — must win the tie.

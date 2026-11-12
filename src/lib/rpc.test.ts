@@ -62,3 +62,16 @@ describe("unmapped database errors (owner decision 2026-09-10)", () => {
     expect(spy).toHaveBeenCalledTimes(2);
   });
 });
+
+describe("a response cut off mid-download (production 2026-11-12)", () => {
+  it("is a network error, not an unknown one, for an unparsed JSON body", () => {
+    expect(toAppError({ message: '[{"id":"34421622","department_id":"998c' })).toMatchObject({
+      code: "network", message: he.errors.network,
+    });
+    expect(toAppError({ message: '{"ok":tr', code: "" }).code).toBe("network");
+  });
+
+  it("leaves a real database message alone", () => {
+    expect(toAppError({ code: "XX000", message: "[boom]" }).code).toBe("unknown");
+  });
+});
