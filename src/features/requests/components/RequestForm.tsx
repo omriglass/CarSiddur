@@ -87,7 +87,7 @@ import { isSeriesSubmission, seriesSpanDays } from "../series";
 import { extraAdultsFromStored, payloadSeatCounts, unnamedChildSeatsFromStored } from "../seatCounts";
 import { overlapNames } from "../overlapNames";
 import { childOverlapMessage } from "../childOverlap";
-import { affectedNames, editRefusal, releaseConfirmation, shouldOfferJoinableRides, toastSeriesSubmitOutcome, toastSubmitOutcome } from "../submitOutcome";
+import { affectedNames, editRefusal, carStaysAwayConfirmation, releaseConfirmation, shouldOfferJoinableRides, toastSeriesSubmitOutcome, toastSubmitOutcome } from "../submitOutcome";
 import { shouldSuggestChildcare } from "../childcareType";
 import { suggestionToFormValues } from "../templatePrefill";
 import { canSwapPlaces, swapRequestPlaces } from "../dropOffMode";
@@ -829,6 +829,8 @@ export function RequestForm({
   // R2B20 / REQ §102 f: an open-week edit the probe says would lose the member's current car.
   const [pendingLose, setPendingLose] = useState<{ values: RequestFormValues; names: string[] } | null>(null);
   const [pendingRelease, setPendingRelease] = useState<{ values: RequestFormValues; names: string[] } | null>(null);
+  // OW1 (REQ §13.210): a change to one way would leave the booked car at the destination — ask, then resubmit.
+  const [pendingCarAway, setPendingCarAway] = useState<{ values: RequestFormValues; carName: string; nextRide: boolean } | null>(null);
   // REQ §13.158: the edit was refused (no car at the new hours) — nothing changed, the member stays on the form.
   const [editRefused, setEditRefused] = useState<{ reason: "discussion" | "no_car" | "riders"; groupId: string | null } | null>(null);
   // F4 (docs/TODO.md, owner A8-A10): a `waitlisted` outcome with nearby joinable rides holds off
@@ -913,7 +915,7 @@ export function RequestForm({
   }
 
   /** The `submit_request` payload of validated form values (also used by the unchanged probe). */
-  function buildPayload(formValues: RequestFormValues, options: { confirmRelease?: boolean }) {
+  function buildPayload(formValues: RequestFormValues, options: { confirmRelease?: boolean; allowCarAway?: boolean }) {
     const isSeriesRequest = isSeriesSubmit(formValues);
     const guestNamesList = guestPassengerNames(formValues.guestNames);
     // REQ §13.93: only a הקפצה without a pickup books the quick missing-driver ride; a
@@ -950,6 +952,7 @@ export function RequestForm({
       ),
       ...(waitlist ? { waitlist: true } : {}),
       ...(options.confirmRelease ? { confirm_release: true } : {}),
+      ...(options.allowCarAway ? { allow_car_away: true } : {}),
       // Owner 2026-10-11: "keep both" was answered — not left for the Sadran as a duplicate.
       ...(overlapConfirmedRef.current ? { overlap_confirmed: true } : {}),
       // REQ §13.111 (a): a quick / car-now request is placed right away - the server asks before using a car with no large trunk.
@@ -1000,11 +1003,11 @@ export function RequestForm({
   }
 
   // REQ §13.169 (c): every call of one save is marked as the request form's, so the riders get one notice of it.
-  function performSubmit(formValues: RequestFormValues, options: { confirmRelease?: boolean; confirmLose?: boolean; ignoreChildOverlap?: boolean } = {}) {
+  function performSubmit(formValues: RequestFormValues, options: { confirmRelease?: boolean; confirmLose?: boolean; ignoreChildOverlap?: boolean; allowCarAway?: boolean } = {}) {
     return asRequestFormSave(() => performSubmitCalls(formValues, options));
   }
 
-  async function performSubmitCalls(formValues: RequestFormValues, options: { confirmRelease?: boolean; confirmLose?: boolean; ignoreChildOverlap?: boolean } = {}) {
+  async function performSubmitCalls(formValues: RequestFormValues, options: { confirmRelease?: boolean; confirmLose?: boolean; ignoreChildOverlap?: boolean; allowCarAway?: boolean } = {}) {
     if (quickContext && (isPast || invalidTime)) return;
     setSubmitError(null);
     // Editing a multi-day request always replaces the whole series, even when it shrinks to one day (REQ §13.142).
@@ -1125,6 +1128,11 @@ export function RequestForm({
       }
       // REQ §13.101 f: a car takes the new hours but the member's passengers lose their driver — ask, then resubmit
       // with `confirm_release`.
+      const carAway = carStaysAwayConfirmation(result);
+      if (carAway) {
+        setPendingCarAway({ values: formValues, ...carAway });
+        return;
+      }
       const release = releaseConfirmation(result);
       if (release) {
         setPendingRelease({ values: formValues, ...release });
@@ -1715,6 +1723,21 @@ export function RequestForm({
         ))}
       </ul>
     </ConfirmDialog>
+    <ConfirmDialog
+      open={!!pendingCarAway}
+      onOpenChange={(open) => { if (!open) setPendingCarAway(null); }}
+      title={t("request.carStaysAwayTitle")}
+      description={pendingCarAway
+        ? tv(pendingCarAway.nextRide ? "request.carStaysAwayNextRide" : "request.carStaysAwayWeekEnd", { car: pendingCarAway.carName })
+        : undefined}
+      confirmLabel={t("request.carStaysAwayConfirm")}
+      loading={submitMutation.isPending}
+      onConfirm={() => {
+        const pending = pendingCarAway;
+        setPendingCarAway(null);
+        if (pending) void performSubmit(pending.values, { allowCarAway: true });
+      }}
+    />
     <ConfirmDialog
       open={!!pendingRelease}
       onOpenChange={(open) => { if (!open) setPendingRelease(null); }}

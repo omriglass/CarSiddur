@@ -12,6 +12,7 @@ import {
 // REQ §13.101 (f)/(h) (R11B1), §13.112 (e) "placement-neutral save": editing a request in the sentence form.
 //  - a save that changes nothing is a no-op: toast "לא בוצעו שינויים", the version does not move;
 //  - on a published day an assigned request edited only in its note keeps its ride and status (no "השינוי יוריד אותך מהרכב");
+//  - OW1 (REQ §13.210): a change to one way that would leave the car at the destination asks, then goes through;
 //  - REQ §13.158: a time change no car takes is refused ("אין רכב פנוי בשעות החדשות") and leaves everything as it was —
 //    an edit never costs the car.
 test.use({ viewport: { width: 390, height: 844 } });
@@ -76,7 +77,7 @@ test.describe("request edits", { tag: ["@request-form"] }, () => {
     }
   });
 
-  test("published day: a note-only edit keeps the booking, a time change no car takes is refused", async ({ page }) => {
+  test("published day: a note-only edit keeps the booking, a time change no car takes is refused, one way asks", async ({ page }) => {
     const service = serviceRoleClient();
     const week = FIXTURE_WEEKS.publishedEdit;
     const day = dayOfWeek(week, 1);
@@ -155,6 +156,33 @@ test.describe("request edits", { tag: ["@request-form"] }, () => {
         expect(jerusalemTime(request!.depart_at as string)).toBe("10:00");
         const { data: links } = await service.from("ride_requests").select("ride_id").eq("request_id", requestId as string);
         expect(links).toEqual([{ ride_id: rideId }]);
+      });
+
+      await test.step("OW1 (REQ §13.210): a change to one way asks, then leaves the car at the destination", async () => {
+        await service.from("rides").delete().in("id", blockerIds);
+        blockerIds.length = 0;
+        await page.goto(paths.requests.edit(requestId as string));
+        const sentence = page.getByTestId("request-sentence");
+        await expect(sentence).toBeVisible();
+        await sentence.getByTestId("chip-trip").click();
+        await page.getByRole("radio", { name: he.request.tripTypeOneWay, exact: true }).click();
+        const done = page.getByRole("button", { name: he.requestSentence.sheetDone, exact: true });
+        await done.waitFor({ state: "visible", timeout: 2_000 }).then(() => done.click(), () => undefined);
+        await saveEditedRequest(page);
+
+        const ask = page.getByRole("dialog").filter({ hasText: he.request.carStaysAwayTitle });
+        await expect(ask).toBeVisible();
+        const { data: untouched } = await service.from("requests").select("trip_type").eq("id", requestId as string).single();
+        expect(untouched!.trip_type).toBe("round_trip");
+        await ask.getByRole("button", { name: he.request.carStaysAwayConfirm, exact: true }).click();
+
+        await expect(page).toHaveURL(/\/my$/);
+        const { data: request } = await service.from("requests").select("status, trip_type").eq("id", requestId as string).single();
+        expect(request).toMatchObject({ status: "assigned", trip_type: "one_way" });
+        const { data: rides } = await service.from("rides").select("car_id, destination_id, status, ride_requests!inner(request_id)")
+          .eq("ride_requests.request_id", requestId as string).neq("status", "cancelled");
+        expect(rides).toHaveLength(1);
+        expect(rides![0]).toMatchObject({ car_id: carId, destination_id: PLACES.haifa.id });
       });
     } finally {
       if (blockerIds.length > 0) await service.from("rides").delete().in("id", blockerIds);

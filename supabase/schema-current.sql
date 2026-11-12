@@ -959,7 +959,9 @@ CREATE OR REPLACE FUNCTION "public"."_auto_approve_free_car"("p_request_id" "uui
       where b.car_id = c.id
         and tstzrange(b.starts_at, b.ends_at, '[)') && tstzrange(q.depart_at, p_end + p_turnaround, '[)')
     )
-    and (not p_is_one_way or public.car_week_end_ok(c.id, p_end, q.destination_id))   -- REQ §13.136 c: no next ride -> the base
+    and (not p_is_one_way or public.car_week_end_ok(c.id, p_end, q.destination_id)
+         -- OW1 (REQ §13.210): the person changing their own ride to one way said yes to leaving this car there.
+         or c.id::text = nullif(current_setting('app.car_stays_away', true), ''))   -- REQ §13.136 c: no next ride -> the base
     -- R15B10: a car an open contested group's member could take stays theirs; the newcomer joins the group instead.
     and not public.car_held_by_waitlist_group(c.id, q.depart_at, p_end + p_turnaround, p_request_id)
   order by (c.id = p_pref) desc nulls last, c.id
@@ -14624,6 +14626,8 @@ begin
     -- car where its next ride does not start; the board's chain-break warning stays as the reminder.
     if exists(select 1 from public.cars where id = v_car and type = 'shared')
        and coalesce(public.car_next_ride_origin(v_car, v_end), q.destination_id) <> q.destination_id
+       -- OW1 (REQ §13.210): the Sadran changing the trip type said yes ("לשנות בכל זאת?") for this car.
+       and v_car::text is distinct from nullif(current_setting('app.car_stays_away', true), '')
        and not (v_manual and exists(select 1 from public.proposals pp
          where pp.id::text = nullif(current_setting('app.applying_proposal', true), '')
            and pp.created_via = 'sadran' and coalesce((pp.payload ->> 'allow_chain_break')::boolean, false))) then
@@ -21636,7 +21640,7 @@ end $$;
 ALTER FUNCTION "public"."set_request_companions"("p_request_id" "uuid", "p_profile_ids" "uuid"[]) OWNER TO "postgres";
 
 
-CREATE OR REPLACE FUNCTION "public"."set_request_trip_type"("p_request_id" "uuid", "p_trip_type" "public"."trip_type", "p_expected_version" integer, "p_keep_car" boolean DEFAULT false) RETURNS "jsonb"
+CREATE OR REPLACE FUNCTION "public"."set_request_trip_type"("p_request_id" "uuid", "p_trip_type" "public"."trip_type", "p_expected_version" integer, "p_keep_car" boolean DEFAULT false, "p_allow_car_away" boolean DEFAULT false) RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
@@ -21648,6 +21652,7 @@ declare
   v_kept timestamptz; v_defaulted timestamptz; v_flex_any boolean := false;
   -- REQ §13.126 g: the Sadran may also choose "round trip, the car stays at the destination" (a two-way הקפצה + the flag).
   v_keep boolean := coalesce(p_keep_car, false); v_keep_car_id uuid;
+  v_place_error text;
 begin
   select * into q from public.requests where id = p_request_id for update;
   if q.id is null then raise exception 'request_not_found' using errcode = 'P0001'; end if;
@@ -21722,11 +21727,19 @@ begin
   where rr.request_id = q.id and r.status <> 'cancelled' order by r.starts_at, r.id limit 1;
   if v_car is not null then
     begin
+      -- OW1 (REQ §13.210): a one-way trip leaves the car at the destination. When the car's next ride does not start
+      -- there the Sadran is asked first (`car_next_ride_elsewhere`, nothing changed) and says yes with p_allow_car_away.
+      perform set_config('app.car_stays_away', case when coalesce(p_allow_car_away, false) then v_car::text else '' end, true);
       v_ride := public.place_request_on_car(q.id, v_car, true, v_actor, null, v_dep, v_ret, 'TRIP_TYPE_CHANGED');
       v_placed := true;
     exception when sqlstate 'P0001' or sqlstate '23P01' or sqlstate '23514' then
-      v_placed := false; v_ride := null;
+      v_placed := false; v_ride := null; v_place_error := sqlerrm;
     end;
+    perform set_config('app.car_stays_away', '', true);
+    if v_place_error = 'car_next_ride_elsewhere' and p_trip_type = 'one_way' and not coalesce(p_allow_car_away, false) then
+      raise exception 'car_next_ride_elsewhere' using errcode = 'P0001',
+        detail = jsonb_build_object('ask', 'car_stays_away', 'car_name', (select c.name from public.cars c where c.id = v_car))::text;
+    end if;
     if not v_placed then
       for v_old in select rd.* from public.rides rd join public.ride_requests rr on rr.ride_id = rd.id
         where rr.request_id = q.id and rd.status <> 'cancelled' order by rd.id for update of rd loop
@@ -21785,7 +21798,7 @@ end;
 $$;
 
 
-ALTER FUNCTION "public"."set_request_trip_type"("p_request_id" "uuid", "p_trip_type" "public"."trip_type", "p_expected_version" integer, "p_keep_car" boolean) OWNER TO "postgres";
+ALTER FUNCTION "public"."set_request_trip_type"("p_request_id" "uuid", "p_trip_type" "public"."trip_type", "p_expected_version" integer, "p_keep_car" boolean, "p_allow_car_away" boolean) OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."set_ride_driver"("p_ride_id" "uuid", "p_driver_id" "uuid", "p_expected_version" integer, "p_allow_busy" boolean DEFAULT false) RETURNS "jsonb"
@@ -22924,6 +22937,7 @@ declare
   v_carry_from uuid;   -- REQ §13.205: the driver's ride whose added passengers go along to the new one
   v_carry_to uuid;
   v_carry_failed boolean := false;
+  v_probe_away jsonb; v_away_car uuid;
   v_overlaps jsonb := '[]'::jsonb;
   v_probe_only boolean := coalesce((payload ->> 'probe_only')::boolean, false);
   v_late_variant text;
@@ -23216,6 +23230,31 @@ begin
             'drives_others', true, 'would_place', true,
             'affected_names', coalesce(v_booking -> 'affected_names', '[]'::jsonb));
         end if;
+        -- OW1 (REQ §13.210): a change to one way that is refused only because the booked car would stay at the
+        -- destination (its next ride starts elsewhere, or the week ends with it away from its base) asks instead:
+        -- nothing changes now; the form resubmits with `allow_car_away`.
+        if v_trip_type = 'one_way' and not coalesce((payload ->> 'allow_car_away')::boolean, false) then
+          select r.car_id into v_away_car from public.ride_requests rr join public.rides r on r.id = rr.ride_id
+          where rr.request_id = v_request_id and r.status <> 'cancelled' order by r.starts_at limit 1;
+          begin
+            perform set_config('app.edit_probe_inner', 'on', true);
+            v_probe_away := public.submit_request(payload || jsonb_build_object('confirm_release', true, 'allow_car_away', true));
+            raise exception 'release_probe_rollback' using errcode = 'PXRP1';
+          exception when sqlstate 'PXRP1' then
+            null;
+          end;
+          perform set_config('app.edit_probe_inner', 'off', true);
+          perform set_config('app.car_stays_away', '', true);
+          if coalesce(v_probe_away ->> 'status', '') = 'assigned'
+             and (v_confirm or not coalesce((v_booking ->> 'drives_others')::boolean, false)) then
+            return jsonb_build_object('ok', false, 'needs_confirmation', 'car_stays_away', 'unchanged', false,
+              'request_id', v_request_id, 'status', v_existing.status,
+              'car_name', (select c.name from public.cars c where c.id = v_away_car),
+              -- which of the two reasons: a later ride of the car (true), or none and the car ends away from its base
+              'next_ride', public.car_next_ride_origin(v_away_car, v_depart_at + interval '1 minute') is not null,
+              'warnings', '[]'::jsonb, 'overlaps', '[]'::jsonb);
+          end if;
+        end if;
         -- REQ §13.158: an edit never costs the member the car. No car takes the new hours, so nothing changes;
         -- `discussion` when an open waiting-list discussion holds the car in those hours (try_auto_approve's offer).
         v_hold_group := coalesce(nullif(v_probe ->> 'group_offer', '')::uuid, (
@@ -23326,6 +23365,9 @@ begin
     select r.car_id into v_old_edit_car from public.ride_requests rr join public.rides r on r.id = rr.ride_id
     where rr.request_id = v_request_id and r.status <> 'cancelled' order by r.starts_at limit 1;
     perform set_config('app.edit_prefer_car', coalesce(v_old_edit_car::text, ''), true);
+    -- OW1 (REQ §13.210): the member said yes to leaving the booked car at the destination.
+    perform set_config('app.car_stays_away', case when v_trip_type = 'one_way' and coalesce((payload ->> 'allow_car_away')::boolean, false)
+      then coalesce(v_old_edit_car::text, '') else '' end, true);
     -- REQ §13.158: the old booking keeps counting against waiting-list holds (car_held_by_waitlist_group).
     perform set_config('app.edit_kept_rides', coalesce((select jsonb_agg(jsonb_build_object('car', r.car_id, 'from', r.starts_at, 'until', r.blocked_until))
       from public.ride_requests rr join public.rides r on r.id = rr.ride_id
@@ -23844,6 +23886,7 @@ begin
 
   -- R2B20: a post-publish edit that was placed straight away is confirmed to the member.
   perform set_config('app.edit_prefer_car', '', true);
+  perform set_config('app.car_stays_away', '', true);
   perform set_config('app.edit_kept_rides', '', true);
   if v_published_edit and coalesce(v_auto_result->>'status', '') = 'assigned' then
     -- R3B14: when the car changed, the confirmation says old -> new including the car.
@@ -35806,9 +35849,9 @@ GRANT ALL ON FUNCTION "public"."set_request_companions"("p_request_id" "uuid", "
 
 
 
-REVOKE ALL ON FUNCTION "public"."set_request_trip_type"("p_request_id" "uuid", "p_trip_type" "public"."trip_type", "p_expected_version" integer, "p_keep_car" boolean) FROM PUBLIC;
-GRANT ALL ON FUNCTION "public"."set_request_trip_type"("p_request_id" "uuid", "p_trip_type" "public"."trip_type", "p_expected_version" integer, "p_keep_car" boolean) TO "service_role";
-GRANT ALL ON FUNCTION "public"."set_request_trip_type"("p_request_id" "uuid", "p_trip_type" "public"."trip_type", "p_expected_version" integer, "p_keep_car" boolean) TO "authenticated";
+REVOKE ALL ON FUNCTION "public"."set_request_trip_type"("p_request_id" "uuid", "p_trip_type" "public"."trip_type", "p_expected_version" integer, "p_keep_car" boolean, "p_allow_car_away" boolean) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."set_request_trip_type"("p_request_id" "uuid", "p_trip_type" "public"."trip_type", "p_expected_version" integer, "p_keep_car" boolean, "p_allow_car_away" boolean) TO "service_role";
+GRANT ALL ON FUNCTION "public"."set_request_trip_type"("p_request_id" "uuid", "p_trip_type" "public"."trip_type", "p_expected_version" integer, "p_keep_car" boolean, "p_allow_car_away" boolean) TO "authenticated";
 
 
 

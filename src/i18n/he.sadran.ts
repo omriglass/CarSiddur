@@ -997,6 +997,10 @@ export const heSadran = {
     confirmTitle: "לשנות את סוג הנסיעה של {{name}}?",
     confirmBody: "סוג הנסיעה החדש: {{type}}. הבקשה תשובץ מחדש אם אפשר, והמבקש/ת יקבל/תקבל הודעה.",
     confirm: "שנה סוג נסיעה",
+    /** OW1 (REQ §13.210): one way leaves the car at the destination while its next ride starts elsewhere. */
+    carStaysAwayTitle: "הרכב יישאר ביעד",
+    carStaysAwayBody: "בנסיעה לכיוון אחד הרכב לא חוזר, והנסיעה הבאה שלו יוצאת ממקום אחר. לשנות בכל זאת? האזהרה בלוח תישאר.",
+    carStaysAwayConfirm: "לשנות בכל זאת",
     stayed: "סוג הנסיעה של {{name}} שונה והבקשה נשארה על הרכב",
     unplaced: "סוג הנסיעה של {{name}} שונה והבקשה חזרה לרשימת הלא-משובצים",
     /** R8B12: an unmet request found a free car after the change. */

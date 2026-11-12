@@ -2,7 +2,7 @@ import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/rea
 
 import { fetchCars } from "@/features/fleet/api";
 import { toast } from "sonner";
-import { toAppError, showErrorToast, type AppError } from "@/lib/rpc";
+import { AppError, toAppError, showErrorToast } from "@/lib/rpc";
 
 import * as api from "./api";
 import { sadranKeys } from "./keys";
@@ -344,17 +344,28 @@ export function useSplitRideCompanionMutation() {
   });
 }
 
+/** OW1 (REQ §13.210): `set_request_trip_type` asks before leaving the car where its next ride does not start. */
+export function isCarStaysAwayAsk(error: unknown): boolean {
+  return error instanceof AppError && error.code === "car_next_ride_elsewhere";
+}
+
 /** REQ §13.95 (H3): "סוג נסיעה" - applied directly by the Sadran, no draft/proposal. */
 export function useSetRequestTripTypeMutation() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ requestId, tripType, expectedVersion, keepCar }: {
+    mutationFn: ({ requestId, tripType, expectedVersion, keepCar, allowCarAway }: {
       requestId: string; tripType: TripType; expectedVersion: number; departmentId: string; weekStart: string;
       /** REQ §13.126 g: "round trip, the car stays at the destination" (with `tripType: "drop_off"`). */
       keepCar?: boolean;
-    }) => api.setRequestTripType(requestId, tripType, expectedVersion, keepCar ?? false),
+      /** OW1 (REQ §13.210): the Sadran said yes to leaving the car where its next ride does not start. */
+      allowCarAway?: boolean;
+    }) => api.setRequestTripType(requestId, tripType, expectedVersion, keepCar ?? false, allowCarAway ?? false),
     onSuccess: (_data, { departmentId, weekStart }) => invalidateWeekData(queryClient, departmentId, weekStart),
-    onError: showErrorToast,
+    // OW1: the first refusal of a change to one way is a question the control asks (TripTypeChange), not an error toast.
+    onError: (error, { tripType, allowCarAway }) => {
+      if (isCarStaysAwayAsk(error) && tripType === "one_way" && !allowCarAway) return;
+      showErrorToast(error);
+    },
   });
 }
 

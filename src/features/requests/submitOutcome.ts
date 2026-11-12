@@ -120,6 +120,15 @@ export function releaseConfirmation(result: SubmitRequestResult | null | undefin
   return { names: affectedNames(result) };
 }
 
+/**
+ * OW1 (REQ §13.210): a change to one way would leave the booked car at the destination — the server changed nothing and
+ * asks. Returns the car and the reason for the dialog, or `null` otherwise.
+ */
+export function carStaysAwayConfirmation(result: SubmitRequestResult | null | undefined): { carName: string; nextRide: boolean } | null {
+  if (result?.needs_confirmation !== "car_stays_away") return null;
+  return { carName: result.car_name ?? "", nextRide: !!result.next_ride };
+}
+
 /** REQ §13.158: a refused edit (nothing changed, the booking kept) — the reason and the discussion holding the car. */
 export function editRefusal(
   result: SubmitRequestResult | null | undefined,

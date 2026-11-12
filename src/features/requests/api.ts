@@ -881,6 +881,8 @@ export interface SubmitRequestPayload {
   template_id?: string;
   /** REQ §13.101 f (QM5): re-submit of an edit the server asked to confirm (`needs_confirmation`). */
   confirm_release?: boolean;
+  /** OW1 (REQ §13.210): the member said yes to leaving the booked car at the destination (answer to `car_stays_away`). */
+  allow_car_away?: boolean;
   /** R2B20 / REQ §102 f: ask the server what the edit would do without changing anything. */
   probe_only?: boolean;
   /** REQ §13.111 (a): quick / car-now - ask "לשבץ בכל זאת?" when only a car without a large trunk could take a large-luggage request. */
@@ -932,7 +934,10 @@ export interface SubmitRequestResult {
    * REQ §13.101 f: a car takes the new hours, but the member drives others who would be left without a driver —
    * nothing was changed; resubmit with `confirm_release: true` to go ahead.
    */
-  needs_confirmation?: "release_to_waitlist";
+  needs_confirmation?: "release_to_waitlist" | "car_stays_away";
+  /** OW1 (REQ §13.210), with `car_stays_away`: the booked car, and whether a later ride of it is the reason (else the week's end). */
+  car_name?: string;
+  next_ride?: boolean;
   drives_others?: boolean;
   /** R14U4: with `needs_confirmation`: the other people on the ride the member drives (names). */
   affected_names?: string[];

@@ -7835,6 +7835,7 @@ export type Database = {
       }
       set_request_trip_type: {
         Args: {
+          p_allow_car_away?: boolean
           p_expected_version: number
           p_keep_car?: boolean
           p_request_id: string

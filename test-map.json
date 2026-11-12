@@ -171,7 +171,8 @@
         "request_window.sql",
         "plan_b.sql",
         "plan_b_switch.sql",
-        "qa_run11_noop_save.sql"
+        "qa_run11_noop_save.sql",
+        "one_way_change_asks.sql"
       ],
       "playwrightTags": [
         "@request-form"

@@ -12,7 +12,7 @@ import { he, tv } from "@/i18n/he";
 import { formatTime } from "@/lib/time";
 import type { TripType } from "@/lib/enums";
 
-import { useSetRequestTripTypeMutation } from "../../hooks";
+import { isCarStaysAwayAsk, useSetRequestTripTypeMutation } from "../../hooks";
 import { useRecordBoardUndo } from "../boardUndo";
 
 const TRIP_TYPE_LABEL: Record<TripType, string> = {
@@ -51,6 +51,8 @@ export function TripTypeChange({ requestId, version, tripType, keepCarAtDestinat
   // R2U2: choosing a type asks first; the select then shows the chosen type until the refetched row agrees.
   const [pending, setPending] = useState<TripChoice | null>(null);
   const [applied, setApplied] = useState<TripChoice | null>(null);
+  // OW1 (REQ §13.210): the server asked before leaving the car where its next ride does not start.
+  const [askCarAway, setAskCarAway] = useState<TripChoice | null>(null);
   if (version == null || !tripType) return null;
   const current: TripChoice = tripType === "drop_off" && keepCarAtDestination ? KEEP_CAR : tripType;
   const labelOf = (choice: TripChoice): string => (choice === KEEP_CAR ? keepCarTripLabel(destination) : TRIP_TYPE_LABEL[choice]);
@@ -59,11 +61,11 @@ export function TripTypeChange({ requestId, version, tripType, keepCarAtDestinat
     const chosen = CHOICES.find((choice) => choice === next);
     if (chosen) setPending(chosen);
   }
-  function apply(chosen: TripChoice) {
+  function apply(chosen: TripChoice, allowCarAway = false) {
     if (version == null) return;
     setPending(null);
     void recordUndo(he.sadranBoard.undoLabel.tripType, () => mutation.mutateAsync(
-      { requestId, tripType: chosen === KEEP_CAR ? "drop_off" : chosen, keepCar: chosen === KEEP_CAR, expectedVersion: version, departmentId, weekStart },
+      { requestId, tripType: chosen === KEEP_CAR ? "drop_off" : chosen, keepCar: chosen === KEEP_CAR, allowCarAway, expectedVersion: version, departmentId, weekStart },
       {
         onSuccess: (result) => {
           setApplied(chosen);
@@ -77,19 +79,29 @@ export function TripTypeChange({ requestId, version, tripType, keepCarAtDestinat
           toast.success(detail ? `${base} · ${detail}` : base);
         },
       },
-    )).catch(() => undefined);
+    )).catch((error: unknown) => { if (!allowCarAway && chosen === "one_way" && isCarStaysAwayAsk(error)) setAskCarAway(chosen); });
   }
   const controlled = onMenuOpenChange !== undefined;
   const shown: TripChoice = applied && applied !== current && mutation.isSuccess ? applied : current;
   const confirmDialog = (
-    <ConfirmDialog
-      open={!!pending}
-      onOpenChange={(open) => { if (!open) setPending(null); }}
-      title={tv("tripTypeChange.confirmTitle", { name })}
-      description={pending ? tv("tripTypeChange.confirmBody", { name, type: labelOf(pending) }) : undefined}
-      confirmLabel={he.tripTypeChange.confirm}
-      onConfirm={() => { if (pending) apply(pending); }}
-    />
+    <>
+      <ConfirmDialog
+        open={!!pending}
+        onOpenChange={(open) => { if (!open) setPending(null); }}
+        title={tv("tripTypeChange.confirmTitle", { name })}
+        description={pending ? tv("tripTypeChange.confirmBody", { name, type: labelOf(pending) }) : undefined}
+        confirmLabel={he.tripTypeChange.confirm}
+        onConfirm={() => { if (pending) apply(pending); }}
+      />
+      <ConfirmDialog
+        open={!!askCarAway}
+        onOpenChange={(open) => { if (!open) setAskCarAway(null); }}
+        title={he.tripTypeChange.carStaysAwayTitle}
+        description={he.tripTypeChange.carStaysAwayBody}
+        confirmLabel={he.tripTypeChange.carStaysAwayConfirm}
+        onConfirm={() => { const chosen = askCarAway; setAskCarAway(null); if (chosen) apply(chosen, true); }}
+      />
+    </>
   );
   // Menu mode (the unmet card's "⋮"): a picker dialog, then the same confirmation.
   if (controlled) {

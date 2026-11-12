@@ -654,8 +654,9 @@ export interface SetTripTypeResult {
   defaultedReturnAt: string | null;
 }
 
-export async function setRequestTripType(requestId: string, tripType: TripType, expectedVersion: number, keepCar = false): Promise<SetTripTypeResult> {
-  const raw = await rpc("set_request_trip_type", { p_request_id: requestId, p_trip_type: tripType, p_expected_version: expectedVersion, p_keep_car: keepCar });
+/** OW1 (REQ §13.210): `car_next_ride_elsewhere` from a change to one way is a question; `allowCarAway` is the yes. */
+export async function setRequestTripType(requestId: string, tripType: TripType, expectedVersion: number, keepCar = false, allowCarAway = false): Promise<SetTripTypeResult> {
+  const raw = await rpc("set_request_trip_type", { p_request_id: requestId, p_trip_type: tripType, p_expected_version: expectedVersion, p_keep_car: keepCar, ...(allowCarAway ? { p_allow_car_away: true } : {}) });
   const body = raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as Record<string, Json | undefined>) : {};
   return { status: typeof body.status === "string" ? body.status : "", rideId: typeof body.ride_id === "string" ? body.ride_id : null, changed: body.changed !== false, restoredReturnAt: typeof body.restored_return_at === "string" ? body.restored_return_at : null,
     defaultedReturnAt: typeof body.defaulted_return_at === "string" ? body.defaulted_return_at : null };

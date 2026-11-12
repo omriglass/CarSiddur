@@ -122,6 +122,11 @@ export const heMember = {
     editRefusedRidersBody: "את/ה נוהג/ת גם עבור אחרים, והרכב נשאר איתם בשעות שלהם — לכן השינוי לא נשמר והנסיעה נשארת כמו שהייתה. אפשר לתאם עם הנוסעים או לפנות לסדרן/ית.",
     editRefusedBack: "חזרה לטופס",
     releaseAffected: "מושפעים גם: {{names}}",
+    /** OW1 (REQ §13.210): a change to one way leaves the booked car at the destination — ask instead of refusing. */
+    carStaysAwayTitle: "הרכב יישאר ביעד",
+    carStaysAwayNextRide: "בנסיעה לכיוון אחד {{car}} לא חוזר, והנסיעה הבאה שלו יוצאת ממקום אחר. לשנות בכל זאת?",
+    carStaysAwayWeekEnd: "בנסיעה לכיוון אחד {{car}} לא חוזר, ואין אחריה נסיעה שמחזירה אותו. לשנות בכל זאת?",
+    carStaysAwayConfirm: "לשנות בכל זאת",
     releaseKeepPassengersTitle: "הנוסעים שלך יישארו בלי נהג/ת",
     releaseKeepPassengersBody: "יש רכב פנוי בשעות החדשות, אבל הנוסעים בנסיעה הנוכחית שלך יישארו בה וימתינו לנהג/ת. להמשיך?",
     overlapRefused: "הבקשה חופפת לנסיעה או לבקשה אחרת שלך ולכן לא שובצה אוטומטית — הסדרן/ית יבדוק",
