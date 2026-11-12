@@ -19780,7 +19780,7 @@ CREATE OR REPLACE FUNCTION "public"."ride_routes_json"("p_ride_ids" "uuid"[]) RE
      where (s.leg = 'out' and s.i > 1) or (s.leg = 'return' and s.i < s.n)
   ),
   -- `_route_hop_minutes`, once per pair
-  hop as (
+  hop as materialized (
     select pr.from_id, pr.to_id,
            case when pr.from_id is null or pr.to_id is null then 60
                 else greatest(coalesce((select t.travel_minutes from public.place_travel(pr.from_id, pr.to_id) t), 60), 0) end as m
