@@ -83,6 +83,26 @@ begin
   assert (select count(*) from public.my_upcoming_rides(dept, t) where week_start in (wp, wo)) = 2, 'own department returns the two published rides';
   reset role;
 
+  -- PF1 step 2: one ride by id, rides with a person on them and the week subset equal the view, per caller.
+  foreach u in array array[member1, member2, sadran] loop
+    perform set_config('request.jwt.claims', json_build_object('sub', u, 'role', 'authenticated')::text, true);
+    set local role authenticated;
+    assert (select coalesce(jsonb_agg(to_jsonb(b) order by b.id), '[]') from public.board_rides_by_ids(array[r_pub, r_named, r_open, r_sadran_draft]) b)
+         = (select coalesce(jsonb_agg(to_jsonb(v) order by v.id), '[]') from public.v_board_rides v where v.id in (r_pub, r_named, r_open, r_sadran_draft)),
+      format('board_rides_by_ids differs from the view for %s', u);
+    assert (select coalesce(jsonb_agg(to_jsonb(b) order by b.id), '[]') from public.week_board_rides_subset(dept, wo, array[r_pub, r_open, r_sadran_draft]) b)
+         = (select coalesce(jsonb_agg(to_jsonb(v) order by v.id), '[]') from public.v_board_rides v where v.week_start = wo and v.id in (r_open, r_sadran_draft)),
+      format('week_board_rides_subset differs from the view (and must stay inside its week) for %s', u);
+    select coalesce(array_agg(id order by id), '{}') into v_ids from public.rides_with_people(array[member1], '{}', null, t) where week_start in (wp, wo);
+    select coalesce(array_agg(id order by id), '{}') into v_old from public.v_board_rides
+      where status in ('confirmed', 'flagged') and ends_at > t and week_start in (wp, wo)
+        and people @> jsonb_build_array(jsonb_build_object('person_id', member1));
+    assert v_ids = v_old, format('rides_with_people differs from the old people-filter for %s: %s vs %s', u, v_ids, v_old);
+    assert (select count(*) from public.rides_with_people('{}', '{}', null, t)) = 0, 'nobody asked for: nothing';
+    reset role;
+    if u <> sadran then assert v_ids = (select array_agg(x order by x) from unnest(array[r_pub, r_named]) x), 'member1 is on the two published rides'; end if;
+  end loop;
+
   -- anon cannot call it.
   assert not has_function_privilege('anon', 'public.my_upcoming_rides(uuid, timestamptz)', 'execute'), 'anon must not execute my_upcoming_rides';
   assert has_function_privilege('authenticated', 'public.my_upcoming_rides(uuid, timestamptz)', 'execute'), 'authenticated executes my_upcoming_rides';

@@ -7638,6 +7638,35 @@ SELECT
 ALTER VIEW "public"."v_board_rides" OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."board_rides_by_ids"("p_ride_ids" "uuid"[]) RETURNS SETOF "public"."v_board_rides"
+    LANGUAGE "plpgsql" STABLE
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  v_own uuid[];
+  v_other uuid[];
+begin
+  if p_ride_ids is null or cardinality(p_ride_ids) = 0 then return; end if;
+  select array_agg(r.id) filter (where d.own), array_agg(r.id) filter (where not d.own)
+    into v_own, v_other
+    from public.rides r
+    join (select dd.department_id, (public.member_of(dd.department_id) or public.is_admin()) as own
+            from (select distinct r2.department_id from public.rides r2 where r2.id = any(p_ride_ids)) dd) d
+      on d.department_id = r.department_id
+   where r.id = any(p_ride_ids);
+  if v_own is not null then
+    return query select b.* from public.board_rows(v_own) b;
+  end if;
+  if v_other is not null then
+    return query select v.* from public.v_board_rides v where v.id = any(v_other);
+  end if;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."board_rides_by_ids"("p_ride_ids" "uuid"[]) OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."board_rows"("p_ride_ids" "uuid"[]) RETURNS SETOF "public"."v_board_rides"
     LANGUAGE "plpgsql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -20133,6 +20162,32 @@ $$;
 ALTER FUNCTION "public"."rides_temp_car_owner_only"() OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."rides_with_people"("p_person_ids" "uuid"[], "p_child_ids" "uuid"[], "p_department_id" "uuid" DEFAULT NULL::"uuid", "p_now" timestamp with time zone DEFAULT "now"()) RETURNS SETOF "public"."v_board_rides"
+    LANGUAGE "plpgsql" STABLE
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  v_ids uuid[];
+begin
+  if coalesce(cardinality(p_person_ids), 0) = 0 and coalesce(cardinality(p_child_ids), 0) = 0 then return; end if;
+  select array_agg(r.id) into v_ids
+    from public.rides r
+   where r.status in ('confirmed', 'flagged') and r.ends_at > p_now
+     and (p_department_id is null or r.department_id = p_department_id);
+  return query
+  select b.* from public.board_rides_by_ids(v_ids) b
+   where b.status in ('confirmed', 'flagged') and b.ends_at > p_now
+     and exists (select 1 from jsonb_array_elements(b.people) pe
+                  where (pe ->> 'person_id')::uuid = any(coalesce(p_person_ids, '{}'::uuid[]))
+                     or (pe ->> 'child_id')::uuid = any(coalesce(p_child_ids, '{}'::uuid[])))
+   order by b.starts_at, b.id;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."rides_with_people"("p_person_ids" "uuid"[], "p_child_ids" "uuid"[], "p_department_id" "uuid", "p_now" timestamp with time zone) OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."rides_withdraw_proposals"() RETURNS "trigger"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -25564,7 +25619,12 @@ CREATE OR REPLACE FUNCTION "public"."week_board_rides_subset"("p_department_id" 
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
 begin
-  if public.can_manage_week(p_department_id, p_week_start) and public.member_of(p_department_id) then
+  if p_ride_ids is not null then
+    return query
+    select * from public.board_rides_by_ids((select array_agg(r.id) from public.rides r
+                                              where r.department_id = p_department_id and r.week_start = p_week_start
+                                                and r.id = any(p_ride_ids)));
+  elsif public.can_manage_week(p_department_id, p_week_start) and public.member_of(p_department_id) then
     return query select * from public.week_board_rides_managed(p_department_id, p_week_start, p_ride_ids);
   else
     return query select * from public.week_board_rides_rows(p_department_id, p_week_start, p_ride_ids);
@@ -33440,6 +33500,12 @@ GRANT ALL ON TABLE "public"."v_board_rides" TO "service_role";
 
 
 
+REVOKE ALL ON FUNCTION "public"."board_rides_by_ids"("p_ride_ids" "uuid"[]) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."board_rides_by_ids"("p_ride_ids" "uuid"[]) TO "service_role";
+GRANT ALL ON FUNCTION "public"."board_rides_by_ids"("p_ride_ids" "uuid"[]) TO "authenticated";
+
+
+
 REVOKE ALL ON FUNCTION "public"."board_rows"("p_ride_ids" "uuid"[]) FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."board_rows"("p_ride_ids" "uuid"[]) TO "service_role";
 GRANT ALL ON FUNCTION "public"."board_rows"("p_ride_ids" "uuid"[]) TO "authenticated";
@@ -35205,6 +35271,12 @@ GRANT ALL ON FUNCTION "public"."rides_temp_car_never_relays"() TO "service_role"
 REVOKE ALL ON FUNCTION "public"."rides_temp_car_owner_only"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."rides_temp_car_owner_only"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."rides_temp_car_owner_only"() TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."rides_with_people"("p_person_ids" "uuid"[], "p_child_ids" "uuid"[], "p_department_id" "uuid", "p_now" timestamp with time zone) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."rides_with_people"("p_person_ids" "uuid"[], "p_child_ids" "uuid"[], "p_department_id" "uuid", "p_now" timestamp with time zone) TO "service_role";
+GRANT ALL ON FUNCTION "public"."rides_with_people"("p_person_ids" "uuid"[], "p_child_ids" "uuid"[], "p_department_id" "uuid", "p_now" timestamp with time zone) TO "authenticated";
 
 
 

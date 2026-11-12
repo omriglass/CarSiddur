@@ -61,17 +61,6 @@ async function fetchMyRideParts(rideIds: string[]): Promise<Map<string, { starts
   return parts;
 }
 
-/** Upcoming rides whose `people` list holds `person` (`{person_id}` or `{child_id}`) — jsonb containment on the view. */
-async function fetchRidesWithPerson(person: { person_id: string } | { child_id: string }, now: string, statuses: ("confirmed" | "flagged" | "draft")[]): Promise<BoardRide[]> {
-  // postgrest-js turns an array argument into a Postgres array literal, so the JSON goes in as a string.
-  const { data, error } = await supabase.from("v_board_rides").select("*")
-    .in("status", statuses).gt("ends_at", now)
-    .contains("people", JSON.stringify([person]))
-    .order("starts_at").order("id");
-  if (error) throw toAppError(error);
-  return data ?? [];
-}
-
 async function withCarNames(rideList: BoardRide[], departmentId?: string): Promise<MyUpcomingRide[]> {
   const rides = new Map<string, BoardRide>();
   for (const ride of rideList) if (ride.id) rides.set(ride.id, ride);
@@ -123,12 +112,12 @@ export async function fetchMyChildren(profileId: string): Promise<MyChild[]> {
  */
 export async function fetchMyChildrenRides(childIds: readonly string[], departmentId?: string, guardianIds: readonly string[] = []): Promise<MyUpcomingRide[]> {
   if (!childIds.length && !guardianIds.length) return [];
-  const now = new Date().toISOString();
-  const lists = await Promise.all([
-    ...childIds.map((id) => fetchRidesWithPerson({ child_id: id }, now, ["confirmed", "flagged"])),
-    ...guardianIds.map((id) => fetchRidesWithPerson({ person_id: id }, now, ["confirmed", "flagged"])),
-  ]);
-  return withCarNames(lists.flat(), departmentId);
+  // One call (`rides_with_people`, PF1): upcoming confirmed/flagged rides I may see with one of them in `people`.
+  const { data, error } = await supabase.rpc("rides_with_people", {
+    p_person_ids: [...guardianIds], p_child_ids: [...childIds], p_department_id: departmentId, p_now: new Date().toISOString(),
+  });
+  if (error) throw toAppError(error);
+  return withCarNames(data ?? [], departmentId);
 }
 
 /** Profile ids of the other guardians of my children in the department (REQ §13.134); empty when none. */
@@ -210,7 +199,8 @@ export async function fetchBoardRides(departmentId: string, weekStart: string): 
 
 /** A single ride for the ride-detail sheet / "ask to join" prefill (`?ride=<id>`). */
 export async function fetchBoardRideById(rideId: string): Promise<BoardRide | null> {
-  const { data, error } = await supabase.from("v_board_rides").select("*").eq("id", rideId).maybeSingle();
+  // `board_rides_by_ids` (PF1): the same row as `v_board_rides`, without the view's planning cost.
+  const { data, error } = await supabase.rpc("board_rides_by_ids", { p_ride_ids: [rideId] }).maybeSingle();
   if (error) throw toAppError(error);
   return data ?? null;
 }
