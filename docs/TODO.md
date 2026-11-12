@@ -1607,7 +1607,7 @@ Found while reproducing a production autofill failure for Tue 10.11 (`leg_locati
 
 Rule for all of these: same behaviour, proven before and after; each starts with a measurement.
 
-- DC1 — **Access policies evaluated once per query, everywhere** (C1 generalised). 110 of the 150 policies call a permission helper bare. Wrap the constant helpers (`is_admin()`, `is_approved()`), turn per-department helpers into a set as C1 did. Proof: every member of the full-history debug copy reads the same rows of every table before and after. **Do now.**
+- DC1 — ✅ 2026-11-12 (`20261112170000`, branch `fixes-2026-11-12`; plan §12 "DC1 done"): board ~445 → ~400 ms, member siddur ~305 → ~245 ms of database time per open; same rows for every member. Original: **Access policies evaluated once per query, everywhere** (C1 generalised). 110 of the 150 policies call a permission helper bare. Wrap the constant helpers (`is_admin()`, `is_approved()`), turn per-department helpers into a set as C1 did. Proof: every member of the full-history debug copy reads the same rows of every table before and after. **Do now.**
 - DC2a — **One "who am I here" call** replaces the 5 `can_manage_*` checks, `department_members` ×2 and `weeks` ×2 per screen open. **Do now.**
 - DC2b — **One week-snapshot call** returns the board's week data (rides, requests, proposals, waiting list, held notices, readiness) and fills the existing cache keys; components unchanged. Proof: a test oracle that each part equals today's query (like `_board_rows_oracle.sql`). After the `perf:slow` records of a real Sadran session confirm the queuing.
 - DC2c — **The refresh after a change uses the snapshot call** instead of ~15 refetches (acting device and watching devices). After DC2b.

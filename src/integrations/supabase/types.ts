@@ -7001,6 +7001,10 @@ export type Database = {
           profile_id: string
         }[]
       }
+      my_companion_request_ids: { Args: never; Returns: string[] }
+      my_department_ids: { Args: never; Returns: string[] }
+      my_guarded_request_ids: { Args: never; Returns: string[] }
+      my_proposal_ids: { Args: never; Returns: string[] }
       my_ride_editor_links: {
         Args: never
         Returns: {
@@ -7026,6 +7030,14 @@ export type Database = {
           ride_id: string
           starts_at: string
           whole: boolean
+        }[]
+      }
+      my_sadran_department_ids: { Args: never; Returns: string[] }
+      my_sadran_weeks: {
+        Args: never
+        Returns: {
+          department_id: string
+          week_start: string
         }[]
       }
       my_upcoming_rides: {

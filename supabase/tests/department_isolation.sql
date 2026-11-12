@@ -442,7 +442,11 @@ declare
   -- 'name:one-word-reason'. Duplicated names (day_date_label has two overloads) are fine —
   -- the completeness check below groups by proname.
   iso_exempt text[] := array[
-    'my_car_tasks:caller_scoped', 'my_ride_editor_links:caller_scoped', 'my_ride_owners:caller_scoped', 'is_guardian_on_request:read-helper',
+    'my_car_tasks:caller_scoped', 'my_ride_editor_links:caller_scoped', 'my_ride_owners:caller_scoped',
+    -- PF1 / DC1: the policies' once-per-query sets — only the caller's own departments, weeks, requests and proposals.
+    'my_department_ids:caller_scoped', 'my_sadran_department_ids:caller_scoped', 'my_sadran_weeks:caller_scoped',
+    'my_guarded_request_ids:caller_scoped', 'my_companion_request_ids:caller_scoped', 'my_proposal_ids:caller_scoped',
+    'is_guardian_on_request:read-helper',
     'audit_row:trigger', 'car_issues_protect_resolution_fields:trigger',
     'cars_protect_owner_editable_fields:trigger', 'client_errors_rate_limit:trigger',
     'flag_rides_in_maintenance:trigger', 'handle_new_user:trigger',

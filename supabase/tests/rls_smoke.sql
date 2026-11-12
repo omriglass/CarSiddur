@@ -828,4 +828,42 @@ do $$ begin
 end $$;
 reset role;
 
+-- TEST 20 (PF1 / DC1): the policies' once-per-query sets equal the per-row helpers, for every profile.
+do $$
+declare m record; bad int; checked int := 0;
+begin
+  for m in select id from public.profiles loop
+    perform set_config('request.jwt.claims', jsonb_build_object('sub', m.id, 'role', 'authenticated')::text, true);
+    select count(*) into bad from public.departments d
+     where public.member_of(d.id) is distinct from (d.id in (select public.my_department_ids()))
+        or public.is_sadran_any(d.id) is distinct from (d.id in (select public.my_sadran_department_ids()))
+        or public.can_manage_operations(d.id) is distinct from ((select public.is_admin()) or d.id in (select public.my_sadran_department_ids()));
+    assert bad = 0, format('TEST 20 FAILED: department sets differ from the helpers for %s', m.id);
+    select count(*) into bad from (select department_id, week_start from public.weeks
+                                   union select department_id, week_start from public.sadran_assignments) w
+     where public.is_sadran(w.department_id, w.week_start) is distinct from
+             (w.department_id in (select public.my_sadran_department_ids())
+              or (w.department_id, w.week_start) in (select s.department_id, s.week_start from public.my_sadran_weeks() s))
+        or public.can_manage_week(w.department_id, w.week_start) is distinct from
+             ((select public.is_admin()) or w.department_id in (select public.my_sadran_department_ids())
+              or (w.department_id, w.week_start) in (select s.department_id, s.week_start from public.my_sadran_weeks() s));
+    assert bad = 0, format('TEST 20 FAILED: week sets differ from the helpers for %s', m.id);
+    select count(*) into bad from public.requests q
+     where public.is_guardian_on_request(q.id) is distinct from (q.id in (select public.my_guarded_request_ids()))
+        or public.is_request_companion(q.id) is distinct from (q.id in (select public.my_companion_request_ids()));
+    assert bad = 0, format('TEST 20 FAILED: request sets differ from the helpers for %s', m.id);
+    select count(*) into bad from public.proposals pr
+     where public.is_proposal_party(pr.id) is distinct from (pr.id in (select public.my_proposal_ids()));
+    assert bad = 0, format('TEST 20 FAILED: proposal set differs from the helper for %s', m.id);
+    checked := checked + 1;
+  end loop;
+  -- A policy must not call these helpers per row again (a new policy uses the set forms above).
+  select count(*) into bad from pg_policies
+   where schemaname = 'public'
+     and coalesce(qual, '') || ' ' || coalesce(with_check, '') ~
+         '(member_of|is_sadran_any|can_manage_operations|is_sadran|can_manage_week)\((\w+\.)?department_id[,)]|(is_guardian_on_request|is_request_companion|is_proposal_party)\(|(?<!SELECT )(public\.)?(is_admin|is_approved)\(\)';
+  assert bad = 0, format('TEST 20 FAILED: %s policies call a caller-only helper per row (use the set form, 20261112170000)', bad);
+  raise notice 'TEST 20 PASSED: once-per-query sets equal the helpers for % profiles; no per-row caller-only helper in a policy', checked;
+end $$;
+
 rollback;

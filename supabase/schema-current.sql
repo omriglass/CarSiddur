@@ -13315,6 +13315,54 @@ end $$;
 ALTER FUNCTION "public"."my_co_guardians"("p_department_id" "uuid") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."my_companion_request_ids"() RETURNS SETOF "uuid"
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  select rc.request_id from public.request_companions rc where rc.profile_id = (select auth.uid());
+$$;
+
+
+ALTER FUNCTION "public"."my_companion_request_ids"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."my_department_ids"() RETURNS SETOF "uuid"
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  select dm.department_id
+    from public.department_members dm join public.profiles p on p.id = dm.profile_id
+   where dm.profile_id = (select auth.uid()) and dm.removed_at is null and p.approval_status = 'approved';
+$$;
+
+
+ALTER FUNCTION "public"."my_department_ids"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."my_guarded_request_ids"() RETURNS SETOF "uuid"
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  select rc.request_id
+    from public.request_children rc
+    join public.child_guardians g on g.child_id = rc.child_id and g.profile_id = (select auth.uid());
+$$;
+
+
+ALTER FUNCTION "public"."my_guarded_request_ids"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."my_proposal_ids"() RETURNS SETOF "uuid"
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  select pp.proposal_id from public.proposal_parties pp where pp.profile_id = (select auth.uid());
+$$;
+
+
+ALTER FUNCTION "public"."my_proposal_ids"() OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."my_ride_editor_links"() RETURNS TABLE("department_id" "uuid", "person_id" "uuid", "person_name" "text", "direction" "text", "named" boolean, "co_parent" boolean)
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -13387,6 +13435,35 @@ $$;
 
 
 ALTER FUNCTION "public"."my_ride_parts"("p_ride_ids" "uuid"[]) OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."my_sadran_department_ids"() RETURNS SETOF "uuid"
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  select dm.department_id
+    from public.department_members dm join public.profiles p on p.id = dm.profile_id
+   where dm.profile_id = (select auth.uid()) and dm.removed_at is null and dm.role = 'sadran'
+     and p.approval_status = 'approved';
+$$;
+
+
+ALTER FUNCTION "public"."my_sadran_department_ids"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."my_sadran_weeks"() RETURNS TABLE("department_id" "uuid", "week_start" "date")
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  select sa.department_id, sa.week_start
+    from public.sadran_assignments sa
+    join public.department_members dm on dm.department_id = sa.department_id and dm.profile_id = sa.profile_id
+    join public.profiles p on p.id = dm.profile_id
+   where sa.profile_id = (select auth.uid()) and dm.removed_at is null and p.approval_status = 'approved';
+$$;
+
+
+ALTER FUNCTION "public"."my_sadran_weeks"() OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."my_upcoming_rides"("p_department_id" "uuid" DEFAULT NULL::"uuid", "p_now" timestamp with time zone DEFAULT "now"()) RETURNS SETOF "public"."v_board_rides"
@@ -31601,63 +31678,74 @@ ALTER TABLE "public"."app_secrets" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "public"."app_settings" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "app_settings_delete" ON "public"."app_settings" FOR DELETE TO "authenticated" USING ("public"."is_admin"());
+CREATE POLICY "app_settings_delete" ON "public"."app_settings" FOR DELETE TO "authenticated" USING (( SELECT "public"."is_admin"() AS "is_admin"));
 
 
 
-CREATE POLICY "app_settings_insert" ON "public"."app_settings" FOR INSERT TO "authenticated" WITH CHECK ("public"."is_admin"());
+CREATE POLICY "app_settings_insert" ON "public"."app_settings" FOR INSERT TO "authenticated" WITH CHECK (( SELECT "public"."is_admin"() AS "is_admin"));
 
 
 
-CREATE POLICY "app_settings_select" ON "public"."app_settings" FOR SELECT TO "authenticated" USING ("public"."is_approved"());
+CREATE POLICY "app_settings_select" ON "public"."app_settings" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_approved"() AS "is_approved"));
 
 
 
-CREATE POLICY "app_settings_update" ON "public"."app_settings" FOR UPDATE TO "authenticated" USING ("public"."is_admin"()) WITH CHECK ("public"."is_admin"());
+CREATE POLICY "app_settings_update" ON "public"."app_settings" FOR UPDATE TO "authenticated" USING (( SELECT "public"."is_admin"() AS "is_admin")) WITH CHECK (( SELECT "public"."is_admin"() AS "is_admin"));
 
 
 
 ALTER TABLE "public"."audit_log" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "audit_log_select" ON "public"."audit_log" FOR SELECT TO "authenticated" USING (("public"."is_admin"() OR (("department_id" IS NOT NULL) AND ("week_start" IS NOT NULL) AND "public"."is_sadran"("department_id", "week_start")) OR ("subject_profile_id" = ( SELECT "auth"."uid"() AS "uid"))));
+CREATE POLICY "audit_log_select" ON "public"."audit_log" FOR SELECT TO "authenticated" USING ((( SELECT "public"."is_admin"() AS "is_admin") OR (("department_id" IS NOT NULL) AND ("week_start" IS NOT NULL) AND (("department_id" IN ( SELECT "d"."d"
+   FROM "public"."my_sadran_department_ids"() "d"("d"))) OR (("department_id", "week_start") IN ( SELECT "w"."department_id",
+    "w"."week_start"
+   FROM "public"."my_sadran_weeks"() "w"("department_id", "week_start"))))) OR ("subject_profile_id" = ( SELECT "auth"."uid"() AS "uid"))));
 
 
 
 ALTER TABLE "public"."car_access_codes" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "car_access_codes_delete" ON "public"."car_access_codes" FOR DELETE TO "authenticated" USING (("public"."can_manage_operations"("department_id") OR "public"."can_manage_car"("car_id")));
+CREATE POLICY "car_access_codes_delete" ON "public"."car_access_codes" FOR DELETE TO "authenticated" USING ((( SELECT "public"."is_admin"() AS "is_admin") OR ("department_id" IN ( SELECT "d"."d"
+   FROM "public"."my_sadran_department_ids"() "d"("d"))) OR "public"."can_manage_car"("car_id")));
 
 
 
-CREATE POLICY "car_access_codes_insert" ON "public"."car_access_codes" FOR INSERT TO "authenticated" WITH CHECK (("public"."can_manage_operations"("department_id") OR "public"."can_manage_car"("car_id")));
+CREATE POLICY "car_access_codes_insert" ON "public"."car_access_codes" FOR INSERT TO "authenticated" WITH CHECK ((( SELECT "public"."is_admin"() AS "is_admin") OR ("department_id" IN ( SELECT "d"."d"
+   FROM "public"."my_sadran_department_ids"() "d"("d"))) OR "public"."can_manage_car"("car_id")));
 
 
 
-CREATE POLICY "car_access_codes_select" ON "public"."car_access_codes" FOR SELECT TO "authenticated" USING (("public"."member_of"("department_id") OR "public"."can_manage_operations"("department_id")));
+CREATE POLICY "car_access_codes_select" ON "public"."car_access_codes" FOR SELECT TO "authenticated" USING ((("department_id" IN ( SELECT "d"."d"
+   FROM "public"."my_department_ids"() "d"("d"))) OR (( SELECT "public"."is_admin"() AS "is_admin") OR ("department_id" IN ( SELECT "d"."d"
+   FROM "public"."my_sadran_department_ids"() "d"("d"))))));
 
 
 
-CREATE POLICY "car_access_codes_update" ON "public"."car_access_codes" FOR UPDATE TO "authenticated" USING (("public"."can_manage_operations"("department_id") OR "public"."can_manage_car"("car_id"))) WITH CHECK (("public"."can_manage_operations"("department_id") OR "public"."can_manage_car"("car_id")));
+CREATE POLICY "car_access_codes_update" ON "public"."car_access_codes" FOR UPDATE TO "authenticated" USING ((( SELECT "public"."is_admin"() AS "is_admin") OR ("department_id" IN ( SELECT "d"."d"
+   FROM "public"."my_sadran_department_ids"() "d"("d"))) OR "public"."can_manage_car"("car_id"))) WITH CHECK ((( SELECT "public"."is_admin"() AS "is_admin") OR ("department_id" IN ( SELECT "d"."d"
+   FROM "public"."my_sadran_department_ids"() "d"("d"))) OR "public"."can_manage_car"("car_id")));
 
 
 
 ALTER TABLE "public"."car_care_events" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "car_care_events_select" ON "public"."car_care_events" FOR SELECT TO "authenticated" USING (("public"."is_car_responsible"("car_id") OR "public"."is_admin"() OR ("reported_by" = ( SELECT "auth"."uid"() AS "uid"))));
+CREATE POLICY "car_care_events_select" ON "public"."car_care_events" FOR SELECT TO "authenticated" USING (("public"."is_car_responsible"("car_id") OR ( SELECT "public"."is_admin"() AS "is_admin") OR ("reported_by" = ( SELECT "auth"."uid"() AS "uid"))));
 
 
 
-CREATE POLICY "car_care_events_select_member" ON "public"."car_care_events" FOR SELECT TO "authenticated" USING ("public"."member_of"("department_id"));
+CREATE POLICY "car_care_events_select_member" ON "public"."car_care_events" FOR SELECT TO "authenticated" USING (("department_id" IN ( SELECT "d"."d"
+   FROM "public"."my_department_ids"() "d"("d"))));
 
 
 
 ALTER TABLE "public"."car_checklist_answers" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "car_checklist_answers_select" ON "public"."car_checklist_answers" FOR SELECT TO "authenticated" USING (("public"."member_of"("department_id") OR "public"."is_admin"()));
+CREATE POLICY "car_checklist_answers_select" ON "public"."car_checklist_answers" FOR SELECT TO "authenticated" USING ((("department_id" IN ( SELECT "d"."d"
+   FROM "public"."my_department_ids"() "d"("d"))) OR ( SELECT "public"."is_admin"() AS "is_admin")));
 
 
 
@@ -31667,7 +31755,8 @@ ALTER TABLE "public"."car_checklist_date_reminders" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "public"."car_checklist_items" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "car_checklist_items_select" ON "public"."car_checklist_items" FOR SELECT TO "authenticated" USING (("public"."member_of"("department_id") OR "public"."is_admin"()));
+CREATE POLICY "car_checklist_items_select" ON "public"."car_checklist_items" FOR SELECT TO "authenticated" USING ((("department_id" IN ( SELECT "d"."d"
+   FROM "public"."my_department_ids"() "d"("d"))) OR ( SELECT "public"."is_admin"() AS "is_admin")));
 
 
 
@@ -31681,18 +31770,20 @@ CREATE POLICY "car_checklist_prompts_select" ON "public"."car_checklist_prompts"
 ALTER TABLE "public"."car_checklists" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "car_checklists_select" ON "public"."car_checklists" FOR SELECT TO "authenticated" USING (("public"."member_of"("department_id") OR "public"."is_admin"()));
+CREATE POLICY "car_checklists_select" ON "public"."car_checklists" FOR SELECT TO "authenticated" USING ((("department_id" IN ( SELECT "d"."d"
+   FROM "public"."my_department_ids"() "d"("d"))) OR ( SELECT "public"."is_admin"() AS "is_admin")));
 
 
 
 ALTER TABLE "public"."car_issues" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "car_issues_delete" ON "public"."car_issues" FOR DELETE TO "authenticated" USING ("public"."is_admin"());
+CREATE POLICY "car_issues_delete" ON "public"."car_issues" FOR DELETE TO "authenticated" USING (( SELECT "public"."is_admin"() AS "is_admin"));
 
 
 
-CREATE POLICY "car_issues_select" ON "public"."car_issues" FOR SELECT TO "authenticated" USING (("public"."member_of"("department_id") OR "public"."is_admin"()));
+CREATE POLICY "car_issues_select" ON "public"."car_issues" FOR SELECT TO "authenticated" USING ((("department_id" IN ( SELECT "d"."d"
+   FROM "public"."my_department_ids"() "d"("d"))) OR ( SELECT "public"."is_admin"() AS "is_admin")));
 
 
 
@@ -31700,66 +31791,78 @@ CREATE POLICY "car_issues_select_responsible" ON "public"."car_issues" FOR SELEC
 
 
 
-CREATE POLICY "car_issues_update" ON "public"."car_issues" FOR UPDATE TO "authenticated" USING (("public"."is_admin"() OR "public"."is_sadran_any"("department_id") OR (("reported_by" = ( SELECT "auth"."uid"() AS "uid")) AND ("status" = 'open'::"public"."car_issue_status")))) WITH CHECK (("public"."is_admin"() OR "public"."is_sadran_any"("department_id") OR ("reported_by" = ( SELECT "auth"."uid"() AS "uid"))));
+CREATE POLICY "car_issues_update" ON "public"."car_issues" FOR UPDATE TO "authenticated" USING ((( SELECT "public"."is_admin"() AS "is_admin") OR ("department_id" IN ( SELECT "d"."d"
+   FROM "public"."my_sadran_department_ids"() "d"("d"))) OR (("reported_by" = ( SELECT "auth"."uid"() AS "uid")) AND ("status" = 'open'::"public"."car_issue_status")))) WITH CHECK ((( SELECT "public"."is_admin"() AS "is_admin") OR ("department_id" IN ( SELECT "d"."d"
+   FROM "public"."my_sadran_department_ids"() "d"("d"))) OR ("reported_by" = ( SELECT "auth"."uid"() AS "uid"))));
 
 
 
 ALTER TABLE "public"."car_maintenance_blocks" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "car_maintenance_blocks_delete" ON "public"."car_maintenance_blocks" FOR DELETE TO "authenticated" USING (("public"."is_admin"() OR "public"."is_sadran_any"("department_id")));
+CREATE POLICY "car_maintenance_blocks_delete" ON "public"."car_maintenance_blocks" FOR DELETE TO "authenticated" USING ((( SELECT "public"."is_admin"() AS "is_admin") OR ("department_id" IN ( SELECT "d"."d"
+   FROM "public"."my_sadran_department_ids"() "d"("d")))));
 
 
 
-CREATE POLICY "car_maintenance_blocks_insert" ON "public"."car_maintenance_blocks" FOR INSERT TO "authenticated" WITH CHECK (("public"."is_admin"() OR "public"."is_sadran_any"("department_id")));
+CREATE POLICY "car_maintenance_blocks_insert" ON "public"."car_maintenance_blocks" FOR INSERT TO "authenticated" WITH CHECK ((( SELECT "public"."is_admin"() AS "is_admin") OR ("department_id" IN ( SELECT "d"."d"
+   FROM "public"."my_sadran_department_ids"() "d"("d")))));
 
 
 
-CREATE POLICY "car_maintenance_blocks_select" ON "public"."car_maintenance_blocks" FOR SELECT TO "authenticated" USING (("public"."member_of"("department_id") OR "public"."is_admin"()));
+CREATE POLICY "car_maintenance_blocks_select" ON "public"."car_maintenance_blocks" FOR SELECT TO "authenticated" USING ((("department_id" IN ( SELECT "d"."d"
+   FROM "public"."my_department_ids"() "d"("d"))) OR ( SELECT "public"."is_admin"() AS "is_admin")));
 
 
 
-CREATE POLICY "car_maintenance_blocks_update" ON "public"."car_maintenance_blocks" FOR UPDATE TO "authenticated" USING (("public"."is_admin"() OR "public"."is_sadran_any"("department_id"))) WITH CHECK (("public"."is_admin"() OR "public"."is_sadran_any"("department_id")));
+CREATE POLICY "car_maintenance_blocks_update" ON "public"."car_maintenance_blocks" FOR UPDATE TO "authenticated" USING ((( SELECT "public"."is_admin"() AS "is_admin") OR ("department_id" IN ( SELECT "d"."d"
+   FROM "public"."my_sadran_department_ids"() "d"("d"))))) WITH CHECK ((( SELECT "public"."is_admin"() AS "is_admin") OR ("department_id" IN ( SELECT "d"."d"
+   FROM "public"."my_sadran_department_ids"() "d"("d")))));
 
 
 
 ALTER TABLE "public"."car_odometer_readings" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "car_odometer_readings_select" ON "public"."car_odometer_readings" FOR SELECT TO "authenticated" USING (("public"."member_of"("department_id") OR "public"."is_admin"()));
+CREATE POLICY "car_odometer_readings_select" ON "public"."car_odometer_readings" FOR SELECT TO "authenticated" USING ((("department_id" IN ( SELECT "d"."d"
+   FROM "public"."my_department_ids"() "d"("d"))) OR ( SELECT "public"."is_admin"() AS "is_admin")));
 
 
 
 ALTER TABLE "public"."car_seat_configs" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "car_seat_configs_delete" ON "public"."car_seat_configs" FOR DELETE TO "authenticated" USING (("public"."is_admin"() OR (EXISTS ( SELECT 1
+CREATE POLICY "car_seat_configs_delete" ON "public"."car_seat_configs" FOR DELETE TO "authenticated" USING ((( SELECT "public"."is_admin"() AS "is_admin") OR (EXISTS ( SELECT 1
    FROM "public"."cars" "managed_car"
-  WHERE (("managed_car"."id" = "car_seat_configs"."car_id") AND "public"."can_manage_operations"("managed_car"."department_id")))) OR (EXISTS ( SELECT 1
+  WHERE (("managed_car"."id" = "car_seat_configs"."car_id") AND (( SELECT "public"."is_admin"() AS "is_admin") OR ("managed_car"."department_id" IN ( SELECT "d"."d"
+           FROM "public"."my_sadran_department_ids"() "d"("d"))))))) OR (EXISTS ( SELECT 1
    FROM "public"."cars" "c"
   WHERE (("c"."id" = "car_seat_configs"."car_id") AND ("c"."type" = 'temporary'::"public"."car_type") AND ("c"."owner_id" = ( SELECT "auth"."uid"() AS "uid")))))));
 
 
 
-CREATE POLICY "car_seat_configs_insert" ON "public"."car_seat_configs" FOR INSERT TO "authenticated" WITH CHECK (("public"."is_admin"() OR (EXISTS ( SELECT 1
+CREATE POLICY "car_seat_configs_insert" ON "public"."car_seat_configs" FOR INSERT TO "authenticated" WITH CHECK ((( SELECT "public"."is_admin"() AS "is_admin") OR (EXISTS ( SELECT 1
    FROM "public"."cars" "managed_car"
-  WHERE (("managed_car"."id" = "car_seat_configs"."car_id") AND "public"."can_manage_operations"("managed_car"."department_id")))) OR (EXISTS ( SELECT 1
+  WHERE (("managed_car"."id" = "car_seat_configs"."car_id") AND (( SELECT "public"."is_admin"() AS "is_admin") OR ("managed_car"."department_id" IN ( SELECT "d"."d"
+           FROM "public"."my_sadran_department_ids"() "d"("d"))))))) OR (EXISTS ( SELECT 1
    FROM "public"."cars" "c"
   WHERE (("c"."id" = "car_seat_configs"."car_id") AND ("c"."type" = 'temporary'::"public"."car_type") AND ("c"."owner_id" = ( SELECT "auth"."uid"() AS "uid")))))));
 
 
 
-CREATE POLICY "car_seat_configs_select" ON "public"."car_seat_configs" FOR SELECT TO "authenticated" USING ("public"."is_approved"());
+CREATE POLICY "car_seat_configs_select" ON "public"."car_seat_configs" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_approved"() AS "is_approved"));
 
 
 
-CREATE POLICY "car_seat_configs_update" ON "public"."car_seat_configs" FOR UPDATE TO "authenticated" USING (("public"."is_admin"() OR (EXISTS ( SELECT 1
+CREATE POLICY "car_seat_configs_update" ON "public"."car_seat_configs" FOR UPDATE TO "authenticated" USING ((( SELECT "public"."is_admin"() AS "is_admin") OR (EXISTS ( SELECT 1
    FROM "public"."cars" "managed_car"
-  WHERE (("managed_car"."id" = "car_seat_configs"."car_id") AND "public"."can_manage_operations"("managed_car"."department_id")))) OR (EXISTS ( SELECT 1
+  WHERE (("managed_car"."id" = "car_seat_configs"."car_id") AND (( SELECT "public"."is_admin"() AS "is_admin") OR ("managed_car"."department_id" IN ( SELECT "d"."d"
+           FROM "public"."my_sadran_department_ids"() "d"("d"))))))) OR (EXISTS ( SELECT 1
    FROM "public"."cars" "c"
-  WHERE (("c"."id" = "car_seat_configs"."car_id") AND ("c"."type" = 'temporary'::"public"."car_type") AND ("c"."owner_id" = ( SELECT "auth"."uid"() AS "uid"))))))) WITH CHECK (("public"."is_admin"() OR (EXISTS ( SELECT 1
+  WHERE (("c"."id" = "car_seat_configs"."car_id") AND ("c"."type" = 'temporary'::"public"."car_type") AND ("c"."owner_id" = ( SELECT "auth"."uid"() AS "uid"))))))) WITH CHECK ((( SELECT "public"."is_admin"() AS "is_admin") OR (EXISTS ( SELECT 1
    FROM "public"."cars" "managed_car"
-  WHERE (("managed_car"."id" = "car_seat_configs"."car_id") AND "public"."can_manage_operations"("managed_car"."department_id")))) OR (EXISTS ( SELECT 1
+  WHERE (("managed_car"."id" = "car_seat_configs"."car_id") AND (( SELECT "public"."is_admin"() AS "is_admin") OR ("managed_car"."department_id" IN ( SELECT "d"."d"
+           FROM "public"."my_sadran_department_ids"() "d"("d"))))))) OR (EXISTS ( SELECT 1
    FROM "public"."cars" "c"
   WHERE (("c"."id" = "car_seat_configs"."car_id") AND ("c"."type" = 'temporary'::"public"."car_type") AND ("c"."owner_id" = ( SELECT "auth"."uid"() AS "uid")))))));
 
@@ -31778,21 +31881,26 @@ CREATE POLICY "car_tasks_select_manager" ON "public"."car_tasks" FOR SELECT TO "
 ALTER TABLE "public"."cars" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "cars_delete" ON "public"."cars" FOR DELETE TO "authenticated" USING (("public"."can_manage_operations"("department_id") OR (("type" = 'temporary'::"public"."car_type") AND ("owner_id" = ( SELECT "auth"."uid"() AS "uid")) AND (NOT (EXISTS ( SELECT 1
+CREATE POLICY "cars_delete" ON "public"."cars" FOR DELETE TO "authenticated" USING ((( SELECT "public"."is_admin"() AS "is_admin") OR ("department_id" IN ( SELECT "d"."d"
+   FROM "public"."my_sadran_department_ids"() "d"("d"))) OR (("type" = 'temporary'::"public"."car_type") AND ("owner_id" = ( SELECT "auth"."uid"() AS "uid")) AND (NOT (EXISTS ( SELECT 1
    FROM "public"."rides" "r"
   WHERE (("r"."car_id" = "cars"."id") AND ("r"."status" <> 'cancelled'::"public"."ride_status"))))))));
 
 
 
-CREATE POLICY "cars_insert" ON "public"."cars" FOR INSERT TO "authenticated" WITH CHECK (("public"."can_manage_operations"("department_id") OR (("type" = 'temporary'::"public"."car_type") AND ("owner_id" = ( SELECT "auth"."uid"() AS "uid")) AND "public"."member_of"("department_id"))));
+CREATE POLICY "cars_insert" ON "public"."cars" FOR INSERT TO "authenticated" WITH CHECK ((( SELECT "public"."is_admin"() AS "is_admin") OR ("department_id" IN ( SELECT "d"."d"
+   FROM "public"."my_sadran_department_ids"() "d"("d"))) OR (("type" = 'temporary'::"public"."car_type") AND ("owner_id" = ( SELECT "auth"."uid"() AS "uid")) AND ("department_id" IN ( SELECT "d"."d"
+   FROM "public"."my_department_ids"() "d"("d"))))));
 
 
 
-CREATE POLICY "cars_select" ON "public"."cars" FOR SELECT TO "authenticated" USING ("public"."is_approved"());
+CREATE POLICY "cars_select" ON "public"."cars" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_approved"() AS "is_approved"));
 
 
 
-CREATE POLICY "cars_update" ON "public"."cars" FOR UPDATE TO "authenticated" USING (("public"."can_manage_operations"("department_id") OR (("type" = 'temporary'::"public"."car_type") AND ("owner_id" = ( SELECT "auth"."uid"() AS "uid"))))) WITH CHECK (("public"."can_manage_operations"("department_id") OR (("type" = 'temporary'::"public"."car_type") AND ("owner_id" = ( SELECT "auth"."uid"() AS "uid")))));
+CREATE POLICY "cars_update" ON "public"."cars" FOR UPDATE TO "authenticated" USING ((( SELECT "public"."is_admin"() AS "is_admin") OR ("department_id" IN ( SELECT "d"."d"
+   FROM "public"."my_sadran_department_ids"() "d"("d"))) OR (("type" = 'temporary'::"public"."car_type") AND ("owner_id" = ( SELECT "auth"."uid"() AS "uid"))))) WITH CHECK ((( SELECT "public"."is_admin"() AS "is_admin") OR ("department_id" IN ( SELECT "d"."d"
+   FROM "public"."my_sadran_department_ids"() "d"("d"))) OR (("type" = 'temporary'::"public"."car_type") AND ("owner_id" = ( SELECT "auth"."uid"() AS "uid")))));
 
 
 
@@ -31807,38 +31915,38 @@ CREATE POLICY "cars_update_responsible" ON "public"."cars" FOR UPDATE TO "authen
 ALTER TABLE "public"."child_guardians" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "child_guardians_admin_write_delete" ON "public"."child_guardians" FOR DELETE TO "authenticated" USING (("public"."is_approved"() AND "public"."is_admin"()));
+CREATE POLICY "child_guardians_admin_write_delete" ON "public"."child_guardians" FOR DELETE TO "authenticated" USING ((( SELECT "public"."is_approved"() AS "is_approved") AND ( SELECT "public"."is_admin"() AS "is_admin")));
 
 
 
-CREATE POLICY "child_guardians_admin_write_insert" ON "public"."child_guardians" FOR INSERT TO "authenticated" WITH CHECK (("public"."is_approved"() AND "public"."is_admin"()));
+CREATE POLICY "child_guardians_admin_write_insert" ON "public"."child_guardians" FOR INSERT TO "authenticated" WITH CHECK ((( SELECT "public"."is_approved"() AS "is_approved") AND ( SELECT "public"."is_admin"() AS "is_admin")));
 
 
 
-CREATE POLICY "child_guardians_admin_write_update" ON "public"."child_guardians" FOR UPDATE TO "authenticated" USING (("public"."is_approved"() AND "public"."is_admin"())) WITH CHECK (("public"."is_approved"() AND "public"."is_admin"()));
+CREATE POLICY "child_guardians_admin_write_update" ON "public"."child_guardians" FOR UPDATE TO "authenticated" USING ((( SELECT "public"."is_approved"() AS "is_approved") AND ( SELECT "public"."is_admin"() AS "is_admin"))) WITH CHECK ((( SELECT "public"."is_approved"() AS "is_approved") AND ( SELECT "public"."is_admin"() AS "is_admin")));
 
 
 
-CREATE POLICY "child_guardians_select" ON "public"."child_guardians" FOR SELECT TO "authenticated" USING (("public"."is_approved"() AND (("profile_id" = ( SELECT "auth"."uid"() AS "uid")) OR "public"."is_admin"())));
+CREATE POLICY "child_guardians_select" ON "public"."child_guardians" FOR SELECT TO "authenticated" USING ((( SELECT "public"."is_approved"() AS "is_approved") AND (("profile_id" = ( SELECT "auth"."uid"() AS "uid")) OR ( SELECT "public"."is_admin"() AS "is_admin"))));
 
 
 
 ALTER TABLE "public"."children" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "children_admin_write_delete" ON "public"."children" FOR DELETE TO "authenticated" USING (("public"."is_approved"() AND "public"."is_admin"()));
+CREATE POLICY "children_admin_write_delete" ON "public"."children" FOR DELETE TO "authenticated" USING ((( SELECT "public"."is_approved"() AS "is_approved") AND ( SELECT "public"."is_admin"() AS "is_admin")));
 
 
 
-CREATE POLICY "children_admin_write_insert" ON "public"."children" FOR INSERT TO "authenticated" WITH CHECK (("public"."is_approved"() AND "public"."is_admin"()));
+CREATE POLICY "children_admin_write_insert" ON "public"."children" FOR INSERT TO "authenticated" WITH CHECK ((( SELECT "public"."is_approved"() AS "is_approved") AND ( SELECT "public"."is_admin"() AS "is_admin")));
 
 
 
-CREATE POLICY "children_admin_write_update" ON "public"."children" FOR UPDATE TO "authenticated" USING (("public"."is_approved"() AND "public"."is_admin"())) WITH CHECK (("public"."is_approved"() AND "public"."is_admin"()));
+CREATE POLICY "children_admin_write_update" ON "public"."children" FOR UPDATE TO "authenticated" USING ((( SELECT "public"."is_approved"() AS "is_approved") AND ( SELECT "public"."is_admin"() AS "is_admin"))) WITH CHECK ((( SELECT "public"."is_approved"() AS "is_approved") AND ( SELECT "public"."is_admin"() AS "is_admin")));
 
 
 
-CREATE POLICY "children_select" ON "public"."children" FOR SELECT TO "authenticated" USING (("public"."is_approved"() AND (EXISTS ( SELECT 1
+CREATE POLICY "children_select" ON "public"."children" FOR SELECT TO "authenticated" USING ((( SELECT "public"."is_approved"() AS "is_approved") AND (EXISTS ( SELECT 1
    FROM "public"."department_members" "dm"
   WHERE (("dm"."department_id" = "children"."department_id") AND ("dm"."profile_id" = ( SELECT "auth"."uid"() AS "uid")) AND ("dm"."removed_at" IS NULL))))));
 
@@ -31851,177 +31959,198 @@ CREATE POLICY "client_errors_insert" ON "public"."client_errors" FOR INSERT TO "
 
 
 
-CREATE POLICY "client_errors_select" ON "public"."client_errors" FOR SELECT TO "authenticated" USING ("public"."is_admin"());
+CREATE POLICY "client_errors_select" ON "public"."client_errors" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_admin"() AS "is_admin"));
 
 
 
 ALTER TABLE "public"."department_change_seq" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "department_change_seq_select" ON "public"."department_change_seq" FOR SELECT TO "authenticated" USING (("public"."member_of"("department_id") OR "public"."is_admin"()));
+CREATE POLICY "department_change_seq_select" ON "public"."department_change_seq" FOR SELECT TO "authenticated" USING ((("department_id" IN ( SELECT "d"."d"
+   FROM "public"."my_department_ids"() "d"("d"))) OR ( SELECT "public"."is_admin"() AS "is_admin")));
 
 
 
 ALTER TABLE "public"."department_members" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "department_members_delete" ON "public"."department_members" FOR DELETE TO "authenticated" USING ("public"."is_admin"());
+CREATE POLICY "department_members_delete" ON "public"."department_members" FOR DELETE TO "authenticated" USING (( SELECT "public"."is_admin"() AS "is_admin"));
 
 
 
-CREATE POLICY "department_members_insert" ON "public"."department_members" FOR INSERT TO "authenticated" WITH CHECK ("public"."is_admin"());
+CREATE POLICY "department_members_insert" ON "public"."department_members" FOR INSERT TO "authenticated" WITH CHECK (( SELECT "public"."is_admin"() AS "is_admin"));
 
 
 
-CREATE POLICY "department_members_select" ON "public"."department_members" FOR SELECT TO "authenticated" USING ((("profile_id" = ( SELECT "auth"."uid"() AS "uid")) OR "public"."member_of"("department_id") OR "public"."is_admin"()));
+CREATE POLICY "department_members_select" ON "public"."department_members" FOR SELECT TO "authenticated" USING ((("profile_id" = ( SELECT "auth"."uid"() AS "uid")) OR ("department_id" IN ( SELECT "d"."d"
+   FROM "public"."my_department_ids"() "d"("d"))) OR ( SELECT "public"."is_admin"() AS "is_admin")));
 
 
 
-CREATE POLICY "department_members_update" ON "public"."department_members" FOR UPDATE TO "authenticated" USING ("public"."is_admin"()) WITH CHECK ("public"."is_admin"());
+CREATE POLICY "department_members_update" ON "public"."department_members" FOR UPDATE TO "authenticated" USING (( SELECT "public"."is_admin"() AS "is_admin")) WITH CHECK (( SELECT "public"."is_admin"() AS "is_admin"));
 
 
 
 ALTER TABLE "public"."department_settings" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "department_settings_insert" ON "public"."department_settings" FOR INSERT TO "authenticated" WITH CHECK ("public"."can_manage_operations"("department_id"));
+CREATE POLICY "department_settings_insert" ON "public"."department_settings" FOR INSERT TO "authenticated" WITH CHECK ((( SELECT "public"."is_admin"() AS "is_admin") OR ("department_id" IN ( SELECT "d"."d"
+   FROM "public"."my_sadran_department_ids"() "d"("d")))));
 
 
 
-CREATE POLICY "department_settings_select" ON "public"."department_settings" FOR SELECT TO "authenticated" USING (("public"."member_of"("department_id") OR "public"."is_admin"()));
+CREATE POLICY "department_settings_select" ON "public"."department_settings" FOR SELECT TO "authenticated" USING ((("department_id" IN ( SELECT "d"."d"
+   FROM "public"."my_department_ids"() "d"("d"))) OR ( SELECT "public"."is_admin"() AS "is_admin")));
 
 
 
-CREATE POLICY "department_settings_update" ON "public"."department_settings" FOR UPDATE TO "authenticated" USING ("public"."can_manage_operations"("department_id")) WITH CHECK ("public"."can_manage_operations"("department_id"));
+CREATE POLICY "department_settings_update" ON "public"."department_settings" FOR UPDATE TO "authenticated" USING ((( SELECT "public"."is_admin"() AS "is_admin") OR ("department_id" IN ( SELECT "d"."d"
+   FROM "public"."my_sadran_department_ids"() "d"("d"))))) WITH CHECK ((( SELECT "public"."is_admin"() AS "is_admin") OR ("department_id" IN ( SELECT "d"."d"
+   FROM "public"."my_sadran_department_ids"() "d"("d")))));
 
 
 
 ALTER TABLE "public"."departments" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "departments_delete" ON "public"."departments" FOR DELETE TO "authenticated" USING ("public"."is_admin"());
+CREATE POLICY "departments_delete" ON "public"."departments" FOR DELETE TO "authenticated" USING (( SELECT "public"."is_admin"() AS "is_admin"));
 
 
 
-CREATE POLICY "departments_insert" ON "public"."departments" FOR INSERT TO "authenticated" WITH CHECK ("public"."is_admin"());
+CREATE POLICY "departments_insert" ON "public"."departments" FOR INSERT TO "authenticated" WITH CHECK (( SELECT "public"."is_admin"() AS "is_admin"));
 
 
 
-CREATE POLICY "departments_select" ON "public"."departments" FOR SELECT TO "authenticated" USING ("public"."is_approved"());
+CREATE POLICY "departments_select" ON "public"."departments" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_approved"() AS "is_approved"));
 
 
 
-CREATE POLICY "departments_update" ON "public"."departments" FOR UPDATE TO "authenticated" USING ("public"."is_admin"()) WITH CHECK ("public"."is_admin"());
+CREATE POLICY "departments_update" ON "public"."departments" FOR UPDATE TO "authenticated" USING (( SELECT "public"."is_admin"() AS "is_admin")) WITH CHECK (( SELECT "public"."is_admin"() AS "is_admin"));
 
 
 
 ALTER TABLE "public"."destinations" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "destinations_delete" ON "public"."destinations" FOR DELETE TO "authenticated" USING ("public"."can_manage_operations"("department_id"));
+CREATE POLICY "destinations_delete" ON "public"."destinations" FOR DELETE TO "authenticated" USING ((( SELECT "public"."is_admin"() AS "is_admin") OR ("department_id" IN ( SELECT "d"."d"
+   FROM "public"."my_sadran_department_ids"() "d"("d")))));
 
 
 
-CREATE POLICY "destinations_insert" ON "public"."destinations" FOR INSERT TO "authenticated" WITH CHECK ("public"."can_manage_operations"("department_id"));
+CREATE POLICY "destinations_insert" ON "public"."destinations" FOR INSERT TO "authenticated" WITH CHECK ((( SELECT "public"."is_admin"() AS "is_admin") OR ("department_id" IN ( SELECT "d"."d"
+   FROM "public"."my_sadran_department_ids"() "d"("d")))));
 
 
 
-CREATE POLICY "destinations_select" ON "public"."destinations" FOR SELECT TO "authenticated" USING (("public"."is_admin"() OR "public"."member_of"("department_id") OR ("public"."is_approved"() AND "is_approved")));
+CREATE POLICY "destinations_select" ON "public"."destinations" FOR SELECT TO "authenticated" USING ((( SELECT "public"."is_admin"() AS "is_admin") OR ("department_id" IN ( SELECT "d"."d"
+   FROM "public"."my_department_ids"() "d"("d"))) OR (( SELECT "public"."is_approved"() AS "is_approved") AND "is_approved")));
 
 
 
-CREATE POLICY "destinations_update" ON "public"."destinations" FOR UPDATE TO "authenticated" USING ("public"."can_manage_operations"("department_id")) WITH CHECK ("public"."can_manage_operations"("department_id"));
+CREATE POLICY "destinations_update" ON "public"."destinations" FOR UPDATE TO "authenticated" USING ((( SELECT "public"."is_admin"() AS "is_admin") OR ("department_id" IN ( SELECT "d"."d"
+   FROM "public"."my_sadran_department_ids"() "d"("d"))))) WITH CHECK ((( SELECT "public"."is_admin"() AS "is_admin") OR ("department_id" IN ( SELECT "d"."d"
+   FROM "public"."my_sadran_department_ids"() "d"("d")))));
 
 
 
 ALTER TABLE "public"."freed_slot_claims" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "freed_slot_claims_delete" ON "public"."freed_slot_claims" FOR DELETE TO "authenticated" USING ("public"."is_admin"());
+CREATE POLICY "freed_slot_claims_delete" ON "public"."freed_slot_claims" FOR DELETE TO "authenticated" USING (( SELECT "public"."is_admin"() AS "is_admin"));
 
 
 
 CREATE POLICY "freed_slot_claims_select" ON "public"."freed_slot_claims" FOR SELECT TO "authenticated" USING ((("profile_id" = ( SELECT "auth"."uid"() AS "uid")) OR (EXISTS ( SELECT 1
    FROM "public"."freed_slot_offers" "o"
-  WHERE (("o"."id" = "freed_slot_claims"."offer_id") AND ("public"."is_sadran"("o"."department_id", "o"."week_start") OR "public"."is_admin"()))))));
+  WHERE (("o"."id" = "freed_slot_claims"."offer_id") AND (("o"."department_id" IN ( SELECT "d"."d"
+           FROM "public"."my_sadran_department_ids"() "d"("d"))) OR (("o"."department_id", "o"."week_start") IN ( SELECT "w"."department_id",
+            "w"."week_start"
+           FROM "public"."my_sadran_weeks"() "w"("department_id", "week_start"))) OR ( SELECT "public"."is_admin"() AS "is_admin")))))));
 
 
 
 ALTER TABLE "public"."freed_slot_offers" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "freed_slot_offers_delete" ON "public"."freed_slot_offers" FOR DELETE TO "authenticated" USING ("public"."is_admin"());
+CREATE POLICY "freed_slot_offers_delete" ON "public"."freed_slot_offers" FOR DELETE TO "authenticated" USING (( SELECT "public"."is_admin"() AS "is_admin"));
 
 
 
-CREATE POLICY "freed_slot_offers_select" ON "public"."freed_slot_offers" FOR SELECT TO "authenticated" USING (("public"."member_of"("department_id") OR "public"."is_admin"()));
+CREATE POLICY "freed_slot_offers_select" ON "public"."freed_slot_offers" FOR SELECT TO "authenticated" USING ((("department_id" IN ( SELECT "d"."d"
+   FROM "public"."my_department_ids"() "d"("d"))) OR ( SELECT "public"."is_admin"() AS "is_admin")));
 
 
 
 ALTER TABLE "public"."held_notices" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "held_notices_select" ON "public"."held_notices" FOR SELECT TO "authenticated" USING ("public"."can_manage_week"("department_id", "week_start"));
+CREATE POLICY "held_notices_select" ON "public"."held_notices" FOR SELECT TO "authenticated" USING ((( SELECT "public"."is_admin"() AS "is_admin") OR (("department_id" IN ( SELECT "d"."d"
+   FROM "public"."my_sadran_department_ids"() "d"("d"))) OR (("department_id", "week_start") IN ( SELECT "w"."department_id",
+    "w"."week_start"
+   FROM "public"."my_sadran_weeks"() "w"("department_id", "week_start"))))));
 
 
 
 ALTER TABLE "public"."ignored_place_texts" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "ignored_place_texts_delete" ON "public"."ignored_place_texts" FOR DELETE TO "authenticated" USING ("public"."can_manage_operations"("department_id"));
+CREATE POLICY "ignored_place_texts_delete" ON "public"."ignored_place_texts" FOR DELETE TO "authenticated" USING ((( SELECT "public"."is_admin"() AS "is_admin") OR ("department_id" IN ( SELECT "d"."d"
+   FROM "public"."my_sadran_department_ids"() "d"("d")))));
 
 
 
-CREATE POLICY "ignored_place_texts_insert" ON "public"."ignored_place_texts" FOR INSERT TO "authenticated" WITH CHECK ("public"."can_manage_operations"("department_id"));
+CREATE POLICY "ignored_place_texts_insert" ON "public"."ignored_place_texts" FOR INSERT TO "authenticated" WITH CHECK ((( SELECT "public"."is_admin"() AS "is_admin") OR ("department_id" IN ( SELECT "d"."d"
+   FROM "public"."my_sadran_department_ids"() "d"("d")))));
 
 
 
-CREATE POLICY "ignored_place_texts_select" ON "public"."ignored_place_texts" FOR SELECT TO "authenticated" USING ("public"."can_manage_operations"("department_id"));
+CREATE POLICY "ignored_place_texts_select" ON "public"."ignored_place_texts" FOR SELECT TO "authenticated" USING ((( SELECT "public"."is_admin"() AS "is_admin") OR ("department_id" IN ( SELECT "d"."d"
+   FROM "public"."my_sadran_department_ids"() "d"("d")))));
 
 
 
 ALTER TABLE "public"."member_invites" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "member_invites_delete" ON "public"."member_invites" FOR DELETE TO "authenticated" USING ("public"."is_admin"());
+CREATE POLICY "member_invites_delete" ON "public"."member_invites" FOR DELETE TO "authenticated" USING (( SELECT "public"."is_admin"() AS "is_admin"));
 
 
 
-CREATE POLICY "member_invites_insert" ON "public"."member_invites" FOR INSERT TO "authenticated" WITH CHECK ("public"."is_admin"());
+CREATE POLICY "member_invites_insert" ON "public"."member_invites" FOR INSERT TO "authenticated" WITH CHECK (( SELECT "public"."is_admin"() AS "is_admin"));
 
 
 
-CREATE POLICY "member_invites_select" ON "public"."member_invites" FOR SELECT TO "authenticated" USING ("public"."is_admin"());
+CREATE POLICY "member_invites_select" ON "public"."member_invites" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_admin"() AS "is_admin"));
 
 
 
-CREATE POLICY "member_invites_update" ON "public"."member_invites" FOR UPDATE TO "authenticated" USING ("public"."is_admin"()) WITH CHECK ("public"."is_admin"());
+CREATE POLICY "member_invites_update" ON "public"."member_invites" FOR UPDATE TO "authenticated" USING (( SELECT "public"."is_admin"() AS "is_admin")) WITH CHECK (( SELECT "public"."is_admin"() AS "is_admin"));
 
 
 
 ALTER TABLE "public"."notification_event_meta" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "notification_event_meta_select" ON "public"."notification_event_meta" FOR SELECT TO "authenticated" USING ("public"."is_approved"());
+CREATE POLICY "notification_event_meta_select" ON "public"."notification_event_meta" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_approved"() AS "is_approved"));
 
 
 
 ALTER TABLE "public"."notification_templates" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "notification_templates_delete" ON "public"."notification_templates" FOR DELETE TO "authenticated" USING ("public"."is_admin"());
+CREATE POLICY "notification_templates_delete" ON "public"."notification_templates" FOR DELETE TO "authenticated" USING (( SELECT "public"."is_admin"() AS "is_admin"));
 
 
 
-CREATE POLICY "notification_templates_insert" ON "public"."notification_templates" FOR INSERT TO "authenticated" WITH CHECK ("public"."is_admin"());
+CREATE POLICY "notification_templates_insert" ON "public"."notification_templates" FOR INSERT TO "authenticated" WITH CHECK (( SELECT "public"."is_admin"() AS "is_admin"));
 
 
 
-CREATE POLICY "notification_templates_select" ON "public"."notification_templates" FOR SELECT TO "authenticated" USING ("public"."is_approved"());
+CREATE POLICY "notification_templates_select" ON "public"."notification_templates" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_approved"() AS "is_approved"));
 
 
 
-CREATE POLICY "notification_templates_update" ON "public"."notification_templates" FOR UPDATE TO "authenticated" USING ("public"."is_admin"()) WITH CHECK ("public"."is_admin"());
+CREATE POLICY "notification_templates_update" ON "public"."notification_templates" FOR UPDATE TO "authenticated" USING (( SELECT "public"."is_admin"() AS "is_admin")) WITH CHECK (( SELECT "public"."is_admin"() AS "is_admin"));
 
 
 
@@ -32043,38 +32172,48 @@ CREATE POLICY "notifications_update" ON "public"."notifications" FOR UPDATE TO "
 ALTER TABLE "public"."place_distances" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "place_distances_delete" ON "public"."place_distances" FOR DELETE TO "authenticated" USING ("public"."can_manage_operations"("department_id"));
+CREATE POLICY "place_distances_delete" ON "public"."place_distances" FOR DELETE TO "authenticated" USING ((( SELECT "public"."is_admin"() AS "is_admin") OR ("department_id" IN ( SELECT "d"."d"
+   FROM "public"."my_sadran_department_ids"() "d"("d")))));
 
 
 
-CREATE POLICY "place_distances_insert" ON "public"."place_distances" FOR INSERT TO "authenticated" WITH CHECK ("public"."can_manage_operations"("department_id"));
+CREATE POLICY "place_distances_insert" ON "public"."place_distances" FOR INSERT TO "authenticated" WITH CHECK ((( SELECT "public"."is_admin"() AS "is_admin") OR ("department_id" IN ( SELECT "d"."d"
+   FROM "public"."my_sadran_department_ids"() "d"("d")))));
 
 
 
-CREATE POLICY "place_distances_select" ON "public"."place_distances" FOR SELECT TO "authenticated" USING (("public"."member_of"("department_id") OR "public"."is_admin"()));
+CREATE POLICY "place_distances_select" ON "public"."place_distances" FOR SELECT TO "authenticated" USING ((("department_id" IN ( SELECT "d"."d"
+   FROM "public"."my_department_ids"() "d"("d"))) OR ( SELECT "public"."is_admin"() AS "is_admin")));
 
 
 
-CREATE POLICY "place_distances_update" ON "public"."place_distances" FOR UPDATE TO "authenticated" USING ("public"."can_manage_operations"("department_id")) WITH CHECK ("public"."can_manage_operations"("department_id"));
+CREATE POLICY "place_distances_update" ON "public"."place_distances" FOR UPDATE TO "authenticated" USING ((( SELECT "public"."is_admin"() AS "is_admin") OR ("department_id" IN ( SELECT "d"."d"
+   FROM "public"."my_sadran_department_ids"() "d"("d"))))) WITH CHECK ((( SELECT "public"."is_admin"() AS "is_admin") OR ("department_id" IN ( SELECT "d"."d"
+   FROM "public"."my_sadran_department_ids"() "d"("d")))));
 
 
 
 ALTER TABLE "public"."policies" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "policies_delete" ON "public"."policies" FOR DELETE TO "authenticated" USING ("public"."can_manage_operations"("department_id"));
+CREATE POLICY "policies_delete" ON "public"."policies" FOR DELETE TO "authenticated" USING ((( SELECT "public"."is_admin"() AS "is_admin") OR ("department_id" IN ( SELECT "d"."d"
+   FROM "public"."my_sadran_department_ids"() "d"("d")))));
 
 
 
-CREATE POLICY "policies_insert" ON "public"."policies" FOR INSERT TO "authenticated" WITH CHECK ("public"."can_manage_operations"("department_id"));
+CREATE POLICY "policies_insert" ON "public"."policies" FOR INSERT TO "authenticated" WITH CHECK ((( SELECT "public"."is_admin"() AS "is_admin") OR ("department_id" IN ( SELECT "d"."d"
+   FROM "public"."my_sadran_department_ids"() "d"("d")))));
 
 
 
-CREATE POLICY "policies_select" ON "public"."policies" FOR SELECT TO "authenticated" USING (("public"."is_admin"() OR "public"."member_of"("department_id")));
+CREATE POLICY "policies_select" ON "public"."policies" FOR SELECT TO "authenticated" USING ((( SELECT "public"."is_admin"() AS "is_admin") OR ("department_id" IN ( SELECT "d"."d"
+   FROM "public"."my_department_ids"() "d"("d")))));
 
 
 
-CREATE POLICY "policies_update" ON "public"."policies" FOR UPDATE TO "authenticated" USING ("public"."can_manage_operations"("department_id")) WITH CHECK ("public"."can_manage_operations"("department_id"));
+CREATE POLICY "policies_update" ON "public"."policies" FOR UPDATE TO "authenticated" USING ((( SELECT "public"."is_admin"() AS "is_admin") OR ("department_id" IN ( SELECT "d"."d"
+   FROM "public"."my_sadran_department_ids"() "d"("d"))))) WITH CHECK ((( SELECT "public"."is_admin"() AS "is_admin") OR ("department_id" IN ( SELECT "d"."d"
+   FROM "public"."my_sadran_department_ids"() "d"("d")))));
 
 
 
@@ -32083,24 +32222,26 @@ ALTER TABLE "public"."policy_versions" ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "policy_versions_insert" ON "public"."policy_versions" FOR INSERT TO "authenticated" WITH CHECK ((EXISTS ( SELECT 1
    FROM "public"."policies" "managed_policy"
-  WHERE (("managed_policy"."id" = "policy_versions"."policy_id") AND "public"."can_manage_operations"("managed_policy"."department_id")))));
+  WHERE (("managed_policy"."id" = "policy_versions"."policy_id") AND (( SELECT "public"."is_admin"() AS "is_admin") OR ("managed_policy"."department_id" IN ( SELECT "d"."d"
+           FROM "public"."my_sadran_department_ids"() "d"("d"))))))));
 
 
 
 CREATE POLICY "policy_versions_select" ON "public"."policy_versions" FOR SELECT TO "authenticated" USING ((EXISTS ( SELECT 1
    FROM "public"."policies" "p"
-  WHERE (("p"."id" = "policy_versions"."policy_id") AND ("public"."is_admin"() OR "public"."member_of"("p"."department_id"))))));
+  WHERE (("p"."id" = "policy_versions"."policy_id") AND (( SELECT "public"."is_admin"() AS "is_admin") OR ("p"."department_id" IN ( SELECT "d"."d"
+           FROM "public"."my_department_ids"() "d"("d"))))))));
 
 
 
 ALTER TABLE "public"."profiles" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "profiles_select" ON "public"."profiles" FOR SELECT TO "authenticated" USING ("public"."is_approved"());
+CREATE POLICY "profiles_select" ON "public"."profiles" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_approved"() AS "is_approved"));
 
 
 
-CREATE POLICY "profiles_update" ON "public"."profiles" FOR UPDATE TO "authenticated" USING (((( SELECT "auth"."uid"() AS "uid") = "id") OR "public"."is_admin"())) WITH CHECK (((( SELECT "auth"."uid"() AS "uid") = "id") OR "public"."is_admin"()));
+CREATE POLICY "profiles_update" ON "public"."profiles" FOR UPDATE TO "authenticated" USING (((( SELECT "auth"."uid"() AS "uid") = "id") OR ( SELECT "public"."is_admin"() AS "is_admin"))) WITH CHECK (((( SELECT "auth"."uid"() AS "uid") = "id") OR ( SELECT "public"."is_admin"() AS "is_admin")));
 
 
 
@@ -32109,14 +32250,21 @@ ALTER TABLE "public"."proposal_parties" ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "proposal_parties_select" ON "public"."proposal_parties" FOR SELECT TO "authenticated" USING ((("profile_id" = ( SELECT "auth"."uid"() AS "uid")) OR (EXISTS ( SELECT 1
    FROM "public"."proposals" "p"
-  WHERE (("p"."id" = "proposal_parties"."proposal_id") AND ("public"."is_sadran"("p"."department_id", "p"."week_start") OR "public"."is_admin"()))))));
+  WHERE (("p"."id" = "proposal_parties"."proposal_id") AND (("p"."department_id" IN ( SELECT "d"."d"
+           FROM "public"."my_sadran_department_ids"() "d"("d"))) OR (("p"."department_id", "p"."week_start") IN ( SELECT "w"."department_id",
+            "w"."week_start"
+           FROM "public"."my_sadran_weeks"() "w"("department_id", "week_start"))) OR ( SELECT "public"."is_admin"() AS "is_admin")))))));
 
 
 
 ALTER TABLE "public"."proposals" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "proposals_select" ON "public"."proposals" FOR SELECT TO "authenticated" USING (("public"."is_proposal_party"("id") OR "public"."is_sadran"("department_id", "week_start") OR "public"."is_admin"()));
+CREATE POLICY "proposals_select" ON "public"."proposals" FOR SELECT TO "authenticated" USING ((("id" IN ( SELECT "r"."r"
+   FROM "public"."my_proposal_ids"() "r"("r"))) OR (("department_id" IN ( SELECT "d"."d"
+   FROM "public"."my_sadran_department_ids"() "d"("d"))) OR (("department_id", "week_start") IN ( SELECT "w"."department_id",
+    "w"."week_start"
+   FROM "public"."my_sadran_weeks"() "w"("department_id", "week_start")))) OR ( SELECT "public"."is_admin"() AS "is_admin")));
 
 
 
@@ -32145,7 +32293,10 @@ CREATE POLICY "push_subscriptions_update" ON "public"."push_subscriptions" FOR U
 ALTER TABLE "public"."request_alternatives" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "request_alternatives_select" ON "public"."request_alternatives" FOR SELECT TO "authenticated" USING (("public"."can_manage_week"("department_id", "week_start") OR (EXISTS ( SELECT 1
+CREATE POLICY "request_alternatives_select" ON "public"."request_alternatives" FOR SELECT TO "authenticated" USING ((( SELECT "public"."is_admin"() AS "is_admin") OR (("department_id" IN ( SELECT "d"."d"
+   FROM "public"."my_sadran_department_ids"() "d"("d"))) OR (("department_id", "week_start") IN ( SELECT "w"."department_id",
+    "w"."week_start"
+   FROM "public"."my_sadran_weeks"() "w"("department_id", "week_start")))) OR (EXISTS ( SELECT 1
    FROM "public"."requests" "q"
   WHERE (("q"."id" = "request_alternatives"."request_id") AND (("q"."requester_id" = ( SELECT "auth"."uid"() AS "uid")) OR ("q"."filed_by" = ( SELECT "auth"."uid"() AS "uid"))))))));
 
@@ -32160,17 +32311,22 @@ ALTER TABLE "public"."request_children" ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "request_children_published_select" ON "public"."request_children" FOR SELECT TO "authenticated" USING ((EXISTS ( SELECT 1
    FROM "public"."requests" "q"
-  WHERE (("q"."id" = "request_children"."request_id") AND "public"."member_of"("q"."department_id") AND "public"."request_served_by_public_ride"("q"."id")))));
+  WHERE (("q"."id" = "request_children"."request_id") AND ("q"."department_id" IN ( SELECT "d"."d"
+           FROM "public"."my_department_ids"() "d"("d"))) AND "public"."request_served_by_public_ride"("q"."id")))));
 
 
 
 CREATE POLICY "request_children_select" ON "public"."request_children" FOR SELECT TO "authenticated" USING ((EXISTS ( SELECT 1
    FROM "public"."requests" "q"
-  WHERE (("q"."id" = "request_children"."request_id") AND (("q"."requester_id" = ( SELECT "auth"."uid"() AS "uid")) OR "public"."can_manage_week"("q"."department_id", "q"."week_start"))))));
+  WHERE (("q"."id" = "request_children"."request_id") AND (("q"."requester_id" = ( SELECT "auth"."uid"() AS "uid")) OR (( SELECT "public"."is_admin"() AS "is_admin") OR (("q"."department_id" IN ( SELECT "d"."d"
+           FROM "public"."my_sadran_department_ids"() "d"("d"))) OR (("q"."department_id", "q"."week_start") IN ( SELECT "w"."department_id",
+            "w"."week_start"
+           FROM "public"."my_sadran_weeks"() "w"("department_id", "week_start"))))))))));
 
 
 
-CREATE POLICY "request_children_select_child_guardian" ON "public"."request_children" FOR SELECT TO "authenticated" USING ("public"."is_guardian_on_request"("request_id"));
+CREATE POLICY "request_children_select_child_guardian" ON "public"."request_children" FOR SELECT TO "authenticated" USING (("request_id" IN ( SELECT "r"."r"
+   FROM "public"."my_guarded_request_ids"() "r"("r"))));
 
 
 
@@ -32184,23 +32340,35 @@ CREATE POLICY "request_children_select_ride_editor" ON "public"."request_childre
 
 CREATE POLICY "request_children_write_delete" ON "public"."request_children" FOR DELETE TO "authenticated" USING ((EXISTS ( SELECT 1
    FROM "public"."requests" "q"
-  WHERE (("q"."id" = "request_children"."request_id") AND (("q"."requester_id" = ( SELECT "auth"."uid"() AS "uid")) OR "public"."can_manage_week"("q"."department_id", "q"."week_start"))))));
+  WHERE (("q"."id" = "request_children"."request_id") AND (("q"."requester_id" = ( SELECT "auth"."uid"() AS "uid")) OR (( SELECT "public"."is_admin"() AS "is_admin") OR (("q"."department_id" IN ( SELECT "d"."d"
+           FROM "public"."my_sadran_department_ids"() "d"("d"))) OR (("q"."department_id", "q"."week_start") IN ( SELECT "w"."department_id",
+            "w"."week_start"
+           FROM "public"."my_sadran_weeks"() "w"("department_id", "week_start"))))))))));
 
 
 
 CREATE POLICY "request_children_write_insert" ON "public"."request_children" FOR INSERT TO "authenticated" WITH CHECK ((EXISTS ( SELECT 1
    FROM ("public"."requests" "q"
      JOIN "public"."children" "c" ON (("c"."id" = "request_children"."child_id")))
-  WHERE (("q"."id" = "request_children"."request_id") AND ("c"."department_id" = "q"."department_id") AND (("q"."requester_id" = ( SELECT "auth"."uid"() AS "uid")) OR "public"."can_manage_week"("q"."department_id", "q"."week_start"))))));
+  WHERE (("q"."id" = "request_children"."request_id") AND ("c"."department_id" = "q"."department_id") AND (("q"."requester_id" = ( SELECT "auth"."uid"() AS "uid")) OR (( SELECT "public"."is_admin"() AS "is_admin") OR (("q"."department_id" IN ( SELECT "d"."d"
+           FROM "public"."my_sadran_department_ids"() "d"("d"))) OR (("q"."department_id", "q"."week_start") IN ( SELECT "w"."department_id",
+            "w"."week_start"
+           FROM "public"."my_sadran_weeks"() "w"("department_id", "week_start"))))))))));
 
 
 
 CREATE POLICY "request_children_write_update" ON "public"."request_children" FOR UPDATE TO "authenticated" USING ((EXISTS ( SELECT 1
    FROM "public"."requests" "q"
-  WHERE (("q"."id" = "request_children"."request_id") AND (("q"."requester_id" = ( SELECT "auth"."uid"() AS "uid")) OR "public"."can_manage_week"("q"."department_id", "q"."week_start")))))) WITH CHECK ((EXISTS ( SELECT 1
+  WHERE (("q"."id" = "request_children"."request_id") AND (("q"."requester_id" = ( SELECT "auth"."uid"() AS "uid")) OR (( SELECT "public"."is_admin"() AS "is_admin") OR (("q"."department_id" IN ( SELECT "d"."d"
+           FROM "public"."my_sadran_department_ids"() "d"("d"))) OR (("q"."department_id", "q"."week_start") IN ( SELECT "w"."department_id",
+            "w"."week_start"
+           FROM "public"."my_sadran_weeks"() "w"("department_id", "week_start")))))))))) WITH CHECK ((EXISTS ( SELECT 1
    FROM ("public"."requests" "q"
      JOIN "public"."children" "c" ON (("c"."id" = "request_children"."child_id")))
-  WHERE (("q"."id" = "request_children"."request_id") AND ("c"."department_id" = "q"."department_id") AND (("q"."requester_id" = ( SELECT "auth"."uid"() AS "uid")) OR "public"."can_manage_week"("q"."department_id", "q"."week_start"))))));
+  WHERE (("q"."id" = "request_children"."request_id") AND ("c"."department_id" = "q"."department_id") AND (("q"."requester_id" = ( SELECT "auth"."uid"() AS "uid")) OR (( SELECT "public"."is_admin"() AS "is_admin") OR (("q"."department_id" IN ( SELECT "d"."d"
+           FROM "public"."my_sadran_department_ids"() "d"("d"))) OR (("q"."department_id", "q"."week_start") IN ( SELECT "w"."department_id",
+            "w"."week_start"
+           FROM "public"."my_sadran_weeks"() "w"("department_id", "week_start"))))))))));
 
 
 
@@ -32209,17 +32377,22 @@ ALTER TABLE "public"."request_companions" ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "request_companions_published_select" ON "public"."request_companions" FOR SELECT TO "authenticated" USING ((EXISTS ( SELECT 1
    FROM "public"."requests" "q"
-  WHERE (("q"."id" = "request_companions"."request_id") AND "public"."member_of"("q"."department_id") AND "public"."request_served_by_public_ride"("q"."id")))));
+  WHERE (("q"."id" = "request_companions"."request_id") AND ("q"."department_id" IN ( SELECT "d"."d"
+           FROM "public"."my_department_ids"() "d"("d"))) AND "public"."request_served_by_public_ride"("q"."id")))));
 
 
 
 CREATE POLICY "request_companions_select" ON "public"."request_companions" FOR SELECT TO "authenticated" USING (((EXISTS ( SELECT 1
    FROM "public"."requests" "q"
-  WHERE (("q"."id" = "request_companions"."request_id") AND (("q"."requester_id" = ( SELECT "auth"."uid"() AS "uid")) OR ("q"."filed_by" = ( SELECT "auth"."uid"() AS "uid")) OR "public"."is_sadran"("q"."department_id", "q"."week_start") OR "public"."is_admin"())))) OR ("profile_id" = ( SELECT "auth"."uid"() AS "uid"))));
+  WHERE (("q"."id" = "request_companions"."request_id") AND (("q"."requester_id" = ( SELECT "auth"."uid"() AS "uid")) OR ("q"."filed_by" = ( SELECT "auth"."uid"() AS "uid")) OR (("q"."department_id" IN ( SELECT "d"."d"
+           FROM "public"."my_sadran_department_ids"() "d"("d"))) OR (("q"."department_id", "q"."week_start") IN ( SELECT "w"."department_id",
+            "w"."week_start"
+           FROM "public"."my_sadran_weeks"() "w"("department_id", "week_start")))) OR ( SELECT "public"."is_admin"() AS "is_admin"))))) OR ("profile_id" = ( SELECT "auth"."uid"() AS "uid"))));
 
 
 
-CREATE POLICY "request_companions_select_child_guardian" ON "public"."request_companions" FOR SELECT TO "authenticated" USING ("public"."is_guardian_on_request"("request_id"));
+CREATE POLICY "request_companions_select_child_guardian" ON "public"."request_companions" FOR SELECT TO "authenticated" USING (("request_id" IN ( SELECT "r"."r"
+   FROM "public"."my_guarded_request_ids"() "r"("r"))));
 
 
 
@@ -32236,11 +32409,16 @@ ALTER TABLE "public"."request_stops" ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "request_stops_select" ON "public"."request_stops" FOR SELECT TO "authenticated" USING ((EXISTS ( SELECT 1
    FROM "public"."requests" "q"
-  WHERE (("q"."id" = "request_stops"."request_id") AND (("q"."requester_id" = ( SELECT "auth"."uid"() AS "uid")) OR ("q"."filed_by" = ( SELECT "auth"."uid"() AS "uid")) OR "public"."is_request_companion"("q"."id") OR "public"."is_sadran"("q"."department_id", "q"."week_start") OR "public"."is_admin"() OR ("public"."is_approved"() AND "public"."is_week_public"("q"."department_id", "q"."week_start") AND "public"."request_served_by_public_ride"("q"."id")))))));
+  WHERE (("q"."id" = "request_stops"."request_id") AND (("q"."requester_id" = ( SELECT "auth"."uid"() AS "uid")) OR ("q"."filed_by" = ( SELECT "auth"."uid"() AS "uid")) OR ("q"."id" IN ( SELECT "r"."r"
+           FROM "public"."my_companion_request_ids"() "r"("r"))) OR (("q"."department_id" IN ( SELECT "d"."d"
+           FROM "public"."my_sadran_department_ids"() "d"("d"))) OR (("q"."department_id", "q"."week_start") IN ( SELECT "w"."department_id",
+            "w"."week_start"
+           FROM "public"."my_sadran_weeks"() "w"("department_id", "week_start")))) OR ( SELECT "public"."is_admin"() AS "is_admin") OR (( SELECT "public"."is_approved"() AS "is_approved") AND "public"."is_week_public"("q"."department_id", "q"."week_start") AND "public"."request_served_by_public_ride"("q"."id")))))));
 
 
 
-CREATE POLICY "request_stops_select_child_guardian" ON "public"."request_stops" FOR SELECT TO "authenticated" USING ("public"."is_guardian_on_request"("request_id"));
+CREATE POLICY "request_stops_select_child_guardian" ON "public"."request_stops" FOR SELECT TO "authenticated" USING (("request_id" IN ( SELECT "r"."r"
+   FROM "public"."my_guarded_request_ids"() "r"("r"))));
 
 
 
@@ -32255,7 +32433,7 @@ CREATE POLICY "request_stops_select_ride_editor" ON "public"."request_stops" FOR
 ALTER TABLE "public"."request_templates" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "request_templates_delete" ON "public"."request_templates" FOR DELETE TO "authenticated" USING ((("requester_id" = ( SELECT "auth"."uid"() AS "uid")) OR "public"."is_admin"()));
+CREATE POLICY "request_templates_delete" ON "public"."request_templates" FOR DELETE TO "authenticated" USING ((("requester_id" = ( SELECT "auth"."uid"() AS "uid")) OR ( SELECT "public"."is_admin"() AS "is_admin")));
 
 
 
@@ -32263,7 +32441,8 @@ CREATE POLICY "request_templates_insert" ON "public"."request_templates" FOR INS
 
 
 
-CREATE POLICY "request_templates_select" ON "public"."request_templates" FOR SELECT TO "authenticated" USING ((("requester_id" = ( SELECT "auth"."uid"() AS "uid")) OR "public"."is_sadran_any"("department_id") OR "public"."is_admin"()));
+CREATE POLICY "request_templates_select" ON "public"."request_templates" FOR SELECT TO "authenticated" USING ((("requester_id" = ( SELECT "auth"."uid"() AS "uid")) OR ("department_id" IN ( SELECT "d"."d"
+   FROM "public"."my_sadran_department_ids"() "d"("d"))) OR ( SELECT "public"."is_admin"() AS "is_admin")));
 
 
 
@@ -32274,11 +32453,16 @@ CREATE POLICY "request_templates_update" ON "public"."request_templates" FOR UPD
 ALTER TABLE "public"."requests" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "requests_select" ON "public"."requests" FOR SELECT TO "authenticated" USING ((("requester_id" = ( SELECT "auth"."uid"() AS "uid")) OR ("filed_by" = ( SELECT "auth"."uid"() AS "uid")) OR ( SELECT "public"."is_admin"() AS "is_admin") OR "public"."is_sadran"("department_id", "week_start") OR "public"."is_request_companion"("id") OR (( SELECT "public"."is_approved"() AS "is_approved") AND "public"."is_week_public"("department_id", "week_start") AND "public"."request_served_by_public_ride"("id"))));
+CREATE POLICY "requests_select" ON "public"."requests" FOR SELECT TO "authenticated" USING ((("requester_id" = ( SELECT "auth"."uid"() AS "uid")) OR ("filed_by" = ( SELECT "auth"."uid"() AS "uid")) OR ( SELECT "public"."is_admin"() AS "is_admin") OR (("department_id" IN ( SELECT "d"."d"
+   FROM "public"."my_sadran_department_ids"() "d"("d"))) OR (("department_id", "week_start") IN ( SELECT "w"."department_id",
+    "w"."week_start"
+   FROM "public"."my_sadran_weeks"() "w"("department_id", "week_start")))) OR ("id" IN ( SELECT "r"."r"
+   FROM "public"."my_companion_request_ids"() "r"("r"))) OR (( SELECT "public"."is_approved"() AS "is_approved") AND "public"."is_week_public"("department_id", "week_start") AND "public"."request_served_by_public_ride"("id"))));
 
 
 
-CREATE POLICY "requests_select_child_guardian" ON "public"."requests" FOR SELECT TO "authenticated" USING ((( SELECT "public"."is_approved"() AS "is_approved") AND "public"."is_guardian_on_request"("id")));
+CREATE POLICY "requests_select_child_guardian" ON "public"."requests" FOR SELECT TO "authenticated" USING ((( SELECT "public"."is_approved"() AS "is_approved") AND ("id" IN ( SELECT "r"."r"
+   FROM "public"."my_guarded_request_ids"() "r"("r")))));
 
 
 
@@ -32297,14 +32481,20 @@ CREATE POLICY "ride_change_parties_select" ON "public"."ride_change_parties" FOR
 
 
 
-CREATE POLICY "ride_change_planning_private" ON "public"."ride_change_requests" AS RESTRICTIVE FOR SELECT TO "authenticated" USING (((NOT "is_planning") OR "public"."can_manage_week"("department_id", "week_start")));
+CREATE POLICY "ride_change_planning_private" ON "public"."ride_change_requests" AS RESTRICTIVE FOR SELECT TO "authenticated" USING (((NOT "is_planning") OR (( SELECT "public"."is_admin"() AS "is_admin") OR (("department_id" IN ( SELECT "d"."d"
+   FROM "public"."my_sadran_department_ids"() "d"("d"))) OR (("department_id", "week_start") IN ( SELECT "w"."department_id",
+    "w"."week_start"
+   FROM "public"."my_sadran_weeks"() "w"("department_id", "week_start")))))));
 
 
 
 ALTER TABLE "public"."ride_change_requests" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "ride_change_requests_select" ON "public"."ride_change_requests" FOR SELECT TO "authenticated" USING ((("requester_id" = ( SELECT "auth"."uid"() AS "uid")) OR "public"."can_manage_week"("department_id", "week_start") OR ("public"."is_approved"() AND "public"."is_week_public"("department_id", "week_start"))));
+CREATE POLICY "ride_change_requests_select" ON "public"."ride_change_requests" FOR SELECT TO "authenticated" USING ((("requester_id" = ( SELECT "auth"."uid"() AS "uid")) OR (( SELECT "public"."is_admin"() AS "is_admin") OR (("department_id" IN ( SELECT "d"."d"
+   FROM "public"."my_sadran_department_ids"() "d"("d"))) OR (("department_id", "week_start") IN ( SELECT "w"."department_id",
+    "w"."week_start"
+   FROM "public"."my_sadran_weeks"() "w"("department_id", "week_start"))))) OR (( SELECT "public"."is_approved"() AS "is_approved") AND "public"."is_week_public"("department_id", "week_start"))));
 
 
 
@@ -32318,7 +32508,11 @@ CREATE POLICY "ride_editors_select" ON "public"."ride_editors" FOR SELECT TO "au
 ALTER TABLE "public"."ride_passengers" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "ride_passengers_select" ON "public"."ride_passengers" FOR SELECT TO "authenticated" USING (("public"."member_of"("department_id") AND ("public"."is_week_public"("department_id", "week_start") OR "public"."can_manage_week"("department_id", "week_start") OR ("person_id" = ( SELECT "auth"."uid"() AS "uid")))));
+CREATE POLICY "ride_passengers_select" ON "public"."ride_passengers" FOR SELECT TO "authenticated" USING ((("department_id" IN ( SELECT "d"."d"
+   FROM "public"."my_department_ids"() "d"("d"))) AND ("public"."is_week_public"("department_id", "week_start") OR (( SELECT "public"."is_admin"() AS "is_admin") OR (("department_id" IN ( SELECT "d"."d"
+   FROM "public"."my_sadran_department_ids"() "d"("d"))) OR (("department_id", "week_start") IN ( SELECT "w"."department_id",
+    "w"."week_start"
+   FROM "public"."my_sadran_weeks"() "w"("department_id", "week_start"))))) OR ("person_id" = ( SELECT "auth"."uid"() AS "uid")))));
 
 
 
@@ -32334,78 +32528,91 @@ CREATE POLICY "ride_requests_select" ON "public"."ride_requests" FOR SELECT TO "
 ALTER TABLE "public"."ride_types" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "ride_types_insert" ON "public"."ride_types" FOR INSERT TO "authenticated" WITH CHECK ("public"."can_manage_operations"("department_id"));
+CREATE POLICY "ride_types_insert" ON "public"."ride_types" FOR INSERT TO "authenticated" WITH CHECK ((( SELECT "public"."is_admin"() AS "is_admin") OR ("department_id" IN ( SELECT "d"."d"
+   FROM "public"."my_sadran_department_ids"() "d"("d")))));
 
 
 
-CREATE POLICY "ride_types_select" ON "public"."ride_types" FOR SELECT TO "authenticated" USING ("public"."is_approved"());
+CREATE POLICY "ride_types_select" ON "public"."ride_types" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_approved"() AS "is_approved"));
 
 
 
-CREATE POLICY "ride_types_update" ON "public"."ride_types" FOR UPDATE TO "authenticated" USING ("public"."can_manage_operations"("department_id")) WITH CHECK ("public"."can_manage_operations"("department_id"));
+CREATE POLICY "ride_types_update" ON "public"."ride_types" FOR UPDATE TO "authenticated" USING ((( SELECT "public"."is_admin"() AS "is_admin") OR ("department_id" IN ( SELECT "d"."d"
+   FROM "public"."my_sadran_department_ids"() "d"("d"))))) WITH CHECK ((( SELECT "public"."is_admin"() AS "is_admin") OR ("department_id" IN ( SELECT "d"."d"
+   FROM "public"."my_sadran_department_ids"() "d"("d")))));
 
 
 
 ALTER TABLE "public"."rides" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "rides_select" ON "public"."rides" FOR SELECT TO "authenticated" USING (("public"."can_manage_week"("department_id", "week_start") OR ("public"."is_approved"() AND ("status" <> 'draft'::"public"."ride_status") AND "public"."is_day_public"("department_id", "week_start", (("starts_at" AT TIME ZONE 'Asia/Jerusalem'::"text"))::"date"))));
+CREATE POLICY "rides_select" ON "public"."rides" FOR SELECT TO "authenticated" USING ((( SELECT "public"."is_admin"() AS "is_admin") OR (("department_id" IN ( SELECT "d"."d"
+   FROM "public"."my_sadran_department_ids"() "d"("d"))) OR (("department_id", "week_start") IN ( SELECT "w"."department_id",
+    "w"."week_start"
+   FROM "public"."my_sadran_weeks"() "w"("department_id", "week_start")))) OR (( SELECT "public"."is_approved"() AS "is_approved") AND ("status" <> 'draft'::"public"."ride_status") AND "public"."is_day_public"("department_id", "week_start", (("starts_at" AT TIME ZONE 'Asia/Jerusalem'::"text"))::"date"))));
 
 
 
 ALTER TABLE "public"."sadran_assignments" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "sadran_assignments_delete" ON "public"."sadran_assignments" FOR DELETE TO "authenticated" USING ("public"."is_admin"());
+CREATE POLICY "sadran_assignments_delete" ON "public"."sadran_assignments" FOR DELETE TO "authenticated" USING (( SELECT "public"."is_admin"() AS "is_admin"));
 
 
 
-CREATE POLICY "sadran_assignments_insert" ON "public"."sadran_assignments" FOR INSERT TO "authenticated" WITH CHECK ("public"."is_admin"());
+CREATE POLICY "sadran_assignments_insert" ON "public"."sadran_assignments" FOR INSERT TO "authenticated" WITH CHECK (( SELECT "public"."is_admin"() AS "is_admin"));
 
 
 
-CREATE POLICY "sadran_assignments_select" ON "public"."sadran_assignments" FOR SELECT TO "authenticated" USING (("public"."member_of"("department_id") OR "public"."is_admin"()));
+CREATE POLICY "sadran_assignments_select" ON "public"."sadran_assignments" FOR SELECT TO "authenticated" USING ((("department_id" IN ( SELECT "d"."d"
+   FROM "public"."my_department_ids"() "d"("d"))) OR ( SELECT "public"."is_admin"() AS "is_admin")));
 
 
 
-CREATE POLICY "sadran_assignments_update" ON "public"."sadran_assignments" FOR UPDATE TO "authenticated" USING ("public"."is_admin"()) WITH CHECK ("public"."is_admin"());
+CREATE POLICY "sadran_assignments_update" ON "public"."sadran_assignments" FOR UPDATE TO "authenticated" USING (( SELECT "public"."is_admin"() AS "is_admin")) WITH CHECK (( SELECT "public"."is_admin"() AS "is_admin"));
 
 
 
 ALTER TABLE "public"."siddur_versions" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "siddur_versions_select" ON "public"."siddur_versions" FOR SELECT TO "authenticated" USING ("public"."can_manage_week"("department_id", "week_start"));
+CREATE POLICY "siddur_versions_select" ON "public"."siddur_versions" FOR SELECT TO "authenticated" USING ((( SELECT "public"."is_admin"() AS "is_admin") OR (("department_id" IN ( SELECT "d"."d"
+   FROM "public"."my_sadran_department_ids"() "d"("d"))) OR (("department_id", "week_start") IN ( SELECT "w"."department_id",
+    "w"."week_start"
+   FROM "public"."my_sadran_weeks"() "w"("department_id", "week_start"))))));
 
 
 
 ALTER TABLE "public"."solver_runs" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "solver_runs_delete" ON "public"."solver_runs" FOR DELETE TO "authenticated" USING ("public"."is_admin"());
+CREATE POLICY "solver_runs_delete" ON "public"."solver_runs" FOR DELETE TO "authenticated" USING (( SELECT "public"."is_admin"() AS "is_admin"));
 
 
 
-CREATE POLICY "solver_runs_select" ON "public"."solver_runs" FOR SELECT TO "authenticated" USING (("public"."is_sadran"("department_id", "week_start") OR "public"."is_admin"()));
+CREATE POLICY "solver_runs_select" ON "public"."solver_runs" FOR SELECT TO "authenticated" USING ((("department_id" IN ( SELECT "d"."d"
+   FROM "public"."my_sadran_department_ids"() "d"("d"))) OR (("department_id", "week_start") IN ( SELECT "w"."department_id",
+    "w"."week_start"
+   FROM "public"."my_sadran_weeks"() "w"("department_id", "week_start"))) OR ( SELECT "public"."is_admin"() AS "is_admin")));
 
 
 
 ALTER TABLE "public"."text_fragments" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "text_fragments_delete" ON "public"."text_fragments" FOR DELETE TO "authenticated" USING ("public"."is_admin"());
+CREATE POLICY "text_fragments_delete" ON "public"."text_fragments" FOR DELETE TO "authenticated" USING (( SELECT "public"."is_admin"() AS "is_admin"));
 
 
 
-CREATE POLICY "text_fragments_insert" ON "public"."text_fragments" FOR INSERT TO "authenticated" WITH CHECK ("public"."is_admin"());
+CREATE POLICY "text_fragments_insert" ON "public"."text_fragments" FOR INSERT TO "authenticated" WITH CHECK (( SELECT "public"."is_admin"() AS "is_admin"));
 
 
 
-CREATE POLICY "text_fragments_select" ON "public"."text_fragments" FOR SELECT TO "authenticated" USING ("public"."is_approved"());
+CREATE POLICY "text_fragments_select" ON "public"."text_fragments" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_approved"() AS "is_approved"));
 
 
 
-CREATE POLICY "text_fragments_update" ON "public"."text_fragments" FOR UPDATE TO "authenticated" USING ("public"."is_admin"()) WITH CHECK ("public"."is_admin"());
+CREATE POLICY "text_fragments_update" ON "public"."text_fragments" FOR UPDATE TO "authenticated" USING (( SELECT "public"."is_admin"() AS "is_admin")) WITH CHECK (( SELECT "public"."is_admin"() AS "is_admin"));
 
 
 
@@ -32419,14 +32626,22 @@ CREATE POLICY "unsent_change_reminders_select" ON "public"."unsent_change_remind
 ALTER TABLE "public"."waitlist_group_members" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "waitlist_group_members_select" ON "public"."waitlist_group_members" FOR SELECT TO "authenticated" USING (("public"."member_of"("department_id") AND ("public"."is_week_public"("department_id", "week_start") OR "public"."can_manage_week"("department_id", "week_start"))));
+CREATE POLICY "waitlist_group_members_select" ON "public"."waitlist_group_members" FOR SELECT TO "authenticated" USING ((("department_id" IN ( SELECT "d"."d"
+   FROM "public"."my_department_ids"() "d"("d"))) AND ("public"."is_week_public"("department_id", "week_start") OR (( SELECT "public"."is_admin"() AS "is_admin") OR (("department_id" IN ( SELECT "d"."d"
+   FROM "public"."my_sadran_department_ids"() "d"("d"))) OR (("department_id", "week_start") IN ( SELECT "w"."department_id",
+    "w"."week_start"
+   FROM "public"."my_sadran_weeks"() "w"("department_id", "week_start"))))))));
 
 
 
 ALTER TABLE "public"."waitlist_groups" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "waitlist_groups_select" ON "public"."waitlist_groups" FOR SELECT TO "authenticated" USING (("public"."member_of"("department_id") AND ("public"."is_week_public"("department_id", "week_start") OR "public"."can_manage_week"("department_id", "week_start"))));
+CREATE POLICY "waitlist_groups_select" ON "public"."waitlist_groups" FOR SELECT TO "authenticated" USING ((("department_id" IN ( SELECT "d"."d"
+   FROM "public"."my_department_ids"() "d"("d"))) AND ("public"."is_week_public"("department_id", "week_start") OR (( SELECT "public"."is_admin"() AS "is_admin") OR (("department_id" IN ( SELECT "d"."d"
+   FROM "public"."my_sadran_department_ids"() "d"("d"))) OR (("department_id", "week_start") IN ( SELECT "w"."department_id",
+    "w"."week_start"
+   FROM "public"."my_sadran_weeks"() "w"("department_id", "week_start"))))))));
 
 
 
@@ -32436,28 +32651,31 @@ ALTER TABLE "public"."week_change_pending" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "public"."week_change_seq" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "week_change_seq_select" ON "public"."week_change_seq" FOR SELECT TO "authenticated" USING (("public"."member_of"("department_id") OR "public"."is_admin"() OR ("public"."is_approved"() AND "public"."is_week_public"("department_id", "week_start"))));
+CREATE POLICY "week_change_seq_select" ON "public"."week_change_seq" FOR SELECT TO "authenticated" USING ((("department_id" IN ( SELECT "d"."d"
+   FROM "public"."my_department_ids"() "d"("d"))) OR ( SELECT "public"."is_admin"() AS "is_admin") OR (( SELECT "public"."is_approved"() AS "is_approved") AND "public"."is_week_public"("department_id", "week_start"))));
 
 
 
 ALTER TABLE "public"."week_stats" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "week_stats_select" ON "public"."week_stats" FOR SELECT TO "authenticated" USING (("public"."is_admin"() OR "public"."is_sadran_any"("department_id")));
+CREATE POLICY "week_stats_select" ON "public"."week_stats" FOR SELECT TO "authenticated" USING ((( SELECT "public"."is_admin"() AS "is_admin") OR ("department_id" IN ( SELECT "d"."d"
+   FROM "public"."my_sadran_department_ids"() "d"("d")))));
 
 
 
 ALTER TABLE "public"."weekday_labels" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "weekday_labels_select" ON "public"."weekday_labels" FOR SELECT TO "authenticated" USING ("public"."is_approved"());
+CREATE POLICY "weekday_labels_select" ON "public"."weekday_labels" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_approved"() AS "is_approved"));
 
 
 
 ALTER TABLE "public"."weeks" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "weeks_select" ON "public"."weeks" FOR SELECT TO "authenticated" USING (("public"."member_of"("department_id") OR "public"."is_admin"() OR ("public"."is_approved"() AND ("phase" = ANY (ARRAY['published'::"public"."week_phase", 'live'::"public"."week_phase", 'archived'::"public"."week_phase"])))));
+CREATE POLICY "weeks_select" ON "public"."weeks" FOR SELECT TO "authenticated" USING ((("department_id" IN ( SELECT "d"."d"
+   FROM "public"."my_department_ids"() "d"("d"))) OR ( SELECT "public"."is_admin"() AS "is_admin") OR (( SELECT "public"."is_approved"() AS "is_approved") AND ("phase" = ANY (ARRAY['published'::"public"."week_phase", 'live'::"public"."week_phase", 'archived'::"public"."week_phase"])))));
 
 
 
@@ -34463,6 +34681,30 @@ GRANT ALL ON FUNCTION "public"."my_co_guardians"("p_department_id" "uuid") TO "a
 
 
 
+REVOKE ALL ON FUNCTION "public"."my_companion_request_ids"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."my_companion_request_ids"() TO "service_role";
+GRANT ALL ON FUNCTION "public"."my_companion_request_ids"() TO "authenticated";
+
+
+
+REVOKE ALL ON FUNCTION "public"."my_department_ids"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."my_department_ids"() TO "service_role";
+GRANT ALL ON FUNCTION "public"."my_department_ids"() TO "authenticated";
+
+
+
+REVOKE ALL ON FUNCTION "public"."my_guarded_request_ids"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."my_guarded_request_ids"() TO "service_role";
+GRANT ALL ON FUNCTION "public"."my_guarded_request_ids"() TO "authenticated";
+
+
+
+REVOKE ALL ON FUNCTION "public"."my_proposal_ids"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."my_proposal_ids"() TO "service_role";
+GRANT ALL ON FUNCTION "public"."my_proposal_ids"() TO "authenticated";
+
+
+
 REVOKE ALL ON FUNCTION "public"."my_ride_editor_links"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."my_ride_editor_links"() TO "service_role";
 GRANT ALL ON FUNCTION "public"."my_ride_editor_links"() TO "authenticated";
@@ -34478,6 +34720,18 @@ GRANT ALL ON FUNCTION "public"."my_ride_owners"() TO "authenticated";
 REVOKE ALL ON FUNCTION "public"."my_ride_parts"("p_ride_ids" "uuid"[]) FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."my_ride_parts"("p_ride_ids" "uuid"[]) TO "service_role";
 GRANT ALL ON FUNCTION "public"."my_ride_parts"("p_ride_ids" "uuid"[]) TO "authenticated";
+
+
+
+REVOKE ALL ON FUNCTION "public"."my_sadran_department_ids"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."my_sadran_department_ids"() TO "service_role";
+GRANT ALL ON FUNCTION "public"."my_sadran_department_ids"() TO "authenticated";
+
+
+
+REVOKE ALL ON FUNCTION "public"."my_sadran_weeks"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."my_sadran_weeks"() TO "service_role";
+GRANT ALL ON FUNCTION "public"."my_sadran_weeks"() TO "authenticated";
 
 
 
