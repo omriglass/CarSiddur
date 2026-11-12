@@ -781,9 +781,49 @@ export async function fetchProposalPartyTexts(proposalId: string): Promise<Recor
 }
 
 /** R5B5: the server's merge preview (window + the joiner's own times) - the single source for every merge text. */
-export async function fetchMergePreview(rideId: string, requestId: string, leg: RideLeg): Promise<ServerMergePreview | null> {
-  const raw = await rpc("merge_preview", { p_ride_id: rideId, p_request_id: requestId, p_leg: leg });
-  return parseServerMergePreview(raw);
+/**
+ * PF1: previews asked for in the same tick (the popup's legs, every open merge of the board) go out as ONE
+ * `merge_previews` call instead of one request each in parallel. Each caller still gets its own result or its own
+ * error (an item's refusal arrives as that item's `error`, shaped like a failed call), so hooks and cache keys are
+ * unchanged.
+ */
+export function fetchMergePreview(rideId: string, requestId: string, leg: RideLeg): Promise<ServerMergePreview | null> {
+  return new Promise((resolve, reject) => {
+    pendingMergePreviews.push({ rideId, requestId, leg, resolve, reject });
+    if (pendingMergePreviews.length === 1) setTimeout(() => void flushMergePreviews(), 0);
+  });
+}
+
+interface PendingMergePreview {
+  rideId: string; requestId: string; leg: RideLeg;
+  resolve: (preview: ServerMergePreview | null) => void;
+  reject: (error: unknown) => void;
+}
+let pendingMergePreviews: PendingMergePreview[] = [];
+/** The server takes up to 60 specs per call. */
+const MERGE_PREVIEW_BATCH = 50;
+
+async function flushMergePreviews(): Promise<void> {
+  const batch = pendingMergePreviews;
+  pendingMergePreviews = [];
+  // One call after another, never in parallel: the point is one API connection at a time.
+  for (let start = 0; start < batch.length; start += MERGE_PREVIEW_BATCH) {
+    const chunk = batch.slice(start, start + MERGE_PREVIEW_BATCH);
+    try {
+      const raw = await rpc("merge_previews", {
+        p_specs: chunk.map((item) => ({ ride_id: item.rideId, request_id: item.requestId, leg: item.leg })),
+      });
+      const items = Array.isArray(raw) ? raw : [];
+      chunk.forEach((item, index) => {
+        const answer = items[index];
+        if (!answer || typeof answer !== "object" || Array.isArray(answer)) item.reject(toAppError(new Error("merge_previews: missing item")));
+        else if (answer.error) item.reject(toAppError(answer.error));
+        else item.resolve(parseServerMergePreview(answer.preview ?? null));
+      });
+    } catch (error) {
+      chunk.forEach((item) => item.reject(error));
+    }
+  }
 }
 
 export interface CreateProposalInput {

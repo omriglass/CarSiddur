@@ -366,6 +366,14 @@ begin
   insert into public.requests(department_id,week_start,requester_id,filed_by,origin_id,destination_id,ride_type_id,depart_at,trip_shape,trip_type,needs_car_at_destination,one_way_car_mode,status)
     values(dept,w,m2,manager,haifa,zich,typ,d0+interval '30 minutes','one_way_to','one_way',true,'relay','submitted') returning id into g1;
   pv:=public.merge_preview(rA,g1,'out');
+  -- PF1 B2: the batch form gives the same preview per item, in order; a bad item is its own error only.
+  assert public.merge_previews(jsonb_build_array(
+           jsonb_build_object('ride_id', rA, 'request_id', g1, 'leg', 'out'),
+           jsonb_build_object('ride_id', gen_random_uuid(), 'request_id', g1, 'leg', 'out'),
+           jsonb_build_object('ride_id', rA, 'request_id', g1, 'leg', 'out')))
+       = jsonb_build_array(jsonb_build_object('preview', pv),
+           jsonb_build_object('error', jsonb_build_object('code', 'P0001', 'message', 'ride_not_found', 'details', null, 'hint', null)),
+           jsonb_build_object('preview', pv)), 'merge_previews = merge_preview per item';
   assert (pv->>'ok')::boolean=false and pv->>'error'='merge_boards_at_end', format('merge_preview must refuse boarding at the end, got %s',pv);
   begin
     perform public.create_proposal(g1,rA,'merge',jsonb_build_object('ride_id',rA,

@@ -13005,6 +13005,38 @@ end $$;
 ALTER FUNCTION "public"."merge_preview"("p_ride_id" "uuid", "p_request_id" "uuid", "p_leg" "public"."ride_leg") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."merge_previews"("p_specs" "jsonb") RETURNS "jsonb"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  s jsonb;
+  v_out jsonb := '[]'::jsonb;
+  v_state text; v_msg text; v_detail text; v_hint text;
+begin
+  if not public.is_approved() then raise exception 'not_authorized' using errcode = 'P0001'; end if;
+  if p_specs is null or jsonb_typeof(p_specs) <> 'array' or jsonb_array_length(p_specs) > 60 then
+    raise exception 'invalid_input' using errcode = 'P0001';
+  end if;
+  for s in select e.value from jsonb_array_elements(p_specs) with ordinality e(value, n) order by e.n loop
+    begin
+      v_out := v_out || jsonb_build_array(jsonb_build_object('preview',
+        public.merge_preview((s ->> 'ride_id')::uuid, (s ->> 'request_id')::uuid,
+                             coalesce(s ->> 'leg', 'both')::public.ride_leg)));
+    exception when others then
+      get stacked diagnostics v_state = returned_sqlstate, v_msg = message_text,
+                              v_detail = pg_exception_detail, v_hint = pg_exception_hint;
+      v_out := v_out || jsonb_build_array(jsonb_build_object('error', jsonb_build_object(
+        'code', v_state, 'message', v_msg, 'details', nullif(v_detail, ''), 'hint', nullif(v_hint, ''))));
+    end;
+  end loop;
+  return v_out;
+end $$;
+
+
+ALTER FUNCTION "public"."merge_previews"("p_specs" "jsonb") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."merge_request_fingerprint"("p_request_id" "uuid") RETURNS "text"
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -34305,6 +34337,12 @@ GRANT ALL ON FUNCTION "public"."merge_destination"("p_source_id" "uuid", "p_targ
 REVOKE ALL ON FUNCTION "public"."merge_preview"("p_ride_id" "uuid", "p_request_id" "uuid", "p_leg" "public"."ride_leg") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."merge_preview"("p_ride_id" "uuid", "p_request_id" "uuid", "p_leg" "public"."ride_leg") TO "service_role";
 GRANT ALL ON FUNCTION "public"."merge_preview"("p_ride_id" "uuid", "p_request_id" "uuid", "p_leg" "public"."ride_leg") TO "authenticated";
+
+
+
+REVOKE ALL ON FUNCTION "public"."merge_previews"("p_specs" "jsonb") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."merge_previews"("p_specs" "jsonb") TO "service_role";
+GRANT ALL ON FUNCTION "public"."merge_previews"("p_specs" "jsonb") TO "authenticated";
 
 
 

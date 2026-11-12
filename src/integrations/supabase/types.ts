@@ -6949,6 +6949,7 @@ export type Database = {
         }
         Returns: Json
       }
+      merge_previews: { Args: { p_specs: Json }; Returns: Json }
       merge_request_fingerprint: {
         Args: { p_request_id: string }
         Returns: string
