@@ -138,6 +138,22 @@ begin
     execute 'set local role authenticated';
     assert not exists (select 1 from public.requests where id = (select id from re_ids where k = 'kid_request')), 'not for someone who is not a guardian';
     execute 'reset role';
+    -- PF1: `my_ride_owners()` (the read policies' set, once per query) = the per-pair rule, for every member.
+    declare m record; bad int; total int := 0;
+    begin
+      for m in select distinct profile_id from public.department_members loop
+        perform pg_temp.as_user(m.profile_id);
+        select count(*) into bad from (
+          select d.id as department_id, p.id as owner_id from public.departments d cross join public.profiles p
+           where public._is_ride_editor(d.id, p.id, m.profile_id)) x
+          full join public.my_ride_owners() o using (department_id, owner_id)
+         where x.department_id is null or o.department_id is null
+            or (select count(*) from public.my_ride_owners() o2 where o2.department_id = o.department_id and o2.owner_id = o.owner_id) <> 1;
+        assert bad = 0, format('my_ride_owners() differs from _is_ride_editor for %s (%s pairs)', m.profile_id, bad);
+        total := total + (select count(*) from public.my_ride_owners());
+      end loop;
+      assert total >= 2, 'the parity check saw editor pairs (explicit and shared-child)';
+    end;
     perform pg_temp.as_user(coparent);
     delete from public.child_guardians where child_id = kid and profile_id = coparent;
     assert not public._is_ride_editor('00000000-0000-0000-0000-000000000001', owner, coparent), 'rights end with the shared child';

@@ -442,7 +442,7 @@ declare
   -- 'name:one-word-reason'. Duplicated names (day_date_label has two overloads) are fine —
   -- the completeness check below groups by proname.
   iso_exempt text[] := array[
-    'my_car_tasks:caller_scoped', 'my_ride_editor_links:caller_scoped', 'is_guardian_on_request:read-helper',
+    'my_car_tasks:caller_scoped', 'my_ride_editor_links:caller_scoped', 'my_ride_owners:caller_scoped', 'is_guardian_on_request:read-helper',
     'audit_row:trigger', 'car_issues_protect_resolution_fields:trigger',
     'cars_protect_owner_editable_fields:trigger', 'client_errors_rate_limit:trigger',
     'flag_rides_in_maintenance:trigger', 'handle_new_user:trigger',

@@ -7012,6 +7012,13 @@ export type Database = {
           person_name: string
         }[]
       }
+      my_ride_owners: {
+        Args: never
+        Returns: {
+          department_id: string
+          owner_id: string
+        }[]
+      }
       my_ride_parts: {
         Args: { p_ride_ids: string[] }
         Returns: {

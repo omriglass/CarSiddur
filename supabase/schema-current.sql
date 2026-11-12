@@ -13348,6 +13348,32 @@ $$;
 ALTER FUNCTION "public"."my_ride_editor_links"() OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."my_ride_owners"() RETURNS TABLE("department_id" "uuid", "owner_id" "uuid")
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  with me as (
+    select dm.department_id, dm.profile_id as actor
+      from public.department_members dm
+      join public.profiles p on p.id = dm.profile_id
+     where dm.profile_id = (select auth.uid()) and dm.removed_at is null and p.approval_status = 'approved'
+  )
+  select e.department_id, e.owner_id
+    from me join public.ride_editors e on e.department_id = me.department_id and e.editor_id = me.actor
+   where e.owner_id <> me.actor
+  union
+  select me.department_id, ga.profile_id
+    from me
+    join public.child_guardians gb on gb.profile_id = me.actor
+    join public.children c on c.id = gb.child_id and c.department_id = me.department_id
+    join public.child_guardians ga on ga.child_id = gb.child_id
+   where ga.profile_id <> me.actor;
+$$;
+
+
+ALTER FUNCTION "public"."my_ride_owners"() OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."my_ride_parts"("p_ride_ids" "uuid"[]) RETURNS TABLE("ride_id" "uuid", "starts_at" timestamp with time zone, "ends_at" timestamp with time zone, "whole" boolean)
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -32140,7 +32166,9 @@ CREATE POLICY "request_children_select_child_guardian" ON "public"."request_chil
 
 CREATE POLICY "request_children_select_ride_editor" ON "public"."request_children" FOR SELECT TO "authenticated" USING ((EXISTS ( SELECT 1
    FROM "public"."requests" "q"
-  WHERE (("q"."id" = "request_children"."request_id") AND "public"."is_ride_editor_of"("q"."department_id", "q"."requester_id")))));
+  WHERE (("q"."id" = "request_children"."request_id") AND (("q"."department_id", "q"."requester_id") IN ( SELECT "o"."department_id",
+            "o"."owner_id"
+           FROM "public"."my_ride_owners"() "o"("department_id", "owner_id")))))));
 
 
 
@@ -32187,7 +32215,9 @@ CREATE POLICY "request_companions_select_child_guardian" ON "public"."request_co
 
 CREATE POLICY "request_companions_select_ride_editor" ON "public"."request_companions" FOR SELECT TO "authenticated" USING ((EXISTS ( SELECT 1
    FROM "public"."requests" "q"
-  WHERE (("q"."id" = "request_companions"."request_id") AND "public"."is_ride_editor_of"("q"."department_id", "q"."requester_id")))));
+  WHERE (("q"."id" = "request_companions"."request_id") AND (("q"."department_id", "q"."requester_id") IN ( SELECT "o"."department_id",
+            "o"."owner_id"
+           FROM "public"."my_ride_owners"() "o"("department_id", "owner_id")))))));
 
 
 
@@ -32206,7 +32236,9 @@ CREATE POLICY "request_stops_select_child_guardian" ON "public"."request_stops" 
 
 CREATE POLICY "request_stops_select_ride_editor" ON "public"."request_stops" FOR SELECT TO "authenticated" USING ((EXISTS ( SELECT 1
    FROM "public"."requests" "q"
-  WHERE (("q"."id" = "request_stops"."request_id") AND "public"."is_ride_editor_of"("q"."department_id", "q"."requester_id")))));
+  WHERE (("q"."id" = "request_stops"."request_id") AND (("q"."department_id", "q"."requester_id") IN ( SELECT "o"."department_id",
+            "o"."owner_id"
+           FROM "public"."my_ride_owners"() "o"("department_id", "owner_id")))))));
 
 
 
@@ -32240,7 +32272,9 @@ CREATE POLICY "requests_select_child_guardian" ON "public"."requests" FOR SELECT
 
 
 
-CREATE POLICY "requests_select_ride_editor" ON "public"."requests" FOR SELECT TO "authenticated" USING ("public"."is_ride_editor_of"("department_id", "requester_id"));
+CREATE POLICY "requests_select_ride_editor" ON "public"."requests" FOR SELECT TO "authenticated" USING ((("department_id", "requester_id") IN ( SELECT "o"."department_id",
+    "o"."owner_id"
+   FROM "public"."my_ride_owners"() "o"("department_id", "owner_id"))));
 
 
 
@@ -34422,6 +34456,12 @@ GRANT ALL ON FUNCTION "public"."my_co_guardians"("p_department_id" "uuid") TO "a
 REVOKE ALL ON FUNCTION "public"."my_ride_editor_links"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."my_ride_editor_links"() TO "service_role";
 GRANT ALL ON FUNCTION "public"."my_ride_editor_links"() TO "authenticated";
+
+
+
+REVOKE ALL ON FUNCTION "public"."my_ride_owners"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."my_ride_owners"() TO "service_role";
+GRANT ALL ON FUNCTION "public"."my_ride_owners"() TO "authenticated";
 
 
 
