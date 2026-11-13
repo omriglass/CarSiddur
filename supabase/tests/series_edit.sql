@@ -51,6 +51,23 @@ begin
     raise exception 'a stale series edit was accepted';
   exception when others then if sqlerrm not like '%stale%' then raise; end if; end;
 
+  -- R20B6: the edit opened on the second day sends that leg's version, which may differ from the first leg's
+  update public.requests set notes = 'leg 2 touched' where series_id = old_series and series_index = 2;
+  select id, version into legs from public.requests where series_id = old_series and series_index = 2;
+  assert legs.version <> head_version, 'the two legs now have different versions';
+  -- probe only (rolled back): the leg's own version is accepted
+  perform public.submit_series_request(base || jsonb_build_object('series_id', old_series, 'request_id', legs.id,
+    'expected_version', legs.version, 'probe_only', true,
+    'depart_at', ((w + 2) + time '08:00') at time zone 'Asia/Jerusalem',
+    'return_at', ((w + 3) + time '18:00') at time zone 'Asia/Jerusalem'));
+  begin
+    perform public.submit_series_request(base || jsonb_build_object('series_id', old_series, 'request_id', legs.id,
+      'expected_version', head_version, 'probe_only', true,
+      'depart_at', ((w + 2) + time '08:00') at time zone 'Asia/Jerusalem',
+      'return_at', ((w + 3) + time '18:00') at time zone 'Asia/Jerusalem'));
+    raise exception 'an edit opened on day 2 was checked against day 1''s version';
+  exception when others then if sqlerrm not like '%stale%' then raise; end if; end;
+
   edited := public.submit_series_request(base || jsonb_build_object('series_id', old_series, 'expected_version', head_version,
     'depart_at', ((w + 2) + time '08:00') at time zone 'Asia/Jerusalem',
     'return_at', ((w + 3) + time '18:00') at time zone 'Asia/Jerusalem'));

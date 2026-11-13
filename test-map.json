@@ -863,6 +863,8 @@
         "supabase/migrations/**/*unified_ride_people*",
         "supabase/tests/ride_passengers.sql",
         "supabase/tests/leave_merged_ride.sql",
+        "src/features/rides/handOver.ts",
+        "src/features/rides/handOver.test.ts",
         "supabase/tests/qa20_fixes.sql",
         "supabase/migrations/**/*leave_merged_ride*",
         "supabase/migrations/**/*split_ride_companion*",

@@ -1687,15 +1687,15 @@ Pass 1 `qa-p1` (seed 9313, 40 members, 170 requests): a normal Sadran and member
 - R20B3 — ✅ 2026-11-14 (REQ item 230, `20261114100000`). (med, verified) **`split_series` notifies on unpublished days.** There is no `is_day_public` check, unlike `leave_merged_ride`, so members hear about a ride they cannot see yet (p3).
 - R20B4 — ✅ 2026-11-14 (REQ item 230, `20261114100000`). (med, verified) **The co-owner's `private_car_changed` notice goes out at once from the board**, while the rider's own notice waits for the next publish or "שלח". `_notify_private_car_owners` should follow the board hold (REQ §13.138). Case: p1 Thu, ride cdf5d68b.
 - R20B5 — (med, verified; lead re-checked 2026-11-14) **Auto-fill makes a member the driver of two overlapping rides.** עדי לוי drives her private car Mon 07:30–08:30 (p2). Her other request (10:00–12:00, round trip) was merged by auto-fill with two הקפצות at 07:30 and 08:00, so her ride became 08:00–11:00 on the minivan, 2 h earlier than she asked and overlapping her own first trip. The publish page only warns. Look at the solver's merge window (a host round trip moved past its flexibility?) and add a person-busy check. Not in the QA-20 fix branch.
-- R20B6 — (med, reproduced twice by the agent) **Editing a request that overlaps one of my own multi-day requests, then tapping "השאר/י את שתיהן", fails with "מישהו אחר שינה את זה בינתיים"** and saves nothing. The retry probably sends a stale version. Case: p3 m11, a90bdab2, adding a child.
+- R20B6 — ✅ 2026-11-14 (REQ item 230 g; the series edit checked the first day's version). (med, reproduced twice by the agent) **Editing a request that overlaps one of my own multi-day requests, then tapping "השאר/י את שתיהן", fails with "מישהו אחר שינה את זה בינתיים"** and saves nothing. The retry probably sends a stale version. Case: p3 m11, a90bdab2, adding a child.
 - R20B7 — ✅ 2026-11-14 (REQ item 230 f; owner: a pending proposal **blocks** publishing its day, not bypassable, plus "סימון כל ההצעות כמאושרות"; nothing lapses at publish any more). (med, verified) **Publishing a day expired a pending proposal** (p3 63e920db, audit reason `publish_siddur`), although the publish dialog says "הפרסום לא יבטל אותן". The Sadran got no notice. Q3.
 - R20B8 — (med, not checked) **A merged guest cannot move their departure within the host ride's hours.** p2 m15 (36bfa090, ride 06:30–16:15) moved 06:45 to 07:00, then to 07:15, and got `no_car` ("no car takes the new hours").
-- R20B9 — (low-med) **Buttons are not locked after the first tap.**
+- R20B9 — ✅ 2026-11-14 (REQ item 230 h, `useTapLock`). (low-med) **Buttons are not locked after the first tap.**
   - A double tap on "סיימתי" logs two identical tire fills (p3 m30).
   - A double tap on accept at `/p/<token>` shows the thanks screen plus "ההצעה כבר נענתה".
   - A double tap on "פיצול" shows a success plus an error toast.
-- R20B10 — (low, verified by code) **The urea game logs the fill as soon as the tank is full.** The note field sits below the game, so a member who plays first cannot add a note. Fix: a "סיימתי" button instead of auto-saving, or the note above the game.
-- R20B11 — (low, verified) The car-name menu on the board briefly says "רכב פרטי — אין בעלים" until the profiles load; then it shows the owners. Fix: show "loading" until the names are in.
+- R20B10 — ✅ 2026-11-14 (REQ item 230 i). (low, verified by code) **The urea game logs the fill as soon as the tank is full.** The note field sits below the game, so a member who plays first cannot add a note. Fix: a "סיימתי" button instead of auto-saving, or the note above the game.
+- R20B11 — ✅ 2026-11-14 (REQ item 230 j). (low, verified) The car-name menu on the board briefly says "רכב פרטי — אין בעלים" until the profiles load; then it shows the owners. Fix: show "loading" until the names are in.
 - R20B12 — (low) A late request that lands on the waiting list gives the Sadran two notices, `late_request` and `waitlisted_request` (p1 טליה). The requirements say one.
 - R20B13 — (low) "העבר לרכב שלי" on a driverless ride confirms "X ינהג/תנהג ברכב…", but the ride stays without a driver (p2 fbd4375c).
 - R20B14 — (low) After editing an already-waitlisted request, the notice says "הרכב הקודם שוחרר" although there was no car (p3 m26).
@@ -1705,11 +1705,11 @@ Pass 1 `qa-p1` (seed 9313, 40 members, 170 requests): a normal Sadran and member
 - R20B18 — (low) `propose origin` names a car that is busy all day. The member accepts, the proposal is withdrawn as stale, and she is told "ההצעה שאישרת בוטלה" (p2, req 73fb9d48).
 
 **UI issues**
-- R20U1 — (med) At 390 px, the "החלפה עם…" submenu opens to the left and is clipped; the car names are cut off (p1).
-- R20U2 — (med) On a phone, the car-name menu (the glance and the swap) exists only in the table view (eye menu, "טבלה"); the default card view has no car menu (p3, both the siddur and the board).
-- R20U3 — (med) The car page's report and log actions sit behind a tiny unlabelled icon, and the natural targets do nothing: the "עוד לא תיעדו שטיפה" and "קילומטראז׳" cards. Fix: those cards open the matching step (p3).
+- R20U1 — ✅ 2026-11-14 (REQ item 230 k). (med) At 390 px, the "החלפה עם…" submenu opens to the left and is clipped; the car names are cut off (p1).
+- R20U2 — ✅ 2026-11-14 (REQ item 230 k, a row of the day's cars in the card view). (med) On a phone, the car-name menu (the glance and the swap) exists only in the table view (eye menu, "טבלה"); the default card view has no car menu (p3, both the siddur and the board).
+- R20U3 — ✅ 2026-11-14 (REQ item 230 l). (med) The car page's report and log actions sit behind a tiny unlabelled icon, and the natural targets do nothing: the "עוד לא תיעדו שטיפה" and "קילומטראז׳" cards. Fix: those cards open the matching step (p3).
 - R20U4 — (low-med) A driver who wants to leave a merged ride finds the options only under "בטל נסיעה", in a dialog titled "בטוח/ה שברצונך לבטל את הנסיעה?". A separate "אני לא נוהג/ת בנסיעה הזו" entry would be clearer (p1, p3).
-- R20U5 — (low, verified) The split dialog's "2 + 1" is drawn left-to-right and reads "1 then 2" to a Hebrew reader. Label the parts by days instead.
+- R20U5 — ✅ 2026-11-14 (REQ item 230 m). (low, verified) The split dialog's "2 + 1" is drawn left-to-right and reads "1 then 2" to a Hebrew reader. Label the parts by days instead.
 - R20U6 — (low) A one-leg merge proposal says "הלוך בלבד — יציאה 06:30 במקום 11:00" but not that the 13:00 return stays uncovered (p1 רון, d14b1a4a).
 - R20U7 — (low) Assigning a volunteer driver is trial and error: `person_busy`, then the next name. There is no "who is free at these hours" (p2: four tries for one ride).
 - R20U8 — (low) At phone width, the publish page is 10,000–12,000 px tall (a flat list of every request), and the board header takes about 2 screens. The duplicate-children banners cannot be collapsed (p1, p3).
@@ -1721,6 +1721,7 @@ Pass 1 `qa-p1` (seed 9313, 40 members, 170 requests): a normal Sadran and member
 - R20H2 — The board offers "פיצול" only on the series' first-day ride sheet; the other days' sheets have none (p2).
 - R20H3 — A lone one-way pair (home→X and X→home on one car) can be placed only by auto-fill. Dropping either leg alone is refused ("would strand the car's next ride"), so without auto-fill the Sadran is stuck (p2, the forgetful pass).
 - R20H4 — A freed-car offer that resolves to nobody leaves the Sadran no trace (p3: 5 offers closed in 0.1 s, among them a Tue minivan while child הקפצות were waiting; probably the driver rule, but nothing says why).
+- R20H5 — (low, found while testing chunk 2) For an admin who is not a member of the department, `week_board_rides` returns the children's names on its rides while `v_board_rides` hides them (the `children` read policy is membership only). `week_board_rides.sql` fails on such data (the `qa-own` playground), not on CI's seed. Decide which is right and make the two agree.
 
 **Missing**
 - R20M1 — **The Sadran does not learn about live-week events.** None of these produced a notice or a board marker: a driver leaving a ride, a member cancelling, a rider handing the wheel to a companion, an automatic freed-car placement, the Sadran's own proposal expiring. All three Sadrans found them only by re-reading days. Q4.

@@ -2240,6 +2240,7 @@ declare
   v_return timestamptz := nullif(payload ->> 'return_at', '')::timestamptz;
   v_clean jsonb;
   v_legs uuid[];
+  v_opened_version int;
 begin
   select * into v_head from public.requests
   where series_id = v_old and status not in ('withdrawn', 'cancelled')
@@ -2249,7 +2250,10 @@ begin
      or v_head.department_id is distinct from (payload ->> 'department_id')::uuid then
     raise exception 'not_authorized' using errcode = 'P0001';
   end if;
-  if v_expected is not null and v_expected <> v_head.version then perform public.raise_stale_version(); end if;
+  -- R20B6: the version of the leg the edit was opened on (any day of the series), else the first leg's.
+  select q.version into v_opened_version from public.requests q
+  where q.id = nullif(payload ->> 'request_id', '')::uuid and q.series_id = v_old and q.status not in ('withdrawn', 'cancelled');
+  if v_expected is not null and v_expected <> coalesce(v_opened_version, v_head.version) then perform public.raise_stale_version(); end if;
   if v_depart is null or v_return is null then raise exception 'invalid_series_request' using errcode = 'P0001'; end if;
 
   -- The car the old series is on (any of its days), and whether a published day was booked.

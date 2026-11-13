@@ -35,7 +35,7 @@ test("a member splits a 3-day request 1 + 2 from /my", { tag: ["@request-form"] 
   await card.getByTestId("request-row-split").click();
   const form = page.getByTestId("split-series-form");
   await expect(form).toBeVisible();
-  await form.getByTestId("split-at").first().click();   // 1 + 2
+  await form.getByTestId("split-at").first().click();   // the second part starts on day 2 (1 + 2)
   await expect(form.getByTestId("split-parts").locator("li")).toHaveCount(2);
   await page.getByRole("button", { name: he.request.splitSubmit, exact: true }).click();
   await expect(page.getByText(he.request.splitDone)).toBeVisible();

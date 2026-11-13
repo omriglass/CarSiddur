@@ -28,6 +28,7 @@ import {
 import { TireFillPanel } from "./TireFillPanel";
 import { UreaCelebration, UreaGame } from "./UreaGame";
 import { WashCelebration, WashGame } from "./WashGame";
+import { useTapLock } from "@/components/useTapLock";
 
 type View = "home" | "problem" | "tires" | "wash" | "urea" | "km" | "tiresDone" | "washDone" | "ureaDone";
 
@@ -52,6 +53,8 @@ export interface CarReportDialogProps {
  */
 export function CarReportDialog({ carId, carName, open, onOpenChange, initialView }: CarReportDialogProps) {
   const [view, setView] = useState<View>(initialView ?? "home");
+  // R20B9: a double tap on "סיימתי" logs once.
+  const tapLock = useTapLock();
   const [tires, setTires] = useState(DEFAULT_TIRE_STATES);
   const [tireNote, setTireNote] = useState("");
   const [ureaNote, setUreaNote] = useState("");
@@ -258,7 +261,7 @@ export function CarReportDialog({ carId, carName, open, onOpenChange, initialVie
               <Button type="button" variant="ghost" onClick={() => setView("home")}>
                 {he.common.back}
               </Button>
-              <Button type="button" disabled={logCarCareMutation.isPending || !anyTireChecked(tires)} onClick={submitTires}>
+              <Button type="button" disabled={logCarCareMutation.isPending || !anyTireChecked(tires)} onClick={tapLock(submitTires)}>
                 {he.carCare.tireDone}
               </Button>
             </div>
@@ -266,11 +269,11 @@ export function CarReportDialog({ carId, carName, open, onOpenChange, initialVie
         ) : null}
 
         {view === "wash" ? (
-          <WashGame onDone={submitWash} disabled={logCarCareMutation.isPending} onBack={() => setView("home")} />
+          <WashGame onDone={tapLock(submitWash)} disabled={logCarCareMutation.isPending} onBack={() => setView("home")} />
         ) : null}
 
         {view === "urea" ? (
-          <UreaGame onDone={submitUreaFill} disabled={logCarCareMutation.isPending} onBack={() => setView("home")} note={ureaNote} onNoteChange={setUreaNote} />
+          <UreaGame onDone={tapLock(submitUreaFill)} disabled={logCarCareMutation.isPending} onBack={() => setView("home")} note={ureaNote} onNoteChange={setUreaNote} />
         ) : null}
 
         {view === "km" ? (
@@ -304,7 +307,7 @@ export function CarReportDialog({ carId, carName, open, onOpenChange, initialVie
               <Button type="button" variant="ghost" onClick={() => setView("home")}>
                 {he.common.back}
               </Button>
-              <Button type="button" disabled={logKilometrageMutation.isPending || kmValue === null} onClick={submitKm}>
+              <Button type="button" disabled={logKilometrageMutation.isPending || kmValue === null} onClick={tapLock(submitKm)}>
                 {he.carCare.kmSave}
               </Button>
             </div>

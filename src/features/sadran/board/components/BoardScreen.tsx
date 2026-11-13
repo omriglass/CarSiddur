@@ -69,6 +69,7 @@ import { EditModeButton } from "@/features/rides/components/EditModeButton";
 import { useDragHint, useEditMode } from "@/features/rides/editMode";
 import { BoardActionsMenu } from "./BoardActionsMenu";
 import { BoardDisplayMenu } from "./BoardDisplayMenu";
+import { DayCarsStrip } from "@/components/DayCarsStrip";
 import { BoardListMode } from "./BoardListMode";
 import { BoardTitleSwitcher } from "./BoardTitleSwitcher";
 import { BoardWeekSwitcher } from "./BoardWeekSwitcher";
@@ -551,12 +552,25 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
             canSwapCars={board.boardCanSwapCars}
             enableCarReport
             onOpenCarPage={(carId) => navigate(paths.car(carId))}
-                renderCarGlance={(carId) => <CarGlance carId={carId} />}
+            renderCarGlance={(carId) => <CarGlance carId={carId} />}
             onCarSwap={(carA, carB) => { dnd.setCarSwapPair({ carA, carB }); }}
           />
         </div>
 
         <div className={tableView ? "hidden" : "lg:hidden"}>
+          {/* R20U2: the car-name menu in the card view too (the table has it on the car header). */}
+          {board.activeDayRides.length > 0 ? (
+            <div className="mb-2">
+              <DayCarsStrip
+                cars={hideIdleTemporaryCars(board.weekGridCars, board.weekGridRides).filter((car) => car.group !== "phantom")}
+                renderCarGlance={(carId) => <CarGlance carId={carId} />}
+                canSwap={board.boardCanSwapCars}
+                onCarSwap={(carA, carB) => { dnd.setCarSwapPair({ carA, carB }); }}
+                enableCarReport
+                onOpenCarPage={(carId) => navigate(paths.car(carId))}
+              />
+            </div>
+          ) : null}
           {board.dayWaitlistGroups.length ? (
             <div className="mb-2 space-y-2">
               {board.dayWaitlistGroups.map((group) => (

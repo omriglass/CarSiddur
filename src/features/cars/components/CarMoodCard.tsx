@@ -1,3 +1,4 @@
+import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { he, tv } from "@/i18n/he";
 import { formatDayDate } from "@/lib/dayLabels";
@@ -30,8 +31,11 @@ function CarFace({ mood }: { mood: CarMood }) {
   );
 }
 
-/** `/cars/:carId` mood card (UX_FLOWS.md car page). Purely cosmetic; reads the already-loaded wash history. */
-export function CarMoodCard({ lastWashAt, now = new Date() }: { lastWashAt: string | null; now?: Date }) {
+/**
+ * `/cars/:carId` mood card (UX_FLOWS.md car page); reads the already-loaded wash history. R20U3 (QA run 20): its
+ * "שטפתי את הרכב" opens the wash step of the car report dialog (`onLogWash`).
+ */
+export function CarMoodCard({ lastWashAt, now = new Date(), onLogWash }: { lastWashAt: string | null; now?: Date; onLogWash?: () => void }) {
   const mood = carMood(lastWashAt, now);
   const date = lastWashAt ? formatDayDate(lastWashAt) : "";
   const text =
@@ -44,12 +48,17 @@ export function CarMoodCard({ lastWashAt, now = new Date() }: { lastWashAt: stri
     <Card className="bg-gradient-card shadow-card" data-testid="car-mood-card" data-mood={mood}>
       <CardContent className="flex items-center gap-3 p-3 text-sm">
         <CarFace mood={mood} />
-        <div className="space-y-0.5">
+        <div className="min-w-0 flex-1 space-y-0.5">
           <p className="font-medium">{text}</p>
           {mood === "sad" && lastWashAt ? (
             <p className="text-xs text-muted-foreground">{tv("carPage.mood.lastWash", { date })}</p>
           ) : null}
         </div>
+        {onLogWash ? (
+          <Button variant="outline" size="sm" className="shrink-0" onClick={onLogWash} data-testid="car-log-wash">
+            {he.carCare.homeWashTitle}
+          </Button>
+        ) : null}
       </CardContent>
     </Card>
   );

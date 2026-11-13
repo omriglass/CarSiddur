@@ -743,7 +743,14 @@ One canonical `notification_event` list now has **24** events (was 22, CLAUDE.md
   - (d) **Nobody riding a הקפצה is offered its wheel**, by the Sadran's hand-over or a volunteer's. A volunteer driver's "אני לא יכול/ה לנהוג" also offers "X ינהג/תנהג" for someone riding along on any other merged ride.
   - (e) The co-owner's notice of a change on a private car (item 227) is held on the board with the rider's, until "שלח".
   - (f) **A pending proposal blocks publishing its day, not bypassable** (amends §13.109 and the publish dialog's "publish anyway"). A late "yes" must never change a published ride behind the Sadran's back. The publish screen lists them, with **"סימון כל ההצעות כמאושרות"**, which marks every pending proposal of those days agreed with the member offline, as "כן, כבר סיכמנו" does for one (`agree_proposals_offline`). "Publish anyway" remains for incomplete assignments and driverless rides.
-  - Implemented in `20261114100000`; suite `qa20_fixes.sql`.
+  - (g) **Editing a multi-day request from any of its days saves** (R20B6). The edit opened on a later day carried that day's version and was refused as "someone else changed it" once the days' versions differed.
+  - (h) **A double tap does one thing** (R20B9): the confirm button of every dialog, the car-care "סיימתי" buttons and the answer buttons on `/p/<token>` ignore a second tap that comes before the first one is under way.
+  - (i) **The urea game waits for "סיימתי"** (R20B10, amends item 219): a full tank no longer logs the fill on its own, so the note can be written after playing.
+  - (j) The car at a glance says "loading" until the owners' and responsible person's names are in, never "אין בעלים" for a car that has owners (R20B11).
+  - (k) **The car-name menu works at phone width and in the card view** (R20U1, R20U2, amends item 226 c). "החלפה עם…" opens its list of cars inside the menu, not beside it. The card view of the siddur and of the board starts with a row of the day's cars; tapping one opens the same menu as the table's car header.
+  - (l) **The car page's wash and kilometrage cards log** (R20U3): "שטפתי את הרכב" on the wash card and "רישום קריאה" on the kilometrage card open that step of the car report dialog.
+  - (m) The split dialog names the day the second part starts ("מ־ג׳ 17.11"), not "2 + 1", which read backwards in Hebrew (R20U5).
+  - Implemented in `20261114100000` and `20261114110000`; suites `qa20_fixes.sql`, `series_edit.sql`.
 
 ## Owner TODO amendments — 2026-09-07
 

@@ -20,6 +20,7 @@ import { useAllDepartmentMembers, useAllProfiles } from "@/features/admin/member
 import { CarSparkle } from "@/components/CarSparkle";
 import { useRecentlyWashedCarIds } from "@/features/carCare/hooks";
 import { CarNameWithReport } from "@/features/carCare/components/CarNameWithReport";
+import { CarReportDialog } from "@/features/carCare/components/CarReportDialog";
 import { CarTasksManagerCard } from "@/features/carTasks/components/CarTasksManagerCard";
 import { useCarTasksQuery } from "@/features/carTasks/hooks";
 import { he, tv } from "@/i18n/he";
@@ -171,6 +172,7 @@ export function CarManageScreen({ car, isAdmin, canEdit, canManageCar, canDefine
   const [filter, setFilter] = useState<CarHistoryFilter>("all");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+  const [logView, setLogView] = useState<"wash" | "km" | null>(null);
 
   const responsibleOptions: ResponsibleOption[] = useMemo(() => {
     const profilesById = new Map((profilesQuery.data ?? []).map((p) => [p.id, p.full_name]));
@@ -228,9 +230,12 @@ export function CarManageScreen({ car, isAdmin, canEdit, canManageCar, canDefine
 
       <CarMoodCard
         lastWashAt={merged.find((entry) => entry.kind === "wash")?.createdAt ?? null}
+        onLogWash={() => setLogView("wash")}
       />
 
-      <CarKilometrageCard car={car} current={currentKmQuery.data ?? null} loading={currentKmQuery.isLoading} canCorrect={canManageCar} />
+      <CarKilometrageCard car={car} current={currentKmQuery.data ?? null} loading={currentKmQuery.isLoading} canCorrect={canManageCar} onLogKm={() => setLogView("km")} />
+      {/* R20U3 (QA run 20): the wash and kilometrage cards open their step of the car report dialog. */}
+      {logView ? <CarReportDialog carId={car.id} carName={car.name} open initialView={logView} onOpenChange={(open) => { if (!open) setLogView(null); }} /> : null}
 
       {canManageCar ? <CarTasksManagerCard car={car} /> : null}
 

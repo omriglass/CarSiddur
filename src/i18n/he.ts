@@ -154,6 +154,7 @@ export const he = {
   },
   carSwap: {
     carMenuLabel: "תפריט הרכב {{car}}",
+    dayCarsLabel: "רכבי היום",
     carReportItem: "דיווח / טיפול ברכב",
     carPageItem: "דף הרכב",
     swapWithCar: "החלפה עם {{car}}",

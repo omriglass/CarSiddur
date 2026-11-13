@@ -2,6 +2,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { ConfirmDialog } from "./ConfirmDialog";
+import { TAP_LOCK_MS } from "./useTapLock";
 import { he } from "@/i18n/he";
 
 describe("ConfirmDialog", () => {
@@ -61,5 +62,21 @@ describe("ConfirmDialog", () => {
       </ConfirmDialog>,
     );
     expect(screen.getByText("תוכן נוסף")).toBeInTheDocument();
+  });
+
+  it("R20B9: a double tap confirms once; a later tap confirms again", () => {
+    vi.useFakeTimers();
+    try {
+      const onConfirm = vi.fn();
+      render(<ConfirmDialog open title="t" onOpenChange={() => {}} onConfirm={onConfirm} />);
+      fireEvent.click(screen.getByText(he.common.confirm));
+      fireEvent.click(screen.getByText(he.common.confirm));
+      expect(onConfirm).toHaveBeenCalledTimes(1);
+      vi.advanceTimersByTime(TAP_LOCK_MS);
+      fireEvent.click(screen.getByText(he.common.confirm));
+      expect(onConfirm).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

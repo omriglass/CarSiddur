@@ -1,5 +1,6 @@
 import { carOwnerIds, isCarOwner } from "@/lib/carOwners";
 import { useMaintenanceGridEditing } from "@/features/fleet/useMaintenanceGridEditing";
+import { DayCarsStrip } from "@/components/DayCarsStrip";
 import { CarGlance } from "@/features/cars/components/CarGlance";
 import { useWeekChangeWatch } from "@/features/liveSync/useWeekChangeWatch";
 import { useProfile } from "@/features/auth/useProfile";
@@ -689,6 +690,17 @@ export function SiddurPage() {
                     </Button>
                   ) : null}
                 </div>
+              ) : null}
+              {/* R20U2: the car-name menu in the card view too (the table has it on the car header). */}
+              {!boardRidesQuery.isLoading && activeDayRides.length > 0 ? (
+                <DayCarsStrip
+                  cars={weekGridVisibleCars.filter((car) => car.group !== "phantom")}
+                  renderCarGlance={(carId) => <CarGlance carId={carId} />}
+                  canSwap={canSwapCarsOnActiveDay}
+                  onCarSwap={(carA, carB) => setCarSwapPair({ carA, carB })}
+                  enableCarReport
+                  onOpenCarPage={(carId) => navigate(paths.car(carId))}
+                />
               ) : null}
               {boardRidesQuery.isLoading ? (
                 <CardListSkeleton />

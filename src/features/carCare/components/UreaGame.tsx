@@ -177,7 +177,7 @@ function UreaScene({ landingX, fill, smiling, puddle, puddleX, aimX = null, show
 }
 
 export interface UreaGameProps {
-  /** Called once when the tank is full (after a moment of smiling), or on "דלג ותעד מילוי אוראה". */
+  /** Called on "סיימתי" once the tank is full (R20B10: never on its own, so the note can be written first), or on "דלג ותעד מילוי אוראה". */
   onDone: () => void;
   /** While true (mutation pending) all input is ignored. */
   disabled?: boolean;
@@ -186,9 +186,6 @@ export interface UreaGameProps {
   note: string;
   onNoteChange: (note: string) => void;
 }
-
-/** How long the boy smiles at the full tank before the fill is logged. */
-const SMILE_MS = 900;
 
 /** Aim the stream into the funnel until the AdBlue gauge is full, or skip. */
 export function UreaGame({ onDone, disabled = false, onBack, note, onNoteChange }: UreaGameProps) {
@@ -213,7 +210,6 @@ export function UreaGame({ onDone, disabled = false, onBack, note, onNoteChange 
     let raf = 0;
     let last = performance.now();
     const started = last;
-    let smileTimer: number | undefined;
     const step = (now: number) => {
       const dt = Math.min(0.05, (now - last) / 1000);
       last = now;
@@ -226,11 +222,9 @@ export function UreaGame({ onDone, disabled = false, onBack, note, onNoteChange 
       }
       const full = fillRef.current >= 1;
       setFrame({ landingX, aim: aimRef.current, fill: fillRef.current, puddle: missRef.current, puddleX: puddleXRef.current, smiling: full });
+      // R20B10 (QA run 20): a full tank stops the game; the member logs it with "סיימתי" (the note is still open).
       if (full) {
-        if (!doneRef.current) {
-          doneRef.current = true;
-          smileTimer = window.setTimeout(() => onDoneRef.current(), SMILE_MS);
-        }
+        doneRef.current = true;
         return;
       }
       raf = requestAnimationFrame(step);
@@ -238,7 +232,6 @@ export function UreaGame({ onDone, disabled = false, onBack, note, onNoteChange 
     raf = requestAnimationFrame(step);
     return () => {
       cancelAnimationFrame(raf);
-      if (smileTimer) window.clearTimeout(smileTimer);
     };
   }, []);
 
@@ -301,9 +294,15 @@ export function UreaGame({ onDone, disabled = false, onBack, note, onNoteChange 
         <Button type="button" variant="ghost" onClick={onBack}>
           {he.common.back}
         </Button>
-        <Button type="button" variant="ghost" className="min-h-11 text-muted-foreground" disabled={disabled} onClick={skip}>
-          {he.carCare.ureaSkip}
-        </Button>
+        {full ? (
+          <Button type="button" className="min-h-11" disabled={disabled} onClick={() => onDoneRef.current()} data-testid="urea-done">
+            {he.carCare.tireDone}
+          </Button>
+        ) : (
+          <Button type="button" variant="ghost" className="min-h-11 text-muted-foreground" disabled={disabled} onClick={skip}>
+            {he.carCare.ureaSkip}
+          </Button>
+        )}
       </div>
     </div>
   );

@@ -2,22 +2,13 @@ import { CarFront, ChevronDown, Pin, Clock3, UserRoundX, Star, X } from "lucide-
 import type { MouseEvent, PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import { Fragment, useEffect, useMemo, useRef, useState, useCallback, useSyncExternalStore } from "react";
 
+import { CarMenu } from "@/components/CarMenu";
 import { CarSparkle } from "@/components/CarSparkle";
 import { edgeScrollStep } from "@/components/dragAutoScroll";
 import { nextZoom } from "@/components/pinchZoom";
 import { ScaledGrid } from "@/components/ScaledGrid";
 import { isIdentityZoom } from "@/components/weekGridScale";
 import { formatMinutes } from "@/components/timeField15Format";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
 import { CarReportDialog } from "@/features/carCare/components/CarReportDialog";
@@ -1640,58 +1631,34 @@ export function WeekGrid({
             {recentlyWashedCarIds?.has(car.id) ? <CarSparkle /> : null}
             <span className={cn("flex min-w-0 items-center justify-center gap-1 text-center text-sm md:text-base leading-tight", myCarIds.has(car.id) || car.today ? "font-bold" : "font-medium")} data-testid="week-grid-car-name" data-my-car={myCarIds.has(car.id) || undefined} data-today={car.today || undefined} data-unpublished={car.unpublished || undefined}>
               {renderCarName ? renderCarName(car) : hasCarMenu ? (
-                <DropdownMenu open={menuCarId === car.id} onOpenChange={(o) => { if (!o) setMenuCarId(null); }}>
-                  <DropdownMenuTrigger asChild>
-                    <button
-                      type="button"
-                      className="flex min-h-8 min-w-0 max-w-full items-center gap-0.5 rounded px-0.5 text-center hover:bg-accent/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                      aria-label={tv("carSwap.carMenuLabel", { car: car.name })}
-                      data-testid="week-grid-car-menu-trigger"
-                      // Radix opens on pointerdown; ours opens on click so a touch long-press (swap drag) never opens it.
-                      // Mouse: the click path still opens it; the header's own pointerdown (drag start) is left to bubble.
-                      onPointerDown={(e) => e.preventDefault()}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (suppressCarClickRef.current) return;
-                        setMenuCarId((cur) => (cur === car.id ? null : car.id));
-                      }}
-                    >
-                      <span className="min-w-0 whitespace-normal break-words line-clamp-2" title={car.name}>{car.name}</span>
-                      <ChevronDown className="size-3 shrink-0 text-muted-foreground" aria-hidden="true" />
-                    </button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start" className="min-w-56">
-                    {renderCarGlance ? (
-                      <>
-                        <div data-testid="week-grid-car-glance">{renderCarGlance(car.id)}</div>
-                        <DropdownMenuSeparator />
-                      </>
-                    ) : null}
-                    {swappable ? (
-                      <DropdownMenuSub>
-                        <DropdownMenuSubTrigger data-testid="car-swap-submenu">{he.carSwap.swapWithMenu}</DropdownMenuSubTrigger>
-                        <DropdownMenuSubContent className="max-h-[60dvh] overflow-y-auto">
-                          {allCars.filter((other) => other.id !== car.id && other.group !== "phantom").map((other) => (
-                            <DropdownMenuItem key={other.id} onSelect={() => onCarSwap?.(car.id, other.id)}>
-                              {tv("carSwap.swapWithCar", { car: other.name })}
-                            </DropdownMenuItem>
-                          ))}
-                        </DropdownMenuSubContent>
-                      </DropdownMenuSub>
-                    ) : null}
-                    {swappable && (enableCarReport || onOpenCarPage) ? <DropdownMenuSeparator /> : null}
-                    {enableCarReport ? (
-                      <DropdownMenuItem data-testid="car-name-report-menu-item" onSelect={() => setReportCarId(car.id)}>
-                        {he.carSwap.carReportItem}
-                      </DropdownMenuItem>
-                    ) : null}
-                    {onOpenCarPage ? (
-                      <DropdownMenuItem data-testid="car-page-menu-item" onSelect={() => onOpenCarPage(car.id)}>
-                        {he.carSwap.carPageItem}
-                      </DropdownMenuItem>
-                    ) : null}
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                <CarMenu
+                  car={car}
+                  open={menuCarId === car.id}
+                  onOpenChange={(o) => { if (!o) setMenuCarId(null); }}
+                  glance={renderCarGlance ? renderCarGlance(car.id) : undefined}
+                  swapTargets={swappable ? allCars.filter((other) => other.id !== car.id && other.group !== "phantom") : []}
+                  onSwap={onCarSwap}
+                  onReport={enableCarReport ? setReportCarId : undefined}
+                  onOpenCarPage={onOpenCarPage}
+                >
+                  <button
+                    type="button"
+                    className="flex min-h-8 min-w-0 max-w-full items-center gap-0.5 rounded px-0.5 text-center hover:bg-accent/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    aria-label={tv("carSwap.carMenuLabel", { car: car.name })}
+                    data-testid="week-grid-car-menu-trigger"
+                    // Radix opens on pointerdown; ours opens on click so a touch long-press (swap drag) never opens it.
+                    // Mouse: the click path still opens it; the header's own pointerdown (drag start) is left to bubble.
+                    onPointerDown={(e) => e.preventDefault()}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (suppressCarClickRef.current) return;
+                      setMenuCarId((cur) => (cur === car.id ? null : car.id));
+                    }}
+                  >
+                    <span className="min-w-0 whitespace-normal break-words line-clamp-2" title={car.name}>{car.name}</span>
+                    <ChevronDown className="size-3 shrink-0 text-muted-foreground" aria-hidden="true" />
+                  </button>
+                </CarMenu>
               ) : (
                 <>
                   <CarFront className="size-3.5 shrink-0 text-primary md:size-4" aria-hidden="true" />
