@@ -23,6 +23,7 @@ import { CarNameWithReport } from "@/features/carCare/components/CarNameWithRepo
 import { CarTasksManagerCard } from "@/features/carTasks/components/CarTasksManagerCard";
 import { useCarTasksQuery } from "@/features/carTasks/hooks";
 import { he, tv } from "@/i18n/he";
+import { formatDayDate } from "@/lib/dayLabels";
 import { TZ } from "@/lib/time";
 
 import { CarExcelExportButton } from "./CarExcelExportButton";
@@ -181,6 +182,7 @@ export function CarManageScreen({ car, isAdmin, canEdit, canManageCar, canDefine
   }, [isAdmin, car.responsible_id, car.department_id, deptMembersQuery.data, profilesQuery.data]);
 
   const merged = mergeCarHistory(issuesQuery.data ?? [], careEventsQuery.data ?? [], odometerQuery.data ?? [], tasksQuery.data ?? []);
+  const lastUreaAt = merged.find((entry) => entry.kind === "urea_fill")?.createdAt ?? null;
   const filtered = filterCarHistory(merged, filter, { from: dateFrom || undefined, to: dateTo || undefined });
   const historyLoading = issuesQuery.isLoading || careEventsQuery.isLoading || odometerQuery.isLoading;
   const historyError = issuesQuery.isError || careEventsQuery.isError || odometerQuery.isError;
@@ -211,6 +213,12 @@ export function CarManageScreen({ car, isAdmin, canEdit, canManageCar, canDefine
         <span className="font-medium" dir="ltr" data-testid="car-plate">{car.license_plate}</span>
         <CarFuelChip fuel={car.fuel_type} />
         <StatusBadge kind="car" status={car.status} />
+        {/* Owner 2026-11-13: the last urea fill at a glance on a diesel car. */}
+        {car.fuel_type === "diesel" ? (
+          <span className="text-xs text-muted-foreground" data-testid="car-last-urea">
+            {lastUreaAt ? tv("carPage.lastUreaFill", { date: formatDayDate(lastUreaAt) }) : he.carPage.lastUreaNever}
+          </span>
+        ) : null}
       </div>
 
       <CarMoodCard

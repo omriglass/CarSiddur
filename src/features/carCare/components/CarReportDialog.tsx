@@ -60,7 +60,8 @@ export function CarReportDialog({ carId, carName, open, onOpenChange, initialVie
   const logCarCareMutation = useLogCarCareMutation();
   const logKilometrageMutation = useLogCarKilometrageMutation();
   const currentKmQuery = useCarCurrentKmQuery(carId, open && view === "km");
-  // FU2 (REQ item 219): urea only on a diesel car (the fuel type is on the car row).
+  // FU2 (REQ item 219): urea only on a diesel car (the fuel type is on the car row). Owner 2026-11-13: no "needs urea"
+  // report — whoever sees it fills it.
   const isDiesel = useCarQuery(open ? carId : undefined).data?.fuel_type === "diesel";
   const kmValue = parseKm(kmText);
 
@@ -130,15 +131,7 @@ export function CarReportDialog({ carId, carName, open, onOpenChange, initialVie
     }
   }
 
-  async function submitUreaNeed() {
-    try {
-      await reportIssueMutation.mutateAsync({ carId, category: "urea", description: he.carCare.ureaNeedDescription });
-      toast.success(he.carCare.ureaNeedSaved);
-      handleOpenChange(false);
-    } catch {
-      // already toasted by useReportCarIssueMutation's onError
-    }
-  }
+
 
   async function submitKm() {
     if (kmValue === null) return;
@@ -187,27 +180,15 @@ export function CarReportDialog({ carId, carName, open, onOpenChange, initialVie
               <span className="font-medium">{he.carCare.homeWashTitle}</span>
             </button>
             {isDiesel ? (
-              <>
-                <button
-                  type="button"
-                  disabled={reportIssueMutation.isPending}
-                  onClick={() => void submitUreaNeed()}
-                  data-testid="car-urea-need"
-                  className="flex min-h-16 items-center gap-3 rounded-lg border p-4 text-start transition-smooth hover:bg-accent/40"
-                >
-                  <Fuel className="size-6 shrink-0 text-destructive" aria-hidden="true" />
-                  <span className="font-medium">{he.carCare.homeUreaNeedTitle}</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setView("urea")}
-                  data-testid="car-urea-fill"
-                  className="flex min-h-16 items-center gap-3 rounded-lg border p-4 text-start transition-smooth hover:bg-accent/40"
-                >
-                  <Fuel className="size-6 shrink-0 text-booked" aria-hidden="true" />
-                  <span className="font-medium">{he.carCare.homeUreaFillTitle}</span>
-                </button>
-              </>
+              <button
+                type="button"
+                onClick={() => setView("urea")}
+                data-testid="car-urea-fill"
+                className="flex min-h-16 items-center gap-3 rounded-lg border p-4 text-start transition-smooth hover:bg-accent/40"
+              >
+                <Fuel className="size-6 shrink-0 text-booked" aria-hidden="true" />
+                <span className="font-medium">{he.carCare.homeUreaFillTitle}</span>
+              </button>
             ) : null}
             <button
               type="button"

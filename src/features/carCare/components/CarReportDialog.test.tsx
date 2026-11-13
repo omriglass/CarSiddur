@@ -51,15 +51,13 @@ describe("CarReportDialog", () => {
   it("urea (FU2): a car that is not diesel offers no urea", () => {
     show();
     expect(screen.queryByText(he.carCare.homeUreaFillTitle)).not.toBeInTheDocument();
-    expect(screen.queryByText(he.carCare.homeUreaNeedTitle)).not.toBeInTheDocument();
   });
 
-  it("urea on a diesel car", async () => {
+  it("urea on a diesel car: fill only, no \"needs urea\" report (owner 2026-11-13)", () => {
     mocks.car.data = { fuel_type: "diesel" };
-    const { onOpenChange } = show();
-    fireEvent.click(screen.getByTestId("car-urea-need"));
-    await waitFor(() => expect(mocks.reportIssue).toHaveBeenCalledWith({ carId: "car-1", category: "urea", description: he.carCare.ureaNeedDescription }));
-    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
+    show();
+    expect(screen.getByTestId("car-urea-fill")).toBeInTheDocument();
+    expect(screen.queryByTestId("car-urea-need")).not.toBeInTheDocument();
   });
 
   it("urea fill: the game's skip logs a urea fill and shows the smiling boy", async () => {

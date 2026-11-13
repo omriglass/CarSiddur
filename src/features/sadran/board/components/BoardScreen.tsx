@@ -1,4 +1,5 @@
 import { useRecentlyWashedCarIds } from "@/features/carCare/hooks";
+import { CarGlance } from "@/features/cars/components/CarGlance";
 import { useMaintenanceGridEditing } from "@/features/fleet/useMaintenanceGridEditing";
 import { useWeekChangeWatch } from "@/features/liveSync/useWeekChangeWatch";
 import { paths } from "@/app/routes";
@@ -550,6 +551,7 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
             canSwapCars={board.boardCanSwapCars}
             enableCarReport
             onOpenCarPage={(carId) => navigate(paths.car(carId))}
+                renderCarGlance={(carId) => <CarGlance carId={carId} />}
             onCarSwap={(carA, carB) => { dnd.setCarSwapPair({ carA, carB }); }}
           />
         </div>

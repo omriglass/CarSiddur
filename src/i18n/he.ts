@@ -153,6 +153,8 @@ export const he = {
     carReportItem: "דיווח / טיפול ברכב",
     carPageItem: "דף הרכב",
     swapWithCar: "החלפה עם {{car}}",
+    /** Owner 2026-11-13: one submenu instead of one item per car. */
+    swapWithMenu: "החלפה עם…",
     dialogTitle: "החלפת {{carA}} ו{{carB}}",
     dialogDay: "ביום {{day}}",
     movedCount: "יועברו {{count}} נסיעות",

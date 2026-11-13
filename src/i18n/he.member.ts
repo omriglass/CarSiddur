@@ -1206,10 +1206,7 @@ export const heMember = {
     washSpotsLeft: "נשארו {{count}} כתמים",
     washSkip: "דלג ותעד שטיפה",
     // FU2 (REQ item 219): urea on diesel cars.
-    homeUreaNeedTitle: "צריך אוראה",
     homeUreaFillTitle: "מילאתי אוראה",
-    ureaNeedDescription: "צריך למלא אוראה",
-    ureaNeedSaved: "תודה, האחראי/ת על הרכב יקבל/תקבל הודעה",
     ureaPrompt: "גרור/י את הכוונת כדי לכוון את הזרם אל המשפך",
     ureaProgress: "{{percent}}% מלא",
     ureaSkip: "דלג ותעד מילוי אוראה",
@@ -1283,6 +1280,12 @@ export const heMember = {
       never: "עוד לא תיעדו שטיפה",
       lastWash: "שטיפה אחרונה: {{date}}",
     },
+    // Owner 2026-11-13: the car at a glance (car page header, the siddur/board car-name menu).
+    lastUreaFill: "אוראה אחרונה: {{date}}",
+    lastUreaNever: "אוראה: עוד לא תועד מילוי",
+    glanceOwner: "הרכב של {{name}}",
+    glanceResponsible: "אחראי/ת רכב: {{name}}",
+    glanceLoading: "טוען פרטי רכב…",
     historyReporter: "דיווח/ה",
     historyNote: "הערה",
     exportButton: "ייצוא לאקסל",

@@ -70,12 +70,25 @@ describe("WeekGrid car-swap header drag", () => {
     expect(menuButtons).toHaveLength(2);
   });
 
-  it("the car name is one menu: swap items, report and car page", () => {
+  it("the car name is one menu: the car at a glance, one \"החלפה עם…\" submenu, report and car page", async () => {
     const onCarSwap = vi.fn();
     const onOpenCarPage = vi.fn();
-    const { container } = render(<WeekGrid cars={cars} rides={[]} canSwapCars onCarSwap={onCarSwap} enableCarReport onOpenCarPage={onOpenCarPage} />);
+    const { container } = render(
+      <WeekGrid cars={cars} rides={[]} canSwapCars onCarSwap={onCarSwap} enableCarReport onOpenCarPage={onOpenCarPage} renderCarGlance={(id) => <span>glance {id}</span>} />,
+    );
     fireEvent.click(container.querySelector(`[aria-label="${tv("carSwap.carMenuLabel", { car: "Car A" })}"]`)!);
-    expect(screen.getByRole("menuitem", { name: tv("carSwap.swapWithCar", { car: "Car B" }) })).toBeTruthy();
+    expect(screen.getByText("glance a")).toBeTruthy();
+    // One submenu, not one item per car (owner 2026-11-13).
+    expect(screen.queryByRole("menuitem", { name: tv("carSwap.swapWithCar", { car: "Car B" }) })).toBeNull();
+    fireEvent.click(screen.getByTestId("car-swap-submenu"));
+    fireEvent.click(await screen.findByRole("menuitem", { name: tv("carSwap.swapWithCar", { car: "Car B" }) }));
+    expect(onCarSwap).toHaveBeenCalledWith("a", "b");
+  });
+
+  it("the car menu's report and page items", () => {
+    const onOpenCarPage = vi.fn();
+    const { container } = render(<WeekGrid cars={cars} rides={[]} canSwapCars onCarSwap={vi.fn()} enableCarReport onOpenCarPage={onOpenCarPage} />);
+    fireEvent.click(container.querySelector(`[aria-label="${tv("carSwap.carMenuLabel", { car: "Car A" })}"]`)!);
     expect(screen.getByRole("menuitem", { name: he.carSwap.carReportItem })).toBeTruthy();
     fireEvent.click(screen.getByRole("menuitem", { name: he.carSwap.carPageItem }));
     expect(onOpenCarPage).toHaveBeenCalledWith("a");
@@ -84,7 +97,7 @@ describe("WeekGrid car-swap header drag", () => {
   it("without swap, only the page item shows and a tap on the name opens the menu", () => {
     const { container } = render(<WeekGrid cars={cars} rides={[]} onOpenCarPage={vi.fn()} />);
     fireEvent.click(container.querySelector('[data-testid="week-grid-car-menu-trigger"]')!);
-    expect(screen.queryByRole("menuitem", { name: tv("carSwap.swapWithCar", { car: "Car B" }) })).toBeNull();
+    expect(screen.queryByTestId("car-swap-submenu")).toBeNull();
     expect(screen.getByRole("menuitem", { name: he.carSwap.carPageItem })).toBeTruthy();
   });
 });

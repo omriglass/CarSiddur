@@ -1,4 +1,5 @@
 import { useMaintenanceGridEditing } from "@/features/fleet/useMaintenanceGridEditing";
+import { CarGlance } from "@/features/cars/components/CarGlance";
 import { useWeekChangeWatch } from "@/features/liveSync/useWeekChangeWatch";
 import { useProfile } from "@/features/auth/useProfile";
 import { useActiveDepartment } from "@/features/auth/useActiveDepartment";
@@ -823,6 +824,7 @@ export function SiddurPage() {
                 rangeResetKey={activeDay ?? undefined}
                 enableCarReport
                 onOpenCarPage={(carId) => navigate(paths.car(carId))}
+                renderCarGlance={(carId) => <CarGlance carId={carId} />}
                 discussionBlocks={weekGridDiscussionBlocks}
                 onDiscussionClick={setSelectedGroupId}
                 canSwapCars={canSwapCarsOnActiveDay}

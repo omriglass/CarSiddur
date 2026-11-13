@@ -13,6 +13,9 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
@@ -345,6 +348,8 @@ export interface WeekGridProps {
   enableCarReport?: boolean;
   /** Shows "דף הרכב" in each real car's header menu; the caller navigates (`paths.car(carId)`). */
   onOpenCarPage?: (carId: string) => void;
+  /** The car at a glance (plate, fuel, owner / responsible person, last care), drawn at the top of the car-name menu (owner 2026-11-13). */
+  renderCarGlance?: (carId: string) => ReactNode;
   /** Header `carIdA` was dropped onto header `carIdB` (drag), or `carIdB` was chosen from `carIdA`'s own menu — the caller opens `CarSwapDialog` with these two ids. */
   onCarSwap?: (carIdA: string, carIdB: string) => void;
 }
@@ -521,6 +526,7 @@ export function WeekGrid({
   onCarSwap,
   enableCarReport,
   onOpenCarPage,
+  renderCarGlance,
 }: WeekGridProps) {
   const rideTypeColorClasses = useRideTypeColorClasses();
   const drafting = surface === "drafting";
@@ -1654,12 +1660,25 @@ export function WeekGrid({
                       <ChevronDown className="size-3 shrink-0 text-muted-foreground" aria-hidden="true" />
                     </button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start">
-                    {swappable ? allCars.filter((other) => other.id !== car.id && other.group !== "phantom").map((other) => (
-                      <DropdownMenuItem key={other.id} onSelect={() => onCarSwap?.(car.id, other.id)}>
-                        {tv("carSwap.swapWithCar", { car: other.name })}
-                      </DropdownMenuItem>
-                    )) : null}
+                  <DropdownMenuContent align="start" className="min-w-56">
+                    {renderCarGlance ? (
+                      <>
+                        <div data-testid="week-grid-car-glance">{renderCarGlance(car.id)}</div>
+                        <DropdownMenuSeparator />
+                      </>
+                    ) : null}
+                    {swappable ? (
+                      <DropdownMenuSub>
+                        <DropdownMenuSubTrigger data-testid="car-swap-submenu">{he.carSwap.swapWithMenu}</DropdownMenuSubTrigger>
+                        <DropdownMenuSubContent className="max-h-[60dvh] overflow-y-auto">
+                          {allCars.filter((other) => other.id !== car.id && other.group !== "phantom").map((other) => (
+                            <DropdownMenuItem key={other.id} onSelect={() => onCarSwap?.(car.id, other.id)}>
+                              {tv("carSwap.swapWithCar", { car: other.name })}
+                            </DropdownMenuItem>
+                          ))}
+                        </DropdownMenuSubContent>
+                      </DropdownMenuSub>
+                    ) : null}
                     {swappable && (enableCarReport || onOpenCarPage) ? <DropdownMenuSeparator /> : null}
                     {enableCarReport ? (
                       <DropdownMenuItem data-testid="car-name-report-menu-item" onSelect={() => setReportCarId(car.id)}>
