@@ -32,6 +32,7 @@ import { RequestRow } from "@/features/requests/components/RequestRow";
 import { ClosedRequestsList } from "@/features/requests/components/ClosedRequestsList";
 import { closedByWeek, weekGroupKey } from "@/features/requests/closedByWeek";
 import { ShortenSeriesDialog } from "@/features/requests/components/ShortenSeriesDialog";
+import { SplitSeriesDialog, type SplitTarget } from "@/features/requests/components/SplitSeriesDialog";
 import { TemplateSuggestions } from "@/features/requests/components/TemplateSuggestions";
 import {
   useCancelRideMutation,
@@ -183,6 +184,15 @@ export function HomePage() {
   const collapsedWeeks = useCollapsedWeeks();
   const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null);
   const [shortenRow, setShortenRow] = useState<DisplayRow | null>(null);
+  // SP1 (REQ item 228): "פיצול" on a multi-day request — its first leg, length and the clicked row's version.
+  const [splitTarget, setSplitTarget] = useState<SplitTarget | null>(null);
+  function openSplit(row: DisplayRow) {
+    const legs = row.seriesLegs ?? [];
+    const first = legs[0];
+    const anchor = first?.departAt ?? first?.returnAt;
+    if (!first || !anchor || legs.length < 2) return;
+    setSplitTarget({ requestId: first.id, firstDay: dateKey(anchor), count: legs.length, version: first.version ?? null });
+  }
   // "My rides" week view (owner 2026-10-11): a tapped request / suggestion block opens its own sheet; a ride block
   // reuses `selectedMyRide`, a proposal block navigates like `OpenProposalButton`.
   const [selectedRequestId, setSelectedRequestId] = useState<string | null>(null);
@@ -593,6 +603,7 @@ export function HomePage() {
                 onWithdraw={(target) => setConfirmAction({ kind: "withdraw", row: target })}
                 onCancelRide={(target) => setConfirmAction({ kind: "cancel", row: target })}
                 onShorten={setShortenRow}
+                onSplit={openSplit}
                 onOptOutChange={(target, optOut) => optOutMutation.mutate({ requestId: target.id, optOut })}
                 onPlaceOnOwnCar={(target, carId) =>
                   placeOnOwnCarMutation.mutate({ requestId: target.id, carId }, { onSuccess: () => toast.success(he.request.placedOnOwnCar) })
@@ -709,6 +720,7 @@ export function HomePage() {
                       onWithdraw={(target) => setConfirmAction({ kind: "withdraw", row: target })}
                       onCancelRide={(target) => setConfirmAction({ kind: "cancel", row: target })}
                       onShorten={setShortenRow}
+                      onSplit={openSplit}
                       onOptOutChange={(target, optOut) => optOutMutation.mutate({ requestId: target.id, optOut })}
                       onPlaceOnOwnCar={(target, carId) =>
                         placeOnOwnCarMutation.mutate({ requestId: target.id, carId }, { onSuccess: () => toast.success(he.request.placedOnOwnCar) })
@@ -801,6 +813,7 @@ export function HomePage() {
             onWithdraw={(target) => { setSelectedRequestId(null); setConfirmAction({ kind: "withdraw", row: target }); }}
             onCancelRide={(target) => { setSelectedRequestId(null); setConfirmAction({ kind: "cancel", row: target }); }}
             onShorten={(target) => { setSelectedRequestId(null); setShortenRow(target); }}
+            onSplit={(target) => { setSelectedRequestId(null); openSplit(target); }}
             onOptOutChange={(target, optOut) => optOutMutation.mutate({ requestId: target.id, optOut })}
             onPlaceOnOwnCar={(target, carId) =>
               placeOnOwnCarMutation.mutate({ requestId: target.id, carId }, { onSuccess: () => toast.success(he.request.placedOnOwnCar) })
@@ -832,6 +845,7 @@ export function HomePage() {
         ) : null}
       </MyWeekItemSheet>
       <ShortenSeriesDialog row={shortenRow} onOpenChange={(open) => { if (!open) setShortenRow(null); }} />
+      {splitTarget ? <SplitSeriesDialog target={splitTarget} onOpenChange={(open) => { if (!open) setSplitTarget(null); }} /> : null}
       {makeRoom.element}
       <ConfirmDialog
         open={!!confirmAction}

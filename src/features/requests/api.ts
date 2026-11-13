@@ -1124,6 +1124,15 @@ export async function shortenSeries(requestId: string, departAt: string, returnA
   await rpc("shorten_series", { p_request_id: requestId, p_depart_at: departAt, p_return_at: returnAt });
 }
 
+/** SP1 (REQ item 228): split a multi-day ride after the given days (1-based); same car, same times, new series links. */
+export async function splitSeries(requestId: string, cutAfter: number[], expectedVersion: number | null): Promise<void> {
+  await rpc("split_series", {
+    p_request_id: requestId,
+    p_cut_after: cutAfter,
+    ...(expectedVersion != null ? { p_expected_version: expectedVersion } : {}),
+  });
+}
+
 /**
  * `requests.version` right now — used right before `withdrawRequest()` when the caller
  * (`JoinableRidesDialog`'s "join now" flow, `RequestForm.tsx`) doesn't already hold a

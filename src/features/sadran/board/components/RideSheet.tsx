@@ -49,6 +49,8 @@ import { PlanSwitchButton } from "./PlanSwitchButton";
 import { TripTypeChange } from "./TripTypeChange";
 import { WithdrawDuplicateAction } from "./WithdrawDuplicateAction";
 import { RequestHistoryDialog } from "@/features/requests/components/RequestHistoryDialog";
+import { SplitSeriesDialog } from "@/features/requests/components/SplitSeriesDialog";
+import { seriesFirstDay } from "@/features/requests/split";
 import { busyDriverIds, personDayEntries } from "../driverBusy";
 import { RideDriverPicker, type DriverCandidate } from "./RideDriverPicker";
 import { RideCancelDialog } from "./RideCancelDialog";
@@ -193,6 +195,12 @@ export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenCha
   );
 
   const cancelled = ride?.status === "cancelled";
+  // SP1 (REQ item 228): the multi-day ride's day request, first day and length (its days are consecutive)
+  const [splitOpen, setSplitOpen] = useState(false);
+  const splitRequestId = ride?.series_id && (ride.series_count ?? 0) > 1 ? servedEntries.find((entry) => !!entry.request_id)?.request_id : undefined;
+  const splitTarget = splitRequestId && ride?.starts_at
+    ? { requestId: splitRequestId, firstDay: seriesFirstDay(dateKey(ride.starts_at), ride.series_index ?? 1), count: ride.series_count ?? 0 }
+    : null;
   const [passengerTarget, setPassengerTarget] = useState<MergedPassengerTarget | null>(null);
   const removePassengerMutation = useRemoveRidePassengerMutation();
   const splitCompanionMutation = useSplitRideCompanionMutation();
@@ -573,6 +581,15 @@ export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenCha
                   {onUnassign && !isPlanning && ride.series_id ? (
                     <p className="text-xs text-muted-foreground">{he.sadranBoard.seriesUnassignHint}</p>
                   ) : null}
+                  {/* SP1 (REQ item 228): split a multi-day ride; the parts then move to other cars on their own. */}
+                  {splitTarget && !isPlanning && !cancelled ? (
+                    <div className="space-y-1">
+                      <Button variant="outline" className="w-full" onClick={() => setSplitOpen(true)} disabled={saving} data-testid="ride-sheet-split">
+                        {he.request.splitSeriesTitle}
+                      </Button>
+                      <p className="text-xs text-muted-foreground">{he.request.splitSeriesHelp}</p>
+                    </div>
+                  ) : null}
                   {servedEntries.map((entry) => {
                     const entryRequest = entry.request_id ? requests.find((request) => request.id === entry.request_id) : undefined;
                     if (!(entry.request_id && entryRequest && !entryRequest.series_id && departmentId && weekStart && !isPlanning && !cancelled)) return null;
@@ -630,6 +647,7 @@ export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenCha
             </div>
           </>
         ) : null}
+        {splitOpen && splitTarget ? <SplitSeriesDialog target={splitTarget} onOpenChange={(value) => { if (!value) setSplitOpen(false); }} /> : null}
         {historyFor ? <RequestHistoryDialog requestId={historyFor.id} subtitle={historyFor.name} open onOpenChange={(value) => { if (!value) setHistoryFor(null); }} /> : null}
       </PortalSheetContent>
     </Sheet>

@@ -41,6 +41,7 @@ import {
   withdrawFreedSlotClaim,
   withdrawRequest,
   shortenSeries,
+  splitSeries,
   withdrawAllRequests,
   type JoinableRideRow,
   type RoutePreviewPoint,
@@ -164,6 +165,21 @@ export function useShortenSeriesMutation() {
   return useMutation({
     mutationFn: ({ requestId, departAt, returnAt }: { requestId: string; departAt: string; returnAt: string }) =>
       shortenSeries(requestId, departAt, returnAt),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: requestsKeys.all });
+      queryClient.invalidateQueries({ queryKey: siddurKeys.all });
+      queryClient.invalidateQueries({ queryKey: sadranKeys.all });
+    },
+    onError: showErrorToast,
+  });
+}
+
+/** SP1 (REQ item 228): split a multi-day ride into parts. */
+export function useSplitSeriesMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ requestId, cutAfter, expectedVersion = null }: { requestId: string; cutAfter: number[]; expectedVersion?: number | null }) =>
+      splitSeries(requestId, cutAfter, expectedVersion),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: requestsKeys.all });
       queryClient.invalidateQueries({ queryKey: siddurKeys.all });

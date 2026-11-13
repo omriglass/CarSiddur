@@ -263,6 +263,16 @@ export const heMember = {
     stopEqualsDestination: "העצירה זהה ליעד",
     originEqualsDestination: "מקום היציאה והיעד זהים",
     shortenSeries: "קיצור הבקשה",
+    // SP1 (REQ item 228): split a multi-day ride.
+    splitSeries: "פיצול",
+    splitSeriesTitle: "פיצול הנסיעה הרב-יומית",
+    splitSeriesHelp: "כל חלק נשאר על אותו רכב ובאותן שעות, ואחר כך אפשר להזיז, לערוך או לבטל כל חלק בנפרד.",
+    splitModeTwo: "לשניים",
+    splitModeDaily: "יום-יום",
+    splitAtLabel: "איפה לחתוך?",
+    splitPartsPreview: "החלקים:",
+    splitSubmit: "פיצול",
+    splitDone: "הנסיעה פוצלה",
     shortenSeriesTitle: "קיצור הבקשה הרב-יומית",
     shortenSeriesHelp: "בחרו יום ושעת יציאה חדשים, ויום ושעת חזרה חדשים בתוך הימים של הבקשה. הימים שיוצאים מהטווח משתחררים, והרכב נשמר לימים שנשארו.",
     shortenFirstDay: "יום יציאה חדש",
@@ -794,6 +804,9 @@ export const heMember = {
     rideCar: "הנסיעה עברה מרכב {{oldCar}} לרכב {{car}}",
     rideTimes: "הנסיעה הוזזה מ־{{from}} ל־{{to}}",
     rideCancelled: "הנסיעה ברכב {{car}} בוטלה",
+    // SP1 (REQ item 228 f)
+    split: "הנסיעה הרב-יומית פוצלה — החלק הזה: {{count}} ימים",
+    splitToOne: "הנסיעה הרב-יומית פוצלה — היום הזה נסיעה רגילה",
     notice: "נשלחה הודעה: {{title}}",
     proposal: {
       draft: "נוצרה טיוטת הצעה",
