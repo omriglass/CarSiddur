@@ -3,6 +3,7 @@
 // free slot on the same local day; a collision offers another free car or - only after talking to them - asks the drivers
 // in the way to make room (REQ §13.203, `useMakeRoom`) - except a ride that only ends less than the turnaround before the
 // car's next one, which asks the mover (REQ §13.190).
+import { carOwnerIds, isCarOwner } from "@/lib/carOwners";
 import { useQueryClient } from "@tanstack/react-query";
 import { fromZonedTime } from "date-fns-tz";
 import { useState } from "react";
@@ -79,7 +80,7 @@ export function useMemberRideMoves({ departmentId, weekStart, week, profileId, m
     if (!(week?.published_days?.includes(dateKey(ride.starts_at)) ?? true)) return false;
     if (!rideMovableByMember(ride)) return false;
     const car = carsQuery.data?.find((c) => c.id === ride.car_id);
-    const related = isRideRelated({ ride, profileId, myRequestIds: myRequestIds ?? new Set(), carOwnerId: car?.type === "temporary" ? car.owner_id : null })
+    const related = isRideRelated({ ride, profileId, myRequestIds: myRequestIds ?? new Set(), carOwnerIds: carOwnerIds(car) })
       // REQ §13.205 (b): with the department's "anyone edits rides" switch on, any member moves any shared-car ride it serves
       || (!!settingsQuery.data?.anyone_edits_rides && car?.type !== "temporary" && servedOf(ride).some((entry) => !!entry.request_id));
     return related && isRideDayEditable(ride.starts_at, now)
@@ -159,7 +160,7 @@ export function useMemberRideMoves({ departmentId, weekStart, week, profileId, m
     const car = carsQuery.data?.find((c) => c.id === carId);
     // A ride that is not mine goes only onto one of my own private cars.
     if (ride && !ownsEditableRide(rideId) && !(movableOntoMyCar(rideId) && myCars.some((own) => own.id === carId))) return false;
-    if (!ride || !car || car.status !== "active" || (car.type === "temporary" && car.owner_id !== profileId && carId !== ride.car_id)) return false;
+    if (!ride || !car || car.status !== "active" || (car.type === "temporary" && !isCarOwner(car, profileId) && carId !== ride.car_id)) return false;
     // A one-way leaves this very car at its destination: it never moves to another car.
     if (carId !== ride.car_id && servedOf(ride).some((entry) => entry.car_mode === "relay")) return false;
     const move = moveOnRideDay(ride, carId, startMinutes, endMinutes);

@@ -26,7 +26,7 @@ import { NOTIFICATION_EVENTS, type NotificationEvent } from "@/lib/enums";
  *   the two can never silently diverge.
  */
 export interface NotificationEventMeta {
-  category: "window" | "siddur" | "proposals" | "freedSlot" | "maintenance" | "sadran" | "account";
+  category: "window" | "siddur" | "proposals" | "freedSlot" | "maintenance" | "sadran" | "account" | "privateCar";
   memberMutable: boolean;
   sadranRole: boolean;
   weekScoped: boolean;
@@ -71,6 +71,8 @@ export const NOTIFICATION_EVENT_META: Record<NotificationEvent, NotificationEven
   driver_reminder: { category: "siddur", memberMutable: false, sadranRole: false, weekScoped: true },
   // REQ §13.202: someone named you an editor of their rides — one quiet inbox message, never pushed.
   ride_editor_added: { category: "account", memberMutable: false, sadranRole: false, weekScoped: false },
+  // REQ item 227 (d): an owner of a private car is told about other people's changes on it; its own mute switch.
+  private_car_changed: { category: "privateCar", memberMutable: true, sadranRole: false, weekScoped: false },
 };
 
 /** Every mutable event, grouped by `category` — the source `muteCategories.ts` builds on. */
@@ -95,6 +97,7 @@ const TAB_OF_CATEGORY: Record<NotificationEventMeta["category"], InboxTab> = {
   maintenance: "system",
   sadran: "system",
   account: "system",
+  privateCar: "siddur",
 };
 
 export function inboxTabOf(event: NotificationEvent): InboxTab {

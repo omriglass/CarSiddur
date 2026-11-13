@@ -1,3 +1,4 @@
+import { isCarOwner } from "@/lib/carOwners";
 import { useState } from "react";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Button } from "@/components/ui/button";
@@ -20,7 +21,7 @@ export function MemberRideEditor({ ride, cars, saving, onSave, viewerId }: {
   const [carId, setCarId] = useState(ride.car_id ?? "");
   const [pendingOwnCar, setPendingOwnCar] = useState<RideMove | null>(null);
   const choices = cars.filter((c) => c.status === "active" && !c.retired_at
-    && (c.type === "shared" || c.owner_id === ride.driver_id || (!!viewerId && c.owner_id === viewerId) || c.id === ride.car_id));
+    && (c.type === "shared" || isCarOwner(c, ride.driver_id) || isCarOwner(c, viewerId) || c.id === ride.car_id));
   const pendingCarName = cars.find((c) => c.id === pendingOwnCar?.carId)?.name ?? "";
   const [start, setStart] = useState(formatTime(new Date(ride.starts_at!)));
   const [end, setEnd] = useState(dateKey(ride.starts_at!) === dateKey(ride.ends_at!)
@@ -34,7 +35,7 @@ export function MemberRideEditor({ ride, cars, saving, onSave, viewerId }: {
       const move = moveOnRideDay(ride, carId, minutes(start), endMinutes);
       if (!valid || !move) return;
       // REQ §13.129 (a): someone else's ride onto my private car — the owner confirms first.
-      const ontoMyCar = carId !== ride.car_id && cars.some((c) => c.id === carId && c.type === "temporary" && !!viewerId && c.owner_id === viewerId);
+      const ontoMyCar = carId !== ride.car_id && cars.some((c) => c.id === carId && c.type === "temporary" && isCarOwner(c, viewerId));
       if (ontoMyCar && ride.driver_id !== viewerId) setPendingOwnCar(move);
       else onSave(move);
     }}>

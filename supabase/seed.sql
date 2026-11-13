@@ -522,6 +522,16 @@ from (values
 cross join unnest(array['inbox','push']::public.notification_channel[]) as ch
 on conflict (event,channel,(coalesce(variant,''))) do nothing;
 
+-- REQ item 227 (d): private car owners (same rows as 20261113170300_private_car_owner_notices.sql).
+insert into public.notification_templates (event, channel, variant, title, body, default_title, default_body)
+select 'private_car_changed'::public.notification_event, ch, t.variant, t.title, t.body, t.title, t.body
+from (values
+  (null, 'שינוי ברכב {{carName}}', 'ביום {{day}} · עדכנ/ה: {{byName}}'),
+  ('owner_added', 'נוספת לבעלי הרכב {{carName}}', '{{byName}} הוסיף/ה אותך כבעלים של {{carName}}')
+) as t(variant, title, body)
+cross join unnest(array['inbox','push']::public.notification_channel[]) as ch
+on conflict (event,channel,(coalesce(variant,''))) do nothing;
+
 -- Owner 2026-11-09: a passenger split off into a request of their own (same rows as 20261109150100_split_ride_companion_templates.sql).
 insert into public.notification_templates (event, channel, variant, title, body, default_title, default_body)
 select t.event::public.notification_event, ch, t.variant, t.title, t.body, t.title, t.body

@@ -25,4 +25,6 @@ export const MUTE_CATEGORIES: readonly MuteCategory[] = [
   { key: "proposals", label: he.profileExtra.muteProposals, events: BY_CATEGORY.proposals ?? [] },
   { key: "freedSlots", label: he.profileExtra.muteFreedSlots, events: BY_CATEGORY.freedSlot ?? [] },
   { key: "maintenance", label: he.profileExtra.muteMaintenance, events: BY_CATEGORY.maintenance ?? [] },
+  // REQ item 227 (d): "אל תודיעו לי על שינויים ברכבים פרטיים" — off = muted, like every switch here.
+  { key: "privateCar", label: he.profileExtra.mutePrivateCar, events: BY_CATEGORY.privateCar ?? [] },
 ];

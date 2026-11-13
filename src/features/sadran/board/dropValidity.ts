@@ -12,6 +12,7 @@
  * re-checks in SQL (`_merge_check`, `rides_before_write`, `assert_*`). Keep the twin no
  * stricter than SQL; where the two differ, SQL is right.
  */
+import { isCarOwner } from "@/lib/carOwners";
 import { fromZonedTime } from "date-fns-tz";
 
 import { formatMinutes } from "@/components/timeField15Format";
@@ -125,8 +126,8 @@ export function carLocationAt(ctx: BoardDropContext, carId: string, atIso: strin
 export function privateCarBlocks(ctx: Pick<BoardDropContext, "cars" | "viewerId">, carId: string, requesterId: string | null | undefined): boolean {
   const car = ctx.cars.find((c) => c.id === carId);
   // REQ §13.129 (a): the viewer owns this private car - they may place anyone's request/ride on it (after a confirmation).
-  if (car?.type === "temporary" && !!ctx.viewerId && car.owner_id === ctx.viewerId) return false;
-  return !!car && car.type === "temporary" && (!requesterId || car.owner_id !== requesterId);
+  if (car?.type === "temporary" && isCarOwner(car, ctx.viewerId)) return false;
+  return !!car && car.type === "temporary" && !isCarOwner(car, requesterId);
 }
 
 /** Same rule for a ride moved to another car: its driver must be the car's owner. */

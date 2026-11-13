@@ -63,7 +63,14 @@ describe("fetchCars", () => {
     expect(mocks.from).toHaveBeenCalledWith("cars");
     expect(calls.eq).toEqual([["department_id", "dept-1"]]);
     expect(calls.neq).toEqual([["status", "retired"]]);
-    expect(cars).toEqual([{ id: "car-1", access_code: "1234", is_replaced: true, replacement_code: "5678" }]);
+    expect(cars).toEqual([{ id: "car-1", owner_ids: [], access_code: "1234", is_replaced: true, replacement_code: "5678" }]);
+  });
+
+  it("PC1: flattens the embedded owners into owner_ids", async () => {
+    const { builder } = makeBuilder({ data: [{ id: "car-1", codes: null, owners: [{ profile_id: "a" }, { profile_id: "b" }] }], error: null });
+    mocks.from.mockReturnValue(builder);
+    const [car] = await fetchCars("dept-1");
+    expect(car).toMatchObject({ owner_ids: ["a", "b"] });
   });
 
   it("takes the first element when codes come back as an array", async () => {
@@ -183,11 +190,11 @@ describe("scheduled maintenance RPCs (REQ §13.114)", () => {
 });
 
 describe("fetchMyTemporaryCars", () => {
-  it("filters to the owner's temporary cars", async () => {
-    const { builder, calls } = makeBuilder({ data: [{ id: "car-1", type: "temporary" }], error: null });
+  it("filters to the temporary cars I own, alone or with others (PC1: car_owners)", async () => {
+    const { builder, calls } = makeBuilder({ data: [{ id: "car-1", type: "temporary", mine: [{ profile_id: "owner-1" }] }], error: null });
     mocks.from.mockReturnValue(builder);
     const result = await fetchMyTemporaryCars("owner-1");
-    expect(calls.eq).toEqual([["owner_id", "owner-1"], ["type", "temporary"]]);
+    expect(calls.eq).toEqual([["mine.profile_id", "owner-1"], ["type", "temporary"]]);
     expect(result).toEqual([{ id: "car-1", type: "temporary" }]);
   });
 });

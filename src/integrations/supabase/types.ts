@@ -749,6 +749,65 @@ export type Database = {
           },
         ]
       }
+      car_owners: {
+        Row: {
+          added_by: string | null
+          car_id: string
+          created_at: string
+          department_id: string
+          id: string
+          profile_id: string
+          updated_at: string
+        }
+        Insert: {
+          added_by?: string | null
+          car_id: string
+          created_at?: string
+          department_id: string
+          id?: string
+          profile_id: string
+          updated_at?: string
+        }
+        Update: {
+          added_by?: string | null
+          car_id?: string
+          created_at?: string
+          department_id?: string
+          id?: string
+          profile_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "car_owners_added_by_fkey"
+            columns: ["added_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "car_owners_car_id_fkey"
+            columns: ["car_id"]
+            isOneToOne: false
+            referencedRelation: "cars"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "car_owners_department_id_fkey"
+            columns: ["department_id"]
+            isOneToOne: false
+            referencedRelation: "departments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "car_owners_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       car_seat_configs: {
         Row: {
           adults: number
@@ -5819,6 +5878,10 @@ export type Database = {
       _long_detour_mode: { Args: { p_allow: boolean }; Returns: undefined }
       _maintenance_quarter_ceil: { Args: { p_t: string }; Returns: string }
       _maintenance_quarter_floor: { Args: { p_t: string }; Returns: string }
+      _may_use_ownerless_car: {
+        Args: { p_car: string; p_person: string }
+        Returns: boolean
+      }
       _member_merge_check: {
         Args: {
           p_request_id: string
@@ -5878,6 +5941,10 @@ export type Database = {
           p_vars: Json
         }
         Returns: string
+      }
+      _notify_private_car_owners: {
+        Args: { p_car: string; p_ride: string }
+        Returns: undefined
       }
       _notify_request_closed: {
         Args: { p_reason: string; p_request_id: string }
@@ -6245,6 +6312,7 @@ export type Database = {
       }
       _small_trunk_mode: { Args: { p_allow: boolean }; Returns: undefined }
       _small_trunk_probe: { Args: { p_request_id: string }; Returns: string }
+      _sync_car_owner_id: { Args: { p_car: string }; Returns: undefined }
       _sync_draft_hold: { Args: { p_request_id: string }; Returns: undefined }
       _time_change_line: {
         Args: {
@@ -6280,6 +6348,10 @@ export type Database = {
         Returns: undefined
       }
       _window_text: { Args: { _dep: string; _ret: string }; Returns: string }
+      add_car_owner: {
+        Args: { p_car_id: string; p_profile_id: string }
+        Returns: undefined
+      }
       add_ride_passengers: {
         Args: {
           p_expected_version: number
@@ -6552,6 +6624,7 @@ export type Database = {
         }
         Returns: boolean
       }
+      car_has_owners: { Args: { p_car: string }; Returns: boolean }
       car_held_by_waitlist_group: {
         Args: {
           p_car_id: string
@@ -6879,6 +6952,10 @@ export type Database = {
       is_admin: { Args: never; Returns: boolean }
       is_approved: { Args: never; Returns: boolean }
       is_car_admin: { Args: { _dept: string }; Returns: boolean }
+      is_car_owner: {
+        Args: { p_car: string; p_person: string }
+        Returns: boolean
+      }
       is_car_responsible: { Args: { _car_id: string }; Returns: boolean }
       is_day_public: {
         Args: { p_day: string; p_department_id: string; p_week_start: string }
@@ -7059,6 +7136,7 @@ export type Database = {
       my_department_access: { Args: { p_department_id: string }; Returns: Json }
       my_department_ids: { Args: never; Returns: string[] }
       my_guarded_request_ids: { Args: never; Returns: string[] }
+      my_owned_car_ids: { Args: never; Returns: string[] }
       my_proposal_ids: { Args: never; Returns: string[] }
       my_ride_editor_links: {
         Args: never
@@ -7433,6 +7511,10 @@ export type Database = {
       }
       remind_unsent_board_changes: {
         Args: { p_now?: string }
+        Returns: undefined
+      }
+      remove_car_owner: {
+        Args: { p_car_id: string; p_profile_id: string }
         Returns: undefined
       }
       remove_ride_person: {
@@ -8457,6 +8539,7 @@ export type Database = {
         | "ride_edited"
         | "driver_reminder"
         | "ride_editor_added"
+        | "private_car_changed"
       party_response: "pending" | "accepted" | "declined"
       proposal_status:
         | "draft"
@@ -8714,6 +8797,7 @@ export const Constants = {
         "ride_edited",
         "driver_reminder",
         "ride_editor_added",
+        "private_car_changed",
       ],
       party_response: ["pending", "accepted", "declined"],
       proposal_status: [

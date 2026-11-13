@@ -1273,6 +1273,10 @@
         "supabase/tests/car_care_semantics.sql",
         "supabase/tests/car_administration.sql",
         "supabase/tests/car_tasks.sql",
+        "supabase/tests/car_owners.sql",
+        "supabase/migrations/**/*car_owner*",
+        "e2e/car-owners.spec.ts",
+        "src/lib/carOwners.ts",
         "src/features/admin/members/**",
         "e2e/car-care.spec.ts",
         "e2e/car-admin.spec.ts",
@@ -1295,13 +1299,15 @@
         "car_administration.sql",
         "car_tasks.sql",
         "car_checklists.sql",
+        "car_owners.sql",
         "department_isolation.sql"
       ],
       "playwrightTags": [
         "@car-care",
         "@car-admin",
         "@car-tasks",
-        "@car-checklist"
+        "@car-checklist",
+        "@car-owners"
       ],
       "reqRefs": [
         "13.69",
