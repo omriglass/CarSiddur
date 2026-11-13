@@ -263,6 +263,18 @@ export const carStatusSchema = z.enum(CAR_STATUSES);
 assertSameEnum<CarStatus, Enums<"car_status">>();
 
 // ---------------------------------------------------------------------------
+// car_fuel_type (FU1, REQ item 217)
+// ---------------------------------------------------------------------------
+export const CAR_FUEL_TYPES = [
+  "gasoline",
+  "diesel",
+  "electric",
+] as const satisfies readonly Enums<"car_fuel_type">[];
+export type CarFuelType = (typeof CAR_FUEL_TYPES)[number];
+export const carFuelTypeSchema = z.enum(CAR_FUEL_TYPES);
+assertSameEnum<CarFuelType, Enums<"car_fuel_type">>();
+
+// ---------------------------------------------------------------------------
 // car_issue_status
 // ---------------------------------------------------------------------------
 export const CAR_ISSUE_STATUSES = [

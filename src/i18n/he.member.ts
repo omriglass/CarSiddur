@@ -1294,7 +1294,10 @@ export const heMember = {
     exportTireStateOk: "תקין",
     exportTireStateLow: "נמוך",
     exportTireStateVeryLow: "נמוך מאוד",
-    homeMyCarsTitle: "הרכבים שלי",
+    homeMyCarsTitle: "רכבים באחריותי",
+    // MC1 (REQ item 218): the cars of the rides I am on now.
+    homeRelevantCarsTitle: "רכבים רלוונטיים",
+    homeCarCode: "קוד",
     // Owner 2026-11-03: tapping a car card on /my.
     homeCarAddRide: "הוספת נסיעה ברכב הזה",
     homeCarOpenPage: "דף הרכב",

@@ -14,4 +14,5 @@ export const carKeys = {
   currentKm: (carId: string | undefined) => [...carKeys.all, "currentKm", carId] as const,
   upcomingRides: (carId: string | undefined) => [...carKeys.all, "upcomingRides", carId] as const,
   myResponsible: (profileId: string | undefined) => [...carKeys.all, "myResponsible", profileId] as const,
+  byIds: (carIds: readonly string[]) => [...carKeys.all, "byIds", [...carIds].sort().join(",")] as const,
 };

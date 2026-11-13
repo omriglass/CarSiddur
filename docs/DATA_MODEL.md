@@ -110,6 +110,7 @@ create type public.proposal_status      as enum ('draft','sent','accepted','decl
 create type public.party_response       as enum ('pending','accepted','declined');
 create type public.car_type             as enum ('shared','temporary');
 create type public.car_status           as enum ('active','maintenance','retired');
+create type public.car_fuel_type        as enum ('gasoline','diesel','electric');  -- REQ item 217 (2026-11-13), own migration file
 create type public.car_issue_status     as enum ('open','resolved');
 create type public.car_issue_category   as enum ('warning_light','mechanical','lighting','physical_damage');  -- REQ §6.6
 create type public.car_care_kind        as enum ('tire_fill','wash');                                         -- REQ §6.6
@@ -300,6 +301,7 @@ Unique index `(department_id, profile_id, coalesce(week_start, '1970-01-04'))`. 
 | license_plate | text | NN | | unique, digits only after normalization |
 | type | car_type | NN | 'shared' | |
 | status | car_status | NN | 'active' | |
+| fuel_type | car_fuel_type | | | REQ item 217 (`20261113110100`): בנזין / סולר / חשמלי, null = not set; diesel cars take urea (item 219). Public like every `cars` column (`rls_smoke.sql` TEST 18) |
 | owner_id | uuid | | | FK profiles; CHECK `(type = 'temporary') = (owner_id is not null)` |
 | features | text[] | NN | '{}' | 'roof_rack','large_trunk','manual','awd','tow_hitch' (app-side vocabulary, `CAR_FEATURES`; `manual` replaced `automatic` 2026-11-08, REQ §13.199) |
 | notes | text | | | key location, quirks |

@@ -91,6 +91,15 @@ export async function fetchMyResponsibleCars(profileId: string): Promise<Car[]> 
   );
 }
 
+/** MC1 (REQ item 218): the cars of my current rides, with their codes (members of the car's department read them). */
+export async function fetchCarsByIds(carIds: readonly string[]): Promise<Car[]> {
+  if (!carIds.length) return [];
+  const { data, error } = await supabase.from("cars").select(CARS_WITH_CODES_SELECT).in("id", [...carIds]);
+  if (error) throw toAppError(error);
+  const cars = ((data ?? []) as unknown as (Database["public"]["Tables"]["cars"]["Row"] & { codes: CarCodes | CarCodes[] | null })[]).map(flattenCarCodes);
+  return [...carIds].flatMap((id) => cars.filter((car) => car.id === id));
+}
+
 /** Upcoming non-cancelled rides of a car (for the "make private" warning). Reads only what RLS returns. */
 export async function fetchUpcomingCarRides(carId: string): Promise<{ id: string; driver_id: string | null }[]> {
   const { data, error } = await supabase

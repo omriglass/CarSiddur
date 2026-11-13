@@ -8,19 +8,30 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import type { Car } from "@/features/fleet/api";
 import { RequestLink } from "@/features/requests/components/RequestLink";
 import { he, tv } from "@/i18n/he";
+import type { CarFuelType } from "@/lib/enums";
+
+import { activeCarCode } from "../lib/relevantCars";
+import { CarFuelChip } from "./CarFuelChip";
 
 /**
- * One car on "my rides" (/my): a car I am responsible for or my own private car. Tapping it offers
+ * One car on "my rides" (/my): a car I am responsible for, my own private car, or (MC1) the car of a ride I am on now. Tapping it offers
  * "add a ride on this car" (the request form with the car chosen: my private car takes a round trip
  * directly, a shared car is a preferred car under the normal rules) and the car's own page
  * (owner 2026-11-03, REQ §13.182).
  */
 export function HomeCarCard({ car, addRideTo, checklistPrompt }: {
-  car: Pick<Car, "id" | "name" | "license_plate" | "status">;
+  /** MC1 (REQ item 218): name, licence plate, fuel type and the code to type, when the viewer may read them. */
+  car: Pick<Car, "id" | "name" | "license_plate" | "status"> & {
+    fuel_type?: CarFuelType | null;
+    access_code?: string | null;
+    is_replaced?: boolean;
+    replacement_code?: string | null;
+  };
   /** `paths.requests.new(...)` with the car; omitted when the member cannot file requests. */
   addRideTo?: string;
   checklistPrompt?: boolean;
 }) {
+  const code = activeCarCode(car);
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -32,8 +43,16 @@ export function HomeCarCard({ car, addRideTo, checklistPrompt }: {
                   <CarFront className="size-5" aria-hidden="true" />
                 </span>
                 <div>
-                  <p className="font-medium">{car.name}</p>
-                  <p className="text-xs text-muted-foreground" dir="ltr">{car.license_plate}</p>
+                  <p className="font-medium">{car.is_replaced ? tv("siddurCar.replacementName", { name: car.name }) : car.name}</p>
+                  <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+                    <span dir="ltr">{car.license_plate}</span>
+                    <CarFuelChip fuel={car.fuel_type} />
+                    {code ? (
+                      <span className="font-medium text-foreground" data-testid="home-car-code">
+                        {he.carPage.homeCarCode} <span dir="ltr">{code}</span>
+                      </span>
+                    ) : null}
+                  </p>
                   {checklistPrompt ? (
                     <p className="text-xs font-medium text-primary" data-testid="home-checklist-prompt">{he.carChecklist.promptCard}</p>
                   ) : null}

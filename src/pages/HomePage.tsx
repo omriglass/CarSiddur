@@ -17,7 +17,9 @@ import { useProfile } from "@/features/auth/useProfile";
 import { useIsSadranAnywhere } from "@/features/auth/useIsSadran";
 import { DeviceSetupPrompts } from "@/features/member/components/DeviceSetupPrompts";
 import { useMyChecklistPromptsQuery } from "@/features/cars/checklist/hooks";
-import { useMyResponsibleCarsQuery } from "@/features/cars/hooks";
+import { useCarsByIdsQuery, useMyResponsibleCarsQuery } from "@/features/cars/hooks";
+import { relevantCarIds } from "@/features/cars/lib/relevantCars";
+import { useNowQuarter } from "@/features/requests/myWeek/useNowQuarter";
 import { isMergedRide, isRideRelated, relatedRequestIdToEdit, rideMovableByMember } from "@/features/rides/relatedRide";
 import { useCars, useMyTemporaryCars, useRideTypes } from "@/features/fleet/hooks";
 import { AddRideFab } from "@/features/requests/components/AddRideFab";
@@ -199,6 +201,10 @@ export function HomePage() {
     ...(myCarsQuery.data ?? []),
     ...(ownCarsQuery.data ?? []).filter((car) => car.status !== "retired" && !car.retired_at && !(myCarsQuery.data ?? []).some((mine) => mine.id === car.id)),
   ];
+  // MC1 (REQ item 218): the cars of the rides I am on now (driver or passenger), unless listed above already.
+  useNowQuarter();
+  const relevantCarIdList = relevantCarIds(upcomingRidesQuery.data ?? [], now, new Set(homeCars.map((car) => car.id)));
+  const relevantCars = useCarsByIdsQuery(relevantCarIdList).data ?? [];
   // During a week that is already running the ride is for this week, from today; otherwise the form's own default week.
   const currentWeekStart = dateKey(weekStartFor(now));
   const addRideWeek = (weeksQuery.data ?? []).some((week) => week.week_start === currentWeekStart && week.phase !== "archived" && week.phase !== "upcoming")
@@ -504,6 +510,15 @@ export function HomePage() {
                 addRideTo={active.canSubmit ? paths.requests.new({ ...addRideWeek, car: car.id }) : undefined}
               />
             ))}
+          </div>
+        </section>
+      ) : null}
+
+      {relevantCars.length > 0 ? (
+        <section className="space-y-2" data-testid="home-relevant-cars">
+          <h2 className="text-sm font-semibold text-muted-foreground">{he.carPage.homeRelevantCarsTitle}</h2>
+          <div className="space-y-2">
+            {relevantCars.map((car) => <HomeCarCard key={car.id} car={car} />)}
           </div>
         </section>
       ) : null}

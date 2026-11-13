@@ -10,6 +10,7 @@ import {
   fetchCarCareHistory,
   fetchCarCurrentKm,
   fetchCarIssueHistory,
+  fetchCarsByIds,
   fetchCarOdometerHistory,
   fetchMyResponsibleCars,
   fetchUpcomingCarRides,
@@ -68,6 +69,16 @@ export function useMyResponsibleCarsQuery() {
     queryKey: carKeys.myResponsible(profileId),
     queryFn: () => fetchMyResponsibleCars(profileId as string),
     enabled: !!profileId,
+    staleTime: 60_000,
+  });
+}
+
+/** MC1 (REQ item 218): the cars of the rides I am on now ("רכבים רלוונטיים" on /my). */
+export function useCarsByIdsQuery(carIds: readonly string[]) {
+  return useQuery({
+    queryKey: carKeys.byIds(carIds),
+    queryFn: () => fetchCarsByIds(carIds),
+    enabled: carIds.length > 0,
     staleTime: 60_000,
   });
 }

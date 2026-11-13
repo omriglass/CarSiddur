@@ -644,6 +644,7 @@ begin
     ('cars', 'updated_at', 'public'),
     ('cars', 'responsible_id', 'public'),
     ('cars', 'base_location_id', 'public'),
+    ('cars', 'fuel_type', 'public'),
     ('departments', 'id', 'public'),
     ('departments', 'name', 'public'),
     ('departments', 'slug', 'public'),

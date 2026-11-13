@@ -26,6 +26,7 @@ import { he, tv } from "@/i18n/he";
 import { TZ } from "@/lib/time";
 
 import { CarExcelExportButton } from "./CarExcelExportButton";
+import { CarFuelChip } from "./CarFuelChip";
 import { CarMoodCard } from "./CarMoodCard";
 import { CarKilometrageCard } from "./CarKilometrageCard";
 import { CarChecklistCard } from "../checklist/components/CarChecklistCard";
@@ -204,8 +205,10 @@ export function CarManageScreen({ car, isAdmin, canEdit, canManageCar, canDefine
         }
         actions={headerActions}
       />
-      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-        <span dir="ltr">{car.license_plate}</span>
+      {/* FU1 (REQ item 217): licence plate and fuel type are the first facts about a car. */}
+      <div className="flex flex-wrap items-center gap-2 text-sm">
+        <span className="font-medium" dir="ltr" data-testid="car-plate">{car.license_plate}</span>
+        <CarFuelChip fuel={car.fuel_type} />
         <StatusBadge kind="car" status={car.status} />
       </div>
 

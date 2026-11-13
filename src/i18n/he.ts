@@ -19,7 +19,7 @@ import { heLegal } from "./he.legal";
 import { heMember } from "./he.member";
 import { heSadran } from "./he.sadran";
 
-import type { NotificationEvent } from "@/lib/enums";
+import type { CarFuelType, NotificationEvent } from "@/lib/enums";
 
 // `requests.status_reason` is a free-text column (no SQL enum), so there is
 // no generated type to mirror. This TS-only list is grepped from every
@@ -1006,6 +1006,14 @@ export const he = {
       shared: "משותף",
       temporary: "רכב פרטי",
     },
+    /** FU1 (REQ item 217). */
+    fuel: {
+      gasoline: "בנזין",
+      diesel: "סולר",
+      electric: "חשמלי",
+    } satisfies Record<CarFuelType, string>,
+    fuelLabel: "סוג דלק",
+    fuelUnset: "לא צוין",
   },
   days: {
     short: ["א", "ב", "ג", "ד", "ה", "ו", "ש"] as readonly string[],

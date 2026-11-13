@@ -981,6 +981,7 @@ export type Database = {
           created_at: string
           department_id: string
           features: string[]
+          fuel_type: Database["public"]["Enums"]["car_fuel_type"] | null
           id: string
           license_plate: string
           name: string
@@ -999,6 +1000,7 @@ export type Database = {
           created_at?: string
           department_id: string
           features?: string[]
+          fuel_type?: Database["public"]["Enums"]["car_fuel_type"] | null
           id?: string
           license_plate: string
           name: string
@@ -1017,6 +1019,7 @@ export type Database = {
           created_at?: string
           department_id?: string
           features?: string[]
+          fuel_type?: Database["public"]["Enums"]["car_fuel_type"] | null
           id?: string
           license_plate?: string
           name?: string
@@ -8330,6 +8333,7 @@ export type Database = {
       audit_action: "insert" | "update" | "delete"
       car_care_kind: "tire_fill" | "wash"
       car_checklist_item_kind: "yes_no" | "number" | "date"
+      car_fuel_type: "gasoline" | "diesel" | "electric"
       car_issue_category:
         | "warning_light"
         | "mechanical"
@@ -8582,6 +8586,7 @@ export const Constants = {
       audit_action: ["insert", "update", "delete"],
       car_care_kind: ["tire_fill", "wash"],
       car_checklist_item_kind: ["yes_no", "number", "date"],
+      car_fuel_type: ["gasoline", "diesel", "electric"],
       car_issue_category: [
         "warning_light",
         "mechanical",

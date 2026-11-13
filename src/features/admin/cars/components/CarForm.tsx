@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { useDestinations } from "@/features/fleet/hooks";
 import { he } from "@/i18n/he";
+import { CAR_FUEL_TYPES } from "@/lib/enums";
 import { showErrorToast } from "@/lib/rpc";
 
 import { useReplaceSeatConfigsMutation, useSeatConfigs, useUpdateCarMutation, useCreateCarMutation } from "../hooks";
@@ -75,6 +76,7 @@ export function CarForm({
     defaultValues: {
       name: car?.name ?? "",
       license_plate: car?.license_plate ?? "",
+      fuel_type: car?.fuel_type ?? null,
       access_code: car?.access_code ?? "",
       is_replaced: car?.is_replaced ?? false,
       replacement_code: car?.replacement_code ?? null,
@@ -142,6 +144,26 @@ export function CarForm({
               <FormControl>
                 <Input {...field} dir="ltr" />
               </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+        <FormField
+          control={form.control}
+          name="fuel_type"
+          render={({ field }) => (
+            <FormItem data-field="fuel_type">
+              <FormLabel>{he.car.fuelLabel}</FormLabel>
+              <Select value={field.value ?? ""} onValueChange={(value) => field.onChange(value || null)}>
+                <FormControl>
+                  <SelectTrigger data-testid="car-fuel-type">
+                    <SelectValue placeholder={he.car.fuelUnset} />
+                  </SelectTrigger>
+                </FormControl>
+                <SelectContent>
+                  {CAR_FUEL_TYPES.map((fuel) => <SelectItem key={fuel} value={fuel}>{he.car.fuel[fuel]}</SelectItem>)}
+                </SelectContent>
+              </Select>
               <FormMessage />
             </FormItem>
           )}

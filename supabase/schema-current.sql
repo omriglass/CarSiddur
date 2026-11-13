@@ -84,6 +84,16 @@ CREATE TYPE "public"."car_checklist_item_kind" AS ENUM (
 ALTER TYPE "public"."car_checklist_item_kind" OWNER TO "postgres";
 
 
+CREATE TYPE "public"."car_fuel_type" AS ENUM (
+    'gasoline',
+    'diesel',
+    'electric'
+);
+
+
+ALTER TYPE "public"."car_fuel_type" OWNER TO "postgres";
+
+
 CREATE TYPE "public"."car_issue_category" AS ENUM (
     'warning_light',
     'mechanical',
@@ -4856,9 +4866,9 @@ CREATE TABLE IF NOT EXISTS "public"."requests" (
     CONSTRAINT "requests_depart_qh_ck" CHECK ("public"."is_quarter_hour"("depart_at")),
     CONSTRAINT "requests_destination_ck" CHECK ((("destination_id" IS NOT NULL) OR ("destination_text" IS NOT NULL))),
     CONSTRAINT "requests_flex_depart_early_ck" CHECK (("flex_depart_early" = ANY (ARRAY['00:00:00'::interval, '00:15:00'::interval, '00:30:00'::interval, '01:00:00'::interval, '02:00:00'::interval, '1 day'::interval]))),
-    CONSTRAINT "requests_flex_depart_late_ck" CHECK ((("flex_depart_late" = ANY (ARRAY['00:00:00'::interval, '00:15:00'::interval, '00:30:00'::interval, '01:00:00'::interval, '02:00:00'::interval, '1 day'::interval])) OR ("duration_locked" AND ("flex_depart_late" > '00:00:00'::interval) AND ("flex_depart_late" <= '1 day'::interval) AND (((EXTRACT("epoch" FROM "flex_depart_late"))::bigint % (900)::bigint) = 0)))),
+    CONSTRAINT "requests_flex_depart_late_ck" CHECK ((("flex_depart_late" = ANY (ARRAY['00:00:00'::interval, '00:15:00'::interval, '00:30:00'::interval, '01:00:00'::interval, '02:00:00'::interval, '1 day'::interval])) OR ("duration_locked" AND ("flex_depart_late" > '00:00:00'::interval) AND ("flex_depart_late" <= '1 day'::interval) AND (((EXTRACT(epoch FROM "flex_depart_late"))::bigint % (900)::bigint) = 0)))),
     CONSTRAINT "requests_flex_return_early_ck" CHECK (("flex_return_early" = ANY (ARRAY['00:00:00'::interval, '00:15:00'::interval, '00:30:00'::interval, '01:00:00'::interval, '02:00:00'::interval, '1 day'::interval]))),
-    CONSTRAINT "requests_flex_return_late_ck" CHECK ((("flex_return_late" = ANY (ARRAY['00:00:00'::interval, '00:15:00'::interval, '00:30:00'::interval, '01:00:00'::interval, '02:00:00'::interval, '1 day'::interval])) OR ("duration_locked" AND ("flex_return_late" > '00:00:00'::interval) AND ("flex_return_late" <= '1 day'::interval) AND (((EXTRACT("epoch" FROM "flex_return_late"))::bigint % (900)::bigint) = 0)))),
+    CONSTRAINT "requests_flex_return_late_ck" CHECK ((("flex_return_late" = ANY (ARRAY['00:00:00'::interval, '00:15:00'::interval, '00:30:00'::interval, '01:00:00'::interval, '02:00:00'::interval, '1 day'::interval])) OR ("duration_locked" AND ("flex_return_late" > '00:00:00'::interval) AND ("flex_return_late" <= '1 day'::interval) AND (((EXTRACT(epoch FROM "flex_return_late"))::bigint % (900)::bigint) = 0)))),
     CONSTRAINT "requests_keep_car_at_destination_ck" CHECK (((NOT "keep_car_at_destination") OR (("trip_type" = 'drop_off'::"public"."trip_type") AND ("trip_shape" = 'round_trip'::"public"."trip_shape")))),
     CONSTRAINT "requests_leave_dest_anchor_ck" CHECK ((("leave_dest_at" IS NULL) OR ("return_anchor" = 'leave'::"public"."time_anchor"))),
     CONSTRAINT "requests_leave_dest_qh_ck" CHECK ("public"."is_quarter_hour"("leave_dest_at")),
@@ -26927,6 +26937,7 @@ CREATE TABLE IF NOT EXISTS "public"."cars" (
     "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
     "responsible_id" "uuid",
     "base_location_id" "uuid",
+    "fuel_type" "public"."car_fuel_type",
     CONSTRAINT "cars_built_in_boosters_ck" CHECK (("built_in_boosters" >= 0)),
     CONSTRAINT "cars_built_in_child_seats_ck" CHECK (("built_in_child_seats" >= 0)),
     CONSTRAINT "cars_temporary_owner_ck" CHECK ((("type" = 'temporary'::"public"."car_type") = ("owner_id" IS NOT NULL)))
@@ -27512,28 +27523,28 @@ CREATE TABLE IF NOT EXISTS "public"."request_templates" (
     "needs_tow_hitch" boolean DEFAULT false NOT NULL,
     CONSTRAINT "request_templates_adults_ck" CHECK (("adults" >= 1)),
     CONSTRAINT "request_templates_arrive_by_anchor_ck" CHECK ((("arrive_by_time" IS NULL) OR ("depart_anchor" = 'arrive'::"public"."time_anchor"))),
-    CONSTRAINT "request_templates_arrive_by_qh_ck" CHECK ((("arrive_by_time" IS NULL) OR (((EXTRACT("minute" FROM "arrive_by_time"))::integer % 15) = 0))),
+    CONSTRAINT "request_templates_arrive_by_qh_ck" CHECK ((("arrive_by_time" IS NULL) OR (((EXTRACT(minute FROM "arrive_by_time"))::integer % 15) = 0))),
     CONSTRAINT "request_templates_boosters_ck" CHECK (("boosters" >= 0)),
     CONSTRAINT "request_templates_child_seats_ck" CHECK (("child_seats" >= 0)),
     CONSTRAINT "request_templates_depart_ck" CHECK ((("depart_dow" IS NULL) = ("trip_shape" = 'one_way_from'::"public"."trip_shape"))),
     CONSTRAINT "request_templates_depart_dow_ck" CHECK ((("depart_dow" IS NULL) OR (("depart_dow" >= 0) AND ("depart_dow" <= 6)))),
     CONSTRAINT "request_templates_destination_ck" CHECK ((("destination_id" IS NOT NULL) OR ("destination_text" IS NOT NULL))),
     CONSTRAINT "request_templates_flex_depart_early_ck" CHECK (("flex_depart_early" = ANY (ARRAY['00:00:00'::interval, '00:15:00'::interval, '00:30:00'::interval, '01:00:00'::interval, '02:00:00'::interval, '1 day'::interval]))),
-    CONSTRAINT "request_templates_flex_depart_late_ck" CHECK ((("flex_depart_late" = ANY (ARRAY['00:00:00'::interval, '00:15:00'::interval, '00:30:00'::interval, '01:00:00'::interval, '02:00:00'::interval, '1 day'::interval])) OR ("duration_locked" AND ("flex_depart_late" > '00:00:00'::interval) AND ("flex_depart_late" <= '1 day'::interval) AND (((EXTRACT("epoch" FROM "flex_depart_late"))::bigint % (900)::bigint) = 0)))),
+    CONSTRAINT "request_templates_flex_depart_late_ck" CHECK ((("flex_depart_late" = ANY (ARRAY['00:00:00'::interval, '00:15:00'::interval, '00:30:00'::interval, '01:00:00'::interval, '02:00:00'::interval, '1 day'::interval])) OR ("duration_locked" AND ("flex_depart_late" > '00:00:00'::interval) AND ("flex_depart_late" <= '1 day'::interval) AND (((EXTRACT(epoch FROM "flex_depart_late"))::bigint % (900)::bigint) = 0)))),
     CONSTRAINT "request_templates_flex_return_early_ck" CHECK (("flex_return_early" = ANY (ARRAY['00:00:00'::interval, '00:15:00'::interval, '00:30:00'::interval, '01:00:00'::interval, '02:00:00'::interval, '1 day'::interval]))),
-    CONSTRAINT "request_templates_flex_return_late_ck" CHECK ((("flex_return_late" = ANY (ARRAY['00:00:00'::interval, '00:15:00'::interval, '00:30:00'::interval, '01:00:00'::interval, '02:00:00'::interval, '1 day'::interval])) OR ("duration_locked" AND ("flex_return_late" > '00:00:00'::interval) AND ("flex_return_late" <= '1 day'::interval) AND (((EXTRACT("epoch" FROM "flex_return_late"))::bigint % (900)::bigint) = 0)))),
+    CONSTRAINT "request_templates_flex_return_late_ck" CHECK ((("flex_return_late" = ANY (ARRAY['00:00:00'::interval, '00:15:00'::interval, '00:30:00'::interval, '01:00:00'::interval, '02:00:00'::interval, '1 day'::interval])) OR ("duration_locked" AND ("flex_return_late" > '00:00:00'::interval) AND ("flex_return_late" <= '1 day'::interval) AND (((EXTRACT(epoch FROM "flex_return_late"))::bigint % (900)::bigint) = 0)))),
     CONSTRAINT "request_templates_keep_car_at_destination_ck" CHECK (((NOT "keep_car_at_destination") OR (("trip_type" = 'drop_off'::"public"."trip_type") AND ("trip_shape" = 'round_trip'::"public"."trip_shape")))),
     CONSTRAINT "request_templates_leave_dest_anchor_ck" CHECK ((("leave_dest_time" IS NULL) OR ("return_anchor" = 'leave'::"public"."time_anchor"))),
-    CONSTRAINT "request_templates_leave_dest_qh_ck" CHECK ((("leave_dest_time" IS NULL) OR (((EXTRACT("minute" FROM "leave_dest_time"))::integer % 15) = 0))),
+    CONSTRAINT "request_templates_leave_dest_qh_ck" CHECK ((("leave_dest_time" IS NULL) OR (((EXTRACT(minute FROM "leave_dest_time"))::integer % 15) = 0))),
     CONSTRAINT "request_templates_one_way_mode_ck" CHECK (((("one_way_car_mode" IS NULL) = ("trip_shape" = 'round_trip'::"public"."trip_shape")) AND (("one_way_car_mode" IS NULL) OR ("one_way_car_mode" = ANY (ARRAY['relay'::"public"."leg_car_mode", 'passenger'::"public"."leg_car_mode"]))))),
     CONSTRAINT "request_templates_origin_ck" CHECK ((("origin_id" IS NOT NULL) OR ("origin_text" IS NOT NULL))),
     CONSTRAINT "request_templates_planned_ck" CHECK ((("schedule" = 'dated'::"public"."template_schedule") = ("planned_date" IS NOT NULL))),
     CONSTRAINT "request_templates_planned_until_ck" CHECK ((("planned_until" IS NULL) OR (("planned_date" IS NOT NULL) AND ("planned_until" > "planned_date") AND ("planned_until" <= ("planned_date" + 30))))),
-    CONSTRAINT "request_templates_repeat_anchor_week_sunday_ck" CHECK ((("repeat_anchor_week" IS NULL) OR (EXTRACT("dow" FROM "repeat_anchor_week") = (0)::numeric))),
+    CONSTRAINT "request_templates_repeat_anchor_week_sunday_ck" CHECK ((("repeat_anchor_week" IS NULL) OR (EXTRACT(dow FROM "repeat_anchor_week") = (0)::numeric))),
     CONSTRAINT "request_templates_repeat_every_weeks_ck" CHECK ((("repeat_every_weeks" >= 1) AND ("repeat_every_weeks" <= 8))),
     CONSTRAINT "request_templates_return_ck" CHECK ((("return_dow" IS NULL) = ("trip_shape" = 'one_way_to'::"public"."trip_shape"))),
     CONSTRAINT "request_templates_return_dow_ck" CHECK ((("return_dow" IS NULL) OR (("return_dow" >= 0) AND ("return_dow" <= 6)))),
-    CONSTRAINT "request_templates_snoozed_until_week_sunday_ck" CHECK ((("snoozed_until_week" IS NULL) OR (EXTRACT("dow" FROM "snoozed_until_week") = (0)::numeric)))
+    CONSTRAINT "request_templates_snoozed_until_week_sunday_ck" CHECK ((("snoozed_until_week" IS NULL) OR (EXTRACT(dow FROM "snoozed_until_week") = (0)::numeric)))
 );
 
 ALTER TABLE ONLY "public"."request_templates" FORCE ROW LEVEL SECURITY;
@@ -27741,7 +27752,7 @@ CREATE TABLE IF NOT EXISTS "public"."sadran_assignments" (
     "week_start" "date",
     "assigned_by" "uuid",
     "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
-    CONSTRAINT "sadran_assignments_week_dow_ck" CHECK ((("week_start" IS NULL) OR (EXTRACT("dow" FROM "week_start") = (0)::numeric)))
+    CONSTRAINT "sadran_assignments_week_dow_ck" CHECK ((("week_start" IS NULL) OR (EXTRACT(dow FROM "week_start") = (0)::numeric)))
 );
 
 ALTER TABLE ONLY "public"."sadran_assignments" FORCE ROW LEVEL SECURITY;
@@ -28195,7 +28206,7 @@ CREATE TABLE IF NOT EXISTS "public"."weeks" (
     "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
     "published_days" "date"[] DEFAULT '{}'::"date"[] NOT NULL,
     CONSTRAINT "weeks_time_order_ck" CHECK ((("open_at" < "close_at") AND ("close_at" <= "publish_at"))),
-    CONSTRAINT "weeks_week_start_sunday_ck" CHECK ((EXTRACT("dow" FROM "week_start") = (0)::numeric))
+    CONSTRAINT "weeks_week_start_sunday_ck" CHECK ((EXTRACT(dow FROM "week_start") = (0)::numeric))
 );
 
 ALTER TABLE ONLY "public"."weeks" FORCE ROW LEVEL SECURITY;
@@ -28347,7 +28358,7 @@ CREATE OR REPLACE VIEW "public"."v_request_template_suggestions" WITH ("security
                     "t_1"."guest_passenger_names",
                     "t_1"."notes"
                    FROM ((("public"."request_templates" "t_1"
-                     JOIN "public"."weeks" "w" ON ((("w"."department_id" = "t_1"."department_id") AND ("w"."phase" = 'open'::"public"."week_phase") AND ((("t_1"."schedule" = 'weekly'::"public"."template_schedule") AND (("t_1"."repeat_every_weeks" = 1) OR (((("w"."week_start" - COALESCE("t_1"."repeat_anchor_week", "w"."week_start")) / 7) % ("t_1"."repeat_every_weeks")::integer) = 0))) OR ("w"."week_start" = ("t_1"."planned_date" - (EXTRACT("dow" FROM "t_1"."planned_date"))::integer))))))
+                     JOIN "public"."weeks" "w" ON ((("w"."department_id" = "t_1"."department_id") AND ("w"."phase" = 'open'::"public"."week_phase") AND ((("t_1"."schedule" = 'weekly'::"public"."template_schedule") AND (("t_1"."repeat_every_weeks" = 1) OR (((("w"."week_start" - COALESCE("t_1"."repeat_anchor_week", "w"."week_start")) / 7) % ("t_1"."repeat_every_weeks")::integer) = 0))) OR ("w"."week_start" = ("t_1"."planned_date" - (EXTRACT(dow FROM "t_1"."planned_date"))::integer))))))
                      LEFT JOIN "public"."destinations" "dst" ON (("dst"."id" = "t_1"."destination_id")))
                      JOIN "public"."ride_types" "rt" ON (("rt"."id" = "t_1"."ride_type_id")))
                   WHERE (("t_1"."requester_id" = ( SELECT "auth"."uid"() AS "uid")) AND "t_1"."is_active" AND ("t_1"."cancelled_at" IS NULL) AND (("t_1"."snoozed_until_week" IS NULL) OR ("t_1"."snoozed_until_week" <= "w"."week_start")) AND (NOT (EXISTS ( SELECT 1
@@ -28371,7 +28382,7 @@ CREATE OR REPLACE VIEW "public"."v_ride_car_neighbours" WITH ("security_invoker"
     "nx"."people" AS "next_people",
         CASE
             WHEN ("nx"."id" IS NULL) THEN NULL::integer
-            ELSE ("round"((EXTRACT("epoch" FROM ("nx"."starts_at" - "r"."ends_at")) / (60)::numeric)))::integer
+            ELSE ("round"((EXTRACT(epoch FROM ("nx"."starts_at" - "r"."ends_at")) / (60)::numeric)))::integer
         END AS "next_gap_minutes",
     COALESCE((("nx"."id" IS NOT NULL) AND (("nx"."starts_at" - "r"."ends_at") <= "make_interval"("mins" => "th"."minutes"))), false) AS "next_tight",
     "pv"."id" AS "prev_ride_id",
@@ -28381,7 +28392,7 @@ CREATE OR REPLACE VIEW "public"."v_ride_car_neighbours" WITH ("security_invoker"
     "pv"."people" AS "prev_people",
         CASE
             WHEN ("pv"."id" IS NULL) THEN NULL::integer
-            ELSE ("round"((EXTRACT("epoch" FROM ("r"."starts_at" - "pv"."ends_at")) / (60)::numeric)))::integer
+            ELSE ("round"((EXTRACT(epoch FROM ("r"."starts_at" - "pv"."ends_at")) / (60)::numeric)))::integer
         END AS "prev_gap_minutes",
     COALESCE((("pv"."id" IS NOT NULL) AND (("r"."starts_at" - "pv"."ends_at") <= "make_interval"("mins" => "th"."minutes"))), false) AS "prev_tight"
    FROM ((("public"."rides" "r"

@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 import { he } from "@/i18n/he";
-import { carStatusSchema } from "@/lib/enums";
+import { carFuelTypeSchema, carStatusSchema } from "@/lib/enums";
 
 // REQ §13.199: "manual" replaced "automatic" (most cars are automatic — mark the exception); "tow_hitch" = רכב גורר.
 export const CAR_FEATURES = ["roof_rack", "large_trunk", "manual", "awd", "tow_hitch"] as const;
@@ -10,6 +10,8 @@ export type CarFeature = (typeof CAR_FEATURES)[number];
 export const carSchema = z.object({
   name: z.string().trim().min(1),
   license_plate: z.string().trim().min(1),
+  /** FU1 (REQ item 217): null = not set yet. */
+  fuel_type: carFuelTypeSchema.nullable(),
   /** Empty = the car has no code (owner 2026-10-21); `CarForm` stores it as null. */
   access_code: z.string().trim().regex(/^([0-9]{4,5})?$/, he.adminCars.codeDigitsRequired),
   is_replaced: z.boolean(),
