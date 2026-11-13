@@ -1625,3 +1625,23 @@ Rule for all of these: same behaviour, proven before and after; each starts with
 - CS1 — **A schedule for a shared car — when it is available.** Looks like suggestions; shown in the long-term schedule.
 - PE1 — **People who may edit my rides may edit my car as I can.** A knob on the car: anyone / only family members.
 - PR1 — ✅ 2026-11-12 **Profile: the "does not drive" help said "לא אשובץ/אשובץ כנהג/ת"**; now "לא אשובץ כנהג/ת" (`he.member.ts` `doesNotDriveHelp`).
+
+## QA run 19 findings (2026-11-13, seed 8617, department `qa-s8617`, week 15–21.11; branch `fixes-2026-11-12` @ 69f31cc; QA Sadran and QA user both Sonnet, **Tuesday via UI**; half a week (Sun–Wed); bugs only; database capped at 1.5 GB / 0.5 CPU; both agents paused once at the usage limit) — **awaiting owner triage; none traced to this branch's changes**
+
+Checked by the lead in the data (Tue 17.11, Skoda ride 2e99df8b):
+- R19B1 — **A return-only merge may put a member's return before their own departure.** Request d4460c9f (out 17:45, return 23:30, return flexibility 2 h early) was merged "return only" onto a ride ending 16:45 (proposal fb17b2d8, accepted and applied; notice "חזרה 16:45 במקום 23:30"); its out leg was later merged onto the 18:30 ride dbfd2bbd. `_merge_check` should refuse a leg that lands on the wrong side of the request's other leg.
+- R19B2 — **When the driver cancels and a passenger takes over, the ride grows to a guest's requested hours.** After Noa (8ac033b9) cancelled, the ride became 06:15–23:30 with Nir driving (he asked 06:30–15:45): the window took d4460c9f's 23:30 return. The car is held 17 hours and his notice says "בשעות שביקשת". Follows from R19B1, but the recomputed window should never pass the hours of the people actually riding that leg.
+- Not a bug: "the driver was skipped as a merge party" — she had cancelled her request three minutes earlier; the ride's new driver was asked.
+- Tooling, not the app: `qa:member edit --trip-type one_way --confirm-release` prints "edited" and changes nothing (the new question needs `allow_car_away`, REQ item 210; the CLI sends `confirm_release` and words the question as "passengers without a driver"); freed-car offers stayed open (the stack's `cron_secret` did not match the served functions' `CRON_SECRET` — lead's setup); `PGRST202 week_parts` on the first call after the stack sat idle overnight (PostgREST schema cache, gone on retry).
+
+Reported, not yet checked:
+- R19B3 — The solver warning `FIXED_RIDE_OVER_CAPACITY` on a ride of four requests that fits its 5 seats on every leg (3 + out-only + both + return-only); gone after one unmerge. The solver seems to count all legs together (`qa:sadran day 2026-11-17`).
+- R19B4 — A draft (origin proposal 98070925, request d3bf6f4c, Wed) stays after the Sadran changes the same request's trip type directly; expected a refusal or the draft settled.
+- R19B5 — Sending the same merge again while the first is pending answers with the stale-version text ("מישהו אחר שינה את זה בינתיים") instead of "already pending" (d4460c9f → dbfd2bbd).
+- R19B6 — A request with one leg merged and the other uncovered shows `merged` to the member after publishing (5828d821; health check `request_leg_not_covered`; published with `--allow-unanswered`).
+- R19B7 — A requester already on a ride got no notice when two members joined it with "+ נוסעים" (ride 16f16f39, Wed; the driver got one notice per joiner).
+- R19B8 — The board draws a sent, still pending merge as if the guest were already on the ride (title and window; dbfd2bbd). May be the intended overlay.
+
+Seen working: a cancelled ride discards its drafts; duplicate draft returns the same id; publish refuses with drafts; the one-way prompt in the board UI and the board updating without a reload; ride sheet at 375×667 scrolls with ✕ and buttons reachable; three requests on one ride with one-way guests, unmerge and re-merge; `cancel-ride --close/--continue`; one publish notice per member, all 70 rides the same for every one of the 34 members; member edits on a live day (one notice each; "drives others" asks first); shorten a series. `week_parts` equals the old API calls for the QA week after the run (35 accounts, 7,080 rows, 0 differ). No command over 3 s under the cap; health check 0 errors.
+
+Not exercised: car swap (UI and CLI), retiring a car, the private-car switch, the new one-way request question, "שלח הצעות / עדכונים" in the UI, drag and drop, freed-car offers, waiting-list groups, plan B proposals, the two-whole-days recovery (car was taken), a second three-request ride.
