@@ -1,3 +1,4 @@
+import { isCarOwner } from "@/lib/carOwners";
 import { externalHintForCard, externalHintFromSuggestion } from "@/features/sadran/proposals/externalHint";
 // Extracted from `BoardScreen.tsx` (docs/TODO.md "Code review 2026-09-24" R9):
 // drag/drop + selection state, the ride-reservation dialog's own state, and
@@ -206,7 +207,7 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
   /** Resolves `true` when no confirmation applies (not my private car, or it is my own request/ride) or the owner confirmed. */
   function confirmOwnCarMove(carId: string, personId: string | null | undefined, name: string | null | undefined): Promise<boolean> {
     const car = carsData.find((c) => c.id === carId);
-    if (!car || car.type !== "temporary" || !profileId || car.owner_id !== profileId || personId === profileId) return Promise.resolve(true);
+    if (!car || car.type !== "temporary" || !isCarOwner(car, profileId) || personId === profileId) return Promise.resolve(true);
     return new Promise<boolean>((resolve) => setOwnCarAsk({ name: name ?? "", carName: car.name, resolve }));
   }
   function answerOwnCarAsk(ok: boolean) {

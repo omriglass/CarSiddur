@@ -1,5 +1,6 @@
 import { fetchOperationalDepartments } from "@/features/admin/api";
 import { supabase } from "@/integrations/supabase/client";
+import { CAR_OWNERS_EMBED } from "@/lib/carOwners";
 import { toAppError } from "@/lib/rpc";
 
 import type { Database } from "@/integrations/supabase/types";
@@ -21,27 +22,29 @@ export interface CarCodes {
   is_replaced: boolean;
   replacement_code: string | null;
 }
-export type Car = Database["public"]["Tables"]["cars"]["Row"] & CarCodes;
+/** PC1 (REQ item 227): every owner of a private car (`car_owners`), from the `owners` embed; `owner_id` = the first. */
+export type Car = Database["public"]["Tables"]["cars"]["Row"] & CarCodes & { owner_ids?: string[] };
 export type CarInsert = Database["public"]["Tables"]["cars"]["Insert"] & Partial<CarCodes>;
 export type CarUpdate = Database["public"]["Tables"]["cars"]["Update"] & Partial<CarCodes>;
 export type SeatConfig = Database["public"]["Tables"]["car_seat_configs"]["Row"];
 export type MaintenanceBlock = Database["public"]["Tables"]["car_maintenance_blocks"]["Row"];
 export type CarIssue = Database["public"]["Tables"]["car_issues"]["Row"];
 
-export const CARS_WITH_CODES_SELECT = "*, codes:car_access_codes(access_code, is_replaced, replacement_code)";
+export const CARS_WITH_CODES_SELECT = `*, codes:car_access_codes(access_code, is_replaced, replacement_code), ${CAR_OWNERS_EMBED}`;
 
 /** Flattens the `codes:car_access_codes(...)` embed onto the row (null/absent → not replaced, no codes). */
-export function flattenCarCodes<T extends { codes?: CarCodes | CarCodes[] | null }>(
+export function flattenCarCodes<T extends { codes?: CarCodes | CarCodes[] | null; owners?: { profile_id: string }[] | null }>(
   row: T,
-): Omit<T, "codes"> & CarCodes {
-  const { codes, ...rest } = row;
+): Omit<T, "codes" | "owners"> & CarCodes & { owner_ids?: string[] } {
+  const { codes, owners, ...rest } = row;
   const flat = Array.isArray(codes) ? codes[0] : codes;
   return {
     ...rest,
+    ...(owners !== undefined ? { owner_ids: (owners ?? []).map((o) => o.profile_id) } : {}),
     access_code: flat?.access_code ?? null,
     is_replaced: flat?.is_replaced ?? false,
     replacement_code: flat?.replacement_code ?? null,
-  } as Omit<T, "codes"> & CarCodes;
+  } as Omit<T, "codes" | "owners"> & CarCodes & { owner_ids?: string[] };
 }
 
 /** `departmentId` limits the read (and the permission check) to one department; omitted = every department the caller manages. */

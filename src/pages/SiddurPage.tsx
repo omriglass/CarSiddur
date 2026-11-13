@@ -1,3 +1,4 @@
+import { carOwnerIds, isCarOwner } from "@/lib/carOwners";
 import { useMaintenanceGridEditing } from "@/features/fleet/useMaintenanceGridEditing";
 import { CarGlance } from "@/features/cars/components/CarGlance";
 import { useWeekChangeWatch } from "@/features/liveSync/useWeekChangeWatch";
@@ -221,13 +222,13 @@ export function SiddurPage() {
   // or the owner of the ride's private car.
   function isMyRide(ride: BoardRide): boolean {
     const car = (carsQuery.data ?? []).find((c) => c.id === ride.car_id);
-    return isRideRelated({ ride, profileId, myRequestIds, carOwnerId: car?.type === "temporary" ? car.owner_id : null });
+    return isRideRelated({ ride, profileId, myRequestIds, carOwnerIds: carOwnerIds(car) });
   }
   // REQ §13.177 (c): painted as mine (purple) only through my own trips — not a ride I only filed for someone else.
   const myOwnRequestIds = ownRequestIds(myRequestsQuery.data ?? [], profileId);
   function isMyRideToPaint(ride: BoardRide): boolean {
     const car = (carsQuery.data ?? []).find((c) => c.id === ride.car_id);
-    return isRideRelated({ ride, profileId, myRequestIds: myOwnRequestIds, carOwnerId: car?.type === "temporary" ? car.owner_id : null });
+    return isRideRelated({ ride, profileId, myRequestIds: myOwnRequestIds, carOwnerIds: carOwnerIds(car) });
   }
   // No request of my own on the ride but I am related to it: edit the ride's driver request (the edit page asks the server).
   const relatedEditRequestId = !editableOwnRequest && selectedRideId
@@ -361,7 +362,7 @@ export function SiddurPage() {
   const dayFreeWindows = useDayFreeWindows(departmentId, isLiveDay ? weekStart : undefined, isLiveDay ? (activeDay ?? undefined) : undefined, now);
 
   const myPrivateCarIds = new Set((carsQuery.data ?? [])
-    .filter((car) => car.type === "temporary" && car.owner_id === profileId && car.status === "active").map((car) => car.id));
+    .filter((car) => car.type === "temporary" && isCarOwner(car, profileId) && car.status === "active").map((car) => car.id));
 
   /**
    * Owner 2026-10-11: a two-tap span on an empty part of a car column (first tap = start, second = end) opens the

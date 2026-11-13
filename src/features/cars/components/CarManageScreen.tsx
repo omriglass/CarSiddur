@@ -29,6 +29,7 @@ import { TZ } from "@/lib/time";
 import { CarExcelExportButton } from "./CarExcelExportButton";
 import { CarFuelChip } from "./CarFuelChip";
 import { CarMoodCard } from "./CarMoodCard";
+import { CarOwnersCard } from "./CarOwnersCard";
 import { CarKilometrageCard } from "./CarKilometrageCard";
 import { CarChecklistCard } from "../checklist/components/CarChecklistCard";
 import { CarPrivateSwitch } from "./CarPrivateSwitch";
@@ -140,6 +141,8 @@ interface CarManageScreenProps {
   canDefineChecklist?: boolean;
   /** REQ item 150 (a): a car administrator (not admin/responsible) looking at a private car — may change only its status. */
   canSetStatusOnly?: boolean;
+  /** PC1 (REQ item 227 b): the department's Sadran or an admin may add/remove a private car's owners (its owners always may). */
+  canManageOwners?: boolean;
   /** Admin, the car's responsible person or the department's Sadran: may edit fields, the private switch, maintenance. Everyone else gets a read-only page. */
   canEdit: boolean;
   /**
@@ -152,7 +155,7 @@ interface CarManageScreenProps {
 }
 
 /** `/cars/:carId` (UX_FLOWS.md §5.11 "Car page"). */
-export function CarManageScreen({ car, isAdmin, canEdit, canManageCar, canDefineChecklist = false, canSetStatusOnly = false, headerActions }: CarManageScreenProps) {
+export function CarManageScreen({ car, isAdmin, canEdit, canManageCar, canDefineChecklist = false, canSetStatusOnly = false, canManageOwners = false, headerActions }: CarManageScreenProps) {
   const washed = useRecentlyWashedCarIds(car.department_id);
   const issuesQuery = useCarIssueHistoryQuery(car.id);
   const careEventsQuery = useCarCareHistoryQuery(car.id);
@@ -220,6 +223,8 @@ export function CarManageScreen({ car, isAdmin, canEdit, canManageCar, canDefine
           </span>
         ) : null}
       </div>
+
+      <CarOwnersCard car={car} canManageOwners={canManageOwners} />
 
       <CarMoodCard
         lastWashAt={merged.find((entry) => entry.kind === "wash")?.createdAt ?? null}

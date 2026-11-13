@@ -14,6 +14,8 @@ import {
   fetchCarOdometerHistory,
   fetchMyResponsibleCars,
   fetchUpcomingCarRides,
+  addCarOwner,
+  removeCarOwner,
   setCarStatusOnly,
   setOwnPrivateCar,
 } from "./api";
@@ -125,5 +127,19 @@ export function useSetCarStatusMutation() {
   return useMutation({
     mutationFn: ({ carId, status }: { carId: string; status: Car["status"] }) => setCarStatusOnly(carId, status),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: carKeys.all }),
+  });
+}
+
+/** PC1 (REQ item 227): add / remove an owner of a private car; every car read refreshes (owners are embedded). */
+export function useCarOwnerMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ carId, profileId, remove = false }: { carId: string; profileId: string; remove?: boolean }) =>
+      remove ? removeCarOwner(carId, profileId) : addCarOwner(carId, profileId),
+    onSuccess: () => Promise.all([
+      queryClient.invalidateQueries({ queryKey: carKeys.all }),
+      // the siddur / board car lists and Profile's "my private cars" carry the owners too
+      queryClient.invalidateQueries({ queryKey: ["fleet"] }),
+    ]),
   });
 }

@@ -1,3 +1,4 @@
+import { isCarOwner } from "@/lib/carOwners";
 import { CarFront } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
 
@@ -72,7 +73,7 @@ export function CarPage() {
   // REQ item 150 (d): the department's checklist items are defined by admins and car administrators.
   const canDefineChecklist = isAdmin || isCarAdminHere;
   // REQ item 150 (a): a car administrator of a private car may change only the status.
-  const canSetStatusOnly = isCarAdminHere && car.type === "temporary" && !isAdmin && car.responsible_id !== profile?.id && car.owner_id !== profile?.id;
+  const canSetStatusOnly = isCarAdminHere && car.type === "temporary" && !isAdmin && car.responsible_id !== profile?.id && !isCarOwner(car, profile?.id);
 
   return (
     <CarManageScreen
@@ -82,6 +83,7 @@ export function CarPage() {
       canManageCar={canManageCar}
       canDefineChecklist={canDefineChecklist}
       canSetStatusOnly={canSetStatusOnly}
+      canManageOwners={canManage}
     />
   );
 }

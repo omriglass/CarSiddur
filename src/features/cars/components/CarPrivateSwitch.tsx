@@ -10,9 +10,11 @@ import type { Car } from "@/features/admin/cars/api";
 import { useDepartmentMembers } from "@/features/auth/useDepartmentMembers";
 import { useProfile } from "@/features/auth/useProfile";
 import { he, tv } from "@/i18n/he";
+import { carOwnerIds, isCarOwner } from "@/lib/carOwners";
 import { showErrorToast } from "@/lib/rpc";
 
 import { useSetCarPrivateMutation, useUpcomingCarRidesQuery } from "../hooks";
+import { joinNames } from "../lib/ownerNames";
 import { ridesNeedingWarning } from "../lib/privateCar";
 
 interface Props {
@@ -28,7 +30,7 @@ export function CarPrivateSwitch({ car, canEdit }: Props) {
   const mutation = useSetCarPrivateMutation();
   const isPrivate = car.type === "temporary";
   // R19B13 (REQ item 215): the member holding the private car may give it back from its own page.
-  const asOwner = !canEdit && isPrivate && !!profile && car.owner_id === profile.id;
+  const asOwner = !canEdit && isPrivate && isCarOwner(car, profile?.id);
   const showSwitch = canEdit || asOwner;
   const [turnOnOpen, setTurnOnOpen] = useState(false);
   const [turnOffOpen, setTurnOffOpen] = useState(false);
@@ -40,7 +42,8 @@ export function CarPrivateSwitch({ car, canEdit }: Props) {
     ...(membersQuery.data ?? []).map((m) => ({ id: m.id, name: m.name })),
   ];
   const ownerId = pickedOwner ?? car.responsible_id ?? null;
-  const ownerName = options.find((o) => o.id === car.owner_id)?.name ?? null;
+  // PC1 (REQ item 227): every owner by name; none = an ownerless private car (its last owner left the department).
+  const ownerName = joinNames(carOwnerIds(car).map((id) => options.find((o) => o.id === id)?.name ?? "")) || null;
 
   const upcomingQuery = useUpcomingCarRidesQuery(car.id, turnOnOpen);
   // Until an owner is picked nobody is "another driver" yet: the warning waits for the choice.

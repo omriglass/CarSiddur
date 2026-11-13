@@ -128,3 +128,13 @@ export async function setCarStatusOnly(carId: string, status: Database["public"]
 export async function setOwnPrivateCar(carId: string, ownerId: string | null): Promise<void> {
   await rpc("set_own_private_car", { p_car_id: carId, ...(ownerId ? { p_owner_id: ownerId } : {}) });
 }
+
+/** PC1 (REQ item 227): any owner, the department's Sadran or an admin adds an owner (an approved department member). */
+export async function addCarOwner(carId: string, profileId: string): Promise<void> {
+  await rpc("add_car_owner", { p_car_id: carId, p_profile_id: profileId });
+}
+
+/** PC1: removes an owner — never the last one (`car_last_owner`). */
+export async function removeCarOwner(carId: string, profileId: string): Promise<void> {
+  await rpc("remove_car_owner", { p_car_id: carId, p_profile_id: profileId });
+}

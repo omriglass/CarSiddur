@@ -255,7 +255,8 @@ CREATE TYPE "public"."notification_event" AS ENUM (
     'car_task',
     'ride_edited',
     'driver_reminder',
-    'ride_editor_added'
+    'ride_editor_added',
+    'private_car_changed'
 );
 
 
@@ -1916,9 +1917,10 @@ CREATE OR REPLACE FUNCTION "public"."_day_car_swap_private_car_blockers"("p_car_
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
   select coalesce(jsonb_agg(jsonb_build_object('code', 'private_car', 'car_id', c.id,
-      'detail', format('car %s is a private car; only its owner may swap it', c.id))), '[]'::jsonb)
+      'detail', format('car %s is a private car; only its owners may swap it', c.id))), '[]'::jsonb)
   from public.cars c
-  where c.id in (p_car_a, p_car_b) and c.type = 'temporary' and c.owner_id is distinct from p_actor;
+  where c.id in (p_car_a, p_car_b) and c.type = 'temporary' and not public.is_car_owner(c.id, p_actor)
+    and not public._may_use_ownerless_car(c.id, p_actor);
 $$;
 
 
@@ -2771,6 +2773,20 @@ CREATE OR REPLACE FUNCTION "public"."_maintenance_quarter_floor"("p_t" timestamp
 ALTER FUNCTION "public"."_maintenance_quarter_floor"("p_t" timestamp with time zone) OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."_may_use_ownerless_car"("p_car" "uuid", "p_person" "uuid") RETURNS boolean
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  select p_person is not null and not public.car_has_owners(p_car) and (
+    exists (select 1 from public.profiles p where p.id = p_person and p.is_admin)
+    or exists (select 1 from public.cars c join public.sadran_assignments sa on sa.department_id = c.department_id
+               where c.id = p_car and sa.profile_id = p_person));
+$$;
+
+
+ALTER FUNCTION "public"."_may_use_ownerless_car"("p_car" "uuid", "p_person" "uuid") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."_member_merge_check"("p_ride_id" "uuid", "p_source_ride_id" "uuid", "p_request_id" "uuid") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -3369,6 +3385,63 @@ end $$;
 
 
 ALTER FUNCTION "public"."_notify_inbox_only"("p_recipient" "uuid", "p_event" "public"."notification_event", "p_department" "uuid", "p_vars" "jsonb", "p_data" "jsonb", "p_dedupe" "text") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."_notify_private_car_owners"("p_ride" "uuid", "p_car" "uuid") RETURNS "void"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  v_actor uuid := (select auth.uid());
+  v_car record; v_ride record; v_day date; v_actor_name text;
+  o record; v_old record; v_names jsonb; v_old_ids uuid[]; v_notif uuid;
+begin
+  if v_actor is null or p_car is null or p_ride is null then return; end if;
+  if coalesce(current_setting('app.publishing', true), '') = 'on' then return; end if;
+  select c.id, c.name, c.type into v_car from public.cars c where c.id = p_car;
+  if v_car.type is distinct from 'temporary' then return; end if;
+  select r.id, r.starts_at, r.department_id, r.week_start into v_ride from public.rides r where r.id = p_ride;
+  if v_ride.id is null then return; end if;
+  v_day := (v_ride.starts_at at time zone 'Asia/Jerusalem')::date;
+  if not public.is_day_public(v_ride.department_id, v_ride.week_start, v_day) then return; end if;
+  select full_name into v_actor_name from public.profiles where id = v_actor;
+
+  for o in
+    select co.profile_id from public.car_owners co
+    where co.car_id = p_car and co.profile_id <> v_actor
+      and co.profile_id not in (select x.pid from public._ride_person_ids(p_ride) x where x.pid is not null)
+    order by co.profile_id
+  loop
+    perform pg_advisory_xact_lock(hashtextextended(format('private_car_changed:%s:%s:%s', p_car, v_day, o.profile_id), 0));
+    v_names := '[]'::jsonb; v_old_ids := null;
+    for v_old in
+      select n.id, n.data from public.notifications n
+      where n.recipient_id = o.profile_id and n.event = 'private_car_changed' and n.read_at is null
+        and n.data ->> 'car_id' = p_car::text and n.data ->> 'day' = v_day::text
+      order by n.created_at, n.id
+    loop
+      v_old_ids := array_append(v_old_ids, v_old.id);
+      v_names := v_names || coalesce(v_old.data -> 'names', '[]'::jsonb);
+    end loop;
+    v_names := v_names || to_jsonb(array[coalesce(v_actor_name, '')]);
+    select coalesce(jsonb_agg(nm order by ord), '[]'::jsonb) into v_names
+    from (select nm, min(ord) as ord from jsonb_array_elements_text(v_names) with ordinality u(nm, ord)
+          where nm <> '' group by nm) x;
+    if v_old_ids is not null then delete from public.notifications where id = any(v_old_ids); end if;
+    v_notif := public.enqueue_notification(o.profile_id, 'private_car_changed', v_ride.department_id, v_ride.week_start,
+      jsonb_build_object('carName', v_car.name, 'day', public.day_date_label(v_ride.starts_at),
+        'byName', public._and_list(array(select jsonb_array_elements_text(v_names)))),
+      jsonb_build_object('car_id', p_car, 'ride_id', p_ride, 'day', v_day, 'names', v_names),
+      format('private_car_changed:%s:%s:%s:%s', p_car, v_day, o.profile_id, clock_timestamp()));
+    -- the unread notice it replaces already pushed: this one stays quiet
+    if v_notif is not null and v_old_ids is not null then
+      delete from public.push_outbox where notification_id = v_notif;
+    end if;
+  end loop;
+end $$;
+
+
+ALTER FUNCTION "public"."_notify_private_car_owners"("p_ride" "uuid", "p_car" "uuid") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."_notify_request_closed"("p_request_id" "uuid", "p_reason" "text") RETURNS "void"
@@ -4888,9 +4961,9 @@ CREATE TABLE IF NOT EXISTS "public"."requests" (
     CONSTRAINT "requests_depart_qh_ck" CHECK ("public"."is_quarter_hour"("depart_at")),
     CONSTRAINT "requests_destination_ck" CHECK ((("destination_id" IS NOT NULL) OR ("destination_text" IS NOT NULL))),
     CONSTRAINT "requests_flex_depart_early_ck" CHECK (("flex_depart_early" = ANY (ARRAY['00:00:00'::interval, '00:15:00'::interval, '00:30:00'::interval, '01:00:00'::interval, '02:00:00'::interval, '1 day'::interval]))),
-    CONSTRAINT "requests_flex_depart_late_ck" CHECK ((("flex_depart_late" = ANY (ARRAY['00:00:00'::interval, '00:15:00'::interval, '00:30:00'::interval, '01:00:00'::interval, '02:00:00'::interval, '1 day'::interval])) OR ("duration_locked" AND ("flex_depart_late" > '00:00:00'::interval) AND ("flex_depart_late" <= '1 day'::interval) AND (((EXTRACT("epoch" FROM "flex_depart_late"))::bigint % (900)::bigint) = 0)))),
+    CONSTRAINT "requests_flex_depart_late_ck" CHECK ((("flex_depart_late" = ANY (ARRAY['00:00:00'::interval, '00:15:00'::interval, '00:30:00'::interval, '01:00:00'::interval, '02:00:00'::interval, '1 day'::interval])) OR ("duration_locked" AND ("flex_depart_late" > '00:00:00'::interval) AND ("flex_depart_late" <= '1 day'::interval) AND (((EXTRACT(epoch FROM "flex_depart_late"))::bigint % (900)::bigint) = 0)))),
     CONSTRAINT "requests_flex_return_early_ck" CHECK (("flex_return_early" = ANY (ARRAY['00:00:00'::interval, '00:15:00'::interval, '00:30:00'::interval, '01:00:00'::interval, '02:00:00'::interval, '1 day'::interval]))),
-    CONSTRAINT "requests_flex_return_late_ck" CHECK ((("flex_return_late" = ANY (ARRAY['00:00:00'::interval, '00:15:00'::interval, '00:30:00'::interval, '01:00:00'::interval, '02:00:00'::interval, '1 day'::interval])) OR ("duration_locked" AND ("flex_return_late" > '00:00:00'::interval) AND ("flex_return_late" <= '1 day'::interval) AND (((EXTRACT("epoch" FROM "flex_return_late"))::bigint % (900)::bigint) = 0)))),
+    CONSTRAINT "requests_flex_return_late_ck" CHECK ((("flex_return_late" = ANY (ARRAY['00:00:00'::interval, '00:15:00'::interval, '00:30:00'::interval, '01:00:00'::interval, '02:00:00'::interval, '1 day'::interval])) OR ("duration_locked" AND ("flex_return_late" > '00:00:00'::interval) AND ("flex_return_late" <= '1 day'::interval) AND (((EXTRACT(epoch FROM "flex_return_late"))::bigint % (900)::bigint) = 0)))),
     CONSTRAINT "requests_keep_car_at_destination_ck" CHECK (((NOT "keep_car_at_destination") OR (("trip_type" = 'drop_off'::"public"."trip_type") AND ("trip_shape" = 'round_trip'::"public"."trip_shape")))),
     CONSTRAINT "requests_leave_dest_anchor_ck" CHECK ((("leave_dest_at" IS NULL) OR ("return_anchor" = 'leave'::"public"."time_anchor"))),
     CONSTRAINT "requests_leave_dest_qh_ck" CHECK ("public"."is_quarter_hour"("leave_dest_at")),
@@ -5561,6 +5634,30 @@ end $$;
 ALTER FUNCTION "public"."_small_trunk_probe"("p_request_id" "uuid") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."_sync_car_owner_id"("p_car" "uuid") RETURNS "void"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  v_first uuid;
+  v_prev_sync text := coalesce(current_setting('app.car_owner_sync', true), '');
+  v_prev_pass text := coalesce(current_setting('app.own_private_car', true), '');
+begin
+  select o.profile_id into v_first from public.car_owners o where o.car_id = p_car order by o.created_at, o.id limit 1;
+  if exists (select 1 from public.cars c where c.id = p_car and c.type = 'temporary' and c.owner_id is distinct from v_first) then
+    perform set_config('app.car_owner_sync', 'on', true);
+    -- cars_protect_owner_editable_fields lets a change of type/owner_id only through with this pass
+    perform set_config('app.own_private_car', p_car::text, true);
+    update public.cars set owner_id = v_first where id = p_car;
+    perform set_config('app.own_private_car', v_prev_pass, true);
+    perform set_config('app.car_owner_sync', v_prev_sync, true);
+  end if;
+end $$;
+
+
+ALTER FUNCTION "public"."_sync_car_owner_id"("p_car" "uuid") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."_sync_draft_hold"("p_request_id" "uuid") RETURNS "void"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -6068,6 +6165,43 @@ $$;
 
 
 ALTER FUNCTION "public"."_window_text"("_dep" timestamp with time zone, "_ret" timestamp with time zone) OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."add_car_owner"("p_car_id" "uuid", "p_profile_id" "uuid") RETURNS "void"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  v_actor uuid := (select auth.uid());
+  v_car public.cars%rowtype;
+  v_id uuid;
+begin
+  select * into v_car from public.cars where id = p_car_id for update;
+  if v_car.id is null or v_car.type <> 'temporary' then raise exception 'not_authorized' using errcode = '42501'; end if;
+  if not (public.is_car_owner(p_car_id, v_actor) or public.can_manage_operations(v_car.department_id)) then
+    raise exception 'not_authorized' using errcode = '42501';
+  end if;
+  if not exists (
+      select 1 from public.department_members dm join public.profiles p on p.id = dm.profile_id
+      where dm.department_id = v_car.department_id and dm.profile_id = p_profile_id and dm.removed_at is null
+        and p.approval_status = 'approved') then
+    raise exception 'not_authorized' using errcode = '42501';
+  end if;
+  insert into public.car_owners (car_id, profile_id, department_id, added_by)
+  values (p_car_id, p_profile_id, v_car.department_id, v_actor)
+  on conflict (car_id, profile_id) do nothing
+  returning id into v_id;
+  if v_id is not null and p_profile_id is distinct from v_actor then
+    perform public.enqueue_notification(p_profile_id, 'private_car_changed', v_car.department_id, null,
+      jsonb_build_object('carName', v_car.name,
+        'byName', coalesce((select full_name from public.profiles where id = v_actor), '')),
+      jsonb_build_object('variant', 'owner_added', 'car_id', p_car_id),
+      format('car_owner_added:%s:%s', p_car_id, p_profile_id));
+  end if;
+end $$;
+
+
+ALTER FUNCTION "public"."add_car_owner"("p_car_id" "uuid", "p_profile_id" "uuid") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."add_ride_passengers"("p_ride_id" "uuid", "p_expected_version" integer, "p_passengers" "jsonb") RETURNS "void"
@@ -7498,11 +7632,10 @@ CREATE OR REPLACE FUNCTION "public"."assert_private_car_owner_only"("p_car" "uui
     LANGUAGE "plpgsql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
-declare v_owner uuid;
 begin
-  select c.owner_id into v_owner from public.cars c where c.id = p_car and c.type = 'temporary';
-  if v_owner is null then return; end if;
-  if p_actor is not distinct from v_owner or p_requester is not distinct from v_owner then return; end if;
+  if not exists (select 1 from public.cars c where c.id = p_car and c.type = 'temporary') then return; end if;
+  if public.is_car_owner(p_car, p_actor) or public.is_car_owner(p_car, p_requester) then return; end if;
+  if public._may_use_ownerless_car(p_car, p_actor) then return; end if;
   raise exception 'private_car_owner_only' using errcode = 'P0001';
 end $$;
 
@@ -7514,11 +7647,11 @@ CREATE OR REPLACE FUNCTION "public"."assert_private_car_request"("p_car" "uuid",
     LANGUAGE "plpgsql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
-declare v_owner uuid;
 begin
-  select c.owner_id into v_owner from public.cars c where c.id = p_car and c.type = 'temporary';
-  if v_owner is null or p_actor is not distinct from v_owner then return; end if;
-  if exists (select 1 from public.requests q where q.id = p_request and (q.requester_id = v_owner or q.filed_by = v_owner)) then return; end if;
+  if not exists (select 1 from public.cars c where c.id = p_car and c.type = 'temporary') then return; end if;
+  if public.is_car_owner(p_car, p_actor) or public._may_use_ownerless_car(p_car, p_actor) then return; end if;
+  if exists (select 1 from public.requests q where q.id = p_request
+             and (public.is_car_owner(p_car, q.requester_id) or public.is_car_owner(p_car, q.filed_by))) then return; end if;
   if nullif(current_setting('app.edit_prefer_car', true), '') = p_car::text then return; end if;
   raise exception 'private_car_owner_only' using errcode = 'P0001';
 end $$;
@@ -8540,6 +8673,17 @@ $$;
 ALTER FUNCTION "public"."car_fits"("_car" "uuid", "_adults" integer, "_child_seats" integer, "_boosters" integer) OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."car_has_owners"("p_car" "uuid") RETURNS boolean
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  select exists (select 1 from public.car_owners o where o.car_id = p_car);
+$$;
+
+
+ALTER FUNCTION "public"."car_has_owners"("p_car" "uuid") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."car_held_by_waitlist_group"("p_car_id" "uuid", "p_from" timestamp with time zone, "p_until" timestamp with time zone, "p_request_id" "uuid") RETURNS boolean
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -8696,6 +8840,20 @@ $$;
 ALTER FUNCTION "public"."car_next_ride_origin"("_car" "uuid", "_after" timestamp with time zone) OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."car_owners_sync_car"() RETURNS "trigger"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+begin
+  if coalesce(current_setting('app.car_owner_sync', true), '') = 'on' then return null; end if;
+  perform public._sync_car_owner_id(coalesce(new.car_id, old.car_id));
+  return null;
+end $$;
+
+
+ALTER FUNCTION "public"."car_owners_sync_car"() OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."car_responsible_changed"() RETURNS "trigger"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -8810,7 +8968,7 @@ begin
         and (new.department_id is not distinct from old.department_id
              or public.can_manage_operations(new.department_id)))
   ) then
-    if public.is_car_admin(old.department_id) and old.owner_id is distinct from (select auth.uid()) then
+    if public.is_car_admin(old.department_id) and not public.is_car_owner(old.id, (select auth.uid())) then
       -- Acting as a car administrator only.
       if new.department_id is distinct from old.department_id then
         raise exception 'car_fields_locked' using errcode = 'P0001';
@@ -8861,6 +9019,33 @@ $$;
 
 
 ALTER FUNCTION "public"."cars_refuse_retire_with_rides"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."cars_sync_owners"() RETURNS "trigger"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare v_prev text := coalesce(current_setting('app.car_owner_sync', true), '');
+begin
+  if v_prev = 'on' then return null; end if;
+  if tg_op = 'UPDATE' and new.type is not distinct from old.type and new.owner_id is not distinct from old.owner_id then
+    return null;
+  end if;
+  perform set_config('app.car_owner_sync', 'on', true);
+  if new.type <> 'temporary' or new.owner_id is null then
+    delete from public.car_owners where car_id = new.id;
+  elsif tg_op = 'INSERT' or old.type is distinct from 'temporary' or old.owner_id is distinct from new.owner_id then
+    delete from public.car_owners where car_id = new.id and profile_id <> new.owner_id;
+    insert into public.car_owners (car_id, profile_id, department_id, added_by)
+    values (new.id, new.owner_id, new.department_id, (select auth.uid()))
+    on conflict (car_id, profile_id) do nothing;
+  end if;
+  perform set_config('app.car_owner_sync', v_prev, true);
+  return null;
+end $$;
+
+
+ALTER FUNCTION "public"."cars_sync_owners"() OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."cars_track_retired_at"() RETURNS "trigger"
@@ -9917,6 +10102,22 @@ end $_$;
 ALTER FUNCTION "public"."deliver_changelog"("p_entry_id" "text", "p_title" "text", "p_body" "text") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."department_member_left_car_owners"() RETURNS "trigger"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+begin
+  if tg_op = 'DELETE' or (old.removed_at is null and new.removed_at is not null) then
+    delete from public.car_owners o
+    where o.profile_id = old.profile_id and o.department_id = old.department_id;
+  end if;
+  return null;
+end $$;
+
+
+ALTER FUNCTION "public"."department_member_left_car_owners"() OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."department_members_clear_car_admin"() RETURNS "trigger"
     LANGUAGE "plpgsql"
     SET "search_path" TO 'public', 'pg_temp'
@@ -10806,7 +11007,7 @@ begin
   if exists (select 1 from public.weeks where department_id=v_dept and week_start=v_week and phase='archived') then raise exception 'week_archived'; end if;
   if not v_manage then
     v_owner_move := v_id is not null and (p_ride->>'car_id')::uuid is distinct from v_existing.car_id
-      and exists (select 1 from public.cars c where c.id = (p_ride->>'car_id')::uuid and c.type = 'temporary' and c.owner_id = (select auth.uid()));
+      and exists (select 1 from public.cars c where c.id = (p_ride->>'car_id')::uuid and c.type = 'temporary' and public.is_car_owner(c.id, (select auth.uid())));
     -- REQ §13.127: the driver, or anyone related to the ride (who filed it, a passenger, the private car's owner);
     -- REQ §13.129 (a): or the owner of the private car the ride moves onto.
     -- REQ §13.205 (b): with the department's "anyone edits rides" switch on (REQ §13.169), a member related to its requests
@@ -10839,16 +11040,17 @@ begin
   if not exists (select 1 from public.cars where id=(p_ride->>'car_id')::uuid and status='active' and department_id=v_dept) then raise exception 'car_unavailable'; end if;
   -- REQ §13.99: only the owner puts requests on a private (temporary) car.
   select * into v_car_row from public.cars where id=(p_ride->>'car_id')::uuid;
-  if v_car_row.type='temporary' and v_car_row.owner_id is distinct from (select auth.uid()) then
+  if v_car_row.type='temporary' and not public.is_car_owner(v_car_row.id, (select auth.uid()))
+     and not public._may_use_ownerless_car(v_car_row.id, (select auth.uid())) then
     if v_id is not null and v_existing.car_id is distinct from v_car_row.id then
       raise exception 'private_car_owner_only' using errcode='P0001';  -- moving a ride onto it
     elsif v_id is null and (jsonb_array_length(coalesce(p_ride->'served','[]'))=0 or exists(
         select 1 from jsonb_array_elements(p_ride->'served') s join public.requests q on q.id=(s->>'request_id')::uuid
-        where q.requester_id is distinct from v_car_row.owner_id)) then
+        where not public.is_car_owner(v_car_row.id, q.requester_id))) then
       raise exception 'private_car_owner_only' using errcode='P0001';  -- a new ride that is not the owner's own
     elsif v_id is not null and v_manage and p_ride ? 'served' and exists(
         select 1 from jsonb_array_elements(p_ride->'served') s join public.requests q on q.id=(s->>'request_id')::uuid
-        where q.requester_id is distinct from v_car_row.owner_id
+        where not public.is_car_owner(v_car_row.id, q.requester_id)
           and not exists(select 1 from public.ride_requests rr where rr.ride_id=v_id and rr.request_id=q.id)) then
       raise exception 'private_car_owner_only' using errcode='P0001';  -- adding someone else's request
     end if;
@@ -11018,7 +11220,7 @@ begin
   if wants_planning and collision and existing.id is not null and existing.status<>'draft' then
     if exists(select 1 from public.weeks where department_id=v_dept and week_start=v_week and phase='archived') then raise exception 'week_archived'; end if;
     if not exists(select 1 from public.cars where id=v_car and department_id=v_dept and status='active'
-      and (type='shared' or owner_id=existing.driver_id)) then raise exception 'car_unavailable'; end if;
+      and (type='shared' or public.is_car_owner(id, existing.driver_id))) then raise exception 'car_unavailable'; end if;
     if (v_start at time zone 'Asia/Jerusalem')::date<>(existing.starts_at at time zone 'Asia/Jerusalem')::date then raise exception 'ride_request_day_mismatch'; end if;
     if not public.is_quarter_hour(v_start) or not(public.is_quarter_hour(v_end) or public.is_same_day_end(v_end)) then raise exception 'invalid_ride_window'; end if;
     if exists(select 1 from public.car_maintenance_blocks b where b.car_id=v_car
@@ -12102,6 +12304,18 @@ $$;
 
 
 ALTER FUNCTION "public"."is_car_admin"("_dept" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."is_car_owner"("p_car" "uuid", "p_person" "uuid") RETURNS boolean
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  select p_person is not null
+    and exists (select 1 from public.car_owners o where o.car_id = p_car and o.profile_id = p_person);
+$$;
+
+
+ALTER FUNCTION "public"."is_car_owner"("p_car" "uuid", "p_person" "uuid") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."is_car_responsible"("_car_id" "uuid") RETURNS boolean
@@ -13488,6 +13702,17 @@ $$;
 ALTER FUNCTION "public"."my_guarded_request_ids"() OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."my_owned_car_ids"() RETURNS SETOF "uuid"
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  select o.car_id from public.car_owners o where o.profile_id = (select auth.uid());
+$$;
+
+
+ALTER FUNCTION "public"."my_owned_car_ids"() OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."my_proposal_ids"() RETURNS SETOF "uuid"
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -14515,7 +14740,7 @@ begin
   end if;
   select * into v_car from public.cars where id = p_car_id;
   if v_car.id is null or v_car.department_id <> v_req.department_id then raise exception 'not_authorized' using errcode = 'P0001'; end if;
-  if v_car.type <> 'temporary' or v_car.owner_id is distinct from v_actor then raise exception 'private_car_owner_only' using errcode = 'P0001'; end if;
+  if v_car.type <> 'temporary' or not public.is_car_owner(v_car.id, v_actor) then raise exception 'private_car_owner_only' using errcode = 'P0001'; end if;
   if v_car.status <> 'active' then raise exception 'car_unavailable' using errcode = 'P0001'; end if;
   if v_req.status in ('assigned', 'merged', 'withdrawn', 'cancelled') or v_req.series_id is not null
      or exists (select 1 from public.ride_requests rr join public.rides r on r.id = rr.ride_id
@@ -15190,7 +15415,7 @@ begin
   select * into q from public.requests where id = p_request_id for update;
   select * into v_car from public.cars where id = p_car_id and department_id = q.department_id and status = 'active';
   if q.id is null or not (public.can_edit_request(q.id)
-       or (v_car.type = 'temporary' and v_car.owner_id = v_uid and public.member_of(q.department_id))) then
+       or (v_car.type = 'temporary' and public.is_car_owner(v_car.id, v_uid) and public.member_of(q.department_id))) then
     raise exception 'not_authorized' using errcode = '42501';
   end if;
   if q.version <> p_expected_version then raise exception 'stale_version' using errcode = 'P0409'; end if;
@@ -15220,7 +15445,7 @@ begin
 
   -- Refusals: nothing a member may take from someone else.
   -- Only the owner puts a request on their private car (REQ §13.99).
-  if v_car.type = 'temporary' and v_car.owner_id is distinct from v_uid then
+  if v_car.type = 'temporary' and not public.is_car_owner(v_car.id, v_uid) and not public._may_use_ownerless_car(v_car.id, v_uid) then
     return jsonb_build_object('ok', false, 'blocked', 'private_car');
   end if;
   if exists (select 1 from public.rides r where r.car_id = v_car.id and r.status <> 'cancelled' and not r.draft_hold
@@ -17491,6 +17716,30 @@ end $$;
 ALTER FUNCTION "public"."remind_unsent_board_changes"("p_now" timestamp with time zone) OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."remove_car_owner"("p_car_id" "uuid", "p_profile_id" "uuid") RETURNS "void"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  v_actor uuid := (select auth.uid());
+  v_car public.cars%rowtype;
+begin
+  select * into v_car from public.cars where id = p_car_id for update;
+  if v_car.id is null or v_car.type <> 'temporary' then raise exception 'not_authorized' using errcode = '42501'; end if;
+  if not (public.is_car_owner(p_car_id, v_actor) or public.can_manage_operations(v_car.department_id)) then
+    raise exception 'not_authorized' using errcode = '42501';
+  end if;
+  if not public.is_car_owner(p_car_id, p_profile_id) then return; end if;
+  if not exists (select 1 from public.car_owners o where o.car_id = p_car_id and o.profile_id <> p_profile_id) then
+    raise exception 'car_last_owner' using errcode = 'P0001';
+  end if;
+  delete from public.car_owners where car_id = p_car_id and profile_id = p_profile_id;
+end $$;
+
+
+ALTER FUNCTION "public"."remove_car_owner"("p_car_id" "uuid", "p_profile_id" "uuid") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."remove_ride_person"("p_ride_id" "uuid", "p_expected_version" integer, "p_key" "text") RETURNS "void"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -19746,6 +19995,20 @@ $$;
 ALTER FUNCTION "public"."ride_notice_route"("p_ride_id" "uuid") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."ride_people_notify_private_car_owners"() RETURNS "trigger"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare v_ride uuid := coalesce(new.ride_id, old.ride_id);
+begin
+  perform public._notify_private_car_owners(v_ride, (select r.car_id from public.rides r where r.id = v_ride));
+  return null;
+end $$;
+
+
+ALTER FUNCTION "public"."ride_people_notify_private_car_owners"() OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."ride_related"("p_ride" "uuid", "p_actor" "uuid") RETURNS boolean
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -19754,7 +20017,7 @@ CREATE OR REPLACE FUNCTION "public"."ride_related"("p_ride" "uuid", "p_actor" "u
     select 1 from public.rides r left join public.cars c on c.id = r.car_id
     where r.id = p_ride and (
       r.driver_id = p_actor
-      or (c.type = 'temporary' and c.owner_id = p_actor)
+      or (c.type = 'temporary' and public.is_car_owner(c.id, p_actor))
       or exists (select 1 from public.ride_passengers rp where rp.ride_id = r.id and rp.person_id = p_actor)
       or exists (select 1 from public.ride_requests rr join public.requests q on q.id = rr.request_id
                  where rr.ride_id = r.id and (q.requester_id = p_actor or q.filed_by = p_actor
@@ -20443,6 +20706,22 @@ $$;
 ALTER FUNCTION "public"."rides_location_ends"() OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."rides_notify_private_car_owners"() RETURNS "trigger"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+begin
+  perform public._notify_private_car_owners(new.id, new.car_id);
+  if tg_op = 'UPDATE' and old.car_id is distinct from new.car_id then
+    perform public._notify_private_car_owners(new.id, old.car_id);   -- moved off the private car
+  end if;
+  return null;
+end $$;
+
+
+ALTER FUNCTION "public"."rides_notify_private_car_owners"() OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."rides_refresh_flags"() RETURNS "trigger"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -20561,19 +20840,21 @@ CREATE OR REPLACE FUNCTION "public"."rides_temp_car_owner_only"() RETURNS "trigg
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
-declare v_type public.car_type; v_owner uuid;
+declare v_type public.car_type;
 begin
-  select type, owner_id into v_type, v_owner from public.cars where id = new.car_id;
-  if v_type is distinct from 'temporary' or new.driver_id is not distinct from v_owner then return new; end if;
+  select type into v_type from public.cars where id = new.car_id;
+  if v_type is distinct from 'temporary' or public.is_car_owner(new.car_id, new.driver_id) then return new; end if;
   -- consent was given when the ride got onto the car with this driver
   if tg_op = 'UPDATE' and old.car_id = new.car_id and old.driver_id is not distinct from new.driver_id then return new; end if;
-  -- the owner is the one doing it (REQ §13.129 a), or an edit re-places a ride on the private car it was on
-  if (select auth.uid()) is not distinct from v_owner
+  -- an owner is the one doing it (REQ §13.129 a), or an edit re-places a ride on the private car it was on
+  if public.is_car_owner(new.car_id, (select auth.uid()))
      or nullif(current_setting('app.edit_prefer_car', true), '') = new.car_id::text then return new; end if;
-  -- someone the owner filed a live request for that day (REQ §13.127 c)
+  -- REQ item 227 (c): an ownerless private car is the Sadran's / an admin's to use
+  if public._may_use_ownerless_car(new.car_id, (select auth.uid())) then return new; end if;
+  -- someone an owner filed a live request for that day (REQ §13.127 c)
   if exists (
        select 1 from public.requests q
-       where q.requester_id = new.driver_id and q.filed_by = v_owner and q.department_id = new.department_id
+       where q.requester_id = new.driver_id and public.is_car_owner(new.car_id, q.filed_by) and q.department_id = new.department_id
          and q.status not in ('withdrawn', 'cancelled')
          and (q.depart_at at time zone 'Asia/Jerusalem')::date = (new.starts_at at time zone 'Asia/Jerusalem')::date) then
     return new;
@@ -21772,9 +22053,10 @@ CREATE OR REPLACE FUNCTION "public"."set_own_private_car"("p_car_id" "uuid", "p_
     AS $$
 declare
   v_car public.cars%rowtype;
+  v_me uuid := (select auth.uid());
 begin
   select * into v_car from public.cars where id = p_car_id for update;
-  if v_car.id is null or v_car.type <> 'temporary' or v_car.owner_id is distinct from (select auth.uid()) then
+  if v_car.id is null or v_car.type <> 'temporary' or not public.is_car_owner(p_car_id, v_me) then
     raise exception 'not_authorized' using errcode = '42501';
   end if;
   if p_owner_id is not null and not exists (
@@ -21783,14 +22065,17 @@ begin
         and p.approval_status = 'approved') then
     raise exception 'not_authorized' using errcode = '42501';
   end if;
-  -- the field guard below lets only this function's own change through
-  perform set_config('app.own_private_car', p_car_id::text, true);
   if p_owner_id is null then
-    update public.cars set type = 'shared', owner_id = null where id = p_car_id;
-  elsif p_owner_id is distinct from v_car.owner_id then
-    update public.cars set owner_id = p_owner_id where id = p_car_id;
+    -- the field guard lets only this function's own change through
+    perform set_config('app.own_private_car', p_car_id::text, true);
+    update public.cars set type = 'shared', owner_id = null where id = p_car_id;   -- cars_sync_owners clears the list
+    perform set_config('app.own_private_car', '', true);
+  elsif p_owner_id is distinct from v_me then
+    insert into public.car_owners (car_id, profile_id, department_id, added_by)
+    values (p_car_id, p_owner_id, v_car.department_id, v_me)
+    on conflict (car_id, profile_id) do nothing;
+    delete from public.car_owners where car_id = p_car_id and profile_id = v_me;
   end if;
-  perform set_config('app.own_private_car', '', true);
 end $$;
 
 
@@ -23275,8 +23560,8 @@ begin
   -- or filed the request being edited); anyone else's private car (e.g. a grid tap on its column) is dropped, not refused.
   if v_preferred_car_id is not null and exists (
        select 1 from public.cars c where c.id = v_preferred_car_id and c.type = 'temporary'
-         and c.owner_id is distinct from v_actor and c.owner_id is distinct from v_requester_id
-         and (v_request_id is null or c.owner_id is distinct from (select q.filed_by from public.requests q where q.id = v_request_id))) then
+         and not public.is_car_owner(c.id, v_actor) and not public.is_car_owner(c.id, v_requester_id)
+         and (v_request_id is null or not public.is_car_owner(c.id, (select q.filed_by from public.requests q where q.id = v_request_id)))) then
     v_preferred_car_id := null;
   end if;
 
@@ -23918,7 +24203,7 @@ begin
      and coalesce((payload->>'reserve_missing_driver')::boolean, false) = false
      and exists (select 1 from public.cars c join public.requests q on q.id = v_request_id
                  where c.id = v_preferred_car_id and c.type = 'temporary' and c.status = 'active'
-                   and c.owner_id in (v_actor, q.requester_id, q.filed_by)) then
+                   and (public.is_car_owner(c.id, v_actor) or public.is_car_owner(c.id, q.requester_id) or public.is_car_owner(c.id, q.filed_by))) then
     v_own_car := v_preferred_car_id;
     if v_depart_at < now() then raise exception 'ride_in_past' using errcode = 'P0001'; end if;
     v_own_turnaround := coalesce(public.required_turnaround_minutes(v_department_id, v_week_start), 30);
@@ -25646,7 +25931,7 @@ declare v_filed_by uuid := case when tg_table_name = 'requests' then (to_jsonb(n
 begin
   if new.preferred_car_id is null then return new; end if;
   if not exists(select 1 from public.cars c where c.id=new.preferred_car_id and c.department_id=new.department_id
-      and (c.type='shared' or (c.type='temporary' and c.owner_id in (new.requester_id, v_filed_by)))) then
+      and (c.type='shared' or (c.type='temporary' and (public.is_car_owner(c.id, new.requester_id) or public.is_car_owner(c.id, v_filed_by))))) then
     raise exception 'invalid_preferred_car';
   end if;
   if (tg_op='INSERT' or new.preferred_car_id is distinct from old.preferred_car_id)
@@ -27048,6 +27333,22 @@ ALTER TABLE ONLY "public"."car_maintenance_blocks" FORCE ROW LEVEL SECURITY;
 ALTER TABLE "public"."car_maintenance_blocks" OWNER TO "postgres";
 
 
+CREATE TABLE IF NOT EXISTS "public"."car_owners" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "car_id" "uuid" NOT NULL,
+    "profile_id" "uuid" NOT NULL,
+    "department_id" "uuid" NOT NULL,
+    "added_by" "uuid",
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL
+);
+
+ALTER TABLE ONLY "public"."car_owners" FORCE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."car_owners" OWNER TO "postgres";
+
+
 CREATE TABLE IF NOT EXISTS "public"."car_seat_configs" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "car_id" "uuid" NOT NULL,
@@ -27127,7 +27428,7 @@ CREATE TABLE IF NOT EXISTS "public"."cars" (
     "fuel_type" "public"."car_fuel_type",
     CONSTRAINT "cars_built_in_boosters_ck" CHECK (("built_in_boosters" >= 0)),
     CONSTRAINT "cars_built_in_child_seats_ck" CHECK (("built_in_child_seats" >= 0)),
-    CONSTRAINT "cars_temporary_owner_ck" CHECK ((("type" = 'temporary'::"public"."car_type") = ("owner_id" IS NOT NULL)))
+    CONSTRAINT "cars_temporary_owner_ck" CHECK ((("type" = 'temporary'::"public"."car_type") OR ("owner_id" IS NULL)))
 );
 
 ALTER TABLE ONLY "public"."cars" FORCE ROW LEVEL SECURITY;
@@ -27731,28 +28032,28 @@ CREATE TABLE IF NOT EXISTS "public"."request_templates" (
     "needs_tow_hitch" boolean DEFAULT false NOT NULL,
     CONSTRAINT "request_templates_adults_ck" CHECK (("adults" >= 1)),
     CONSTRAINT "request_templates_arrive_by_anchor_ck" CHECK ((("arrive_by_time" IS NULL) OR ("depart_anchor" = 'arrive'::"public"."time_anchor"))),
-    CONSTRAINT "request_templates_arrive_by_qh_ck" CHECK ((("arrive_by_time" IS NULL) OR (((EXTRACT("minute" FROM "arrive_by_time"))::integer % 15) = 0))),
+    CONSTRAINT "request_templates_arrive_by_qh_ck" CHECK ((("arrive_by_time" IS NULL) OR (((EXTRACT(minute FROM "arrive_by_time"))::integer % 15) = 0))),
     CONSTRAINT "request_templates_boosters_ck" CHECK (("boosters" >= 0)),
     CONSTRAINT "request_templates_child_seats_ck" CHECK (("child_seats" >= 0)),
     CONSTRAINT "request_templates_depart_ck" CHECK ((("depart_dow" IS NULL) = ("trip_shape" = 'one_way_from'::"public"."trip_shape"))),
     CONSTRAINT "request_templates_depart_dow_ck" CHECK ((("depart_dow" IS NULL) OR (("depart_dow" >= 0) AND ("depart_dow" <= 6)))),
     CONSTRAINT "request_templates_destination_ck" CHECK ((("destination_id" IS NOT NULL) OR ("destination_text" IS NOT NULL))),
     CONSTRAINT "request_templates_flex_depart_early_ck" CHECK (("flex_depart_early" = ANY (ARRAY['00:00:00'::interval, '00:15:00'::interval, '00:30:00'::interval, '01:00:00'::interval, '02:00:00'::interval, '1 day'::interval]))),
-    CONSTRAINT "request_templates_flex_depart_late_ck" CHECK ((("flex_depart_late" = ANY (ARRAY['00:00:00'::interval, '00:15:00'::interval, '00:30:00'::interval, '01:00:00'::interval, '02:00:00'::interval, '1 day'::interval])) OR ("duration_locked" AND ("flex_depart_late" > '00:00:00'::interval) AND ("flex_depart_late" <= '1 day'::interval) AND (((EXTRACT("epoch" FROM "flex_depart_late"))::bigint % (900)::bigint) = 0)))),
+    CONSTRAINT "request_templates_flex_depart_late_ck" CHECK ((("flex_depart_late" = ANY (ARRAY['00:00:00'::interval, '00:15:00'::interval, '00:30:00'::interval, '01:00:00'::interval, '02:00:00'::interval, '1 day'::interval])) OR ("duration_locked" AND ("flex_depart_late" > '00:00:00'::interval) AND ("flex_depart_late" <= '1 day'::interval) AND (((EXTRACT(epoch FROM "flex_depart_late"))::bigint % (900)::bigint) = 0)))),
     CONSTRAINT "request_templates_flex_return_early_ck" CHECK (("flex_return_early" = ANY (ARRAY['00:00:00'::interval, '00:15:00'::interval, '00:30:00'::interval, '01:00:00'::interval, '02:00:00'::interval, '1 day'::interval]))),
-    CONSTRAINT "request_templates_flex_return_late_ck" CHECK ((("flex_return_late" = ANY (ARRAY['00:00:00'::interval, '00:15:00'::interval, '00:30:00'::interval, '01:00:00'::interval, '02:00:00'::interval, '1 day'::interval])) OR ("duration_locked" AND ("flex_return_late" > '00:00:00'::interval) AND ("flex_return_late" <= '1 day'::interval) AND (((EXTRACT("epoch" FROM "flex_return_late"))::bigint % (900)::bigint) = 0)))),
+    CONSTRAINT "request_templates_flex_return_late_ck" CHECK ((("flex_return_late" = ANY (ARRAY['00:00:00'::interval, '00:15:00'::interval, '00:30:00'::interval, '01:00:00'::interval, '02:00:00'::interval, '1 day'::interval])) OR ("duration_locked" AND ("flex_return_late" > '00:00:00'::interval) AND ("flex_return_late" <= '1 day'::interval) AND (((EXTRACT(epoch FROM "flex_return_late"))::bigint % (900)::bigint) = 0)))),
     CONSTRAINT "request_templates_keep_car_at_destination_ck" CHECK (((NOT "keep_car_at_destination") OR (("trip_type" = 'drop_off'::"public"."trip_type") AND ("trip_shape" = 'round_trip'::"public"."trip_shape")))),
     CONSTRAINT "request_templates_leave_dest_anchor_ck" CHECK ((("leave_dest_time" IS NULL) OR ("return_anchor" = 'leave'::"public"."time_anchor"))),
-    CONSTRAINT "request_templates_leave_dest_qh_ck" CHECK ((("leave_dest_time" IS NULL) OR (((EXTRACT("minute" FROM "leave_dest_time"))::integer % 15) = 0))),
+    CONSTRAINT "request_templates_leave_dest_qh_ck" CHECK ((("leave_dest_time" IS NULL) OR (((EXTRACT(minute FROM "leave_dest_time"))::integer % 15) = 0))),
     CONSTRAINT "request_templates_one_way_mode_ck" CHECK (((("one_way_car_mode" IS NULL) = ("trip_shape" = 'round_trip'::"public"."trip_shape")) AND (("one_way_car_mode" IS NULL) OR ("one_way_car_mode" = ANY (ARRAY['relay'::"public"."leg_car_mode", 'passenger'::"public"."leg_car_mode"]))))),
     CONSTRAINT "request_templates_origin_ck" CHECK ((("origin_id" IS NOT NULL) OR ("origin_text" IS NOT NULL))),
     CONSTRAINT "request_templates_planned_ck" CHECK ((("schedule" = 'dated'::"public"."template_schedule") = ("planned_date" IS NOT NULL))),
     CONSTRAINT "request_templates_planned_until_ck" CHECK ((("planned_until" IS NULL) OR (("planned_date" IS NOT NULL) AND ("planned_until" > "planned_date") AND ("planned_until" <= ("planned_date" + 30))))),
-    CONSTRAINT "request_templates_repeat_anchor_week_sunday_ck" CHECK ((("repeat_anchor_week" IS NULL) OR (EXTRACT("dow" FROM "repeat_anchor_week") = (0)::numeric))),
+    CONSTRAINT "request_templates_repeat_anchor_week_sunday_ck" CHECK ((("repeat_anchor_week" IS NULL) OR (EXTRACT(dow FROM "repeat_anchor_week") = (0)::numeric))),
     CONSTRAINT "request_templates_repeat_every_weeks_ck" CHECK ((("repeat_every_weeks" >= 1) AND ("repeat_every_weeks" <= 8))),
     CONSTRAINT "request_templates_return_ck" CHECK ((("return_dow" IS NULL) = ("trip_shape" = 'one_way_to'::"public"."trip_shape"))),
     CONSTRAINT "request_templates_return_dow_ck" CHECK ((("return_dow" IS NULL) OR (("return_dow" >= 0) AND ("return_dow" <= 6)))),
-    CONSTRAINT "request_templates_snoozed_until_week_sunday_ck" CHECK ((("snoozed_until_week" IS NULL) OR (EXTRACT("dow" FROM "snoozed_until_week") = (0)::numeric)))
+    CONSTRAINT "request_templates_snoozed_until_week_sunday_ck" CHECK ((("snoozed_until_week" IS NULL) OR (EXTRACT(dow FROM "snoozed_until_week") = (0)::numeric)))
 );
 
 ALTER TABLE ONLY "public"."request_templates" FORCE ROW LEVEL SECURITY;
@@ -27960,7 +28261,7 @@ CREATE TABLE IF NOT EXISTS "public"."sadran_assignments" (
     "week_start" "date",
     "assigned_by" "uuid",
     "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
-    CONSTRAINT "sadran_assignments_week_dow_ck" CHECK ((("week_start" IS NULL) OR (EXTRACT("dow" FROM "week_start") = (0)::numeric)))
+    CONSTRAINT "sadran_assignments_week_dow_ck" CHECK ((("week_start" IS NULL) OR (EXTRACT(dow FROM "week_start") = (0)::numeric)))
 );
 
 ALTER TABLE ONLY "public"."sadran_assignments" FORCE ROW LEVEL SECURITY;
@@ -28414,7 +28715,7 @@ CREATE TABLE IF NOT EXISTS "public"."weeks" (
     "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
     "published_days" "date"[] DEFAULT '{}'::"date"[] NOT NULL,
     CONSTRAINT "weeks_time_order_ck" CHECK ((("open_at" < "close_at") AND ("close_at" <= "publish_at"))),
-    CONSTRAINT "weeks_week_start_sunday_ck" CHECK ((EXTRACT("dow" FROM "week_start") = (0)::numeric))
+    CONSTRAINT "weeks_week_start_sunday_ck" CHECK ((EXTRACT(dow FROM "week_start") = (0)::numeric))
 );
 
 ALTER TABLE ONLY "public"."weeks" FORCE ROW LEVEL SECURITY;
@@ -28566,7 +28867,7 @@ CREATE OR REPLACE VIEW "public"."v_request_template_suggestions" WITH ("security
                     "t_1"."guest_passenger_names",
                     "t_1"."notes"
                    FROM ((("public"."request_templates" "t_1"
-                     JOIN "public"."weeks" "w" ON ((("w"."department_id" = "t_1"."department_id") AND ("w"."phase" = 'open'::"public"."week_phase") AND ((("t_1"."schedule" = 'weekly'::"public"."template_schedule") AND (("t_1"."repeat_every_weeks" = 1) OR (((("w"."week_start" - COALESCE("t_1"."repeat_anchor_week", "w"."week_start")) / 7) % ("t_1"."repeat_every_weeks")::integer) = 0))) OR ("w"."week_start" = ("t_1"."planned_date" - (EXTRACT("dow" FROM "t_1"."planned_date"))::integer))))))
+                     JOIN "public"."weeks" "w" ON ((("w"."department_id" = "t_1"."department_id") AND ("w"."phase" = 'open'::"public"."week_phase") AND ((("t_1"."schedule" = 'weekly'::"public"."template_schedule") AND (("t_1"."repeat_every_weeks" = 1) OR (((("w"."week_start" - COALESCE("t_1"."repeat_anchor_week", "w"."week_start")) / 7) % ("t_1"."repeat_every_weeks")::integer) = 0))) OR ("w"."week_start" = ("t_1"."planned_date" - (EXTRACT(dow FROM "t_1"."planned_date"))::integer))))))
                      LEFT JOIN "public"."destinations" "dst" ON (("dst"."id" = "t_1"."destination_id")))
                      JOIN "public"."ride_types" "rt" ON (("rt"."id" = "t_1"."ride_type_id")))
                   WHERE (("t_1"."requester_id" = ( SELECT "auth"."uid"() AS "uid")) AND "t_1"."is_active" AND ("t_1"."cancelled_at" IS NULL) AND (("t_1"."snoozed_until_week" IS NULL) OR ("t_1"."snoozed_until_week" <= "w"."week_start")) AND (NOT (EXISTS ( SELECT 1
@@ -28590,7 +28891,7 @@ CREATE OR REPLACE VIEW "public"."v_ride_car_neighbours" WITH ("security_invoker"
     "nx"."people" AS "next_people",
         CASE
             WHEN ("nx"."id" IS NULL) THEN NULL::integer
-            ELSE ("round"((EXTRACT("epoch" FROM ("nx"."starts_at" - "r"."ends_at")) / (60)::numeric)))::integer
+            ELSE ("round"((EXTRACT(epoch FROM ("nx"."starts_at" - "r"."ends_at")) / (60)::numeric)))::integer
         END AS "next_gap_minutes",
     COALESCE((("nx"."id" IS NOT NULL) AND (("nx"."starts_at" - "r"."ends_at") <= "make_interval"("mins" => "th"."minutes"))), false) AS "next_tight",
     "pv"."id" AS "prev_ride_id",
@@ -28600,7 +28901,7 @@ CREATE OR REPLACE VIEW "public"."v_ride_car_neighbours" WITH ("security_invoker"
     "pv"."people" AS "prev_people",
         CASE
             WHEN ("pv"."id" IS NULL) THEN NULL::integer
-            ELSE ("round"((EXTRACT("epoch" FROM ("r"."starts_at" - "pv"."ends_at")) / (60)::numeric)))::integer
+            ELSE ("round"((EXTRACT(epoch FROM ("r"."starts_at" - "pv"."ends_at")) / (60)::numeric)))::integer
         END AS "prev_gap_minutes",
     COALESCE((("pv"."id" IS NOT NULL) AND (("r"."starts_at" - "pv"."ends_at") <= "make_interval"("mins" => "th"."minutes"))), false) AS "prev_tight"
    FROM ((("public"."rides" "r"
@@ -29007,6 +29308,16 @@ ALTER TABLE ONLY "public"."car_maintenance_blocks"
 
 ALTER TABLE ONLY "public"."car_odometer_readings"
     ADD CONSTRAINT "car_odometer_readings_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."car_owners"
+    ADD CONSTRAINT "car_owners_car_id_profile_id_key" UNIQUE ("car_id", "profile_id");
+
+
+
+ALTER TABLE ONLY "public"."car_owners"
+    ADD CONSTRAINT "car_owners_pkey" PRIMARY KEY ("id");
 
 
 
@@ -29489,6 +29800,14 @@ CREATE INDEX "car_odometer_readings_car_idx" ON "public"."car_odometer_readings"
 
 
 CREATE INDEX "car_odometer_readings_department_idx" ON "public"."car_odometer_readings" USING "btree" ("department_id");
+
+
+
+CREATE INDEX "car_owners_department_idx" ON "public"."car_owners" USING "btree" ("department_id");
+
+
+
+CREATE INDEX "car_owners_profile_idx" ON "public"."car_owners" USING "btree" ("profile_id");
 
 
 
@@ -30269,6 +30588,10 @@ CREATE OR REPLACE TRIGGER "audit_row" AFTER INSERT OR DELETE OR UPDATE ON "publi
 
 
 
+CREATE OR REPLACE TRIGGER "audit_row" AFTER INSERT OR DELETE OR UPDATE ON "public"."car_owners" FOR EACH ROW EXECUTE FUNCTION "public"."audit_row"();
+
+
+
 CREATE OR REPLACE TRIGGER "audit_row" AFTER INSERT OR DELETE OR UPDATE ON "public"."car_seat_configs" FOR EACH ROW EXECUTE FUNCTION "public"."audit_row"();
 
 
@@ -30401,6 +30724,10 @@ CREATE OR REPLACE TRIGGER "car_maintenance_blocks_set_department" BEFORE INSERT 
 
 
 
+CREATE OR REPLACE TRIGGER "car_owners_sync_car" AFTER INSERT OR DELETE ON "public"."car_owners" FOR EACH ROW EXECUTE FUNCTION "public"."car_owners_sync_car"();
+
+
+
 CREATE OR REPLACE TRIGGER "cars_protect_owner_editable_fields" BEFORE UPDATE ON "public"."cars" FOR EACH ROW EXECUTE FUNCTION "public"."cars_protect_owner_editable_fields"();
 
 
@@ -30410,6 +30737,10 @@ CREATE OR REPLACE TRIGGER "cars_refuse_retire_with_rides" BEFORE UPDATE OF "stat
 
 
 CREATE OR REPLACE TRIGGER "cars_responsible_changed" AFTER UPDATE OF "responsible_id" ON "public"."cars" FOR EACH ROW WHEN (("new"."responsible_id" IS DISTINCT FROM "old"."responsible_id")) EXECUTE FUNCTION "public"."car_responsible_changed"();
+
+
+
+CREATE OR REPLACE TRIGGER "cars_sync_owners" AFTER INSERT OR UPDATE OF "type", "owner_id" ON "public"."cars" FOR EACH ROW EXECUTE FUNCTION "public"."cars_sync_owners"();
 
 
 
@@ -30438,6 +30769,10 @@ CREATE OR REPLACE TRIGGER "client_errors_rate_limit" BEFORE INSERT ON "public"."
 
 
 CREATE CONSTRAINT TRIGGER "companions_named_passenger_counts" AFTER INSERT OR DELETE OR UPDATE ON "public"."request_companions" DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION "public"."request_named_passenger_counts"();
+
+
+
+CREATE OR REPLACE TRIGGER "department_member_left_car_owners" AFTER DELETE OR UPDATE OF "removed_at" ON "public"."department_members" FOR EACH ROW EXECUTE FUNCTION "public"."department_member_left_car_owners"();
 
 
 
@@ -30705,6 +31040,10 @@ CREATE OR REPLACE TRIGGER "ride_editors_set_updated_at" BEFORE UPDATE ON "public
 
 
 
+CREATE OR REPLACE TRIGGER "ride_passengers_notify_private_car_owners" AFTER INSERT OR DELETE ON "public"."ride_passengers" FOR EACH ROW EXECUTE FUNCTION "public"."ride_people_notify_private_car_owners"();
+
+
+
 CREATE CONSTRAINT TRIGGER "ride_requests_day" AFTER INSERT OR UPDATE ON "public"."ride_requests" DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION "public"."check_ride_request_day"();
 
 
@@ -30718,6 +31057,10 @@ CREATE OR REPLACE TRIGGER "ride_requests_leg_location" BEFORE INSERT OR UPDATE O
 
 
 CREATE OR REPLACE TRIGGER "ride_requests_notify_fellows" AFTER DELETE ON "public"."ride_requests" FOR EACH ROW EXECUTE FUNCTION "public"."ride_requests_notify_fellows"();
+
+
+
+CREATE OR REPLACE TRIGGER "ride_requests_notify_private_car_owners" AFTER INSERT OR DELETE ON "public"."ride_requests" FOR EACH ROW EXECUTE FUNCTION "public"."ride_people_notify_private_car_owners"();
 
 
 
@@ -30782,6 +31125,14 @@ CREATE OR REPLACE TRIGGER "rides_drop_held_joins_delete" AFTER DELETE ON "public
 
 
 CREATE CONSTRAINT TRIGGER "rides_location_ends" AFTER INSERT OR UPDATE OF "origin_id", "destination_id" ON "public"."rides" DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION "public"."rides_location_ends"();
+
+
+
+CREATE OR REPLACE TRIGGER "rides_notify_private_car_owners_ins" AFTER INSERT ON "public"."rides" FOR EACH ROW EXECUTE FUNCTION "public"."rides_notify_private_car_owners"();
+
+
+
+CREATE OR REPLACE TRIGGER "rides_notify_private_car_owners_upd" AFTER UPDATE OF "car_id", "starts_at", "ends_at", "status" ON "public"."rides" FOR EACH ROW WHEN ((("old"."car_id" IS DISTINCT FROM "new"."car_id") OR ("old"."starts_at" IS DISTINCT FROM "new"."starts_at") OR ("old"."ends_at" IS DISTINCT FROM "new"."ends_at") OR (("old"."status" = 'cancelled'::"public"."ride_status") IS DISTINCT FROM ("new"."status" = 'cancelled'::"public"."ride_status")))) EXECUTE FUNCTION "public"."rides_notify_private_car_owners"();
 
 
 
@@ -30850,6 +31201,10 @@ CREATE OR REPLACE TRIGGER "set_updated_at" BEFORE UPDATE ON "public"."car_checkl
 
 
 CREATE OR REPLACE TRIGGER "set_updated_at" BEFORE UPDATE ON "public"."car_odometer_readings" FOR EACH ROW EXECUTE FUNCTION "public"."set_updated_at"();
+
+
+
+CREATE OR REPLACE TRIGGER "set_updated_at" BEFORE UPDATE ON "public"."car_owners" FOR EACH ROW EXECUTE FUNCTION "public"."set_updated_at"();
 
 
 
@@ -31442,6 +31797,26 @@ ALTER TABLE ONLY "public"."car_odometer_readings"
 
 ALTER TABLE ONLY "public"."car_odometer_readings"
     ADD CONSTRAINT "car_odometer_readings_recorded_by_fkey" FOREIGN KEY ("recorded_by") REFERENCES "public"."profiles"("id");
+
+
+
+ALTER TABLE ONLY "public"."car_owners"
+    ADD CONSTRAINT "car_owners_added_by_fkey" FOREIGN KEY ("added_by") REFERENCES "public"."profiles"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."car_owners"
+    ADD CONSTRAINT "car_owners_car_id_fkey" FOREIGN KEY ("car_id") REFERENCES "public"."cars"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."car_owners"
+    ADD CONSTRAINT "car_owners_department_id_fkey" FOREIGN KEY ("department_id") REFERENCES "public"."departments"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."car_owners"
+    ADD CONSTRAINT "car_owners_profile_id_fkey" FOREIGN KEY ("profile_id") REFERENCES "public"."profiles"("id") ON DELETE CASCADE;
 
 
 
@@ -32407,24 +32782,34 @@ CREATE POLICY "car_odometer_readings_select" ON "public"."car_odometer_readings"
 
 
 
+ALTER TABLE "public"."car_owners" ENABLE ROW LEVEL SECURITY;
+
+
+CREATE POLICY "car_owners_select" ON "public"."car_owners" FOR SELECT TO "authenticated" USING ((( SELECT "public"."is_admin"() AS "is_admin") OR ("department_id" IN ( SELECT "d"."d"
+   FROM "public"."my_department_ids"() "d"("d")))));
+
+
+
 ALTER TABLE "public"."car_seat_configs" ENABLE ROW LEVEL SECURITY;
 
 
 CREATE POLICY "car_seat_configs_delete" ON "public"."car_seat_configs" FOR DELETE TO "authenticated" USING ((( SELECT "public"."is_admin"() AS "is_admin") OR (EXISTS ( SELECT 1
    FROM "public"."cars" "managed_car"
-  WHERE (("managed_car"."id" = "car_seat_configs"."car_id") AND (( SELECT "public"."is_admin"() AS "is_admin") OR ("managed_car"."department_id" IN ( SELECT "d"."d"
-           FROM "public"."my_sadran_department_ids"() "d"("d"))))))) OR (EXISTS ( SELECT 1
+  WHERE (("managed_car"."id" = "car_seat_configs"."car_id") AND ("managed_car"."department_id" IN ( SELECT "d"."d"
+           FROM "public"."my_sadran_department_ids"() "d"("d")))))) OR (EXISTS ( SELECT 1
    FROM "public"."cars" "c"
-  WHERE (("c"."id" = "car_seat_configs"."car_id") AND ("c"."type" = 'temporary'::"public"."car_type") AND ("c"."owner_id" = ( SELECT "auth"."uid"() AS "uid")))))));
+  WHERE (("c"."id" = "car_seat_configs"."car_id") AND ("c"."type" = 'temporary'::"public"."car_type") AND ("c"."id" IN ( SELECT "o"."o"
+           FROM "public"."my_owned_car_ids"() "o"("o"))))))));
 
 
 
 CREATE POLICY "car_seat_configs_insert" ON "public"."car_seat_configs" FOR INSERT TO "authenticated" WITH CHECK ((( SELECT "public"."is_admin"() AS "is_admin") OR (EXISTS ( SELECT 1
    FROM "public"."cars" "managed_car"
-  WHERE (("managed_car"."id" = "car_seat_configs"."car_id") AND (( SELECT "public"."is_admin"() AS "is_admin") OR ("managed_car"."department_id" IN ( SELECT "d"."d"
-           FROM "public"."my_sadran_department_ids"() "d"("d"))))))) OR (EXISTS ( SELECT 1
+  WHERE (("managed_car"."id" = "car_seat_configs"."car_id") AND ("managed_car"."department_id" IN ( SELECT "d"."d"
+           FROM "public"."my_sadran_department_ids"() "d"("d")))))) OR (EXISTS ( SELECT 1
    FROM "public"."cars" "c"
-  WHERE (("c"."id" = "car_seat_configs"."car_id") AND ("c"."type" = 'temporary'::"public"."car_type") AND ("c"."owner_id" = ( SELECT "auth"."uid"() AS "uid")))))));
+  WHERE (("c"."id" = "car_seat_configs"."car_id") AND ("c"."type" = 'temporary'::"public"."car_type") AND ("c"."id" IN ( SELECT "o"."o"
+           FROM "public"."my_owned_car_ids"() "o"("o"))))))));
 
 
 
@@ -32434,15 +32819,17 @@ CREATE POLICY "car_seat_configs_select" ON "public"."car_seat_configs" FOR SELEC
 
 CREATE POLICY "car_seat_configs_update" ON "public"."car_seat_configs" FOR UPDATE TO "authenticated" USING ((( SELECT "public"."is_admin"() AS "is_admin") OR (EXISTS ( SELECT 1
    FROM "public"."cars" "managed_car"
-  WHERE (("managed_car"."id" = "car_seat_configs"."car_id") AND (( SELECT "public"."is_admin"() AS "is_admin") OR ("managed_car"."department_id" IN ( SELECT "d"."d"
-           FROM "public"."my_sadran_department_ids"() "d"("d"))))))) OR (EXISTS ( SELECT 1
+  WHERE (("managed_car"."id" = "car_seat_configs"."car_id") AND ("managed_car"."department_id" IN ( SELECT "d"."d"
+           FROM "public"."my_sadran_department_ids"() "d"("d")))))) OR (EXISTS ( SELECT 1
    FROM "public"."cars" "c"
-  WHERE (("c"."id" = "car_seat_configs"."car_id") AND ("c"."type" = 'temporary'::"public"."car_type") AND ("c"."owner_id" = ( SELECT "auth"."uid"() AS "uid"))))))) WITH CHECK ((( SELECT "public"."is_admin"() AS "is_admin") OR (EXISTS ( SELECT 1
+  WHERE (("c"."id" = "car_seat_configs"."car_id") AND ("c"."type" = 'temporary'::"public"."car_type") AND ("c"."id" IN ( SELECT "o"."o"
+           FROM "public"."my_owned_car_ids"() "o"("o")))))))) WITH CHECK ((( SELECT "public"."is_admin"() AS "is_admin") OR (EXISTS ( SELECT 1
    FROM "public"."cars" "managed_car"
-  WHERE (("managed_car"."id" = "car_seat_configs"."car_id") AND (( SELECT "public"."is_admin"() AS "is_admin") OR ("managed_car"."department_id" IN ( SELECT "d"."d"
-           FROM "public"."my_sadran_department_ids"() "d"("d"))))))) OR (EXISTS ( SELECT 1
+  WHERE (("managed_car"."id" = "car_seat_configs"."car_id") AND ("managed_car"."department_id" IN ( SELECT "d"."d"
+           FROM "public"."my_sadran_department_ids"() "d"("d")))))) OR (EXISTS ( SELECT 1
    FROM "public"."cars" "c"
-  WHERE (("c"."id" = "car_seat_configs"."car_id") AND ("c"."type" = 'temporary'::"public"."car_type") AND ("c"."owner_id" = ( SELECT "auth"."uid"() AS "uid")))))));
+  WHERE (("c"."id" = "car_seat_configs"."car_id") AND ("c"."type" = 'temporary'::"public"."car_type") AND ("c"."id" IN ( SELECT "o"."o"
+           FROM "public"."my_owned_car_ids"() "o"("o"))))))));
 
 
 
@@ -32460,7 +32847,8 @@ ALTER TABLE "public"."cars" ENABLE ROW LEVEL SECURITY;
 
 
 CREATE POLICY "cars_delete" ON "public"."cars" FOR DELETE TO "authenticated" USING ((( SELECT "public"."is_admin"() AS "is_admin") OR ("department_id" IN ( SELECT "d"."d"
-   FROM "public"."my_sadran_department_ids"() "d"("d"))) OR (("type" = 'temporary'::"public"."car_type") AND ("owner_id" = ( SELECT "auth"."uid"() AS "uid")) AND (NOT (EXISTS ( SELECT 1
+   FROM "public"."my_sadran_department_ids"() "d"("d"))) OR (("type" = 'temporary'::"public"."car_type") AND ("id" IN ( SELECT "o"."o"
+   FROM "public"."my_owned_car_ids"() "o"("o"))) AND (NOT (EXISTS ( SELECT 1
    FROM "public"."rides" "r"
   WHERE (("r"."car_id" = "cars"."id") AND ("r"."status" <> 'cancelled'::"public"."ride_status"))))))));
 
@@ -32477,8 +32865,10 @@ CREATE POLICY "cars_select" ON "public"."cars" FOR SELECT TO "authenticated" USI
 
 
 CREATE POLICY "cars_update" ON "public"."cars" FOR UPDATE TO "authenticated" USING ((( SELECT "public"."is_admin"() AS "is_admin") OR ("department_id" IN ( SELECT "d"."d"
-   FROM "public"."my_sadran_department_ids"() "d"("d"))) OR (("type" = 'temporary'::"public"."car_type") AND ("owner_id" = ( SELECT "auth"."uid"() AS "uid"))))) WITH CHECK ((( SELECT "public"."is_admin"() AS "is_admin") OR ("department_id" IN ( SELECT "d"."d"
-   FROM "public"."my_sadran_department_ids"() "d"("d"))) OR (("type" = 'temporary'::"public"."car_type") AND ("owner_id" = ( SELECT "auth"."uid"() AS "uid")))));
+   FROM "public"."my_sadran_department_ids"() "d"("d"))) OR (("type" = 'temporary'::"public"."car_type") AND ("id" IN ( SELECT "o"."o"
+   FROM "public"."my_owned_car_ids"() "o"("o")))))) WITH CHECK ((( SELECT "public"."is_admin"() AS "is_admin") OR ("department_id" IN ( SELECT "d"."d"
+   FROM "public"."my_sadran_department_ids"() "d"("d"))) OR (("type" = 'temporary'::"public"."car_type") AND ("id" IN ( SELECT "o"."o"
+   FROM "public"."my_owned_car_ids"() "o"("o"))))));
 
 
 
@@ -33596,6 +33986,11 @@ GRANT ALL ON FUNCTION "public"."_maintenance_quarter_floor"("p_t" timestamp with
 
 
 
+REVOKE ALL ON FUNCTION "public"."_may_use_ownerless_car"("p_car" "uuid", "p_person" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_may_use_ownerless_car"("p_car" "uuid", "p_person" "uuid") TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."_member_merge_check"("p_ride_id" "uuid", "p_source_ride_id" "uuid", "p_request_id" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."_member_merge_check"("p_ride_id" "uuid", "p_source_ride_id" "uuid", "p_request_id" "uuid") TO "service_role";
 
@@ -33643,6 +34038,11 @@ GRANT ALL ON FUNCTION "public"."_notice_is_unpublished_outcome"("_event" "public
 
 REVOKE ALL ON FUNCTION "public"."_notify_inbox_only"("p_recipient" "uuid", "p_event" "public"."notification_event", "p_department" "uuid", "p_vars" "jsonb", "p_data" "jsonb", "p_dedupe" "text") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."_notify_inbox_only"("p_recipient" "uuid", "p_event" "public"."notification_event", "p_department" "uuid", "p_vars" "jsonb", "p_data" "jsonb", "p_dedupe" "text") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."_notify_private_car_owners"("p_ride" "uuid", "p_car" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_notify_private_car_owners"("p_ride" "uuid", "p_car" "uuid") TO "service_role";
 
 
 
@@ -34227,6 +34627,11 @@ GRANT ALL ON FUNCTION "public"."_small_trunk_probe"("p_request_id" "uuid") TO "s
 
 
 
+REVOKE ALL ON FUNCTION "public"."_sync_car_owner_id"("p_car" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_sync_car_owner_id"("p_car" "uuid") TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."_sync_draft_hold"("p_request_id" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."_sync_draft_hold"("p_request_id" "uuid") TO "service_role";
 
@@ -34279,6 +34684,12 @@ GRANT ALL ON FUNCTION "public"."_wcs_note"("p_kind" "text", "p_department_id" "u
 
 REVOKE ALL ON FUNCTION "public"."_window_text"("_dep" timestamp with time zone, "_ret" timestamp with time zone) FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."_window_text"("_dep" timestamp with time zone, "_ret" timestamp with time zone) TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."add_car_owner"("p_car_id" "uuid", "p_profile_id" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."add_car_owner"("p_car_id" "uuid", "p_profile_id" "uuid") TO "service_role";
+GRANT ALL ON FUNCTION "public"."add_car_owner"("p_car_id" "uuid", "p_profile_id" "uuid") TO "authenticated";
 
 
 
@@ -34548,6 +34959,11 @@ GRANT ALL ON FUNCTION "public"."car_fits"("_car" "uuid", "_adults" integer, "_ch
 
 
 
+REVOKE ALL ON FUNCTION "public"."car_has_owners"("p_car" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."car_has_owners"("p_car" "uuid") TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."car_held_by_waitlist_group"("p_car_id" "uuid", "p_from" timestamp with time zone, "p_until" timestamp with time zone, "p_request_id" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."car_held_by_waitlist_group"("p_car_id" "uuid", "p_from" timestamp with time zone, "p_until" timestamp with time zone, "p_request_id" "uuid") TO "service_role";
 
@@ -34594,6 +35010,11 @@ GRANT ALL ON FUNCTION "public"."car_next_ride_origin"("_car" "uuid", "_after" ti
 
 
 
+REVOKE ALL ON FUNCTION "public"."car_owners_sync_car"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."car_owners_sync_car"() TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."car_responsible_changed"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."car_responsible_changed"() TO "service_role";
 
@@ -34627,6 +35048,11 @@ GRANT ALL ON FUNCTION "public"."cars_protect_owner_editable_fields"() TO "servic
 
 REVOKE ALL ON FUNCTION "public"."cars_refuse_retire_with_rides"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."cars_refuse_retire_with_rides"() TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."cars_sync_owners"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."cars_sync_owners"() TO "service_role";
 
 
 
@@ -34790,6 +35216,11 @@ GRANT ALL ON FUNCTION "public"."delete_car_maintenance"("p_block_id" "uuid") TO 
 REVOKE ALL ON FUNCTION "public"."deliver_changelog"("p_entry_id" "text", "p_title" "text", "p_body" "text") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."deliver_changelog"("p_entry_id" "text", "p_title" "text", "p_body" "text") TO "service_role";
 GRANT ALL ON FUNCTION "public"."deliver_changelog"("p_entry_id" "text", "p_title" "text", "p_body" "text") TO "authenticated";
+
+
+
+REVOKE ALL ON FUNCTION "public"."department_member_left_car_owners"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."department_member_left_car_owners"() TO "service_role";
 
 
 
@@ -35052,6 +35483,11 @@ GRANT ALL ON FUNCTION "public"."is_car_admin"("_dept" "uuid") TO "authenticated"
 
 
 
+REVOKE ALL ON FUNCTION "public"."is_car_owner"("p_car" "uuid", "p_person" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."is_car_owner"("p_car" "uuid", "p_person" "uuid") TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."is_car_responsible"("_car_id" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."is_car_responsible"("_car_id" "uuid") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."is_car_responsible"("_car_id" "uuid") TO "service_role";
@@ -35279,6 +35715,12 @@ GRANT ALL ON FUNCTION "public"."my_department_ids"() TO "authenticated";
 REVOKE ALL ON FUNCTION "public"."my_guarded_request_ids"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."my_guarded_request_ids"() TO "service_role";
 GRANT ALL ON FUNCTION "public"."my_guarded_request_ids"() TO "authenticated";
+
+
+
+REVOKE ALL ON FUNCTION "public"."my_owned_car_ids"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."my_owned_car_ids"() TO "service_role";
+GRANT ALL ON FUNCTION "public"."my_owned_car_ids"() TO "authenticated";
 
 
 
@@ -35708,6 +36150,12 @@ GRANT ALL ON FUNCTION "public"."remind_unsent_board_changes"("p_now" timestamp w
 
 
 
+REVOKE ALL ON FUNCTION "public"."remove_car_owner"("p_car_id" "uuid", "p_profile_id" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."remove_car_owner"("p_car_id" "uuid", "p_profile_id" "uuid") TO "service_role";
+GRANT ALL ON FUNCTION "public"."remove_car_owner"("p_car_id" "uuid", "p_profile_id" "uuid") TO "authenticated";
+
+
+
 REVOKE ALL ON FUNCTION "public"."remove_ride_person"("p_ride_id" "uuid", "p_expected_version" integer, "p_key" "text") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."remove_ride_person"("p_ride_id" "uuid", "p_expected_version" integer, "p_key" "text") TO "service_role";
 GRANT ALL ON FUNCTION "public"."remove_ride_person"("p_ride_id" "uuid", "p_expected_version" integer, "p_key" "text") TO "authenticated";
@@ -36092,6 +36540,11 @@ GRANT ALL ON FUNCTION "public"."ride_notice_route"("p_ride_id" "uuid") TO "servi
 
 
 
+REVOKE ALL ON FUNCTION "public"."ride_people_notify_private_car_owners"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."ride_people_notify_private_car_owners"() TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."ride_related"("p_ride" "uuid", "p_actor" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."ride_related"("p_ride" "uuid", "p_actor" "uuid") TO "service_role";
 
@@ -36215,6 +36668,11 @@ GRANT ALL ON FUNCTION "public"."rides_drop_held_joins"() TO "service_role";
 
 REVOKE ALL ON FUNCTION "public"."rides_location_ends"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."rides_location_ends"() TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."rides_notify_private_car_owners"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."rides_notify_private_car_owners"() TO "service_role";
 
 
 
@@ -36866,6 +37324,11 @@ GRANT ALL ON TABLE "public"."car_issues" TO "service_role";
 
 GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE "public"."car_maintenance_blocks" TO "authenticated";
 GRANT ALL ON TABLE "public"."car_maintenance_blocks" TO "service_role";
+
+
+
+GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE "public"."car_owners" TO "authenticated";
+GRANT ALL ON TABLE "public"."car_owners" TO "service_role";
 
 
 

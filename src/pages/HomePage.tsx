@@ -1,3 +1,4 @@
+import { carOwnerIds } from "@/lib/carOwners";
 import { useActiveDepartment } from "@/features/auth/useActiveDepartment";
 import { useWeekChangeWatch } from "@/features/liveSync/useWeekChangeWatch";
 import { ChevronDown, Inbox, MessageCircleQuestion } from "lucide-react";
@@ -371,7 +372,7 @@ export function HomePage() {
     ride: editableRide,
     profileId: profileQuery.data?.id,
     myRequestIds: new Set((requestsQuery.data ?? []).map((request) => request.id)),
-    carOwnerId: editableRideCar?.type === "temporary" ? editableRideCar.owner_id : null,
+    carOwnerIds: carOwnerIds(editableRideCar),
   });
   const ownsEditableRide = !!editableRide &&
     // Same rule as `useMemberRideMoves` (REQ §13.179 a: anyone riding along does not stop it).
@@ -392,7 +393,7 @@ export function HomePage() {
       ride: selectedMyRide,
       profileId: profileQuery.data?.id,
       myRequestIds: new Set((requestsQuery.data ?? []).map((request) => request.id)),
-      carOwnerId: selectedRideCar?.type === "temporary" ? selectedRideCar.owner_id : null,
+      carOwnerIds: carOwnerIds(selectedRideCar),
     })
     ? relatedRequestIdToEdit(selectedMyRide) : undefined;
   // REQ §13.179 (a): on a merged ride everyone on it edits the shared ride — its main trip.

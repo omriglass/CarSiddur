@@ -906,6 +906,7 @@ export const he = {
     seriesEditNotSupported: "בקשה רב-יומית משנים כולה — בעריכת הבקשה, או בשיבוץ או הצעה לכל ימיה",
     tiresNoneChecked: "סמנו לפחות צמיג אחד לפני השמירה",
     carNotDiesel: "רק רכב סולר צריך אוראה",
+    carLastOwner: "צריך להשאיר לרכב לפחות בעלים אחד",
     kilometrageLowerThanLast: "הקילומטראז׳ נמוך מהקריאה האחרונה. אם הקריאה האחרונה שגויה, אחראי/ת הרכב או מנהל/ת הרכבים יכולים לתקן אותה",
     invalidKilometrage: "יש להזין קילומטראז׳ תקין (מספר שלם)",
     seriesCarUnavailable: "הרכב לא פנוי לכל ימי הבקשה הרב-יומית",
@@ -998,6 +999,7 @@ export const he = {
     ride_edited: "מישהו שינה את הנסיעה שלך",
     driver_reminder: "תזכורת לצאת לנסיעה שאני נוהג/ת בה",
     ride_editor_added: "מישהו נתן לך לערוך את הנסיעות שלו",
+    private_car_changed: "שינוי ברכב פרטי שבבעלותי",
   } satisfies Record<NotificationEvent, string>,
   car: {
     status: {

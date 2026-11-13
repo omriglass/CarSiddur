@@ -9,15 +9,15 @@ export interface RelatedRideInput {
   profileId: string | undefined;
   /** The ids of the requests the member may act on (own + filed by the member — `useMyRequests`). */
   myRequestIds: ReadonlySet<string>;
-  /** `cars.owner_id` of the ride's car when it is a private (temporary) car, else null/undefined. */
-  carOwnerId?: string | null;
+  /** The owners of the ride's car when it is a private (temporary) car (PC1: `carOwnerIds(car)`), else empty. */
+  carOwnerIds?: readonly string[];
 }
 
 /** Driver, a served request of mine (requested or filed), a named passenger, or the private car's owner. */
-export function isRideRelated({ ride, profileId, myRequestIds, carOwnerId }: RelatedRideInput): boolean {
+export function isRideRelated({ ride, profileId, myRequestIds, carOwnerIds }: RelatedRideInput): boolean {
   if (!profileId) return false;
   return ride.driver_id === profileId
-    || (!!carOwnerId && carOwnerId === profileId)
+    || (carOwnerIds ?? []).includes(profileId)
     || servedOf(ride).some((entry) => !!entry.request_id && myRequestIds.has(entry.request_id))
     || namedPassengersOf(ride).some((entry) => entry.person_id === profileId);
 }

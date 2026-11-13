@@ -1,4 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
+import { CAR_OWNERS_EMBED } from "@/lib/carOwners";
 import { rpc, toAppError } from "@/lib/rpc";
 
 import type { Database } from "@/integrations/supabase/types";
@@ -20,6 +21,8 @@ export type Car = Database["public"]["Tables"]["cars"]["Row"] & {
   access_code?: string | null;
   is_replaced?: boolean;
   replacement_code?: string | null;
+  /** PC1 (REQ item 227): every owner of a private car (`car_owners`); `owner_id` = the first. */
+  owner_ids?: string[];
 };
 export type Destination = Database["public"]["Tables"]["destinations"]["Row"];
 export type RideType = Database["public"]["Tables"]["ride_types"]["Row"];
@@ -33,15 +36,16 @@ interface CarCodesEmbed {
 export async function fetchCars(departmentId: string): Promise<Car[]> {
   const { data, error } = await supabase
     .from("cars")
-    .select("*, codes:car_access_codes(access_code, is_replaced, replacement_code)")
+    .select(`*, codes:car_access_codes(access_code, is_replaced, replacement_code), ${CAR_OWNERS_EMBED}`)
     .eq("department_id", departmentId)
     .neq("status", "retired");
   if (error) throw toAppError(error);
-  return ((data ?? []) as unknown as (Database["public"]["Tables"]["cars"]["Row"] & { codes: CarCodesEmbed | CarCodesEmbed[] | null })[]).map(
-    ({ codes, ...rest }) => {
+  return ((data ?? []) as unknown as (Database["public"]["Tables"]["cars"]["Row"] & { codes: CarCodesEmbed | CarCodesEmbed[] | null; owners: { profile_id: string }[] | null })[]).map(
+    ({ codes, owners, ...rest }) => {
       const flat = Array.isArray(codes) ? codes[0] : codes;
       return {
         ...rest,
+        owner_ids: (owners ?? []).map((o) => o.profile_id),
         access_code: flat?.access_code ?? null,
         is_replaced: flat?.is_replaced ?? false,
         replacement_code: flat?.replacement_code ?? null,
@@ -191,13 +195,13 @@ export async function markIssueUnsafeMaintenance(input: { issueId: string; endsA
   return rpc("report_car_issue_unsafe_maintenance", { p_issue_id: input.issueId, p_ends_at: input.endsAt });
 }
 
-/** My own temporary cars (Profile "רכב פרטי לשיתוף"). */
+/** The private cars I own, alone or with others (Profile "רכב פרטי לשיתוף"; PC1, REQ item 227). */
 export async function fetchMyTemporaryCars(ownerId: string): Promise<Car[]> {
   const { data, error } = await supabase
     .from("cars")
-    .select("*")
-    .eq("owner_id", ownerId)
+    .select("*, mine:car_owners!inner(profile_id)")
+    .eq("mine.profile_id", ownerId)
     .eq("type", "temporary");
   if (error) throw toAppError(error);
-  return data ?? [];
+  return ((data ?? []) as unknown as (Database["public"]["Tables"]["cars"]["Row"] & { mine?: unknown })[]).map(({ mine: _mine, ...car }) => car);
 }

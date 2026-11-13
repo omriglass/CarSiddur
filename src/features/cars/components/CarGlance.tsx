@@ -1,8 +1,10 @@
 import { useAllProfiles } from "@/features/admin/members/hooks";
 import { he, tv } from "@/i18n/he";
+import { carOwnerIds } from "@/lib/carOwners";
 import { formatDayDate } from "@/lib/dayLabels";
 
 import { useCarCareHistoryQuery, useCarQuery } from "../hooks";
+import { joinNames } from "../lib/ownerNames";
 import { CarFuelChip } from "./CarFuelChip";
 
 /**
@@ -18,7 +20,8 @@ export function CarGlance({ carId, showUrea = true }: { carId: string; /** Off o
 
   const nameOf = (id: string | null) => (id ? profiles?.find((p) => p.id === id)?.full_name ?? "" : "");
   const lastAt = (kind: string) => care?.find((event) => event.kind === kind)?.created_at ?? null;
-  const owner = car.type === "temporary" ? nameOf(car.owner_id) : "";
+  // PC1 (REQ item 227 e): every owner of a private car ("הרכב של X וY"); an ownerless private car says so.
+  const owners = car.type === "temporary" ? joinNames(carOwnerIds(car).map((id) => nameOf(id))) : "";
   const responsible = nameOf(car.responsible_id);
   const lastWash = lastAt("wash");
   const lastUrea = lastAt("urea_fill");
@@ -29,7 +32,9 @@ export function CarGlance({ carId, showUrea = true }: { carId: string; /** Off o
         <span className="font-medium" dir="ltr">{car.license_plate}</span>
         <CarFuelChip fuel={car.fuel_type} />
       </div>
-      {owner ? <p>{tv("carPage.glanceOwner", { name: owner })}</p> : responsible ? <p>{tv("carPage.glanceResponsible", { name: responsible })}</p> : null}
+      {owners ? <p>{tv("carPage.glanceOwner", { name: owners })}</p>
+        : car.type === "temporary" ? <p>{he.carPage.glanceNoOwner}</p>
+        : responsible ? <p>{tv("carPage.glanceResponsible", { name: responsible })}</p> : null}
       {lastWash ? <p className="text-muted-foreground">{tv("carPage.mood.lastWash", { date: formatDayDate(lastWash) })}</p> : null}
       {showUrea && car.fuel_type === "diesel" ? (
         <p className="text-muted-foreground" data-testid="car-glance-urea">
