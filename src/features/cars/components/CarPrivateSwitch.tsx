@@ -40,7 +40,8 @@ export function CarPrivateSwitch({ car, canEdit }: Props) {
   const ownerName = options.find((o) => o.id === car.owner_id)?.name ?? null;
 
   const upcomingQuery = useUpcomingCarRidesQuery(car.id, turnOnOpen);
-  const warnCount = ridesNeedingWarning(upcomingQuery.data ?? [], ownerId).length;
+  // Until an owner is picked nobody is "another driver" yet: the warning waits for the choice.
+  const warnCount = ownerId ? ridesNeedingWarning(upcomingQuery.data ?? [], ownerId).length : 0;
 
   async function save(next: string | null, close: () => void) {
     try {

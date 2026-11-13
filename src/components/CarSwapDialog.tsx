@@ -8,6 +8,7 @@ import { carSwapBlockerMessage, carSwapRideLabel } from "@/features/carSwap/bloc
 import { carSwapAskedForCar, carSwapConfirmDisabled, carSwapFromOptions, carSwapSeriesRangeLabel, groupCarSwapRidesByCar } from "@/features/carSwap/dialogView";
 import { useCarSwapMutation, useCarSwapPreviewQuery } from "@/features/carSwap/hooks";
 import { he, tv } from "@/i18n/he";
+import { appSurface } from "@/lib/appSurface";
 import { formatDayDate } from "@/lib/dayLabels";
 import { showErrorToast, toAppError } from "@/lib/rpc";
 import { formatTime } from "@/lib/time";
@@ -85,7 +86,8 @@ export function CarSwapDialog({ open, onOpenChange, departmentId, weekStart, day
         allowShortTurnaround: preview.needs_short_turnaround === true,
       }));
       toast.success(he.carSwap.successToast);
-      if (result.notified > 0) toast(tv("carSwap.notifiedToast", { count: String(result.notified) }));
+      // On the board the notices are held until "שלח הצעות / עדכונים" (REQ §13.138 c) - never say they were sent.
+      if (result.notified > 0) toast(tv(appSurface() === "board" ? "carSwap.heldToast" : "carSwap.notifiedToast", { count: String(result.notified) }));
       for (const notice of result.notices) {
         toast(tv("carSwap.noticeEndsAway", { car: carNameById[notice.car_id] ?? "", place: notice.location_name }));
       }

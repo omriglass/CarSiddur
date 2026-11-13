@@ -208,6 +208,14 @@ async function cmdEdit(args: Args): Promise<void> {
     return;
   }
   // R13B19: a car takes the new hours but the member drives others — the form asks, so does the CLI.
+  // REQ item 210: a change that leaves the booked car at the destination asks first; yes keeps the same car.
+  if (result.needs_confirmation === "car_stays_away") {
+    if (!has(args, "allow-car-away")) {
+      console.log(`NOT edited ${short(id)}: the server asks first (car_stays_away, car=${result.car_name ?? "-"}, next_ride=${!!result.next_ride}) — nothing changed; rerun with --allow-car-away to leave the car at the destination`);
+      return;
+    }
+    result = await requests.submitRequest({ ...payload, allow_car_away: true }) as unknown as requests.SubmitRequestResult;
+  }
   if (result.needs_confirmation) {
     if (!has(args, "confirm-release")) {
       console.log(`NOT edited ${short(id)}: the server asks first (${result.needs_confirmation}, drives_others=${!!result.drives_others}) — nothing changed; rerun with --confirm-release to leave the passengers without a driver`);
@@ -278,7 +286,18 @@ async function cmdRequest(args: Args, forceToday = false): Promise<void> {
     stops: [...destinationValuesToStopPayload(flagAll(args, "stop").map((s) => resolvePlaceToken(destinations, s)), "out"),
       ...destinationValuesToStopPayload(flagAll(args, "return-stop").map((s) => resolvePlaceToken(destinations, s)), "return")],
   };
-  const result = (returnDay && returnDay > day ? await requests.submitSeriesRequest(payload) : await requests.submitRequest(payload)) as unknown as requests.SubmitRequestResult & { series_id?: string; request_ids?: string[] };
+  type Filed = requests.SubmitRequestResult & { series_id?: string; request_ids?: string[] };
+  const isSeries = !!(returnDay && returnDay > day);
+  // REQ item 211: like the form, a new request asks when a free car would be left at the destination.
+  let result = (isSeries ? await requests.submitSeriesRequest(payload) : await requests.submitRequest({ ...payload, car_away_ask: true })) as unknown as Filed;
+  if (result.needs_confirmation === "car_stays_away") {
+    if (has(args, "allow-car-away")) result = await requests.submitRequest({ ...payload, allow_car_away: true }) as unknown as Filed;
+    else if (has(args, "wait")) result = await requests.submitRequest(payload) as unknown as Filed;
+    else {
+      console.log(`NOT filed: the server asks first (car_stays_away, car=${result.car_name ?? "-"}) — nothing filed; rerun with --allow-car-away (take the car, it stays at the destination) or --wait (file and wait for the Sadran)`);
+      return;
+    }
+  }
   console.log(`filed: ${result.request_ids ? `series ${short(result.series_id)} requests ${result.request_ids.map(short).join(",")}` : `request ${short(result.request_id)}`} late=${result.is_late ?? "-"} status=${result.status ?? "submitted"}${result.ride_id ? ` ride=${short(result.ride_id)}` : ""}${result.car_id ? ` car=${short(result.car_id)}` : ""}${result.reason ? ` reason=${result.reason}` : ""}${result.warnings?.length ? ` warnings=${result.warnings.join(",")}` : ""}`);
 }
 

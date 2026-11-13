@@ -191,6 +191,7 @@ export const he = {
     noticeEndsAway: "שים/י לב: {{car}} מסיים/ת את היום ב{{place}}",
     successToast: "הרכבים הוחלפו",
     notifiedToast: "נשלחו {{count}} הודעות",
+    heldToast: "{{count}} הודעות ממתינות — יישלחו עם ״שלח הצעות / עדכונים״",
   },
   /** REQ §13.111 (a): the large-trunk requirement waived by whoever places by hand ("allow_small_trunk"). */
   // REQ §13.191 (DR2): asked once after volunteering to drive.
