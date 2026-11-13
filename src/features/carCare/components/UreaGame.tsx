@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
 import { he, tv } from "@/i18n/he";
 
 import {
@@ -181,13 +182,16 @@ export interface UreaGameProps {
   /** While true (mutation pending) all input is ignored. */
   disabled?: boolean;
   onBack: () => void;
+  /** Owner 2026-11-13: an optional note with the fill, as with a tire fill. */
+  note: string;
+  onNoteChange: (note: string) => void;
 }
 
 /** How long the boy smiles at the full tank before the fill is logged. */
 const SMILE_MS = 900;
 
 /** Aim the stream into the funnel until the AdBlue gauge is full, or skip. */
-export function UreaGame({ onDone, disabled = false, onBack }: UreaGameProps) {
+export function UreaGame({ onDone, disabled = false, onBack, note, onNoteChange }: UreaGameProps) {
   const svgRef = useRef<SVGSVGElement>(null);
   const aimRef = useRef(START_AIM);
   const holdingRef = useRef(false);
@@ -289,6 +293,10 @@ export function UreaGame({ onDone, disabled = false, onBack }: UreaGameProps) {
       <p className="text-center text-xs text-muted-foreground" aria-live="polite">
         {tv("carCare.ureaProgress", { percent: String(Math.round(frame.fill * 100)) })}
       </p>
+      <label className="flex flex-col gap-1 text-sm">
+        {he.carCare.tireNoteLabel}
+        <Textarea value={note} onChange={(event) => onNoteChange(event.target.value)} data-testid="urea-note" />
+      </label>
       <div className="flex justify-between gap-2">
         <Button type="button" variant="ghost" onClick={onBack}>
           {he.common.back}

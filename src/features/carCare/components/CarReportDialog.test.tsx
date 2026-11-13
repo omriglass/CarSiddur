@@ -70,6 +70,15 @@ describe("CarReportDialog", () => {
     expect(await screen.findByText(he.carCare.ureaCelebration)).toBeInTheDocument();
   });
 
+  it("urea fill carries an optional note, like a tire fill (owner 2026-11-13)", async () => {
+    mocks.car.data = { fuel_type: "diesel" };
+    show();
+    fireEvent.click(screen.getByTestId("car-urea-fill"));
+    fireEvent.change(screen.getByTestId("urea-note"), { target: { value: "  מילאתי חצי  " } });
+    fireEvent.click(screen.getByRole("button", { name: he.carCare.ureaSkip }));
+    await waitFor(() => expect(mocks.logCarCare).toHaveBeenCalledWith({ carId: "car-1", kind: "urea_fill", note: "מילאתי חצי" }));
+  });
+
   it("kilometrage: shows the last reading, keeps save disabled for non-numbers and logs a whole number", async () => {
     mocks.currentKm.data = { km: 12345, recorded_at: "2026-10-20T10:00:00Z" };
     const { onOpenChange } = show();

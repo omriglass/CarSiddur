@@ -54,6 +54,7 @@ export function CarReportDialog({ carId, carName, open, onOpenChange, initialVie
   const [view, setView] = useState<View>(initialView ?? "home");
   const [tires, setTires] = useState(DEFAULT_TIRE_STATES);
   const [tireNote, setTireNote] = useState("");
+  const [ureaNote, setUreaNote] = useState("");
   const [kmText, setKmText] = useState("");
 
   const reportIssueMutation = useReportCarIssueMutation();
@@ -79,6 +80,7 @@ export function CarReportDialog({ carId, carName, open, onOpenChange, initialVie
       setView(initialView ?? "home");
       setTires(DEFAULT_TIRE_STATES);
       setTireNote("");
+      setUreaNote("");
       setKmText("");
       form.reset({ category: undefined, description: "" });
     }
@@ -124,7 +126,7 @@ export function CarReportDialog({ carId, carName, open, onOpenChange, initialVie
 
   async function submitUreaFill() {
     try {
-      await logCarCareMutation.mutateAsync({ carId, kind: "urea_fill" });
+      await logCarCareMutation.mutateAsync({ carId, kind: "urea_fill", note: ureaNote.trim() || undefined });
       setView("ureaDone");
     } catch {
       // already toasted by useLogCarCareMutation's onError
@@ -268,7 +270,7 @@ export function CarReportDialog({ carId, carName, open, onOpenChange, initialVie
         ) : null}
 
         {view === "urea" ? (
-          <UreaGame onDone={submitUreaFill} disabled={logCarCareMutation.isPending} onBack={() => setView("home")} />
+          <UreaGame onDone={submitUreaFill} disabled={logCarCareMutation.isPending} onBack={() => setView("home")} note={ureaNote} onNoteChange={setUreaNote} />
         ) : null}
 
         {view === "km" ? (

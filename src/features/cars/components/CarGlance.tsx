@@ -9,10 +9,10 @@ import { CarFuelChip } from "./CarFuelChip";
 
 /**
  * The car at a glance (owner 2026-11-13), at the top of the siddur's and the board's car-name menu: licence plate,
- * fuel, whose car it is ("הרכב של …" for a private car, else "אחראי/ת רכב: …"), the last wash and — on a diesel
- * car — the last urea fill. Mounted only while the menu is open, so the reads run on demand.
+ * fuel, whose car it is ("הרכב של …" for a private car, else "אחראי/ת רכב: …"), and the last wash (the urea fill is
+ * shown on the car page only, owner 2026-11-13). Mounted only while the menu is open, so the reads run on demand.
  */
-export function CarGlance({ carId, showUrea = true }: { carId: string; /** Off on the board (owner 2026-11-13). */ showUrea?: boolean }) {
+export function CarGlance({ carId }: { carId: string }) {
   const car = useCarQuery(carId).data;
   const care = useCarCareHistoryQuery(carId).data;
   const profiles = useAllProfiles().data;
@@ -24,7 +24,6 @@ export function CarGlance({ carId, showUrea = true }: { carId: string; /** Off o
   const owners = car.type === "temporary" ? joinNames(carOwnerIds(car).map((id) => nameOf(id))) : "";
   const responsible = nameOf(car.responsible_id);
   const lastWash = lastAt("wash");
-  const lastUrea = lastAt("urea_fill");
 
   return (
     <div className="space-y-1 px-2 py-1.5 text-xs" data-testid="car-glance">
@@ -36,11 +35,6 @@ export function CarGlance({ carId, showUrea = true }: { carId: string; /** Off o
         : car.type === "temporary" ? <p>{he.carPage.glanceNoOwner}</p>
         : responsible ? <p>{tv("carPage.glanceResponsible", { name: responsible })}</p> : null}
       {lastWash ? <p className="text-muted-foreground">{tv("carPage.mood.lastWash", { date: formatDayDate(lastWash) })}</p> : null}
-      {showUrea && car.fuel_type === "diesel" ? (
-        <p className="text-muted-foreground" data-testid="car-glance-urea">
-          {lastUrea ? tv("carPage.lastUreaFill", { date: formatDayDate(lastUrea) }) : he.carPage.lastUreaNever}
-        </p>
-      ) : null}
     </div>
   );
 }
