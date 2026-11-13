@@ -402,6 +402,17 @@ export function RequestForm({
   useEffect(() => {
     if (!isSentence && form.getValues("preferSpecificCar")) form.setValue("preferSpecificCar", false);
   }, [isSentence, form, watchedPreferredCar]);
+  // REQ item 224 "רכב מועדף": a new request starts with the member's own preferred car, unless the form was opened on
+  // a car (a slot, "add a ride on this car", a repeating request). Membership loads after `useForm` captured its
+  // defaults, so it is applied once here, never over the member's own choice.
+  const myPreferredCarId = myDepartmentsQuery.data?.find((d) => d.department_id === departmentId)?.preferred_car_id ?? null;
+  const preferredCarAppliedRef = useRef(false);
+  useEffect(() => {
+    if (preferredCarAppliedRef.current || mode === "edit" || !myPreferredCarId) return;
+    if (carPrefill || slotPrefill?.carId || templateSuggestion) { preferredCarAppliedRef.current = true; return; }
+    preferredCarAppliedRef.current = true;
+    if (!form.getValues("preferredCarId") && !form.getFieldState("preferredCarId").isDirty) form.setValue("preferredCarId", myPreferredCarId);
+  }, [myPreferredCarId, mode, carPrefill, slotPrefill?.carId, templateSuggestion, form]);
   // A failed submit also opens the sheet/row of the first bad field in the sentence layout.
   const [invalidSignal, setInvalidSignal] = useState<{ field: string; n: number } | null>(null);
   // Weekly sentence requests have two stages: 1 = the sentence, 2 = the modifiers (UX_FLOWS §3.4a).

@@ -19,12 +19,14 @@ vi.mock("@/features/auth/useProfile", () => ({
 vi.mock("@/features/auth/useMyDepartments", () => ({
   useMyDepartments: () => ({ data: [] }),
   useSetMyDefaultOriginMutation: () => ({ mutate: vi.fn() }),
+  useSetMyPreferredCarMutation: () => ({ mutate: vi.fn() }),
 }));
 vi.mock("@/features/auth/usePushSubscriptionStatus", () => ({
   usePushSubscriptionStatus: () => ({ isSubscribed: false, isLoading: false, refresh: vi.fn() }),
 }));
 vi.mock("@/features/fleet/hooks", () => ({
   useDestinations: () => ({ data: [] }),
+  useCars: () => ({ data: [] }),
   useMyTemporaryCars: () => ({ data: [] }),
   useRegisterTemporaryCarMutation: () => ({ mutateAsync: vi.fn() }),
 }));

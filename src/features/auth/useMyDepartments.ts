@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { fetchMyDepartments, setMyDefaultOrigin } from "./api";
+import { fetchMyDepartments, setMyDefaultOrigin, setMyPreferredCar } from "./api";
 import { authKeys } from "./queryKeys";
 import { useSession } from "./useSession";
 
@@ -25,6 +25,18 @@ export function useSetMyDefaultOriginMutation() {
   return useMutation({
     mutationFn: ({ departmentId, originId }: { departmentId: string; originId: string | null }) =>
       setMyDefaultOrigin(departmentId, originId),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: authKeys.myDepartments(profileId) }),
+  });
+}
+
+/** "רכב מועדף" (REQ item 224, Profile page) — invalidates `useMyDepartments` so new requests start with it at once. */
+export function useSetMyPreferredCarMutation() {
+  const { session } = useSession();
+  const profileId = session?.user.id;
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ departmentId, carId }: { departmentId: string; carId: string | null }) => setMyPreferredCar(departmentId, carId),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: authKeys.myDepartments(profileId) }),
   });
 }

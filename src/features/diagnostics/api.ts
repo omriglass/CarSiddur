@@ -47,3 +47,22 @@ export async function fetchClientErrors(limit: number = CLIENT_ERRORS_LIMIT): Pr
   if (error) throw error;
   return data as unknown as ClientErrorListRow[];
 }
+
+/** AN1 (REQ item 225): this device's browser-only preferences; resolves `false` on any failure, never throws. */
+export async function reportClientPreferences(deviceId: string, prefs: Record<string, string | boolean>, appVersion: string): Promise<boolean> {
+  try {
+    const { error } = await supabase.rpc("report_client_preferences", { p_device_id: deviceId, p_prefs: prefs, p_app_version: appVersion });
+    return !error;
+  } catch {
+    return false;
+  }
+}
+
+export type PreferenceStats = Record<string, unknown>;
+
+/** AN1: the counts (admin only, `preference_stats`). */
+export async function fetchPreferenceStats(): Promise<PreferenceStats> {
+  const { data, error } = await supabase.rpc("preference_stats");
+  if (error) throw error;
+  return (data ?? {}) as PreferenceStats;
+}

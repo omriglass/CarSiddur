@@ -66,6 +66,8 @@ export interface DepartmentMembership {
   default_origin_id: string | null;
   /** REQ item 150 (a): this membership carries the car-administrator flag (`department_members.is_car_admin`). */
   is_car_admin: boolean;
+  /** REQ item 224 "רכב מועדף": the car a new request starts with (`set_my_preferred_car`), null = none. */
+  preferred_car_id: string | null;
   department: { id: string; name: string; slug: string };
 }
 
@@ -73,7 +75,7 @@ export interface DepartmentMembership {
 export async function fetchMyDepartments(profileId: string): Promise<DepartmentMembership[]> {
   const { data, error } = await supabase
     .from("department_members")
-    .select("department_id, role, default_origin_id, is_car_admin, department:departments(id, name, slug)")
+    .select("department_id, role, default_origin_id, is_car_admin, preferred_car_id, department:departments(id, name, slug)")
     .eq("profile_id", profileId)
     .is("removed_at", null);
   if (error) throw toAppError(error);
@@ -85,6 +87,11 @@ export async function setMyDefaultOrigin(departmentId: string, originId: string 
   // `p_origin_id uuid default null` — the generated Args type doesn't know the SQL param
   // accepts null (it only reflects the column type), so this cast matches the real signature.
   await rpc("set_my_default_origin", { p_department_id: departmentId, p_origin_id: originId as unknown as string });
+}
+
+/** "רכב מועדף" (REQ item 224) — null clears it. */
+export async function setMyPreferredCar(departmentId: string, carId: string | null): Promise<void> {
+  await rpc("set_my_preferred_car", { p_department_id: departmentId, ...(carId ? { p_car_id: carId } : {}) });
 }
 
 export interface DepartmentMemberOption {

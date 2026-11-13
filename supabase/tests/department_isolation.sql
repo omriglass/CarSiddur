@@ -286,6 +286,7 @@ begin
   perform pg_temp.expect_refused('origins.place_travel_for_week', format('select * from public.place_travel_for_week(%L, %L)', dept_b, week_b));
   perform pg_temp.expect_refused('origins.car_start_locations', format('select * from public.car_start_locations(%L, %L)', dept_b, week_b));
   perform pg_temp.expect_refused('origins.set_my_default_origin', format('select public.set_my_default_origin(%L, %L)', dept_b, other_dest_b));
+  perform pg_temp.expect_refused('cars.set_my_preferred_car', format('select public.set_my_preferred_car(%L, %L)', dept_b, car_b));
   perform pg_temp.expect_refused('requests.route_minutes_preview', format('select public.route_minutes_preview(%L, %L::jsonb)', dept_b, '[]'));
   -- REQ §13.153: request_notes filters (never raises) — another department's note never comes back
   update public.requests set notes = 'B private note' where id = req_b;
@@ -447,7 +448,7 @@ declare
     'publish_scores_fingerprint','solver_state_fingerprint','sadran_contact_of','fairness_stats','department_stats','joinable_rides_for_request',
     'planning_month','typical_usage','save_reservation',
     'create_policy_version','set_policy_active','policy_week_alignment','resolve_waitlist_group','cancel_waitlist_group','join_waitlist_discussion','waitlist_group_holds','siddur_waitlist','place_waiting_request',
-    'place_travel_for_week','car_start_locations','set_my_default_origin','route_minutes_preview','request_notes','request_history',
+    'place_travel_for_week','car_start_locations','set_my_default_origin','set_my_preferred_car','route_minutes_preview','request_notes','request_history',
     'my_co_guardians','set_ride_driver','withdraw_duplicate_request','restore_duplicate_request','close_request','restore_closed_request','sadran_cancel_ride','place_on_own_car','set_own_private_car','child_request_overlaps',
     'mark_car_move','shorten_series','join_drop_off_legs','place_series_on_car',
     'create_car_maintenance','update_car_maintenance','delete_car_maintenance','report_car_issue_unsafe_maintenance'
@@ -460,7 +461,7 @@ declare
     'my_department_ids:caller_scoped', 'my_sadran_department_ids:caller_scoped', 'my_sadran_weeks:caller_scoped',
     'my_department_access:caller_scoped', 'my_guarded_request_ids:caller_scoped', 'my_companion_request_ids:caller_scoped', 'my_proposal_ids:caller_scoped',
     'is_guardian_on_request:read-helper',
-    'can_manage_any_open_week:read-helper', 'can_manage_operations:read-helper', 'can_manage_car:read-helper', 'can_define_car_checklist:read-helper', 'is_car_admin:read-helper', 'admin_set_car_admin:admin-only', 'car_base_location:read-helper',
+    'can_manage_any_open_week:read-helper', 'can_manage_operations:read-helper', 'can_manage_car:read-helper', 'can_define_car_checklist:read-helper', 'is_car_admin:read-helper', 'admin_set_car_admin:admin-only', 'preference_stats:admin-only', 'report_client_preferences:caller_scoped', 'car_base_location:read-helper',
     'can_manage_week:read-helper', 'day_date_label:read-helper', 'is_admin:read-helper',
     'is_approved:read-helper', 'is_ride_editor_of:read-helper', 'is_car_responsible:read-helper', 'is_day_public:read-helper',
     'is_proposal_party:read-helper', 'is_request_companion:read-helper', 'is_sadran:read-helper',

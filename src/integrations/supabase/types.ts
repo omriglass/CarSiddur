@@ -1165,6 +1165,47 @@ export type Database = {
           },
         ]
       }
+      client_preferences: {
+        Row: {
+          app_version: string | null
+          created_at: string
+          device_id: string
+          id: string
+          prefs: Json
+          profile_id: string
+          reported_at: string
+          updated_at: string
+        }
+        Insert: {
+          app_version?: string | null
+          created_at?: string
+          device_id: string
+          id?: string
+          prefs?: Json
+          profile_id: string
+          reported_at?: string
+          updated_at?: string
+        }
+        Update: {
+          app_version?: string | null
+          created_at?: string
+          device_id?: string
+          id?: string
+          prefs?: Json
+          profile_id?: string
+          reported_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "client_preferences_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       department_change_seq: {
         Row: {
           created_at: string
@@ -1201,6 +1242,7 @@ export type Database = {
           default_origin_id: string | null
           department_id: string
           is_car_admin: boolean
+          preferred_car_id: string | null
           profile_id: string
           removed_at: string | null
           role: Database["public"]["Enums"]["role"]
@@ -1211,6 +1253,7 @@ export type Database = {
           default_origin_id?: string | null
           department_id: string
           is_car_admin?: boolean
+          preferred_car_id?: string | null
           profile_id: string
           removed_at?: string | null
           role?: Database["public"]["Enums"]["role"]
@@ -1221,6 +1264,7 @@ export type Database = {
           default_origin_id?: string | null
           department_id?: string
           is_car_admin?: boolean
+          preferred_car_id?: string | null
           profile_id?: string
           removed_at?: string | null
           role?: Database["public"]["Enums"]["role"]
@@ -1245,6 +1289,13 @@ export type Database = {
             columns: ["department_id"]
             isOneToOne: false
             referencedRelation: "departments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "department_members_preferred_car_id_fkey"
+            columns: ["preferred_car_id"]
+            isOneToOne: false
+            referencedRelation: "cars"
             referencedColumns: ["id"]
           },
           {
@@ -7221,6 +7272,7 @@ export type Database = {
         Returns: Json
       }
       policy_week_alignment: { Args: { p_policy_id: string }; Returns: Json }
+      preference_stats: { Args: never; Returns: Json }
       prepare_manual_ride_window: {
         Args: {
           p_car_id: string
@@ -7425,6 +7477,10 @@ export type Database = {
       report_car_issue_unsafe_to_maintenance: {
         Args: { p_hours?: number; p_issue_id: string }
         Returns: string
+      }
+      report_client_preferences: {
+        Args: { p_app_version?: string; p_device_id: string; p_prefs: Json }
+        Returns: undefined
       }
       request_awaits_driver: {
         Args: { p_request_id: string }
@@ -7822,6 +7878,10 @@ export type Database = {
       }
       set_my_default_origin: {
         Args: { p_department_id: string; p_origin_id: string }
+        Returns: undefined
+      }
+      set_my_preferred_car: {
+        Args: { p_car_id?: string; p_department_id: string }
         Returns: undefined
       }
       set_own_private_car: {

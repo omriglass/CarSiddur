@@ -517,7 +517,7 @@ local replay stack and comparing it with the production solve — scripts/replay
 
 ### admin — Admin catalogs (cars, destinations, ride types, policies, settings, members, departments)
 
-**Paths**: `src/features/admin/**`, `src/features/fleet/**`, `src/features/diagnostics/**` (client errors, `/admin/errors`),
+**Paths**: `src/features/admin/**`, `src/features/fleet/**`, `src/features/diagnostics/**` (client errors, `/admin/errors`; preference counts, `/admin/preferences`, REQ item 225), `src/pages/admin/**`,
 `supabase/functions/destination-route/**`; `src/i18n/he.admin.ts`; migrations matching `*admin*`,
 `*catalog*`, `*member_identity*`, `*department_membership*`, `*origin*`, `*place_distances*`, `*place_texts*`
 (cars' base location / members' default origin / `place_distances`, REQ §13.93, steps O2/O3);
@@ -526,7 +526,7 @@ local replay stack and comparing it with the production solve — scripts/replay
 **Automated**:
 - Vitest: `npx vitest run src/features/admin src/features/fleet src/features/diagnostics`
 - SQL: `admin_member_fixes.sql`, `admin_department_membership.sql`, `department_catalogs.sql`,
-  `member_identity.sql`, `origins_schema.sql`, `ignored_place_texts.sql` (REQ §13.152: ignored typed texts — Sadran/admin only, normalized key, one per text; creating an approved place links waiting requests, never archived-week ones)
+  `member_identity.sql`, `origins_schema.sql`, `preference_stats.sql` (REQ item 225: one row per device, admin-only read), `ignored_place_texts.sql` (REQ §13.152: ignored typed texts — Sadran/admin only, normalized key, one per text; creating an approved place links waiting requests, never archived-week ones)
 - Playwright: `npx playwright test --grep "@admin"`
 
 **QA script**:
@@ -541,6 +541,8 @@ local replay stack and comparing it with the production solve — scripts/replay
    confirm it's read-only (catalogs/Maps route estimates require the owning department).
 5. As `admin`, open `/admin/errors` ("שגיאות באפליקציה"): the list shows recent browser errors
    (time, user, version, page, expandable stack); a member cannot open the route.
+6. As `admin`, open `/admin/preferences` ("העדפות החברים"): profile settings counted out of all members, device settings
+   counted over devices that reported in the last 30 days (open the app as a member first so their device reports).
 
 **REQ**: §13.2, §13.8, §13.25.
 

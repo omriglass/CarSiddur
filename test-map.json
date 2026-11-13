@@ -1211,6 +1211,9 @@
         "e2e/destinations-drop-points.spec.ts",
         "supabase/migrations/**/*place_texts*",
         "supabase/tests/ignored_place_texts.sql",
+        "supabase/tests/preference_stats.sql",
+        "supabase/migrations/**/*preference*",
+        "src/pages/admin/**",
         "src/components/RideTypeColorsProvider.tsx",
         "src/components/rideTypeColorsContext.ts",
         "src/lib/rideTypeColors.ts",
@@ -1227,7 +1230,8 @@
         "department_catalogs.sql",
         "member_identity.sql",
         "origins_schema.sql",
-        "ignored_place_texts.sql"
+        "ignored_place_texts.sql",
+        "preference_stats.sql"
       ],
       "playwrightTags": [
         "@admin"

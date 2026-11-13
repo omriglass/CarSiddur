@@ -2,4 +2,5 @@
 export const diagnosticsKeys = {
   all: ["diagnostics"] as const,
   clientErrors: () => [...diagnosticsKeys.all, "clientErrors"] as const,
+  preferenceStats: () => [...diagnosticsKeys.all, "preferenceStats"] as const,
 };

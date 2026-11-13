@@ -45,6 +45,7 @@ const ROUTE_PATTERNS = [
   "/plan/:dept/new",
   "/plan/:dept/:reservationId/edit",
   "/admin/errors",
+  "/admin/preferences",
 ];
 
 function pathnameOf(url: string): string {
@@ -235,5 +236,8 @@ describe("paths.admin", () => {
   it("errors matches /admin/errors", () => {
     expectRoutable(paths.admin.errors());
     expect(paths.admin.errors()).toBe("/admin/errors");
+  });
+  it("preferences matches /admin/preferences", () => {
+    expectRoutable(paths.admin.preferences());
   });
 });

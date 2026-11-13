@@ -15551,6 +15551,52 @@ $$;
 ALTER FUNCTION "public"."policy_week_alignment"("p_policy_id" "uuid") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."preference_stats"() RETURNS "jsonb"
+    LANGUAGE "plpgsql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare v_out jsonb;
+begin
+  if not public.is_admin() then
+    raise exception 'not_authorized' using errcode = 'P0001';
+  end if;
+  with m as (select * from public.profiles where approval_status = 'approved')
+  select jsonb_build_object(
+    'members', (select count(*) from m),
+    'classicForm', (select count(*) from m where classic_request_form),
+    'weekView', (select count(*) from m where my_rides_week_view),
+    'doesNotDrive', (select count(*) from m where does_not_drive),
+    'pushOnRideEditsOff', (select count(*) from m where not push_on_ride_edits),
+    'driverReminderOn', (select count(*) from m where driver_reminder is true),
+    'driverReminderOff', (select count(*) from m where driver_reminder is false),
+    'homeWeek', coalesce((select jsonb_object_agg(k, n) from (select home_week_preference::text k, count(*) n from m group by 1) x), '{}'::jsonb),
+    'mutedAny', (select count(*) from m where cardinality(muted_events) > 0),
+    'muted', coalesce((select jsonb_object_agg(k, n) from (select e::text k, count(*) n from m, unnest(m.muted_events) e group by 1) x), '{}'::jsonb),
+    'withPush', (select count(*) from m where exists (select 1 from public.push_subscriptions s where s.profile_id = m.id)),
+    'defaultOrigin', (select count(distinct dm.profile_id) from public.department_members dm join m on m.id = dm.profile_id
+                      where dm.removed_at is null and dm.default_origin_id is not null),
+    'preferredCar', (select count(distinct dm.profile_id) from public.department_members dm join m on m.id = dm.profile_id
+                     where dm.removed_at is null and dm.preferred_car_id is not null),
+    'devices', (select count(*) from public.client_preferences c where c.reported_at > now() - interval '30 days'),
+    'deviceMembers', (select count(distinct c.profile_id) from public.client_preferences c where c.reported_at > now() - interval '30 days'),
+    'device', coalesce((
+      select jsonb_object_agg(k, vals) from (
+        select k, jsonb_object_agg(val, n) as vals from (
+          select e.key as k, e.value #>> '{}' as val, count(*) as n
+          from public.client_preferences c cross join lateral jsonb_each(c.prefs) e
+          where c.reported_at > now() - interval '30 days'
+          group by 1, 2) x
+        group by k) y), '{}'::jsonb),
+    'versions', coalesce((select jsonb_object_agg(coalesce(app_version, '?'), n) from (
+        select app_version, count(*) n from public.client_preferences where reported_at > now() - interval '30 days' group by 1) x), '{}'::jsonb)
+  ) into v_out;
+  return v_out;
+end $$;
+
+
+ALTER FUNCTION "public"."preference_stats"() OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."prepare_manual_ride_window"("p_car_id" "uuid", "p_week_start" "date", "p_starts_at" timestamp with time zone, "p_ends_at" timestamp with time zone, "p_ride_id" "uuid" DEFAULT NULL::"uuid") RETURNS smallint
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -17774,6 +17820,25 @@ end $$;
 
 
 ALTER FUNCTION "public"."report_car_issue_unsafe_to_maintenance"("p_issue_id" "uuid", "p_hours" integer) OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."report_client_preferences"("p_device_id" "text", "p_prefs" "jsonb", "p_app_version" "text" DEFAULT NULL::"text") RETURNS "void"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare v_uid uuid := (select auth.uid());
+begin
+  if v_uid is null or not public.is_approved() then
+    raise exception 'not_authorized' using errcode = 'P0001';
+  end if;
+  insert into public.client_preferences (profile_id, device_id, prefs, app_version, reported_at)
+  values (v_uid, p_device_id, coalesce(p_prefs, '{}'::jsonb), left(p_app_version, 40), now())
+  on conflict (profile_id, device_id) do update
+    set prefs = excluded.prefs, app_version = excluded.app_version, reported_at = now();
+end $$;
+
+
+ALTER FUNCTION "public"."report_client_preferences"("p_device_id" "text", "p_prefs" "jsonb", "p_app_version" "text") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."request_awaits_driver"("p_request_id" "uuid") RETURNS boolean
@@ -21672,6 +21737,33 @@ $$;
 
 
 ALTER FUNCTION "public"."set_my_default_origin"("p_department_id" "uuid", "p_origin_id" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."set_my_preferred_car"("p_department_id" "uuid", "p_car_id" "uuid" DEFAULT NULL::"uuid") RETURNS "void"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+begin
+  if not public.member_of(p_department_id) then
+    raise exception 'not_authorized' using errcode = 'P0001';
+  end if;
+  if p_car_id is not null and not exists (
+    select 1 from public.cars c where c.id = p_car_id and c.department_id = p_department_id
+      and c.type = 'shared' and c.status <> 'retired'
+  ) then
+    raise exception 'car_not_found' using errcode = 'P0001';
+  end if;
+  update public.department_members
+    set preferred_car_id = p_car_id
+    where department_id = p_department_id and profile_id = (select auth.uid()) and removed_at is null;
+  if not found then
+    raise exception 'not_authorized' using errcode = 'P0001';
+  end if;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."set_my_preferred_car"("p_department_id" "uuid", "p_car_id" "uuid") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."set_own_private_car"("p_car_id" "uuid", "p_owner_id" "uuid" DEFAULT NULL::"uuid") RETURNS "void"
@@ -27099,6 +27191,26 @@ ALTER TABLE "public"."client_errors" ALTER COLUMN "id" ADD GENERATED ALWAYS AS I
 
 
 
+CREATE TABLE IF NOT EXISTS "public"."client_preferences" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "profile_id" "uuid" NOT NULL,
+    "device_id" "text" NOT NULL,
+    "prefs" "jsonb" DEFAULT '{}'::"jsonb" NOT NULL,
+    "app_version" "text",
+    "reported_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    CONSTRAINT "client_preferences_app_version_check" CHECK ((("app_version" IS NULL) OR ("length"("app_version") <= 40))),
+    CONSTRAINT "client_preferences_device_id_check" CHECK ((("length"("device_id") >= 8) AND ("length"("device_id") <= 64))),
+    CONSTRAINT "client_preferences_prefs_check" CHECK ((("jsonb_typeof"("prefs") = 'object'::"text") AND ("octet_length"(("prefs")::"text") <= 2000)))
+);
+
+ALTER TABLE ONLY "public"."client_preferences" FORCE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."client_preferences" OWNER TO "postgres";
+
+
 CREATE TABLE IF NOT EXISTS "public"."department_change_seq" (
     "department_id" "uuid" NOT NULL,
     "seq" bigint DEFAULT 0 NOT NULL,
@@ -27125,6 +27237,7 @@ CREATE TABLE IF NOT EXISTS "public"."department_members" (
     "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
     "default_origin_id" "uuid",
     "is_car_admin" boolean DEFAULT false NOT NULL,
+    "preferred_car_id" "uuid",
     CONSTRAINT "department_members_role_ck" CHECK (("role" = ANY (ARRAY['member'::"public"."role", 'sadran'::"public"."role"])))
 );
 
@@ -28947,6 +29060,16 @@ ALTER TABLE ONLY "public"."client_errors"
 
 
 
+ALTER TABLE ONLY "public"."client_preferences"
+    ADD CONSTRAINT "client_preferences_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."client_preferences"
+    ADD CONSTRAINT "client_preferences_profile_id_device_id_key" UNIQUE ("profile_id", "device_id");
+
+
+
 ALTER TABLE ONLY "public"."department_change_seq"
     ADD CONSTRAINT "department_change_seq_pkey" PRIMARY KEY ("department_id");
 
@@ -29394,6 +29517,10 @@ CREATE INDEX "cars_owner_idx" ON "public"."cars" USING "btree" ("owner_id");
 
 
 CREATE INDEX "cars_responsible_idx" ON "public"."cars" USING "btree" ("responsible_id") WHERE ("responsible_id" IS NOT NULL);
+
+
+
+CREATE INDEX "client_preferences_reported_idx" ON "public"."client_preferences" USING "btree" ("reported_at");
 
 
 
@@ -30734,6 +30861,10 @@ CREATE OR REPLACE TRIGGER "set_updated_at" BEFORE UPDATE ON "public"."cars" FOR 
 
 
 
+CREATE OR REPLACE TRIGGER "set_updated_at" BEFORE UPDATE ON "public"."client_preferences" FOR EACH ROW EXECUTE FUNCTION "public"."set_updated_at"();
+
+
+
 CREATE OR REPLACE TRIGGER "set_updated_at" BEFORE UPDATE ON "public"."departments" FOR EACH ROW EXECUTE FUNCTION "public"."set_updated_at"();
 
 
@@ -31409,6 +31540,11 @@ ALTER TABLE ONLY "public"."client_errors"
 
 
 
+ALTER TABLE ONLY "public"."client_preferences"
+    ADD CONSTRAINT "client_preferences_profile_id_fkey" FOREIGN KEY ("profile_id") REFERENCES "public"."profiles"("id") ON DELETE CASCADE;
+
+
+
 ALTER TABLE ONLY "public"."department_change_seq"
     ADD CONSTRAINT "department_change_seq_department_id_fkey" FOREIGN KEY ("department_id") REFERENCES "public"."departments"("id") ON DELETE CASCADE;
 
@@ -31426,6 +31562,11 @@ ALTER TABLE ONLY "public"."department_members"
 
 ALTER TABLE ONLY "public"."department_members"
     ADD CONSTRAINT "department_members_department_id_fkey" FOREIGN KEY ("department_id") REFERENCES "public"."departments"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."department_members"
+    ADD CONSTRAINT "department_members_preferred_car_id_fkey" FOREIGN KEY ("preferred_car_id") REFERENCES "public"."cars"("id") ON DELETE SET NULL;
 
 
 
@@ -32397,6 +32538,13 @@ CREATE POLICY "client_errors_insert" ON "public"."client_errors" FOR INSERT TO "
 
 
 CREATE POLICY "client_errors_select" ON "public"."client_errors" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_admin"() AS "is_admin"));
+
+
+
+ALTER TABLE "public"."client_preferences" ENABLE ROW LEVEL SECURITY;
+
+
+CREATE POLICY "client_preferences_select" ON "public"."client_preferences" FOR SELECT TO "authenticated" USING (( SELECT "public"."is_admin"() AS "is_admin"));
 
 
 
@@ -35334,6 +35482,12 @@ GRANT ALL ON FUNCTION "public"."policy_week_alignment"("p_policy_id" "uuid") TO 
 
 
 
+REVOKE ALL ON FUNCTION "public"."preference_stats"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."preference_stats"() TO "service_role";
+GRANT ALL ON FUNCTION "public"."preference_stats"() TO "authenticated";
+
+
+
 REVOKE ALL ON FUNCTION "public"."prepare_manual_ride_window"("p_car_id" "uuid", "p_week_start" "date", "p_starts_at" timestamp with time zone, "p_ends_at" timestamp with time zone, "p_ride_id" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."prepare_manual_ride_window"("p_car_id" "uuid", "p_week_start" "date", "p_starts_at" timestamp with time zone, "p_ends_at" timestamp with time zone, "p_ride_id" "uuid") TO "service_role";
 
@@ -35592,6 +35746,12 @@ GRANT ALL ON FUNCTION "public"."report_car_issue_unsafe_maintenance"("p_issue_id
 REVOKE ALL ON FUNCTION "public"."report_car_issue_unsafe_to_maintenance"("p_issue_id" "uuid", "p_hours" integer) FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."report_car_issue_unsafe_to_maintenance"("p_issue_id" "uuid", "p_hours" integer) TO "authenticated";
 GRANT ALL ON FUNCTION "public"."report_car_issue_unsafe_to_maintenance"("p_issue_id" "uuid", "p_hours" integer) TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."report_client_preferences"("p_device_id" "text", "p_prefs" "jsonb", "p_app_version" "text") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."report_client_preferences"("p_device_id" "text", "p_prefs" "jsonb", "p_app_version" "text") TO "service_role";
+GRANT ALL ON FUNCTION "public"."report_client_preferences"("p_device_id" "text", "p_prefs" "jsonb", "p_app_version" "text") TO "authenticated";
 
 
 
@@ -36218,6 +36378,12 @@ GRANT ALL ON FUNCTION "public"."set_my_default_origin"("p_department_id" "uuid",
 
 
 
+REVOKE ALL ON FUNCTION "public"."set_my_preferred_car"("p_department_id" "uuid", "p_car_id" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."set_my_preferred_car"("p_department_id" "uuid", "p_car_id" "uuid") TO "service_role";
+GRANT ALL ON FUNCTION "public"."set_my_preferred_car"("p_department_id" "uuid", "p_car_id" "uuid") TO "authenticated";
+
+
+
 REVOKE ALL ON FUNCTION "public"."set_own_private_car"("p_car_id" "uuid", "p_owner_id" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."set_own_private_car"("p_car_id" "uuid", "p_owner_id" "uuid") TO "service_role";
 GRANT ALL ON FUNCTION "public"."set_own_private_car"("p_car_id" "uuid", "p_owner_id" "uuid") TO "authenticated";
@@ -36741,6 +36907,11 @@ GRANT ALL ON TABLE "public"."client_errors" TO "service_role";
 GRANT ALL ON SEQUENCE "public"."client_errors_id_seq" TO "anon";
 GRANT ALL ON SEQUENCE "public"."client_errors_id_seq" TO "authenticated";
 GRANT ALL ON SEQUENCE "public"."client_errors_id_seq" TO "service_role";
+
+
+
+GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE "public"."client_preferences" TO "authenticated";
+GRANT ALL ON TABLE "public"."client_preferences" TO "service_role";
 
 
 

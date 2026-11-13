@@ -178,6 +178,18 @@ begin
   assert current_setting('app.own_private_car', true) = '', 'the pass is cleared';
   perform set_config('request.jwt.claims', jsonb_build_object('sub', admin_id, 'role', 'authenticated')::text, true);
   update public.cars set type = 'temporary', owner_id = plain where id = private_car;
+
+  -- REQ item 224 "רכב מועדף": a member picks a shared car of the department; a private car or another department's is refused.
+  perform set_config('request.jwt.claims', jsonb_build_object('sub', plain, 'role', 'authenticated')::text, true);
+  perform public.set_my_preferred_car(dept, shared_free);
+  assert (select preferred_car_id = shared_free from public.department_members where department_id = dept and profile_id = plain), 'preferred car saved';
+  v := pg_temp.err_of(format('select public.set_my_preferred_car(%L, %L)', dept, private_car));
+  assert v like '%car_not_found%', 'a private car is not a preferred car: ' || v;
+  v := pg_temp.err_of(format('select public.set_my_preferred_car(%L, %L)', dept, car_b));
+  assert v like '%car_not_found%', 'another department''s car is refused: ' || v;
+  perform public.set_my_preferred_car(dept, null);
+  assert (select preferred_car_id is null from public.department_members where department_id = dept and profile_id = plain), 'cleared';
+  perform set_config('request.jwt.claims', jsonb_build_object('sub', admin_id, 'role', 'authenticated')::text, true);
 end $$;
 
 ------------------------------------------------------------------------------------------

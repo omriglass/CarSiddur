@@ -694,6 +694,11 @@ export const heMember = {
     defaultOriginHelp: "נקודת היציאה שתוצע כברירת מחדל בבקשות חדשות במחלקה הזו.",
     defaultOriginHome: "בית (ברירת מחדל)",
     defaultOriginNoDepartment: "יש לבחור מחלקה כדי להגדיר נקודת יציאה",
+    /** "רכב מועדף" card (REQ item 224): `set_my_preferred_car`. */
+    preferredCarTitle: "רכב מועדף",
+    preferredCarLabel: "הרכב שתעדיף/י",
+    preferredCarHelp: "בקשה חדשה תתחיל עם הרכב הזה כרכב מועדף. אם אין סיבה לבחור רכב אחר, הוא יקבל אותו. אפשר לשנות בכל בקשה.",
+    preferredCarNone: "אין העדפה",
     notificationsTitle: "התראות",
     /** Owner 2026-10-11: send yourself a test notification (`send_test_notification`). */
     testNotification: "שליחת התראת בדיקה",

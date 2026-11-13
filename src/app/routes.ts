@@ -127,6 +127,8 @@ export const paths = {
   admin: {
     /** `/admin/errors` — admin-only list of browser errors from `client_errors` (E1, UX_FLOWS.md §5.13). */
     errors: (): string => "/admin/errors",
+    /** `/admin/preferences` — admin-only counts of members' preferences (AN1, REQ item 225). */
+    preferences: (): string => "/admin/preferences",
   },
 
   /** `/profile`; `?tab=details|prefs|look|notifications` opens a tab (REQ §13.198). */

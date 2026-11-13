@@ -1,3 +1,4 @@
+import { useReportDevicePreferences } from "@/features/diagnostics/hooks";
 import { useDeliverChangelog } from "@/features/changelog/useDeliverChangelog";
 import { Bell, CalendarDays, CarFront, ClipboardList, PanelRightClose, PanelRightOpen, Settings, User, Users } from "lucide-react";
 import { type ComponentType, useEffect, useState } from "react";
@@ -122,6 +123,8 @@ export function AppShell() {
   const unreadCount = useUnreadCount();
   // REQ §13.139 (b): a new version's "מה חדש" lands in the inbox, quietly.
   useDeliverChangelog();
+  // AN1 (REQ item 225): this device's browser-only preferences, once a day, for the owner's counts.
+  useReportDevicePreferences();
   // Local `vite dev` only (`DEV` is false in every production build): show the
   // active department's name plus a marker, so a renamed QA department is obvious.
   const departmentName = context.departments.find((d) => d.id === context.departmentId)?.name;

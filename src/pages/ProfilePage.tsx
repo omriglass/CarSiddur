@@ -31,7 +31,8 @@ import { useTheme, type ThemePreference } from "@/hooks/useTheme";
 import { useNoAutoDialogs } from "@/features/member/useNoAutoDialogs";
 import { useExperimentalFeatures } from "@/features/member/useExperimentalFeatures";
 import { useReduceMotion } from "@/features/member/useReduceMotion";
-import { useMyDepartments, useSetMyDefaultOriginMutation } from "@/features/auth/useMyDepartments";
+import { useMyDepartments, useSetMyDefaultOriginMutation, useSetMyPreferredCarMutation } from "@/features/auth/useMyDepartments";
+import { useCars } from "@/features/fleet/hooks";
 import { useProfile, useUpdateProfileMutation } from "@/features/auth/useProfile";
 import { usePushSubscriptionStatus } from "@/features/auth/usePushSubscriptionStatus";
 import { useSession } from "@/features/auth/useSession";
@@ -85,7 +86,12 @@ export function ProfilePage() {
   // REQ §13.93: "נקודת יציאה קבועה" for the active department — `department_members.default_origin_id`.
   const originDestinationsQuery = useDestinations(active.departmentId);
   const setDefaultOriginMutation = useSetMyDefaultOriginMutation();
+  const setPreferredCarMutation = useSetMyPreferredCarMutation();
   const activeMembership = (departmentsQuery.data ?? []).find((d) => d.department_id === active.departmentId);
+  // REQ item 224: the department's shared cars in use, by name.
+  const sharedCars = (useCars(active.departmentId).data ?? [])
+    .filter((car) => car.type === "shared" && car.status !== "retired")
+    .sort((a, b) => a.name.localeCompare(b.name, "he") || a.id.localeCompare(b.id));
 
   const pushStatus = usePushSubscriptionStatus();
   const [pushBusy, setPushBusy] = useState(false);
@@ -308,6 +314,33 @@ export function ProfilePage() {
         </TabsContent>
 
         <TabsContent value="prefs" className="space-y-4">
+        {active.departmentId ? (
+          <Card data-testid="profile-preferred-car-card">
+            <CardHeader>
+              <CardTitle className="text-base">{he.profileExtra.preferredCarTitle}</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              <Label htmlFor="profile-preferred-car">{he.profileExtra.preferredCarLabel}</Label>
+              <Select
+                value={activeMembership?.preferred_car_id ?? "none"}
+                onValueChange={(next) =>
+                  setPreferredCarMutation.mutate({ departmentId: active.departmentId as string, carId: next === "none" ? null : next })
+                }
+              >
+                <SelectTrigger id="profile-preferred-car" data-testid="profile-preferred-car">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">{he.profileExtra.preferredCarNone}</SelectItem>
+                  {sharedCars.map((car) => (
+                    <SelectItem key={car.id} value={car.id}>{car.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">{he.profileExtra.preferredCarHelp}</p>
+            </CardContent>
+          </Card>
+        ) : null}
         <Card>
           <CardHeader>
             <CardTitle className="text-base">{he.profileExtra.defaultOriginTitle}</CardTitle>

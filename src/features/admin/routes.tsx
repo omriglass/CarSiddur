@@ -9,6 +9,7 @@ import {
   DepartmentsPage,
   DestinationsPage,
   ErrorsPage,
+  PreferencesPage,
   IssuesPage,
   MaintenancePage,
   MembersPage,
@@ -31,6 +32,7 @@ export const adminRoutes: RouteObject[] = [
   { path: "/admin/members", element: <MembersPage /> },
   { path: "/admin/roster", element: <RosterPage /> },
   { path: paths.admin.errors(), element: <ErrorsPage /> },
+  { path: paths.admin.preferences(), element: <PreferencesPage /> },
 ];
 
 export const operationsRoutes: RouteObject[] = [
