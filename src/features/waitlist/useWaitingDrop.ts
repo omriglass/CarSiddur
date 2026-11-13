@@ -33,7 +33,8 @@ export function useWaitingDrop(departmentId: string | undefined, weekStart: stri
 
   /** Only an upcoming round trip is draggable (the server also refuses a multi-day one); the rest open the form. */
   function canDrag(request: WaitingRequest | undefined): boolean {
-    return !!request && request.trip_type === "round_trip" && Date.parse(request.starts_at) > Date.now();
+    // R19B6: one missing leg of a placed round trip is placed from the board, not dragged as a whole trip.
+    return !!request && request.trip_type === "round_trip" && !request.missing_leg && Date.parse(request.starts_at) > Date.now();
   }
 
   async function submit(drop: Omit<PendingDrop, "warnings">, accept: string[]) {

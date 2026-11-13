@@ -139,4 +139,36 @@ begin
   assert v_refused, 'TEST 4 FAILED: a non-member read the department''s waiting list';
 end $$;
 
+-- TEST 5 (R19B6, REQ item 222): a round trip merged on its out leg only shows its return leg as waiting.
+do $$
+declare
+  dept uuid := '00000000-0000-0000-0000-000000000001';
+  member1 uuid := '00000000-0000-0000-0000-000000000103';
+  dest uuid := '00000000-0000-0000-0000-000000000011';
+  home uuid := '00000000-0000-0000-0000-000000000010';
+  w date := public.current_week_start() + 420;
+  q uuid; rd uuid; r record;
+begin
+  set local session_replication_role = replica;
+  insert into public.requests(department_id, week_start, requester_id, filed_by, ride_type_id, origin_id, destination_id, trip_shape, trip_type,
+                              depart_at, return_at, adults, status)
+    values (dept, w, member1, member1, '00000000-0000-0000-0000-000000000021', home, dest, 'round_trip', 'round_trip',
+            ((w + 2) + time '06:00') at time zone 'Asia/Jerusalem', ((w + 2) + time '21:00') at time zone 'Asia/Jerusalem', 1, 'merged')
+    returning id into q;
+  insert into public.rides(id, department_id, week_start, car_id, starts_at, ends_at, origin_id, destination_id, blocked_until, status, driver_id, created_by)
+    values (gen_random_uuid(), dept, w, '00000000-0000-0000-0000-000000000041', ((w + 2) + time '06:00') at time zone 'Asia/Jerusalem',
+            ((w + 2) + time '07:00') at time zone 'Asia/Jerusalem', home, dest, ((w + 2) + time '07:30') at time zone 'Asia/Jerusalem', 'confirmed', '00000000-0000-0000-0000-000000000102', member1)
+    returning id into rd;
+  insert into public.ride_requests(ride_id, request_id, role, leg, car_mode) values (rd, q, 'passenger', 'out', 'passenger');
+  set local session_replication_role = origin;
+  perform set_config('request.jwt.claims', json_build_object('sub', '00000000-0000-0000-0000-000000000104', 'role', 'authenticated')::text, true);
+  select * into r from public.siddur_waitlist(dept, w) s where s.request_id = q;
+  assert r.request_id = q, 'TEST 5 FAILED: the request with an uncovered return leg is not on the waiting list';
+  assert r.missing_leg = 'return', format('TEST 5 FAILED: missing_leg %s', r.missing_leg);
+  assert r.ends_at = ((w + 2) + time '21:00') at time zone 'Asia/Jerusalem' and r.starts_at < r.ends_at
+     and r.starts_at > ((w + 2) + time '07:00') at time zone 'Asia/Jerusalem', 'TEST 5 FAILED: the block is the return leg''s hours';
+  assert (select missing_leg is null from public.siddur_waitlist(dept, w) s where s.request_id = (select id from sw_ids where k = 'waiting')),
+    'TEST 5 FAILED: a fully waiting request has no missing_leg';
+end $$;
+
 rollback;

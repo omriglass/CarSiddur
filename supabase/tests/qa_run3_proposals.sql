@@ -216,4 +216,43 @@ begin
 end $$;
 rollback;
 
+-- ===================== R19B1 (REQ item 220): a return-only merge before the member's own departure is asked, not refused
+begin;
+do $$
+declare
+  dept uuid:='00000000-0000-0000-0000-000000000001';
+  manager uuid:='00000000-0000-0000-0000-000000000102';
+  m1 uuid:='00000000-0000-0000-0000-000000000103';
+  m2 uuid:='00000000-0000-0000-0000-000000000104';
+  home uuid:='00000000-0000-0000-0000-000000000010';
+  haifa uuid:='00000000-0000-0000-0000-000000000011';
+  typ uuid:='00000000-0000-0000-0000-000000000021';
+  car40 uuid:='00000000-0000-0000-0000-000000000040';
+  w date:=public.current_week_start()+791;
+  d timestamptz; qH uuid; qG uuid; rH uuid; v jsonb;
+begin
+  update public.destinations set travel_minutes=20 where id=haifa;
+  perform set_config('request.jwt.claims',jsonb_build_object('sub',manager,'role','authenticated')::text,true);
+  insert into public.weeks(department_id,week_start,phase,open_at,close_at,publish_at)
+    values(dept,w,'open',now()-interval '2 days',now()+interval '1 day',now()+interval '2 days');
+  d:=((w+2)+time '06:30') at time zone 'Asia/Jerusalem';
+  insert into public.requests(department_id,week_start,requester_id,filed_by,origin_id,destination_id,ride_type_id,depart_at,return_at,trip_shape,trip_type,status)
+    values(dept,w,m2,manager,home,haifa,typ,d,d+interval '10 hours 15 minutes','round_trip','round_trip','assigned') returning id into qH;
+  insert into public.rides(department_id,week_start,car_id,starts_at,ends_at,origin_id,destination_id,driver_id,status,created_by)
+    values(dept,w,car40,d,d+interval '10 hours 15 minutes',home,home,m2,'draft',manager) returning id into rH;
+  insert into public.ride_requests(ride_id,request_id,role,leg,car_mode) values(rH,qH,'driver','both','keep');
+  -- the guest leaves at 17:45 and comes back at 18:30 (within the 2-hour tolerance of the host's 16:45 return)
+  insert into public.requests(department_id,week_start,requester_id,filed_by,origin_id,destination_id,ride_type_id,depart_at,return_at,trip_shape,trip_type,status)
+    values(dept,w,m1,manager,home,haifa,typ,d+interval '11 hours 15 minutes',d+interval '12 hours','round_trip','round_trip','submitted') returning id into qG;
+  v:=public.merge_preview(rH,qG,'return');
+  assert v->>'time_far_kind'='order' and v->>'time_far_leg'='return',
+    format('R19B1: a return before the departure must be reported as order, got %s', v);
+  assert coalesce(v->>'error','') <> 'merge_time_far', 'R19B1: the order case is asked, never refused';
+  assert (v->>'time_far_wanted')::timestamptz = d+interval '11 hours 15 minutes', 'R19B1: compared with the member''s own departure';
+  -- the out leg alone is in order (it leaves in the morning, before the 18:30 return)
+  v:=public.merge_preview(rH,qG,'out');
+  assert v->>'time_far_kind' is distinct from 'order', format('R19B1: the out leg is in order, got %s', v);
+end $$;
+rollback;
+
 do $$ begin raise notice 'qa_run3_proposals.sql: all assertions passed'; end $$;

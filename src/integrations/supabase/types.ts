@@ -7919,6 +7919,7 @@ export type Database = {
           ends_at: string
           guest_names: string[]
           is_mine: boolean
+          missing_leg: string
           origin_is_home: boolean
           origin_name: string
           request_id: string

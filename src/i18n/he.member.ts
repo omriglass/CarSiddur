@@ -1330,6 +1330,9 @@ export const heMember = {
     waitingWhen: "מתי",
     waitingRoute: "לאן",
     waitingTripType: "סוג נסיעה",
+    // R19B6 (REQ item 222): the one leg of a round trip that no ride covers yet.
+    missingLegOut: "הלוך בלבד",
+    missingLegReturn: "חזור בלבד",
     // REQ §13.183: dragging a waiting round trip onto a car.
     dropPlaced: "הנסיעה שובצה ב{{car}}",
     dropConfirmTitle: "לשבץ בכל זאת?",

@@ -261,6 +261,27 @@ begin
   select count(*) into n from public.notifications where recipient_id = driver and data->>'variant' = 'passengers_added';
   assert n = 1, format('the driver adding their own passenger must not self-notify, found %s notifications total', n);
 
+  -- R19B7 (REQ item 221): someone already on a ride (here a named member, not the driver) hears about a join once.
+  declare ride3 uuid; begin
+    perform set_config('request.jwt.claims', jsonb_build_object('sub', sadran, 'role', 'authenticated')::text, true);
+    insert into public.rides(department_id,week_start,car_id,starts_at,ends_at,origin_id,destination_id,driver_id,status,created_by)
+    values(dept, w2, car, (w2+1+time '13:00') at time zone 'Asia/Jerusalem', (w2+1+time '15:00') at time zone 'Asia/Jerusalem',
+      home, home, driver, 'confirmed', sadran) returning id into ride3;
+    insert into public.ride_passengers(ride_id, department_id, week_start, person_id, display_name, seat_kind, added_by)
+      values (ride3, dept, w2, sadran, 'סדרן', 'adult', sadran);
+    perform set_config('request.jwt.claims', jsonb_build_object('sub', member, 'role', 'authenticated')::text, true);
+    perform public.add_ride_passengers(ride3, (select version from public.rides where id = ride3),
+      jsonb_build_array(jsonb_build_object('display_name', 'אורח רביעי', 'seat_kind', 'adult'),
+                        jsonb_build_object('display_name', 'אורחת חמישית', 'seat_kind', 'adult')));
+    select count(*) into n from public.notifications where recipient_id = sadran and data->>'ride_id' = ride3::text
+      and data->>'variant' = 'passengers_added' and body_he like '%אורח רביעי%' and body_he like '%אורחת חמישית%';
+    assert n = 1, format('R19B7: a rider already on the ride gets one notice naming both joiners, got %s', n);
+    select count(*) into n from public.notifications where recipient_id = member and data->>'ride_id' = ride3::text;
+    assert n = 0, 'R19B7: the member who added them is not told';
+    delete from public.ride_passengers where ride_id = ride3;
+    delete from public.rides where id = ride3;
+  end;
+
   -- Capacity: car ...040 tops out at 5 adults; chauffeur bonus (1, no served ride_requests
   -- driver row) + 3 guests already seated = 4. Two more adults (total 6) must be refused,
   -- and a rejected call must not write any of its rows (validated before any insert).

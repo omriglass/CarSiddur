@@ -53,7 +53,7 @@ import { peopleNames, peopleOf } from "@/features/rides/ridePeople";
 import { resolveRideRealDestination } from "../rideLabel";
 import { duplicateChildRuns, groupDuplicateRuns } from "../duplicateChildRuns";
 import { connectedMateOf, unmetItemId } from "../unmetLegs";
-import { applyServerMergeTimes, mergeInvalidReason, mergeLegOptions, mergePayloadLeg, mergePayloadLegs, mergeVerdict, mergeWaitChoice, previewMerge, timeFarWarning, type MergeLeg, type MergeVerdict } from "../mergeProposal";
+import { applyServerMergeTimes, mergeInvalidReason, mergeLegOptions, mergePayloadLeg, mergePayloadLegs, mergeVerdict, mergeWaitChoice, previewMerge, timeFarPrompt, timeFarWarning, type MergeLeg, type MergeVerdict } from "../mergeProposal";
 import { longDetourText, type MergeWaitChoice } from "@/features/rides/mergeQuestions";
 import { requestRouteLine } from "../requestRoute";
 import { parseTimeToMinutes } from "@/features/solverBridge/buildSolverInput";
@@ -108,7 +108,7 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
 
   const boardRef = useRef<HTMLDivElement>(null);
   const [conflictJump, setConflictJump] = useState<{ rideId: string; sequence: number } | null>(null);
-  const [timeFarAsk, setTimeFarAsk] = useState<{ text: string; resolve: (accepted: boolean) => void } | null>(null);
+  const [timeFarAsk, setTimeFarAsk] = useState<{ text: string; title: string; confirm: string; resolve: (accepted: boolean) => void } | null>(null);
   // REQ §13.175: "the detour is long — merge anyway?" and "pick the guest up at another time, or stretch the ride?"
   const [detourAsk, setDetourAsk] = useState<{ text: string; resolve: (accepted: boolean) => void } | null>(null);
   const [waitAsk, setWaitAsk] = useState<{ choice: MergeWaitChoice; resolve: (answer: "extend" | "keep" | null) => void } | null>(null);
@@ -246,15 +246,22 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
     // REQ §13.175 (b): the ride reaches the guest at another time than asked - never silently: take the guest at the
     // ride's time, or stretch the host's ride to the guest's time (sent as the merge's explicit window).
     const wait = !mergePair && mergeRequest && mergeVerdictNow?.status === "ok" ? mergeWaitChoice(serverMergeHost.data, mergeRequest, mergeLeg) : null;
+    // R19B1: a leg on the wrong side of the member's other leg is always asked first, even when a wait choice follows.
+    const orderAsk = mergeVerdictNow?.status === "ok" && mergeVerdictNow.timeFar?.kind === "order" ? mergeVerdictNow.timeFar : null;
+    if (orderAsk) {
+      const accepted = await new Promise<boolean>((resolve) => setTimeFarAsk({ text: timeFarWarning(orderAsk) ?? "", ...timeFarPrompt(orderAsk), resolve }));
+      setTimeFarAsk(null);
+      if (!accepted) return;
+    }
     if (wait) {
       const answer = await new Promise<"extend" | "keep" | null>((resolve) => setWaitAsk({ choice: wait, resolve }));
       setWaitAsk(null);
       if (!answer) return;
       if (answer === "extend") prefill = { ...prefill, payload: { ...prefill.payload, ...(wait.endsAt ? { ends_at: wait.endsAt } : { starts_at: wait.startsAt }) } };
-    } else if (mergeVerdictNow?.status === "ok" && mergeVerdictNow.timeFar) {
+    } else if (mergeVerdictNow?.status === "ok" && mergeVerdictNow.timeFar && !orderAsk) {
       // R13B9: far from the member's own time - allowed, but the Sadran confirms it first.
       const timeFar = mergeVerdictNow.timeFar;
-      const accepted = await new Promise<boolean>((resolve) => setTimeFarAsk({ text: timeFarWarning(timeFar) ?? "", resolve }));
+      const accepted = await new Promise<boolean>((resolve) => setTimeFarAsk({ text: timeFarWarning(timeFar) ?? "", ...timeFarPrompt(timeFar), resolve }));
       setTimeFarAsk(null);
       if (!accepted) return;
     }
@@ -793,9 +800,9 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
       <ConfirmDialog
         open={!!timeFarAsk}
         onOpenChange={(open) => { if (!open) timeFarAsk?.resolve(false); }}
-        title={he.mergedRide.timeFarTitle}
+        title={timeFarAsk?.title ?? he.mergedRide.timeFarTitle}
         description={timeFarAsk?.text}
-        confirmLabel={he.mergedRide.timeFarConfirm}
+        confirmLabel={timeFarAsk?.confirm ?? he.mergedRide.timeFarConfirm}
         onConfirm={() => timeFarAsk?.resolve(true)}
       />
       <ConfirmDialog

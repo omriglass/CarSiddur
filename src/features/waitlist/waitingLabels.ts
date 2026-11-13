@@ -18,5 +18,6 @@ export function waitingRoute(request: WaitingRequest): string {
 
 /** The grid block and list card line: who · where. */
 export function waitingLabel(request: WaitingRequest): string {
-  return `${waitingPeople(request).join(", ")} · ${waitingRoute(request)}`;
+  const leg = request.missing_leg === "out" ? he.waitlist.missingLegOut : request.missing_leg === "return" ? he.waitlist.missingLegReturn : null;
+  return [waitingPeople(request).join(", "), waitingRoute(request), leg].filter(Boolean).join(" · ");
 }

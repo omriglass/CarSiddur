@@ -19,7 +19,7 @@ import { memberMergeAgreeNames, memberMergeWaitChoice, type MemberMergeTarget } 
 import { longDetourText } from "./mergeQuestions";
 import { servedOf } from "./servedOf";
 
-type Step = "confirm" | "wait" | "detour" | "luggage" | "agree";
+type Step = "confirm" | "order" | "wait" | "detour" | "luggage" | "agree";
 
 interface Flow {
   host: BoardRide;
@@ -71,8 +71,9 @@ export function useMemberMerge({ departmentId, weekStart, onDone }: {
   }
 
   function next(current: Flow, after: Step) {
-    const order: Step[] = ["confirm", "wait", "detour", "luggage", "agree"];
+    const order: Step[] = ["confirm", "order", "wait", "detour", "luggage", "agree"];
     for (const step of order.slice(order.indexOf(after) + 1)) {
+      if (step === "order" && current.preview.order) return setFlow({ ...current, step });
       if (step === "wait" && memberMergeWaitChoice(current.preview)) return setFlow({ ...current, step });
       if (step === "detour" && current.preview.longDetour) return setFlow({ ...current, step });
       if (step === "luggage" && current.preview.luggageProblem) return setFlow({ ...current, step });
@@ -122,6 +123,12 @@ export function useMemberMerge({ departmentId, weekStart, onDone }: {
             next({ ...flow, wait: answer === "extend" }, "wait");
           }} />
       ) : null}
+      <ConfirmDialog open={flow?.step === "order"} onOpenChange={(open) => { if (!open) close(); }}
+        title={he.mergedRide.orderTitle}
+        description={flow?.preview.order ? tv(flow.preview.order.leg === "out" ? "mergedRide.orderOut" : "mergedRide.orderReturn", {
+          eta: formatTime(new Date(flow.preview.order.eta)), wanted: formatTime(new Date(flow.preview.order.wanted)),
+        }) : ""}
+        confirmLabel={he.mergedRide.orderConfirm} loading={busy} onConfirm={() => { if (flow) next(flow, "order"); }} />
       <ConfirmDialog open={flow?.step === "detour"} onOpenChange={(open) => { if (!open) close(); }}
         title={he.mergedRide.longDetourTitle}
         description={flow?.preview.longDetour ? longDetourText(flow.preview.longDetour, {

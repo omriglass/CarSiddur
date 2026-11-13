@@ -77,6 +77,8 @@ export const waitingRequestSchema = z.object({
   destination_name: z.string().nullable(),
   is_mine: z.boolean(),
   version: z.number(),
+  /** R19B6 (REQ item 222): the other leg is on a ride already; this block is only this leg. */
+  missing_leg: z.enum(["out", "return"]).nullable().optional(),
 });
 
 /** REQ §13.183: `place_waiting_request()` — placed, refused (`blocked`), or warnings the member may accept. */

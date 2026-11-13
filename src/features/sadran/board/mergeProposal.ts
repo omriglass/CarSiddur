@@ -191,8 +191,11 @@ export interface ServerMergePreview {
   /** R12B4 (REQ §13.119): the guest's person is already on another live ride overlapping the merged ride - a warning, never a refusal. */
   personOverlaps?: { rideId: string; startsAt: string; endsAt: string; role: string }[];
   /** R13B9: the ride passes the guest's place far from the guest's own time - allowed for the Sadran, but unlikely. */
-  timeFar?: { eta: string; wanted: string } | null;
+  timeFar?: TimeFar | null;
 }
+
+/** R13B9 far from the guest's time; R19B1 `kind: "order"` = the leg lands on the wrong side of the guest's other leg. */
+export interface TimeFar { eta: string; wanted: string; kind?: "far" | "order"; leg?: "out" | "return" }
 
 const isoOrNull = (value: unknown): string | null => (typeof value === "string" && value ? value : null);
 
@@ -222,13 +225,26 @@ export function parseServerMergePreview(raw: unknown): ServerMergePreview | null
       })
       : [],
     timeFar: r.time_far === true && typeof r.time_far_eta === "string" && typeof r.time_far_wanted === "string"
-      ? { eta: r.time_far_eta, wanted: r.time_far_wanted } : null,
+      ? {
+        eta: r.time_far_eta, wanted: r.time_far_wanted,
+        ...(r.time_far_kind === "order" ? { kind: "order" as const, leg: r.time_far_leg === "out" ? "out" as const : "return" as const } : {}),
+      } : null,
   };
 }
 
 /** R13B9: "the ride passes there at {eta}, the member asked for {wanted}" for a far-off merge, or `null`. */
-export function timeFarWarning(timeFar: { eta: string; wanted: string } | null | undefined): string | null {
-  return timeFar ? tv("mergedRide.timeFar", { eta: formatTime(new Date(timeFar.eta)), wanted: formatTime(new Date(timeFar.wanted)) }) : null;
+export function timeFarWarning(timeFar: TimeFar | null | undefined): string | null {
+  if (!timeFar) return null;
+  const vars = { eta: formatTime(new Date(timeFar.eta)), wanted: formatTime(new Date(timeFar.wanted)) };
+  if (timeFar.kind === "order") return tv(timeFar.leg === "out" ? "mergedRide.orderOut" : "mergedRide.orderReturn", vars);
+  return tv("mergedRide.timeFar", vars);
+}
+
+/** The prompt's title and button for a far-off / wrong-order merge. */
+export function timeFarPrompt(timeFar: TimeFar): { title: string; confirm: string } {
+  return timeFar.kind === "order"
+    ? { title: he.mergedRide.orderTitle, confirm: he.mergedRide.orderConfirm }
+    : { title: he.mergedRide.timeFarTitle, confirm: he.mergedRide.timeFarConfirm };
 }
 
 /** R12B4: the warning line for a guest already booked on another ride at those hours, or `null`. */
@@ -292,7 +308,7 @@ export type MergeVerdict =
    * `waivable`: allowed, but only after the Sadran accepts a car without a large trunk for a large-luggage request (REQ §13.111 a);
    * `longDetour`: allowed after the Sadran accepts the long detour (REQ §13.175 a).
    */
-  | { status: "ok"; waivable?: boolean; needs?: ("large_trunk" | "tow_hitch")[]; longDetour?: LongDetour; timeFar?: { eta: string; wanted: string } }
+  | { status: "ok"; waivable?: boolean; needs?: ("large_trunk" | "tow_hitch")[]; longDetour?: LongDetour; timeFar?: TimeFar }
   | { status: "refused"; message: string; code: string | null; source: "server" | "twin" };
 
 /** What `useQuery` says about one `merge_preview` call (a subset, so tests need no React). */
@@ -311,7 +327,7 @@ export function mergeVerdict(states: readonly MergePreviewState[], twinInvalid: 
   let waivable = false;
   const needs = new Set<"large_trunk" | "tow_hitch">();
   let longDetour: LongDetour | undefined;
-  let timeFar: { eta: string; wanted: string } | undefined;
+  let timeFar: TimeFar | undefined;
   for (const state of states) {
     if (state.data) {
       if (state.data.timeFar && (state.data.ok || state.data.waivable)) timeFar ??= state.data.timeFar;

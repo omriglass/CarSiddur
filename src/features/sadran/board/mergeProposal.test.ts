@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import { makeHop } from "@/lib/rideRoute";
 
-import { addedGuestsOf, applyServerMergeTimes, combineMergeLegs, mergeWaitChoice, parseServerMergePreview, personOverlapWarning, defaultMergeLeg, mergeLegForCard, mergeLegOptions, mergePayloadFromLegs, mergePayloadLegs, mergePayload, mergePayloadLeg, mergeRefusalText, mergeVerdict, previewMerge, timeFarWarning, type ServerMergePreview } from "./mergeProposal";
-import { he } from "@/i18n/he";
+import { addedGuestsOf, applyServerMergeTimes, combineMergeLegs, mergeWaitChoice, parseServerMergePreview, personOverlapWarning, defaultMergeLeg, mergeLegForCard, mergeLegOptions, mergePayloadFromLegs, mergePayloadLegs, mergePayload, mergePayloadLeg, mergeRefusalText, mergeVerdict, previewMerge, timeFarPrompt, timeFarWarning, type ServerMergePreview } from "./mergeProposal";
+import { he, tv } from "@/i18n/he";
 import { longDetourText } from "@/features/rides/mergeQuestions";
 
 import type { BoardRide, WeekRequestRow } from "../api";
@@ -238,6 +238,15 @@ describe("mergeVerdict / mergeRefusalText (REQ item 108 M1: the server decides)"
     expect(timeFarWarning(parsed.timeFar)).toContain("12:45");
     expect(mergeRefusalText("time_far")).toBe(he.mergedRide.invalid.time_far);
     expect(parseServerMergePreview({ ok: true })?.timeFar).toBeNull();
+  });
+
+  it("a return before the member's own departure asks 'are you sure' (R19B1)", () => {
+    const raw = { ok: true, code: null, time_far: true, time_far_kind: "order", time_far_leg: "return",
+      time_far_eta: "2026-11-17T14:45:00Z", time_far_wanted: "2026-11-17T15:45:00Z" };
+    const parsed = parseServerMergePreview(raw)!;
+    expect(parsed.timeFar).toMatchObject({ kind: "order", leg: "return" });
+    expect(timeFarWarning(parsed.timeFar)).toBe(tv("mergedRide.orderReturn", { eta: "16:45", wanted: "17:45" }));
+    expect(timeFarPrompt(parsed.timeFar!)).toEqual({ title: he.mergedRide.orderTitle, confirm: he.mergedRide.orderConfirm });
   });
 
   it("falls back to the twin when the preview call failed", () => {

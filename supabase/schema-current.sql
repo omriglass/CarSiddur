@@ -2853,6 +2853,7 @@ declare
   v_features text[]; v_luggage boolean; v_guest public.requests%rowtype; v_swap boolean; v_boarding timestamptz; v_anchor timestamptz; v_tol interval; v_overlaps jsonb := '[]'::jsonb; v_conflict boolean := false; v_side text; v_lug_problem boolean := false;
   v_tow boolean; v_tow_taken boolean; v_needs text[];
   v_time_far boolean := false; v_far_eta timestamptz; v_far_wanted timestamptz; v_soft_far boolean;
+  v_far_kind text; v_other_leg timestamptz;
   v_other record;
   v_detour_problem boolean := false; v_unknown_hops jsonb := '[]'::jsonb; v_hops jsonb;
   v_rb jsonb; v_ra jsonb; -- the ride's route without / with the guest (both legs), built once
@@ -2976,6 +2977,25 @@ begin
       where r.leg = v_leg::public.ride_leg
         and r.place_id is not null and r.place_id = (case when v_leg = 'out' or v_swap then v_guest.origin_id else v_guest.destination_id end);
       continue when v_boarding is null;
+      -- R19B1: the leg on the wrong side of the person's other leg — asked of everyone, never refused
+      if not v_swap then
+        if v_leg = 'return' then
+          v_other_leg := coalesce((select min(rd.starts_at) from public.ride_requests rr join public.rides rd on rd.id = rr.ride_id
+                                   where rr.request_id = p_request_id and rr.covers_out and rd.status <> 'cancelled' and rd.id <> p_ride_id),
+                                  v_guest.depart_at);
+          if v_other_leg is not null and v_guest.return_at is not null and v_boarding < v_other_leg then v_far_kind := 'order'; end if;
+        else
+          v_other_leg := case when v_guest.return_at is null then null else coalesce(
+                           (select max(rd.ends_at) from public.ride_requests rr join public.rides rd on rd.id = rr.ride_id
+                            where rr.request_id = p_request_id and rr.covers_return and rd.status <> 'cancelled' and rd.id <> p_ride_id),
+                           v_guest.return_at) end;
+          if v_other_leg is not null and v_boarding > v_other_leg then v_far_kind := 'order'; end if;
+        end if;
+        if v_far_kind = 'order' then
+          v_time_far := true; v_far_eta := v_boarding; v_far_wanted := v_other_leg;
+          exit;
+        end if;
+      end if;
       if v_leg = 'out' or v_swap then
         continue when v_guest.depart_at is null;
         v_tol := greatest(interval '2 hours', v_guest.flex_depart_early, v_guest.flex_depart_late);
@@ -2989,7 +3009,7 @@ begin
       -- "wrong day"); a Sadran (and the apply of a Sadran-made proposal the member accepted) may still propose it -
       -- then it is only reported (`time_far`) and the board warns that it is unlikely.
       if abs(extract(epoch from (v_boarding - v_anchor))) > extract(epoch from v_tol) then
-        v_time_far := true; v_far_eta := v_boarding; v_far_wanted := v_anchor;
+        v_time_far := true; v_far_eta := v_boarding; v_far_wanted := v_anchor; v_far_kind := 'far';
         v_soft_far := public.can_manage_week(v_ride.department_id, v_ride.week_start)
           or exists (select 1 from public.proposals p where p.id::text = nullif(current_setting('app.applying_proposal', true), '')
                      and p.created_via = 'sadran');
@@ -3071,7 +3091,7 @@ begin
 
   return jsonb_build_object('ok', v_err is null, 'error', v_err, 'code', public._merge_error_code(v_err),
     'person_overlaps', v_overlaps, 'luggage_problem', v_lug_problem, 'needs', to_jsonb(v_needs),
-    'time_far', v_time_far, 'time_far_eta', v_far_eta, 'time_far_wanted', v_far_wanted, 'turnaround_conflict', v_conflict, 'turnaround_side', v_side,
+    'time_far', v_time_far, 'time_far_eta', v_far_eta, 'time_far_wanted', v_far_wanted, 'time_far_kind', v_far_kind, 'time_far_leg', case when v_far_kind = 'order' then v_leg end, 'turnaround_conflict', v_conflict, 'turnaround_side', v_side,
     'added_out_minutes', v_add_min[1], 'added_return_minutes', v_add_min[2],
     'added_out_km', round(v_add_km[1], 1), 'added_return_km', round(v_add_km[2], 1),
     'detour_problem', v_detour_problem, 'detour_limit_minutes', v_lim_min, 'detour_limit_km', v_lim_km,
@@ -6295,6 +6315,30 @@ begin
         case when v_added_person_ids = array[v_actor] and cardinality(v_added_names) = 1 then 'passenger_joined' else 'passengers_added' end,
         'ride_id', p_ride_id),
       format('passengers_added:%s:%s:%s', p_ride_id, v_new_version, v_ride.driver_id));
+  end if;
+
+  -- R19B7: everyone else already on the ride (requesters, companions, named passengers) hears it once too.
+  if array_length(v_added_names, 1) > 0 then
+    if v_actor_name is null then
+      select full_name into v_actor_name from public.profiles where id = v_actor;
+    end if;
+    v_destination_name := public.ride_notice_destination(p_ride_id);
+    v_route := public.ride_notice_route(p_ride_id);
+    v_names_joined := array_to_string(v_added_names, ', ');
+    for v_person_id in
+      select p.pid from public._ride_person_ids(p_ride_id) p
+      where p.pid is distinct from v_actor and p.pid is distinct from v_ride.driver_id
+        and not (p.pid = any(coalesce(v_added_person_ids, '{}'::uuid[])))
+      order by p.pid
+    loop
+      perform public.enqueue_notification(v_person_id, 'outcome_changed', v_ride.department_id, v_ride.week_start,
+        jsonb_build_object('byName', coalesce(v_actor_name, ''), 'names', v_names_joined, 'destination', coalesce(v_destination_name, ''),
+          'route', coalesce(v_matched_route, v_route, '')),
+        jsonb_build_object('variant',
+          case when v_added_person_ids = array[v_actor] and cardinality(v_added_names) = 1 then 'passenger_joined' else 'passengers_added' end,
+          'ride_id', p_ride_id),
+        format('passengers_added:%s:%s:%s', p_ride_id, v_new_version, v_person_id));
+    end loop;
   end if;
 
   -- Owner decision 2026-09-14, rule 3: each added *member* (person_id) is told individually
@@ -22732,7 +22776,7 @@ $$;
 ALTER FUNCTION "public"."siddur_versions_assign_number"() OWNER TO "postgres";
 
 
-CREATE OR REPLACE FUNCTION "public"."siddur_waitlist"("p_department_id" "uuid", "p_week_start" "date") RETURNS TABLE("request_id" "uuid", "requester_id" "uuid", "requester_name" "text", "companion_names" "text"[], "child_names" "text"[], "guest_names" "text"[], "adults" smallint, "child_seats" smallint, "boosters" smallint, "trip_type" "public"."trip_type", "depart_at" timestamp with time zone, "return_at" timestamp with time zone, "starts_at" timestamp with time zone, "ends_at" timestamp with time zone, "day" "date", "origin_name" "text", "origin_is_home" boolean, "destination_name" "text", "is_mine" boolean, "version" integer)
+CREATE OR REPLACE FUNCTION "public"."siddur_waitlist"("p_department_id" "uuid", "p_week_start" "date") RETURNS TABLE("request_id" "uuid", "requester_id" "uuid", "requester_name" "text", "companion_names" "text"[], "child_names" "text"[], "guest_names" "text"[], "adults" smallint, "child_seats" smallint, "boosters" smallint, "trip_type" "public"."trip_type", "depart_at" timestamp with time zone, "return_at" timestamp with time zone, "starts_at" timestamp with time zone, "ends_at" timestamp with time zone, "day" "date", "origin_name" "text", "origin_is_home" boolean, "destination_name" "text", "is_mine" boolean, "version" integer, "missing_leg" "text")
     LANGUAGE "plpgsql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
@@ -22742,16 +22786,29 @@ begin
     raise exception 'not_authorized' using errcode = '42501';
   end if;
   return query
-  with w as (
+  with cover as (
+    select rr.request_id, bool_or(rr.covers_out) as has_out, bool_or(rr.covers_return) as has_ret
+    from public.ride_requests rr join public.rides r on r.id = rr.ride_id
+    where r.department_id = p_department_id and r.week_start = p_week_start and r.status <> 'cancelled'
+    group by rr.request_id
+  ), w as (
     select q.*, coalesce(d.travel_minutes, 60) as travel,
-           ((coalesce(q.depart_at, q.return_at)) at time zone 'Asia/Jerusalem')::date as q_day
+           ((coalesce(q.depart_at, q.return_at)) at time zone 'Asia/Jerusalem')::date as q_day,
+           case when q.status = 'waitlisted' then null
+                when c.has_out then 'return' else 'out' end as missing
     from public.requests q
     left join public.destinations d on d.id = q.destination_id
-    where q.department_id = p_department_id and q.week_start = p_week_start and q.status = 'waitlisted' and q.join_ride_id is null
+    left join cover c on c.request_id = q.id
+    where q.department_id = p_department_id and q.week_start = p_week_start and q.join_ride_id is null
       and not exists (select 1 from public.waitlist_group_members gm join public.waitlist_groups g on g.id = gm.group_id
                       where gm.request_id = q.id and g.status = 'open')
-      and not exists (select 1 from public.ride_requests rr join public.rides r on r.id = rr.ride_id
-                      where rr.request_id = q.id and r.status <> 'cancelled'))
+      and (
+        (q.status = 'waitlisted' and c.request_id is null)
+        -- R19B6: a two-leg round trip with exactly one leg on a ride
+        or (q.status in ('assigned', 'merged') and q.series_id is null and q.trip_type = 'round_trip'
+            and q.depart_at is not null and q.return_at is not null
+            and c.request_id is not null and c.has_out is distinct from c.has_ret)
+      ))
   select w.id, w.requester_id, p.full_name,
     coalesce((select array_agg(cp.full_name order by cp.full_name) from public.request_companions c
               join public.profiles cp on cp.id = c.profile_id where c.request_id = w.id), '{}'),
@@ -22759,14 +22816,17 @@ begin
               join public.children ch on ch.id = rc.child_id where rc.request_id = w.id), '{}'),
     w.guest_passenger_names,
     w.adults, w.child_seats, w.boosters, w.trip_type, w.depart_at, w.return_at,
-    coalesce(w.depart_at, w.return_at - make_interval(mins => w.travel)),
-    coalesce(w.return_at, w.depart_at + make_interval(mins => w.travel)),
-    w.q_day,
+    case w.missing when 'return' then w.return_at - make_interval(mins => w.travel)
+                   else coalesce(w.depart_at, w.return_at - make_interval(mins => w.travel)) end,
+    case w.missing when 'out' then w.depart_at + make_interval(mins => w.travel)
+                   else coalesce(w.return_at, w.depart_at + make_interval(mins => w.travel)) end,
+    case when w.missing = 'return' then (w.return_at at time zone 'Asia/Jerusalem')::date else w.q_day end,
     coalesce(o.name, nullif(w.origin_text, ''), home.name),
     (w.origin_id is null and nullif(w.origin_text, '') is null) or w.origin_id = dep.home_destination_id,
     coalesce(dd.name, w.destination_text),
     (w.requester_id = v_uid or w.filed_by = v_uid),
-    w.version
+    w.version,
+    w.missing
   from w
   join public.profiles p on p.id = w.requester_id
   left join public.destinations o on o.id = w.origin_id

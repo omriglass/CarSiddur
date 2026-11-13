@@ -843,6 +843,11 @@ export const heSadran = {
     timeFar: "הנסיעה עוברת שם ב-{{eta}}, והחבר/ה ביקש/ה {{wanted}} — רחוק מהשעה, סביר שלא יתאים.",
     timeFarTitle: "רחוק מהשעה המבוקשת",
     timeFarConfirm: "להציע בכל זאת",
+    /** R19B1 (REQ item 220): the merged leg lands on the wrong side of the member's other leg — asked, never refused. */
+    orderTitle: "בטוח/ה שזה מה שהתכוונת?",
+    orderReturn: "הנסיעה חוזרת ב-{{eta}}, לפני שהחבר/ה בכלל יוצא/ת ({{wanted}}).",
+    orderOut: "הנסיעה יוצאת ב-{{eta}}, אחרי שעת החזרה של החבר/ה ({{wanted}}).",
+    orderConfirm: "כן, לאחד",
     /** REQ §13.175 (a): a detour over the department's limit is the Sadran's call. */
     longDetourTitle: "העיקוף ארוך",
     longDetourBody: "העיקוף ארוך ({{ride}}, {{stop}}): עוד {{minutes}} דק׳ נסיעה. לאחד בכל זאת?",
