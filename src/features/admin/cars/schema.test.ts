@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 
+import { he } from "@/i18n/he";
+
 import { carSchema } from "./schema";
 
 const car = {
@@ -16,9 +18,15 @@ describe("car access codes", () => {
     }
   });
 
-  it("requires a distinct replacement code only while a replacement is active", () => {
+  it("asks for a department in Hebrew when none is chosen (R19B14)", () => {
+    const result = carSchema.safeParse({ ...car, department_id: "" });
+    expect(result.success).toBe(false);
+    if (!result.success) expect(result.error.issues[0]?.message).toBe(he.adminCars.departmentRequired);
+  });
+
+  it("requires a replacement code only while a replacement is active; it may equal the regular code", () => {
     expect(carSchema.safeParse({ ...car, is_replaced: true }).success).toBe(false);
-    expect(carSchema.safeParse({ ...car, is_replaced: true, replacement_code: "01234" }).success).toBe(false);
+    expect(carSchema.parse({ ...car, is_replaced: true, replacement_code: "01234" }).replacement_code).toBe("01234");
     expect(carSchema.parse({ ...car, is_replaced: true, replacement_code: "0567" }).replacement_code).toBe("0567");
     expect(carSchema.safeParse(car).success).toBe(true);
   });

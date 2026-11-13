@@ -21,12 +21,15 @@ interface Props {
   canEdit: boolean;
 }
 
-/** "רכב פרטי (מושאל)" state line + switch on the car page (UX_FLOWS §5.11). The switch shows for editors only. */
+/** "רכב פרטי (מושאל)" state line + switch on the car page (UX_FLOWS §5.11). The switch shows for editors and the private car's owner. */
 export function CarPrivateSwitch({ car, canEdit }: Props) {
   const profile = useProfile().data;
   const membersQuery = useDepartmentMembers(car.department_id);
   const mutation = useSetCarPrivateMutation();
   const isPrivate = car.type === "temporary";
+  // R19B13 (REQ item 215): the member holding the private car may give it back from its own page.
+  const asOwner = !canEdit && isPrivate && !!profile && car.owner_id === profile.id;
+  const showSwitch = canEdit || asOwner;
   const [turnOnOpen, setTurnOnOpen] = useState(false);
   const [turnOffOpen, setTurnOffOpen] = useState(false);
   const [pickedOwner, setPickedOwner] = useState<string | null>(null);
@@ -45,7 +48,7 @@ export function CarPrivateSwitch({ car, canEdit }: Props) {
 
   async function save(next: string | null, close: () => void) {
     try {
-      await mutation.mutateAsync({ car, ownerId: next });
+      await mutation.mutateAsync({ car, ownerId: next, asOwner });
       toast.success(next ? he.carPage.privateSavedOn : he.carPage.privateSavedOff);
       close();
     } catch (error) {
@@ -53,7 +56,7 @@ export function CarPrivateSwitch({ car, canEdit }: Props) {
     }
   }
 
-  if (!isPrivate && !canEdit) return null;
+  if (!isPrivate && !showSwitch) return null;
 
   return (
     <div className="flex items-center justify-between gap-3 rounded-md border p-3" data-testid="car-private-card">
@@ -65,7 +68,7 @@ export function CarPrivateSwitch({ car, canEdit }: Props) {
           </p>
         ) : null}
       </div>
-      {canEdit ? (
+      {showSwitch ? (
         <Switch
           id="car-private-switch"
           checked={isPrivate}

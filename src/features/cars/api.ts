@@ -1,5 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
-import { toAppError } from "@/lib/rpc";
+import { rpc, toAppError } from "@/lib/rpc";
 
 import { CARS_WITH_CODES_SELECT, flattenCarCodes } from "@/features/admin/cars/api";
 
@@ -110,4 +110,12 @@ export async function fetchUpcomingCarRides(carId: string): Promise<{ id: string
 export async function setCarStatusOnly(carId: string, status: Database["public"]["Enums"]["car_status"]): Promise<void> {
   const { error } = await supabase.from("cars").update({ status }).eq("id", carId);
   if (error) throw toAppError(error);
+}
+
+/**
+ * R19B13 (REQ item 215): the private car's own owner hands it to another department member, or gives it back to the
+ * fleet (`ownerId` null). Admins, the Sadran and the responsible person keep using the car update.
+ */
+export async function setOwnPrivateCar(carId: string, ownerId: string | null): Promise<void> {
+  await rpc("set_own_private_car", { p_car_id: carId, ...(ownerId ? { p_owner_id: ownerId } : {}) });
 }

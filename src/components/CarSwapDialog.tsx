@@ -14,7 +14,7 @@ import { showErrorToast, toAppError } from "@/lib/rpc";
 import { formatTime } from "@/lib/time";
 
 import type { CarSwapArgs } from "@/features/carSwap/api";
-import type { CarSwapSeriesMode } from "@/features/carSwap/schema";
+import type { CarSwapBlocker, CarSwapSeriesMode } from "@/features/carSwap/schema";
 
 interface CarSwapDialogProps {
   open: boolean;
@@ -96,6 +96,9 @@ export function CarSwapDialog({ open, onOpenChange, departmentId, weekStart, day
       showErrorToast(error);
     }
   }
+
+  // R19B11: the server reports a luggage blocker once per leg of a ride; each sentence is shown once.
+  const messages = (blockers: readonly CarSwapBlocker[]) => [...new Set(blockers.map((blocker) => carSwapBlockerMessage(blocker, labelRides, carNameById)))];
 
   const hardBlockers = preview?.blockers.filter((blocker) => !blocker.waivable && !blocker.whole_only && !blocker.short_turnaround) ?? [];
   // REQ §13.186 (2026-11-08): rides coming closer than the turnaround — shown, and confirming the swap accepts them.
@@ -205,9 +208,9 @@ export function CarSwapDialog({ open, onOpenChange, departmentId, weekStart, day
                     {he.carSwap.seriesDayOnly}
                   </label>
                 </RadioGroup>
-                {wholeOnlyBlockers.map((blocker, index) => (
-                  <p key={index} className="text-xs text-destructive" data-testid="car-swap-whole-blocked">
-                    {carSwapBlockerMessage(blocker, labelRides, carNameById)}
+                {messages(wholeOnlyBlockers).map((message) => (
+                  <p key={message} className="text-xs text-destructive" data-testid="car-swap-whole-blocked">
+                    {message}
                   </p>
                 ))}
               </div>
@@ -217,8 +220,8 @@ export function CarSwapDialog({ open, onOpenChange, departmentId, weekStart, day
               <div className="space-y-1 rounded-md border border-destructive/50 bg-destructive/5 p-2" data-testid="car-swap-blockers">
                 <p className="font-medium text-destructive">{he.carSwap.blockersTitle}</p>
                 <ul className="space-y-1 text-xs text-destructive">
-                  {hardBlockers.map((blocker, index) => (
-                    <li key={index}>{carSwapBlockerMessage(blocker, labelRides, carNameById)}</li>
+                  {messages(hardBlockers).map((message) => (
+                    <li key={message}>{message}</li>
                   ))}
                 </ul>
               </div>
@@ -228,8 +231,8 @@ export function CarSwapDialog({ open, onOpenChange, departmentId, weekStart, day
               <div className="space-y-1 rounded-md border border-amber-500/50 bg-amber-500/5 p-2" data-testid="car-swap-waivable">
                 <p className="font-medium">{he.smallTrunk.confirmTitle}</p>
                 <ul className="space-y-1 text-xs">
-                  {waivableBlockers.map((blocker, index) => (
-                    <li key={index}>{carSwapBlockerMessage(blocker, labelRides, carNameById)}</li>
+                  {messages(waivableBlockers).map((message) => (
+                    <li key={message}>{message}</li>
                   ))}
                 </ul>
               </div>
@@ -239,8 +242,8 @@ export function CarSwapDialog({ open, onOpenChange, departmentId, weekStart, day
               <div className="space-y-1 rounded-md border border-amber-500/50 bg-amber-500/5 p-2" data-testid="car-swap-short-turnaround">
                 <p className="font-medium">{he.carSwap.shortTurnaroundTitle}</p>
                 <ul className="space-y-1 text-xs">
-                  {shortTurnarounds.map((blocker, index) => (
-                    <li key={index}>{carSwapBlockerMessage(blocker, labelRides, carNameById)}</li>
+                  {messages(shortTurnarounds).map((message) => (
+                    <li key={message}>{message}</li>
                   ))}
                 </ul>
               </div>

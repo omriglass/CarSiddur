@@ -153,6 +153,14 @@ begin
   prop:=public.create_proposal(qJ,rA,'merge',jsonb_build_object('legs',jsonb_build_array(
     jsonb_build_object('ride_id',rA,'leg','out','role','passenger','car_mode','passenger'))),'out');
   tokens:=public.send_proposal(prop,'{}');
+  -- R19B5: the same merge asked for again while it is pending is "already sent", not a stale version
+  begin
+    perform public.create_proposal(qJ,rA,'merge',jsonb_build_object('legs',jsonb_build_array(
+      jsonb_build_object('ride_id',rA,'leg','out','role','passenger','car_mode','passenger'))),'out');
+    raise exception 'R19B5: the same merge again must be refused';
+  exception when others then
+    assert sqlerrm='proposal_already_sent', 'R19B5: expected proposal_already_sent, got '||sqlerrm;
+  end;
   -- ... the return leg dropped on the other ride extends it instead of replacing it
   prop2:=public.create_proposal(qJ,rB,'merge',jsonb_build_object('legs',jsonb_build_array(
     jsonb_build_object('ride_id',rB,'leg','return','role','passenger','car_mode','passenger'))),'return');

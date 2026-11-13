@@ -247,6 +247,8 @@ begin
   -- OB1: place a multi-day request by hand (department B's car)
   perform pg_temp.expect_refused('requests.place_series_on_car', format('select public.place_series_on_car(%L, %L)', req_b, car_b));
   perform pg_temp.expect_refused('requests.place_on_own_car', format('select public.place_on_own_car(%L, %L)', req_b, car_b));
+  -- R19B13: only the private car's own owner, and only to a member of the car's department
+  perform pg_temp.expect_refused('cars.set_own_private_car', format('select public.set_own_private_car(%L, null)', car_b));
 
   -- cars / destinations ----------------------------------------------------
   perform pg_temp.expect_refused('cars.log_car_care', format('select public.log_car_care(%L, %L, null, null)', car_b, 'wash'));
@@ -446,7 +448,7 @@ declare
     'planning_month','typical_usage','save_reservation',
     'create_policy_version','set_policy_active','policy_week_alignment','resolve_waitlist_group','cancel_waitlist_group','join_waitlist_discussion','waitlist_group_holds','siddur_waitlist','place_waiting_request',
     'place_travel_for_week','car_start_locations','set_my_default_origin','route_minutes_preview','request_notes','request_history',
-    'my_co_guardians','set_ride_driver','withdraw_duplicate_request','restore_duplicate_request','close_request','restore_closed_request','sadran_cancel_ride','place_on_own_car','child_request_overlaps',
+    'my_co_guardians','set_ride_driver','withdraw_duplicate_request','restore_duplicate_request','close_request','restore_closed_request','sadran_cancel_ride','place_on_own_car','set_own_private_car','child_request_overlaps',
     'mark_car_move','shorten_series','join_drop_off_legs','place_series_on_car',
     'create_car_maintenance','update_car_maintenance','delete_car_maintenance','report_car_issue_unsafe_maintenance'
   ];

@@ -178,6 +178,18 @@ begin
       'DD2: discarding a draft tells nobody';
   end;
 
+  -- R19B4: a draft made for the old trip type is discarded once the trip type changes, silently.
+  declare qT uuid; dT uuid; dt4 timestamptz := ((w+5)+time '10:00') at time zone 'Asia/Jerusalem';
+  begin
+    insert into public.requests(department_id,week_start,requester_id,filed_by,destination_id,ride_type_id,depart_at,return_at,trip_shape,trip_type,status)
+      values(dept,w,other,manager,dest,typ,dt4,dt4+interval '2 hours','round_trip','round_trip','submitted') returning id into qT;
+    dT:=public.create_proposal(qT,null,'origin',jsonb_build_object('origin_id',dest,'car_id',carA),'r19b4');
+    assert (select status='draft' from public.proposals where id=dT), 'R19B4 setup: a draft';
+    update public.requests set trip_type='drop_off' where id=qT;
+    assert (select status='withdrawn' from public.proposals where id=dT), 'R19B4: a trip-type change must discard the draft';
+    assert not exists(select 1 from public.notifications where data->>'proposal_id'=dT::text), 'R19B4: nobody is told';
+  end;
+
   raise notice 'board_drafts.sql: all assertions passed';
 end $$;
 rollback;

@@ -14,7 +14,7 @@ export const carSchema = z.object({
   access_code: z.string().trim().regex(/^([0-9]{4,5})?$/, he.adminCars.codeDigitsRequired),
   is_replaced: z.boolean(),
   replacement_code: z.string().nullable(),
-  department_id: z.string().uuid(),
+  department_id: z.string().uuid(he.adminCars.departmentRequired),
   // No `type` field: the admin form only ever creates/edits shared cars
   // (owner decision 2026-09-10) — `createCar` always sends `type: "shared"`;
   // a temporary car (member-owned, `cars_temporary_owner_ck`) keeps whatever
@@ -34,10 +34,9 @@ export const carSchema = z.object({
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["is_replaced"], message: he.adminCars.replacementNeedsCode });
     return;
   }
+  // RC1 (REQ item 214): the replacement code may equal the regular code.
   if (!values.replacement_code || !/^[0-9]{4,5}$/.test(values.replacement_code)) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["replacement_code"], message: he.adminCars.codeDigitsRequired });
-  } else if (values.replacement_code === values.access_code) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["replacement_code"], message: he.adminCars.replacementCodeDifferent });
   }
 });
 export type CarFormValues = z.infer<typeof carSchema>;

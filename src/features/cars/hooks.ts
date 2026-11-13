@@ -14,6 +14,7 @@ import {
   fetchMyResponsibleCars,
   fetchUpcomingCarRides,
   setCarStatusOnly,
+  setOwnPrivateCar,
 } from "./api";
 import { carKeys } from "./keys";
 
@@ -89,8 +90,10 @@ export function useSetCarPrivateMutation() {
   const queryClient = useQueryClient();
   const update = useUpdateCarMutation();
   return useMutation({
-    mutationFn: ({ car, ownerId }: { car: Car; ownerId: string | null }) =>
-      update.mutateAsync({
+    /** `asOwner`: the viewer holds the private car and is not otherwise its editor (R19B13). */
+    mutationFn: async ({ car, ownerId, asOwner = false }: { car: Car; ownerId: string | null; asOwner?: boolean }): Promise<void> => {
+      if (asOwner) return setOwnPrivateCar(car.id, ownerId);
+      await update.mutateAsync({
         id: car.id,
         patch: {
           type: ownerId ? "temporary" : "shared",
@@ -99,7 +102,8 @@ export function useSetCarPrivateMutation() {
           is_replaced: car.is_replaced,
           replacement_code: car.replacement_code,
         },
-      }),
+      });
+    },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: carKeys.all }),
   });
 }

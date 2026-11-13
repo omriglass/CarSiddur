@@ -160,6 +160,24 @@ begin
   assert not public.is_car_admin(dept), 'a re-added member is not a car admin again';
   perform set_config('request.jwt.claims', jsonb_build_object('sub', admin_id, 'role', 'authenticated')::text, true);
   perform public.admin_set_car_admin(dept, car_admin, true);
+
+  ------------------------------------------------------------------------------------------
+  -- R19B13 (REQ item 215): the private car's owner hands it on or gives it back; nobody else may.
+  ------------------------------------------------------------------------------------------
+  perform set_config('request.jwt.claims', jsonb_build_object('sub', sadran_id, 'role', 'authenticated')::text, true);
+  v := pg_temp.err_of(format('select public.set_own_private_car(%L, null)', private_car));
+  assert v like '%not_authorized%', 'only the owner uses set_own_private_car: ' || v;
+  perform set_config('request.jwt.claims', jsonb_build_object('sub', plain, 'role', 'authenticated')::text, true);
+  v := pg_temp.err_of(format('select public.set_own_private_car(%L, %L)', private_car, gen_random_uuid()));
+  assert v like '%not_authorized%', 'the new owner must be a department member: ' || v;
+  perform public.set_own_private_car(private_car, car_admin);
+  assert (select owner_id = car_admin and type = 'temporary' from public.cars where id = private_car), 'handed to another member';
+  perform set_config('request.jwt.claims', jsonb_build_object('sub', car_admin, 'role', 'authenticated')::text, true);
+  perform public.set_own_private_car(private_car, null);
+  assert (select owner_id is null and type = 'shared' from public.cars where id = private_car), 'given back to the fleet';
+  assert current_setting('app.own_private_car', true) = '', 'the pass is cleared';
+  perform set_config('request.jwt.claims', jsonb_build_object('sub', admin_id, 'role', 'authenticated')::text, true);
+  update public.cars set type = 'temporary', owner_id = plain where id = private_car;
 end $$;
 
 ------------------------------------------------------------------------------------------

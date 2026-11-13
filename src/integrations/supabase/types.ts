@@ -7821,6 +7821,10 @@ export type Database = {
         Args: { p_department_id: string; p_origin_id: string }
         Returns: undefined
       }
+      set_own_private_car: {
+        Args: { p_car_id: string; p_owner_id?: string }
+        Returns: undefined
+      }
       set_policy_active: {
         Args: { p_is_active: boolean; p_policy_id: string }
         Returns: undefined
