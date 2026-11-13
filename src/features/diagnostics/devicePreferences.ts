@@ -29,7 +29,11 @@ function write(key: string, value: string): void {
 export function deviceId(): string {
   const stored = read(DEVICE_KEY);
   if (stored && stored.length >= 8) return stored;
-  const id = crypto.randomUUID();
+  // randomUUID exists only in a secure context (https / localhost) — not over http on a LAN address
+  const id =
+    typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+      ? crypto.randomUUID()
+      : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
   write(DEVICE_KEY, id);
   return id;
 }
