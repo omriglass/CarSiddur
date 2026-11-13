@@ -1670,3 +1670,93 @@ Still not exercised: the question on a new one-way request and a member's edit t
 - FU2 — ✅ 2026-11-13 (REQ item 219; owner: report the need + log the fill; **2026-11-13 later: no "needs urea" report — fill only, last fill shown at a glance (REQ item 226)**; preview artifact https://claude.ai/artifact/AXQ7sqKMsqEo7u2SRpAUxL). **A diesel car can be reported as needing urea (אוראה / AdBlue), with a fill minigame.** Only for `fuel_type = 'diesel'`; a new car-care kind next to tire fill and wash (`log_car_care`, `car_care` notices, history, export). The minigame, like the wash game (`WashGame.tsx`): a little boy pissing, whose stream starts off the funnel; the member moves the stream into the funnel; whimsical and simple, with a skip button as in the wash game; when done the boy smiles. Depends on FU1.
 - RC1 — ✅ 2026-11-13 (REQ item 214, `20261113100000`). **A replacement car's code may equal the regular car's code.** Codes are random four-digit numbers, so the two are fairly likely to coincide. Today both sides refuse it: the CHECK `car_access_codes_replacement_ck` (`replacement_code <> access_code`) and the zod refine in `src/features/admin/cars/schema.ts` (`he.adminCars.replacementCodeDifferent`). Drop both (a migration with the new check + rollback note if needed), remove the message, update DATA_MODEL/REQ.
 - MC1 — ✅ 2026-11-13 (REQ item 218; owner: passengers too; cards show code, fuel, plate, name). **The car I am driving right now appears on `/my`.** Rename "הרכבים שלי" (`he.carPage.homeMyCarsTitle`, `HomePage.tsx`) to "רכבים באחריותי", and add a section below it, "רכבים רלוונטיים", which for now shows the car of the ride I am on at this moment (driver of a ride whose window contains now; whether passengers see it too — owner to decide, default: driver only). Tapping opens the car page (`/cars/:carId`: code, report an issue, tire fill/wash). REQUIREMENTS + UX_FLOWS first.
+
+## QA run 20 findings (2026-11-13/14; three passes in parallel on the disposable stack, all agents Sonnet; week 15–21.11; main @ c5c520a) — **awaiting owner triage**
+
+Pass 1 `qa-p1` (seed 9313, 40 members, 170 requests): a normal Sadran and members. Pass 2 `qa-p2` (seed 4713, 31 members, 141 requests): a **forgetful Sadran**, with two capabilities forbidden per day plus a 20 % dice roll per action. Pass 3 `qa-p3` (seed 4179, 30 members, 133 requests): a Sadran working from a phone, and **stumbling members** at 390 px, who forget the obvious route to a goal. Sun–Wed went through the UI and Thu–Sat through the CLI. Each department had one private car with a second owner, added by the lead. All weeks were published (pass 2 only Wed–Sat) and run live. "Verified" means the lead checked it in the data or the code; the rest is as reported by the agents.
+
+**Bugs**
+- R20B1 — (high, verified, all three passes) **Splitting a multi-day ride leaves parts that touch at 23:59 / 00:00 on the same car, and publishing then fails.** The turnaround exemption covers consecutive days of one series only, and after the split they are two series. Effects:
+  - `publish_siddur` raises `ride_turnaround_conflict`, and the toast names no car or ride.
+  - `publication_readiness` still says READY with 0 conflicts.
+  - The solver warns `FIXED_RIDE_CONFLICT`.
+  - Cancelling a middle part leaves an orphan part that `place` refuses (`series_car_unavailable`).
+  - The member sees a one-day ride "returning 23:59".
+  Cases: נועה מלכה (p1), יונתן צור on the Kia (p2), הילה שדה (p3; fixed only by a shift proposal shortening Monday to 22:00). Needs an owner decision, Q1.
+- R20B2 — (med, verified) **The driver removed from a merged ride by the Sadran (REQ 229) is never told, and /my says she withdrew it herself.** `leave_merged_ride` withdraws her request as `WITHDRAWN_BY_MEMBER`, so "מה קרה?" says "הוסרה על ידך". The notice loop skips the leaver, assuming the leaver is the actor. On an unpublished day nobody is told at all. The confirmation dialog says everyone will be notified. Fix: when the actor is not the leaver, notify the leaver and use a Sadran reason. Cases: טליה (p1), הילה שדה (p3), נטע גולן (p1, a published day).
+- R20B3 — (med, verified) **`split_series` notifies on unpublished days.** There is no `is_day_public` check, unlike `leave_merged_ride`, so members hear about a ride they cannot see yet (p3).
+- R20B4 — (med, verified) **The co-owner's `private_car_changed` notice goes out at once from the board**, while the rider's own notice waits for the next publish or "שלח". `_notify_private_car_owners` should follow the board hold (REQ §13.138). Case: p1 Thu, ride cdf5d68b.
+- R20B5 — (med, verified) **Auto-fill makes a member the driver of two overlapping rides.** עדי לוי drives her private car Mon 07:30–08:30 (p2), and `apply_solver_result` made her the driver of the minivan 08:00–11:00. The publish page only warns.
+- R20B6 — (med, reproduced twice by the agent) **Editing a request that overlaps one of my own multi-day requests, then tapping "השאר/י את שתיהן", fails with "מישהו אחר שינה את זה בינתיים"** and saves nothing. The retry probably sends a stale version. Case: p3 m11, a90bdab2, adding a child.
+- R20B7 — (med, verified) **Publishing a day expired a pending proposal** (p3 63e920db, audit reason `publish_siddur`), although the publish dialog says "הפרסום לא יבטל אותן". The Sadran got no notice. Q3.
+- R20B8 — (med, not checked) **A merged guest cannot move their departure within the host ride's hours.** p2 m15 (36bfa090, ride 06:30–16:15) moved 06:45 to 07:00, then to 07:15, and got `no_car` ("no car takes the new hours").
+- R20B9 — (low-med) **Buttons are not locked after the first tap.**
+  - A double tap on "סיימתי" logs two identical tire fills (p3 m30).
+  - A double tap on accept at `/p/<token>` shows the thanks screen plus "ההצעה כבר נענתה".
+  - A double tap on "פיצול" shows a success plus an error toast.
+- R20B10 — (low, verified by code) **The urea game logs the fill as soon as the tank is full.** The note field sits below the game, so a member who plays first cannot add a note. Fix: a "סיימתי" button instead of auto-saving, or the note above the game.
+- R20B11 — (low, verified) The car-name menu on the board briefly says "רכב פרטי — אין בעלים" until the profiles load; then it shows the owners. Fix: show "loading" until the names are in.
+- R20B12 — (low) A late request that lands on the waiting list gives the Sadran two notices, `late_request` and `waitlisted_request` (p1 טליה). The requirements say one.
+- R20B13 — (low) "העבר לרכב שלי" on a driverless ride confirms "X ינהג/תנהג ברכב…", but the ride stays without a driver (p2 fbd4375c).
+- R20B14 — (low) After editing an already-waitlisted request, the notice says "הרכב הקודם שוחרר" although there was no car (p3 m26).
+- R20B15 — (low) A ride that loses its driver and becomes a הקפצה keeps its whole round-trip span (e.g. 06:45–18:00), blocking the car all day (p2, p3).
+- R20B16 — (low) The outcome notice after a member accepts a "deny" proposal is vague: "שינוי בסידור שלך — ד׳ 18.11" with the body "ד׳ 18.11 06:30" (p2 m13).
+- R20B17 — (low, not checked) A second per-day auto-fill placed 3 more Monday requests that the first run had left (p2).
+- R20B18 — (low) `propose origin` names a car that is busy all day. The member accepts, the proposal is withdrawn as stale, and she is told "ההצעה שאישרת בוטלה" (p2, req 73fb9d48).
+
+**UI issues**
+- R20U1 — (med) At 390 px, the "החלפה עם…" submenu opens to the left and is clipped; the car names are cut off (p1).
+- R20U2 — (med) On a phone, the car-name menu (the glance and the swap) exists only in the table view (eye menu, "טבלה"); the default card view has no car menu (p3, both the siddur and the board).
+- R20U3 — (med) The car page's report and log actions sit behind a tiny unlabelled icon, and the natural targets do nothing: the "עוד לא תיעדו שטיפה" and "קילומטראז׳" cards. Fix: those cards open the matching step (p3).
+- R20U4 — (low-med) A driver who wants to leave a merged ride finds the options only under "בטל נסיעה", in a dialog titled "בטוח/ה שברצונך לבטל את הנסיעה?". A separate "אני לא נוהג/ת בנסיעה הזו" entry would be clearer (p1, p3).
+- R20U5 — (low, verified) The split dialog's "2 + 1" is drawn left-to-right and reads "1 then 2" to a Hebrew reader. Label the parts by days instead.
+- R20U6 — (low) A one-leg merge proposal says "הלוך בלבד — יציאה 06:30 במקום 11:00" but not that the 13:00 return stays uncovered (p1 רון, d14b1a4a).
+- R20U7 — (low) Assigning a volunteer driver is trial and error: `person_busy`, then the next name. There is no "who is free at these hours" (p2: four tries for one ride).
+- R20U8 — (low) At phone width, the publish page is 10,000–12,000 px tall (a flat list of every request), and the board header takes about 2 screens. The duplicate-children banners cannot be collapsed (p1, p3).
+- R20U9 — (low, verified) On the car page, "מיקום קבוע" shows blank for a car based at home (expected "בית (ברירת מחדל)").
+- R20U10 — (low) For a member, a shared car's page shows the whole edit form greyed out, and an empty "קוד הרכב" looks the same as a hidden one (p3).
+
+**Half-built**
+- R20H1 — Cancelling one day of a multi-day ride is possible only by splitting day by day and then cancelling that day: about 8 taps over 3 screens, with no hint. "ביטול" cancels every day, and "קיצור" trims only the ends (p3).
+- R20H2 — The board offers "פיצול" only on the series' first-day ride sheet; the other days' sheets have none (p2).
+- R20H3 — A lone one-way pair (home→X and X→home on one car) can be placed only by auto-fill. Dropping either leg alone is refused ("would strand the car's next ride"), so without auto-fill the Sadran is stuck (p2, the forgetful pass).
+- R20H4 — A freed-car offer that resolves to nobody leaves the Sadran no trace (p3: 5 offers closed in 0.1 s, among them a Tue minivan while child הקפצות were waiting; probably the driver rule, but nothing says why).
+
+**Missing**
+- R20M1 — **The Sadran does not learn about live-week events.** None of these produced a notice or a board marker: a driver leaving a ride, a member cancelling, a rider handing the wheel to a companion, an automatic freed-car placement, the Sadran's own proposal expiring. All three Sadrans found them only by re-reading days. Q4.
+
+**Forgetful Sadran (pass 2): fallbacks.** Most forgotten capabilities had a workable way round:
+- Auto-fill: place by hand.
+- Place: a second auto-fill run, or a trip-type change.
+- Proposals: the mailbox.
+- Send-all: `send-held`.
+Dead ends:
+- A volunteer driver: only a WhatsApp ask (expected).
+- A shift within flexibility: no other route.
+- A lone one-way pair without auto-fill (R20H3).
+
+**Stumbling members (pass 3).** Easy to recover:
+- Answering a proposal: the /my "מחכה לתשובה שלך" banner, 1 tap.
+- Joining a neighbour's ride: about 5 taps.
+- Changing a time: about 6 taps.
+- Adding a kid: about 5 taps.
+- Coming back from a notice link after the ride changed: the link still opens the right ride.
+Lost:
+- Cancelling one day (R20H1).
+- Logging care on the car page (R20U3).
+- The door code of a shared car (R20U10).
+
+**Seen working:**
+- REQ 227: one `private_car_changed` notice to the other owner, none for one's own change, both directions, links open the right ride.
+- REQ 229 on published days: one notice per rider, the ride keeps car and hours; "X ינהג/תנהג", including the companion-takes-over case.
+- The split dialog at phone width.
+- The car swap dialog (rides, blockers, where the car ends the day).
+- The freed car auto-assigned with one notice.
+- An edit by a driver of others asks first; a published-day edit that no car fits keeps the booking.
+- One publish notice per member.
+- Withdrawn proposals leave no stray notices.
+- No burst of notices for a single change in any pass. The highest count was 6 notices for one member over the whole week, all different events.
+
+**Questions for the owner:** Q1 R20B1 (split), Q2 a member's own edit in an open week unplaces a merged guest silently (p1, two cases), Q3 R20B7 (publish expiring proposals), Q4 R20M1 (Sadran live events), Q5 whether a volunteer driver's "אני לא יכול/ה לנהוג" should also offer the hand-over (p1). Answers go here.
+
+Not tested: car-now (needs today's week), plan B end to end (no unmet request in the three weeks carried one), a merge with a real detour, the car retire guard, "one way asks instead of refusing", dragging on a phone board.
