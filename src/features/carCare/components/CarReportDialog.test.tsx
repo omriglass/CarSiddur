@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   logCarCare: vi.fn(),
   logKilometrage: vi.fn(),
   currentKm: { data: null as null | { km: number; recorded_at: string }, isLoading: false },
+  car: { data: { fuel_type: null as null | string } },
 }));
 
 vi.mock("../hooks", () => ({
@@ -20,6 +21,7 @@ vi.mock("../hooks", () => ({
 
 vi.mock("@/features/cars/hooks", () => ({
   useCarCurrentKmQuery: () => mocks.currentKm,
+  useCarQuery: () => mocks.car,
 }));
 
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
@@ -29,6 +31,7 @@ beforeEach(() => {
   mocks.logCarCare.mockReset().mockResolvedValue("event-1");
   mocks.logKilometrage.mockReset().mockResolvedValue("reading-1");
   mocks.currentKm.data = null;
+  mocks.car.data = { fuel_type: null };
 });
 
 function show(onOpenChange = vi.fn()) {
@@ -43,6 +46,30 @@ describe("CarReportDialog", () => {
     expect(screen.getByText(he.carCare.homeTireFillTitle)).toBeInTheDocument();
     expect(screen.getByText(he.carCare.homeWashTitle)).toBeInTheDocument();
     expect(screen.getByText(he.carCare.homeKilometrageTitle)).toBeInTheDocument();
+  });
+
+  it("urea (FU2): a car that is not diesel offers no urea", () => {
+    show();
+    expect(screen.queryByText(he.carCare.homeUreaFillTitle)).not.toBeInTheDocument();
+    expect(screen.queryByText(he.carCare.homeUreaNeedTitle)).not.toBeInTheDocument();
+  });
+
+  it("urea on a diesel car", async () => {
+    mocks.car.data = { fuel_type: "diesel" };
+    const { onOpenChange } = show();
+    fireEvent.click(screen.getByTestId("car-urea-need"));
+    await waitFor(() => expect(mocks.reportIssue).toHaveBeenCalledWith({ carId: "car-1", category: "urea", description: he.carCare.ureaNeedDescription }));
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
+  });
+
+  it("urea fill: the game's skip logs a urea fill and shows the smiling boy", async () => {
+    mocks.car.data = { fuel_type: "diesel" };
+    show();
+    fireEvent.click(screen.getByTestId("car-urea-fill"));
+    expect(screen.getByTestId("urea-game")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: he.carCare.ureaSkip }));
+    await waitFor(() => expect(mocks.logCarCare).toHaveBeenCalledWith({ carId: "car-1", kind: "urea_fill" }));
+    expect(await screen.findByText(he.carCare.ureaCelebration)).toBeInTheDocument();
   });
 
   it("kilometrage: shows the last reading, keeps save disabled for non-numbers and logs a whole number", async () => {

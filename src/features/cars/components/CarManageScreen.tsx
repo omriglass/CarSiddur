@@ -1,7 +1,7 @@
 import { CarMaintenancePanel } from "@/features/fleet/components/CarMaintenancePanel";
 import { formatInTimeZone } from "date-fns-tz";
 import type { TireState } from "@/lib/enums";
-import { CarFront, ClipboardList, Droplets, History as HistoryIcon, Route, Wrench } from "lucide-react";
+import { CarFront, ClipboardList, Droplets, Fuel, History as HistoryIcon, Route, Wrench } from "lucide-react";
 import type { ReactNode } from "react";
 import { useMemo, useState } from "react";
 
@@ -72,7 +72,7 @@ function TireDots({ tires }: { tires: NonNullable<CarHistoryEntry["tires"]> }) {
 
 function historyRow(entry: CarHistoryEntry) {
   const timestamp = formatInTimeZone(new Date(entry.createdAt), TZ, "dd/MM/yyyy HH:mm");
-  const icon = entry.kind === "issue" ? Wrench : entry.kind === "tire_fill" ? CarFront : entry.kind === "kilometrage" ? Route : entry.kind === "task" ? ClipboardList : Droplets;
+  const icon = entry.kind === "issue" ? Wrench : entry.kind === "tire_fill" ? CarFront : entry.kind === "kilometrage" ? Route : entry.kind === "task" ? ClipboardList : entry.kind === "urea_fill" ? Fuel : Droplets;
   const Icon = icon;
   return (
     <Card key={`${entry.kind}:${entry.id}`} className="bg-gradient-card shadow-card">
@@ -90,7 +90,7 @@ function historyRow(entry: CarHistoryEntry) {
                     ? "historyKindTireFill"
                     : entry.kind === "kilometrage"
                       ? entry.odometerKind === "correction" ? "historyKindKilometrageCorrection" : "historyKindKilometrage"
-                      : "historyKindWash"
+                      : entry.kind === "urea_fill" ? "historyKindUreaFill" : "historyKindWash"
               ]}
             </span>
             <span className="text-xs text-muted-foreground" dir="ltr">{timestamp}</span>
@@ -190,6 +190,7 @@ export function CarManageScreen({ car, isAdmin, canEdit, canManageCar, canDefine
     { value: "issue", label: he.carPage.historyFilterIssue },
     { value: "tire_fill", label: he.carPage.historyFilterTireFill },
     { value: "wash", label: he.carPage.historyFilterWash },
+    ...(car.fuel_type === "diesel" ? [{ value: "urea_fill" as const, label: he.carPage.historyFilterUrea }] : []),
     { value: "kilometrage", label: he.carPage.historyFilterKilometrage },
     ...(canManageCar ? [{ value: "task" as const, label: he.carTasks.historyFilter }] : []),
   ];

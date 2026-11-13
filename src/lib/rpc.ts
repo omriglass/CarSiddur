@@ -44,6 +44,7 @@ export type ErrorCode =
   | "handover_not_possible"
   | "handover_driver_invalid"
   | "tires_none_checked"
+  | "car_not_diesel"
   | "kilometrage_lower_than_last"
   | "invalid_kilometrage"
   | "checklist_incomplete"
@@ -393,6 +394,7 @@ const MESSAGE_TO_CODE: Record<string, ErrorCode> = {
   handover_not_possible: "handover_not_possible",
   handover_driver_invalid: "handover_driver_invalid",
   tires_none_checked: "tires_none_checked",
+  car_not_diesel: "car_not_diesel",
   kilometrage_lower_than_last: "kilometrage_lower_than_last",
   invalid_kilometrage: "invalid_kilometrage",
   checklist_incomplete: "checklist_incomplete",
@@ -557,6 +559,7 @@ const CODE_TO_MESSAGE: Record<ErrorCode, string> = {
   handover_not_possible: he.errors.handoverNotPossible,
   handover_driver_invalid: he.errors.handoverDriverInvalid,
   tires_none_checked: he.errors.tiresNoneChecked,
+  car_not_diesel: he.errors.carNotDiesel,
   kilometrage_lower_than_last: he.errors.kilometrageLowerThanLast,
   invalid_kilometrage: he.errors.invalidKilometrage,
   checklist_incomplete: he.carChecklist.errors.incomplete,

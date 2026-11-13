@@ -29,7 +29,7 @@ export function parseTireStates(value: unknown): TireStates | null {
 }
 
 /** One row of the merged, date-descending car history list (`CarManageScreen`'s History section). */
-export type CarHistoryKind = "issue" | "tire_fill" | "wash" | "kilometrage" | "task";
+export type CarHistoryKind = "issue" | "tire_fill" | "wash" | "urea_fill" | "kilometrage" | "task";
 
 export interface CarHistoryEntry {
   id: string;

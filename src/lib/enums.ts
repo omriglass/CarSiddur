@@ -293,6 +293,7 @@ export const CAR_ISSUE_CATEGORIES = [
   "mechanical",
   "lighting",
   "physical_damage",
+  "urea",
 ] as const satisfies readonly Enums<"car_issue_category">[];
 export type CarIssueCategory = (typeof CAR_ISSUE_CATEGORIES)[number];
 export const carIssueCategorySchema = z.enum(CAR_ISSUE_CATEGORIES);
@@ -304,6 +305,7 @@ assertSameEnum<CarIssueCategory, Enums<"car_issue_category">>();
 export const CAR_CARE_KINDS = [
   "tire_fill",
   "wash",
+  "urea_fill",
 ] as const satisfies readonly Enums<"car_care_kind">[];
 export type CarCareKind = (typeof CAR_CARE_KINDS)[number];
 export const carCareKindSchema = z.enum(CAR_CARE_KINDS);

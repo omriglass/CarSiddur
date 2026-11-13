@@ -112,8 +112,8 @@ create type public.car_type             as enum ('shared','temporary');
 create type public.car_status           as enum ('active','maintenance','retired');
 create type public.car_fuel_type        as enum ('gasoline','diesel','electric');  -- REQ item 217 (2026-11-13), own migration file
 create type public.car_issue_status     as enum ('open','resolved');
-create type public.car_issue_category   as enum ('warning_light','mechanical','lighting','physical_damage');  -- REQ §6.6
-create type public.car_care_kind        as enum ('tire_fill','wash');                                         -- REQ §6.6
+create type public.car_issue_category   as enum ('warning_light','mechanical','lighting','physical_damage','urea');  -- REQ §6.6; 'urea' REQ item 219 (2026-11-13)
+create type public.car_care_kind        as enum ('tire_fill','wash','urea_fill');                             -- REQ §6.6; 'urea_fill' REQ item 219 (2026-11-13)
 create type public.tire_state           as enum ('ok','low','very_low','unchecked');  -- green/yellow(2-5psi)/red(>5psi), REQ §6.6; 'unchecked' = not looked at (REQ §13.124, 20261024090250)
 create type public.solver_run_status    as enum ('succeeded','failed');
 create type public.freed_offer_status   as enum ('open','auto_assigned','pending_approval','approved','expired','closed');
@@ -388,7 +388,7 @@ Index `(car_id) where status = 'open'`. Insert-only via `report_car_issue(_car_i
 | id | uuid | NN | | PK |
 | department_id | uuid | NN | | denormalized from car |
 | car_id | uuid | NN | | FK cars ON DELETE CASCADE |
-| kind | car_care_kind | NN | | `tire_fill` \| `wash` |
+| kind | car_care_kind | NN | | `tire_fill` \| `wash` \| `urea_fill` (diesel cars only, `log_car_care` raises `car_not_diesel`; REQ item 219). CHECK `car_care_events_tires_ck`: tires only and always on a tire fill |
 | tires | jsonb | | | `{front_left, front_right, rear_left, rear_right, spare}`, each a `tire_state` (`unchecked` = not checked, REQ §13.124; `log_car_care` refuses all five unchecked with `tires_none_checked`, and counts `unchecked` as neither low nor very_low); required (and validated) iff `kind = 'tire_fill'`, null iff `kind = 'wash'` (CHECK) |
 | note | text | | | optional |
 | reported_by | uuid | NN | | FK profiles |
@@ -432,6 +432,7 @@ Index `(car_id, recorded_at desc, id)`. RLS enabled + forced; **SELECT only**: `
 
 - `log_car_kilometrage(p_car_id, p_km) returns uuid` — SECURITY DEFINER; `member_of(car's department)` (the rule of `log_car_care`); locks the car row, refuses `p_km` below the car's last value with `kilometrage_lower_than_last` (equal is fine), out-of-range/null with `invalid_kilometrage`, a missing car with `car_not_found`, a non-member with `not_authorized`. Sends no notification.
 - `set_car_kilometrage(p_car_id, p_km, p_note default null) returns uuid` — SECURITY DEFINER; `can_manage_car(p_car_id)` only; any value, recorded as `kind = 'correction'`.
+- `log_car_care(_car_id, _kind, _tires, _note)` / `report_car_issue(…, _category, …)` (REQ item 219, `20261113120200`): `urea_fill` and category `urea` only on a `fuel_type = 'diesel'` car (`car_not_diesel`); a `urea_fill` resolves the car's open `urea` issues (`car_issues_protect_resolution_fields` lets exactly that change through, `app.urea_fill_car`); car tasks are completed by `tire_fill`/`wash` only.
 - `set_own_private_car(p_car_id, p_owner_id default null) returns void` — SECURITY DEFINER (REQ item 215, `20261113100200`); only the private car's own owner (`type = 'temporary' and owner_id = auth.uid()`); null = give it back (shared, no owner), else hand it to an approved member of the car's department. `cars_protect_owner_editable_fields` lets exactly this row change through (`app.own_private_car` = the car id; nothing but `type`/`owner_id` may differ).
 
 #### `car_tasks` and `car_task_notices` (REQ item 150 b, `20261028170100`–`170400`)

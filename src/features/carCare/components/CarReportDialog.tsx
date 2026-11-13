@@ -1,5 +1,5 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { AlertTriangle, Droplets, Gauge, Route } from "lucide-react";
+import { AlertTriangle, Droplets, Fuel, Gauge, Route } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
@@ -12,23 +12,24 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Textarea } from "@/components/ui/textarea";
 import { useScrollToFirstError } from "@/components/useScrollToFirstError";
-import { useCarCurrentKmQuery } from "@/features/cars/hooks";
+import { useCarCurrentKmQuery, useCarQuery } from "@/features/cars/hooks";
 import { he, tv } from "@/i18n/he";
 import { formatKm, parseKm } from "@/features/cars/lib/kilometrage";
 import { formatDayDate } from "@/lib/dayLabels";
 
 import { useLogCarCareMutation, useLogCarKilometrageMutation, useReportCarIssueMutation } from "../hooks";
 import {
-  CAR_ISSUE_CATEGORIES,
+  PROBLEM_CATEGORIES,
   carIssueReportSchema,
   anyTireChecked,
   DEFAULT_TIRE_STATES,
   type CarIssueReportValues,
 } from "../schema";
 import { TireFillPanel } from "./TireFillPanel";
+import { UreaCelebration, UreaGame } from "./UreaGame";
 import { WashCelebration, WashGame } from "./WashGame";
 
-type View = "home" | "problem" | "tires" | "wash" | "km" | "tiresDone" | "washDone";
+type View = "home" | "problem" | "tires" | "wash" | "urea" | "km" | "tiresDone" | "washDone" | "ureaDone";
 
 /** How long the wash/tire-fill celebration shows before the dialog auto-closes. */
 const CELEBRATION_MS = 3500;
@@ -59,6 +60,8 @@ export function CarReportDialog({ carId, carName, open, onOpenChange, initialVie
   const logCarCareMutation = useLogCarCareMutation();
   const logKilometrageMutation = useLogCarKilometrageMutation();
   const currentKmQuery = useCarCurrentKmQuery(carId, open && view === "km");
+  // FU2 (REQ item 219): urea only on a diesel car (the fuel type is on the car row).
+  const isDiesel = useCarQuery(open ? carId : undefined).data?.fuel_type === "diesel";
   const kmValue = parseKm(kmText);
 
   const form = useForm<CarIssueReportValues>({
@@ -81,7 +84,7 @@ export function CarReportDialog({ carId, carName, open, onOpenChange, initialVie
   }
 
   useEffect(() => {
-    if (view !== "tiresDone" && view !== "washDone") return undefined;
+    if (view !== "tiresDone" && view !== "washDone" && view !== "ureaDone") return undefined;
     const timer = setTimeout(() => handleOpenChange(false), CELEBRATION_MS);
     return () => clearTimeout(timer);
     // `handleOpenChange` is stable enough here (closes over props that don't change while this
@@ -115,6 +118,25 @@ export function CarReportDialog({ carId, carName, open, onOpenChange, initialVie
       setView("washDone");
     } catch {
       // already toasted by useLogCarCareMutation's onError
+    }
+  }
+
+  async function submitUreaFill() {
+    try {
+      await logCarCareMutation.mutateAsync({ carId, kind: "urea_fill" });
+      setView("ureaDone");
+    } catch {
+      // already toasted by useLogCarCareMutation's onError
+    }
+  }
+
+  async function submitUreaNeed() {
+    try {
+      await reportIssueMutation.mutateAsync({ carId, category: "urea", description: he.carCare.ureaNeedDescription });
+      toast.success(he.carCare.ureaNeedSaved);
+      handleOpenChange(false);
+    } catch {
+      // already toasted by useReportCarIssueMutation's onError
     }
   }
 
@@ -164,6 +186,29 @@ export function CarReportDialog({ carId, carName, open, onOpenChange, initialVie
               <Droplets className="size-6 shrink-0 text-booked" aria-hidden="true" />
               <span className="font-medium">{he.carCare.homeWashTitle}</span>
             </button>
+            {isDiesel ? (
+              <>
+                <button
+                  type="button"
+                  disabled={reportIssueMutation.isPending}
+                  onClick={() => void submitUreaNeed()}
+                  data-testid="car-urea-need"
+                  className="flex min-h-16 items-center gap-3 rounded-lg border p-4 text-start transition-smooth hover:bg-accent/40"
+                >
+                  <Fuel className="size-6 shrink-0 text-destructive" aria-hidden="true" />
+                  <span className="font-medium">{he.carCare.homeUreaNeedTitle}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setView("urea")}
+                  data-testid="car-urea-fill"
+                  className="flex min-h-16 items-center gap-3 rounded-lg border p-4 text-start transition-smooth hover:bg-accent/40"
+                >
+                  <Fuel className="size-6 shrink-0 text-booked" aria-hidden="true" />
+                  <span className="font-medium">{he.carCare.homeUreaFillTitle}</span>
+                </button>
+              </>
+            ) : null}
             <button
               type="button"
               onClick={() => setView("km")}
@@ -186,7 +231,7 @@ export function CarReportDialog({ carId, carName, open, onOpenChange, initialVie
                     <FormLabel>{he.carCare.categoryLabel}</FormLabel>
                     <FormControl>
                       <RadioGroup value={field.value ?? ""} onValueChange={field.onChange} className="gap-2">
-                        {CAR_ISSUE_CATEGORIES.map((category) => (
+                        {PROBLEM_CATEGORIES.map((category) => (
                           <label key={category} className="flex min-h-11 items-center gap-2 rounded-md border p-2 text-sm">
                             <RadioGroupItem value={category} />
                             {he.carCare.category[category]}
@@ -241,6 +286,10 @@ export function CarReportDialog({ carId, carName, open, onOpenChange, initialVie
           <WashGame onDone={submitWash} disabled={logCarCareMutation.isPending} onBack={() => setView("home")} />
         ) : null}
 
+        {view === "urea" ? (
+          <UreaGame onDone={submitUreaFill} disabled={logCarCareMutation.isPending} onBack={() => setView("home")} />
+        ) : null}
+
         {view === "km" ? (
           <div className="flex flex-col gap-4">
             <p className="text-sm text-muted-foreground" data-testid="car-km-last">
@@ -281,6 +330,7 @@ export function CarReportDialog({ carId, carName, open, onOpenChange, initialVie
 
         {view === "tiresDone" ? <CelebrationMessage message={he.carCare.tireCelebration} /> : null}
         {view === "washDone" ? <WashCelebration message={he.carCare.washCelebration} /> : null}
+        {view === "ureaDone" ? <UreaCelebration message={he.carCare.ureaCelebration} /> : null}
       </PortalDialogContent>
     </Dialog>
   );

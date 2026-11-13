@@ -8331,7 +8331,7 @@ export type Database = {
       answer_channel: "token" | "session" | "sadran"
       approval_status: "pending" | "approved" | "blocked"
       audit_action: "insert" | "update" | "delete"
-      car_care_kind: "tire_fill" | "wash"
+      car_care_kind: "tire_fill" | "wash" | "urea_fill"
       car_checklist_item_kind: "yes_no" | "number" | "date"
       car_fuel_type: "gasoline" | "diesel" | "electric"
       car_issue_category:
@@ -8339,6 +8339,7 @@ export type Database = {
         | "mechanical"
         | "lighting"
         | "physical_damage"
+        | "urea"
       car_issue_status: "open" | "resolved"
       car_odometer_kind: "reading" | "correction"
       car_status: "active" | "maintenance" | "retired"
@@ -8584,7 +8585,7 @@ export const Constants = {
       answer_channel: ["token", "session", "sadran"],
       approval_status: ["pending", "approved", "blocked"],
       audit_action: ["insert", "update", "delete"],
-      car_care_kind: ["tire_fill", "wash"],
+      car_care_kind: ["tire_fill", "wash", "urea_fill"],
       car_checklist_item_kind: ["yes_no", "number", "date"],
       car_fuel_type: ["gasoline", "diesel", "electric"],
       car_issue_category: [
@@ -8592,6 +8593,7 @@ export const Constants = {
         "mechanical",
         "lighting",
         "physical_damage",
+        "urea",
       ],
       car_issue_status: ["open", "resolved"],
       car_odometer_kind: ["reading", "correction"],

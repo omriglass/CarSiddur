@@ -13,6 +13,9 @@ import type { CarIssueCategory, TireState } from "@/lib/enums";
  * `npm run typecheck`.
  */
 export { CAR_ISSUE_CATEGORIES };
+
+/** The problem form's categories: "urea" has its own button on diesel cars (FU2, REQ item 219). */
+export const PROBLEM_CATEGORIES = CAR_ISSUE_CATEGORIES.filter((category) => category !== "urea");
 export type { CarIssueCategory };
 
 /**

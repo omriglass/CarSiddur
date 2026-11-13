@@ -252,6 +252,8 @@ from (values
   ('issue_physical_damage', '{{byName}} דיווח/ה על נזק לרכב {{carName}}', '{{description}}'),
   ('tire_fill', '{{byName}} מילא/ה אוויר בצמיגי {{carName}}', '{{lowCount}} צמיגים נמוכים, {{veryLowCount}} נמוכים מאוד'),
   ('wash', '{{byName}} שטף/ה את {{carName}}', '{{carName}} נקי/ה ומוכן/ה לנסיעה'),
+  ('issue_urea', '{{byName}} דיווח/ה שצריך אוראה ברכב {{carName}}', '{{description}}'),
+  ('urea_fill', '{{byName}} מילא/ה אוראה ב{{carName}}', '{{carName}} מוכן/ה לנסיעה'),
   ('checklist_requested', 'את/ה אחראי/ת על {{carName}} — צריך למלא בדיקת רכב', 'נא למלא את רשימת הבדיקה של {{carName}} בדף הרכב (״בדיקת רכב״).'),
   ('checklist_dates', 'מועדים מתקרבים ברכבים', '{{list}}')
 ) as t(variant, title, body)

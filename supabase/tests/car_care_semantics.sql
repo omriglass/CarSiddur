@@ -119,6 +119,31 @@ begin
   exception when raise_exception then
     if sqlerrm <> 'tires_none_checked' then raise; end if;
   end;
+
+  -- ---------------------------------------------------------------------------
+  -- FU2 (REQ item 219): urea only on a diesel car; a fill resolves the open "צריך אוראה".
+  -- ---------------------------------------------------------------------------
+  update public.cars set fuel_type = 'gasoline' where id = car_with_responsible;
+  begin
+    perform public.log_car_care(car_with_responsible, 'urea_fill'::public.car_care_kind);
+    raise exception 'urea on a gasoline car should be refused';
+  exception when raise_exception then
+    if sqlerrm <> 'car_not_diesel' then raise; end if;
+  end;
+  begin
+    perform public.report_car_issue(car_with_responsible, 'urea'::public.car_issue_category, 'צריך אוראה', null);
+    raise exception 'a urea report on a gasoline car should be refused';
+  exception when raise_exception then
+    if sqlerrm <> 'car_not_diesel' then raise; end if;
+  end;
+  update public.cars set fuel_type = 'diesel' where id = car_with_responsible;
+  issue_id := public.report_car_issue(car_with_responsible, 'urea'::public.car_issue_category, 'צריך אוראה', null);
+  assert exists (select 1 from public.notifications where recipient_id = responsible and data->>'issue_id' = issue_id::text
+    and data->>'variant' = 'issue_urea' and title_he not like '%{{%'), 'the responsible person hears about the urea need';
+  fill_id := public.log_car_care(car_with_responsible, 'urea_fill'::public.car_care_kind);
+  assert (select status = 'resolved' and resolved_by = reporter from public.car_issues where id = issue_id), 'the fill resolves the urea report';
+  assert exists (select 1 from public.notifications where recipient_id = responsible and data->>'car_care_event_id' = fill_id::text
+    and data->>'variant' = 'urea_fill' and title_he not like '%{{%'), 'the responsible person hears about the fill';
 end $$;
 
 -- ---------------------------------------------------------------------------
