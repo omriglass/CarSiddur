@@ -242,6 +242,7 @@ begin
     'REQ 13.162: a department-A Sadran must not close a department-B request';
   -- REQ §13.103: car move + series shortening
   perform pg_temp.expect_refused('rides.mark_car_move', format('select public.mark_car_move(%L, %L, %L, %L::timestamptz, 30)', car_b, gen_random_uuid(), gen_random_uuid(), date_trunc('hour', now()) + interval '10 days'));
+  perform pg_temp.expect_refused('rides.leave_merged_ride', format('select public.leave_merged_ride(%L, %s, null)', ride_b, ride_b_version));
   perform pg_temp.expect_refused('requests.split_series', format('select public.split_series(%L, array[1], null)', req_b));
   perform pg_temp.expect_refused('requests.shorten_series', format('select public.shorten_series(%L, now() + interval ''10 days'', now() + interval ''12 days'')', req_b));
   perform pg_temp.expect_refused('rides.join_drop_off_legs', format('select public.join_drop_off_legs(%L, %L, %L)', req_b, ride_b, ride_b_version));
@@ -454,7 +455,7 @@ declare
     'create_policy_version','set_policy_active','policy_week_alignment','resolve_waitlist_group','cancel_waitlist_group','join_waitlist_discussion','waitlist_group_holds','siddur_waitlist','place_waiting_request',
     'place_travel_for_week','car_start_locations','set_my_default_origin','set_my_preferred_car','route_minutes_preview','request_notes','request_history',
     'my_co_guardians','set_ride_driver','withdraw_duplicate_request','restore_duplicate_request','close_request','restore_closed_request','sadran_cancel_ride','place_on_own_car','set_own_private_car','add_car_owner','remove_car_owner','child_request_overlaps',
-    'mark_car_move','shorten_series','split_series','join_drop_off_legs','place_series_on_car',
+    'mark_car_move','shorten_series','split_series','leave_merged_ride','join_drop_off_legs','place_series_on_car',
     'create_car_maintenance','update_car_maintenance','delete_car_maintenance','report_car_issue_unsafe_maintenance'
   ];
   -- 'name:one-word-reason'. Duplicated names (day_date_label has two overloads) are fine —

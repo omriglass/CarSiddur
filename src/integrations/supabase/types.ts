@@ -7013,6 +7013,14 @@ export type Database = {
           starts_at: string
         }[]
       }
+      leave_merged_ride: {
+        Args: {
+          p_expected_version: number
+          p_new_driver?: string
+          p_ride_id: string
+        }
+        Returns: Json
+      }
       log_car_care: {
         Args: {
           _car_id: string

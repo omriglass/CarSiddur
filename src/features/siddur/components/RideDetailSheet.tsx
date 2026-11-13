@@ -98,6 +98,8 @@ interface RideDetailSheetProps {
   movingToCar?: boolean;
   /** REQ §13.129 (b): drivers who can take over; when present the cancel dialog offers "remove me" first. */
   handOverOptions?: readonly HandOverCandidate[];
+  /** REQ item 229: on a merge, the driver may leave with nobody driving (the ride waits for a driver). */
+  onLeaveNoDriver?: () => void;
   onHandOver?: (newDriverId: string) => void;
   handingOver?: boolean;
 }
@@ -110,7 +112,7 @@ interface RideDetailSheetProps {
  * §13.85; the `/requests/new?ride=` prefill path itself is untouched, still reachable from the
  * joinable-rides dialog after a waiting-list outcome).
  */
-export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = null, onOpenChange, editor, coordinatorNotes, canEditPublicNotes, onRemoveOwnRide, removingOwnRide = false, onRemoveMe, removingMe = false, editRequestLinks = [], showAddPassengers = false, weekRides, moveToCarOptions = [], onMoveToCar, movingToCar = false, handOverOptions = [], onHandOver, handingOver = false }: RideDetailSheetProps) {
+export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = null, onOpenChange, editor, coordinatorNotes, canEditPublicNotes, onRemoveOwnRide, removingOwnRide = false, onRemoveMe, removingMe = false, editRequestLinks = [], showAddPassengers = false, weekRides, moveToCarOptions = [], onMoveToCar, movingToCar = false, handOverOptions = [], onHandOver, onLeaveNoDriver, handingOver = false }: RideDetailSheetProps) {
   const [confirmCancel, setConfirmCancel] = useState(false);
   const viewerId = useSession().session?.user.id;
   const [confirmRemoveMe, setConfirmRemoveMe] = useState(false);
@@ -283,20 +285,26 @@ export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = 
                     open={confirmCancel}
                     onOpenChange={setConfirmCancel}
                     title={he.request.cancelConfirmTitle}
-                    confirmLabel={handOverOptions.length && onHandOver ? he.rideDetail.cancelForAll : t("action.cancelRide")}
+                    confirmLabel={(handOverOptions.length && onHandOver) || onLeaveNoDriver ? he.rideDetail.cancelForAll : t("action.cancelRide")}
                     destructive
                     loading={removingOwnRide || handingOver}
                     onConfirm={() => { setConfirmCancel(false); onRemoveOwnRide(); }}
                   >
                     {/* REQ §13.129 (b): the driver may instead hand the ride to someone on it who drives. */}
-                    {handOverOptions.length && onHandOver ? (
+                    {(handOverOptions.length && onHandOver) || onLeaveNoDriver ? (
                       <div className="space-y-2">
-                        {handOverOptions.map((option) => (
+                        {onHandOver ? handOverOptions.map((option) => (
                           <Button key={option.id} type="button" className="w-full" variant="outline" disabled={handingOver} data-testid="hand-over-option"
                             onClick={() => { setConfirmCancel(false); onHandOver(option.id); }}>
                             {tv("rideDetail.handOverOption", { name: option.name })}
                           </Button>
-                        ))}
+                        )) : null}
+                        {onLeaveNoDriver ? (
+                          <Button type="button" className="w-full" variant="outline" disabled={handingOver} data-testid="leave-no-driver"
+                            onClick={() => { setConfirmCancel(false); onLeaveNoDriver(); }}>
+                            {he.rideDetail.leaveNoDriver}
+                          </Button>
+                        ) : null}
                       </div>
                     ) : null}
                   </ConfirmDialog>

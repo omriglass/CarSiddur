@@ -13,6 +13,7 @@ vi.mock("@/features/rides/components/RidePassengersList", () => ({ RidePassenger
 vi.mock("@/features/rides/components/AddPassengersDialog", () => ({ AddPassengersDialog: () => <div data-testid="stub-add-passengers" /> }));
 vi.mock("@/features/rides/components/RidePersonBlocks", () => ({ RidePersonBlocks: () => <div /> }));
 vi.mock("@/features/rides/components/RideRoute", () => ({ RideRoute: () => <div /> }));
+vi.mock("@/features/rides/components/LeaveMergedRideActions", () => ({ LeaveMergedRideActions: () => <div data-testid="stub-leave-merged" /> }));
 vi.mock("@/features/rides/components/RideRouteStops", () => ({ RideRouteStops: () => <div data-testid="stub-route-stops" /> }));
 vi.mock("./RideRouteEditor", () => ({ RideRouteEditor: () => <div /> }));
 vi.mock("./RidePassengersEditor", () => ({ RidePassengersEditor: () => <div /> }));
