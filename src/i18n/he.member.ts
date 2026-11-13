@@ -1205,7 +1205,7 @@ export const heMember = {
     homeUreaFillTitle: "מילאתי אוראה",
     ureaNeedDescription: "צריך למלא אוראה",
     ureaNeedSaved: "תודה, האחראי/ת על הרכב יקבל/תקבל הודעה",
-    ureaPrompt: "גרור/י כדי לכוון את הזרם אל המשפך",
+    ureaPrompt: "גרור/י את הכוונת כדי לכוון את הזרם אל המשפך",
     ureaProgress: "{{percent}}% מלא",
     ureaSkip: "דלג ותעד מילוי אוראה",
     ureaCelebration: "תודה! האוראה מלאה",
