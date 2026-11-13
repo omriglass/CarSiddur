@@ -1645,3 +1645,19 @@ Reported, not yet checked:
 Seen working: a cancelled ride discards its drafts; duplicate draft returns the same id; publish refuses with drafts; the one-way prompt in the board UI and the board updating without a reload; ride sheet at 375×667 scrolls with ✕ and buttons reachable; three requests on one ride with one-way guests, unmerge and re-merge; `cancel-ride --close/--continue`; one publish notice per member, all 70 rides the same for every one of the 34 members; member edits on a live day (one notice each; "drives others" asks first); shorten a series. `week_parts` equals the old API calls for the QA week after the run (35 accounts, 7,080 rows, 0 differ). No command over 3 s under the cap; health check 0 errors.
 
 Not exercised: car swap (UI and CLI), retiring a car, the private-car switch, the new one-way request question, "שלח הצעות / עדכונים" in the UI, drag and drop, freed-car offers, waiting-list groups, plan B proposals, the two-whole-days recovery (car was taken), a second three-request ride.
+
+### QA run 19 — targeted pass (2026-11-13, same week and cap, one Sonnet agent, mostly through the browser)
+
+Passed: car swap from the member siddur and by dragging car headers on the board (rides listed, "ביקשו את הרכב הזה במיוחד: … בדקת איתם?" as a warning, one `car_swapped` notice per rider, none for the swapper, screens updated without a reload; a multi-day swap moved the whole closed set of 8 rides over 3 days); retiring a car with upcoming rides is refused with the Hebrew reason and changes nothing, an empty car retires and comes back; the private-car switch asks in both directions with the owner's texts, cancel changes nothing; "שלח הצעות / עדכונים" in the browser (per day, per person, the exact texts; an unticked notice stays held; one notice each); a freed car auto-assigned to the one waiting member in 0.3 s with one notice. No action clearly over 3 s.
+
+Findings (older code unless marked):
+- R19B9 — **The board's swap toast says "נשלחו N הודעות" although the notices are held** until "שלח הצעות / עדכונים" (`swap_day_cars` counts enqueue calls; the board holds them). Checked: 3 `held_notices`, no `notifications`.
+- R19B10 — The multi-day swap dialog says "8 נסיעות ב־3 ימים" but lists 7 (the missing one: a series leg, cf797db2, Wed 00:00–18:30). Not checked.
+- R19B11 — The luggage refusal line appears twice in the swap dialog's "לא ניתן להחליף". Not checked.
+- R19B12 — The swap dialog labels round trips by the ride's end place ("ניר דהן לגבעת חביבה") where the siddur says "ניר למענית". Not checked.
+- R19B13 — The private-car owner saw no switch on their own car page (אורי טל, `/cars/59d15b1b`); only the Sadran could switch. And while an owner is not yet picked, the "make private" dialog counts the owner's own rides as "נהג/ת אחר/ת" (REQ item 212 text, this branch). Not checked.
+- R19B14 — The new-car form shows "Invalid uuid" in English when no department is chosen. Not checked.
+- R19B2 revised: when the driver cancels, the ride takes the hours of whoever still rides (second case: 06:30–17:15 became 07:45–17:45, the remaining rider's own request) — that is the notice's "בשעות שביקשת". The 23:30 in the first case came only from R19B1's wrong merge. R19B1 was not reproduced a second time (every attempt was refused for a long detour first).
+- Not a bug: "riders on the other days of a multi-day swap heard nothing" — the one unnotified person was the member who made the swap, and one notice per person names one ride by design (REQ item 186).
+
+Still not exercised: the question on a new one-way request and a member's edit to one way in the form (REQ items 210/211; covered by `one_way_change_asks.sql` and `request-edit.spec.ts` only), a waiting-list group, a freed car with two candidates, dragging and resizing rides on the board in the browser.
