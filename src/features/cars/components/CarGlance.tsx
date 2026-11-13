@@ -10,7 +10,7 @@ import { CarFuelChip } from "./CarFuelChip";
  * fuel, whose car it is ("הרכב של …" for a private car, else "אחראי/ת רכב: …"), the last wash and — on a diesel
  * car — the last urea fill. Mounted only while the menu is open, so the reads run on demand.
  */
-export function CarGlance({ carId }: { carId: string }) {
+export function CarGlance({ carId, showUrea = true }: { carId: string; /** Off on the board (owner 2026-11-13). */ showUrea?: boolean }) {
   const car = useCarQuery(carId).data;
   const care = useCarCareHistoryQuery(carId).data;
   const profiles = useAllProfiles().data;
@@ -31,7 +31,7 @@ export function CarGlance({ carId }: { carId: string }) {
       </div>
       {owner ? <p>{tv("carPage.glanceOwner", { name: owner })}</p> : responsible ? <p>{tv("carPage.glanceResponsible", { name: responsible })}</p> : null}
       {lastWash ? <p className="text-muted-foreground">{tv("carPage.mood.lastWash", { date: formatDayDate(lastWash) })}</p> : null}
-      {car.fuel_type === "diesel" ? (
+      {showUrea && car.fuel_type === "diesel" ? (
         <p className="text-muted-foreground" data-testid="car-glance-urea">
           {lastUrea ? tv("carPage.lastUreaFill", { date: formatDayDate(lastUrea) }) : he.carPage.lastUreaNever}
         </p>

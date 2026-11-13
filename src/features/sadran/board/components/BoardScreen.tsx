@@ -551,7 +551,7 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
             canSwapCars={board.boardCanSwapCars}
             enableCarReport
             onOpenCarPage={(carId) => navigate(paths.car(carId))}
-                renderCarGlance={(carId) => <CarGlance carId={carId} />}
+                renderCarGlance={(carId) => <CarGlance carId={carId} showUrea={false} />}
             onCarSwap={(carA, carB) => { dnd.setCarSwapPair({ carA, carB }); }}
           />
         </div>
