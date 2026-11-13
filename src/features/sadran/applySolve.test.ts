@@ -233,6 +233,18 @@ describe("boardRideToFixedRide large luggage (REQ §13.111 a)", () => {
     const fixed = boardRideToFixedRide(rideWith([entry("a", {}), entry("b", { luggage_waived: true }), entry("c", { luggage: false })]), Date.parse("2026-09-06T00:00:00Z"));
     expect(fixed?.luggageCount).toBe(1);
   });
+
+  it("R19B3: the load is the larger leg's — an out-only and a return-only rider share a seat", () => {
+    const fixed = boardRideToFixedRide(rideWith([
+      entry("driver", { role: "driver", adults: 3, luggage: false }),
+      entry("out", { leg: "out", luggage: false }),
+      entry("both", { luggage: false }),
+      entry("ret", { leg: "return", luggage: false }),
+    ]), Date.parse("2026-09-06T00:00:00Z"));
+    expect(fixed?.passengers).toEqual({ adults: 5, childSeats: 0, boosters: 0 });
+    const luggage = boardRideToFixedRide(rideWith([entry("o", { leg: "out" }), entry("r", { leg: "return" })]), Date.parse("2026-09-06T00:00:00Z"));
+    expect(luggage?.luggageCount).toBe(1);
+  });
 });
 
 describe("computeFullResolveDiff (confirm-dialog data for 're-solve the whole week')", () => {

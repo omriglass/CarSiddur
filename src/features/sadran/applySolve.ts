@@ -134,7 +134,10 @@ export function boardRideToFixedRide(ride: BoardRide, weekStartMs: number): Fixe
     destinationId: ride.destination_id as string,
     role: s.role,
   }));
-  const passengers: Passengers = served.reduce<Passengers>(
+  // R19B3: a ride carries its out leg and its return leg at different times — an out-only and a return-only rider
+  // share a seat. The load is the larger leg's, per seat kind (conservative: never below either leg).
+  const onLeg = (leg: "out" | "return") => served.filter((s) => s.leg === leg || s.leg === "both");
+  const loadOf = (rows: typeof served): Passengers => rows.reduce<Passengers>(
     (acc, s) => ({
       adults: acc.adults + s.adults,
       childSeats: acc.childSeats + s.child_seats,
@@ -142,8 +145,16 @@ export function boardRideToFixedRide(ride: BoardRide, weekStartMs: number): Fixe
     }),
     { adults: 0, childSeats: 0, boosters: 0 },
   );
-  const luggageCount = served.filter((s) => s.luggage && !s.luggage_waived).length;
-  const towCount = served.filter((s) => s.tow_hitch && !s.luggage_waived).length;   // REQ §13.200
+  const outLoad = loadOf(onLeg("out"));
+  const returnLoad = loadOf(onLeg("return"));
+  const passengers: Passengers = {
+    adults: Math.max(outLoad.adults, returnLoad.adults),
+    childSeats: Math.max(outLoad.childSeats, returnLoad.childSeats),
+    boosters: Math.max(outLoad.boosters, returnLoad.boosters),
+  };
+  const countOn = (leg: "out" | "return", pick: (s: (typeof served)[number]) => boolean) => onLeg(leg).filter(pick).length;
+  const luggageCount = Math.max(countOn("out", (s) => !!s.luggage && !s.luggage_waived), countOn("return", (s) => !!s.luggage && !s.luggage_waived));
+  const towCount = Math.max(countOn("out", (s) => !!s.tow_hitch && !s.luggage_waived), countOn("return", (s) => !!s.tow_hitch && !s.luggage_waived));   // REQ §13.200
 
   return {
     id: ride.id,

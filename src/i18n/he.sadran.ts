@@ -649,6 +649,8 @@ export const heSadran = {
     failedTitle: "לא נשלחו",
     failedRow: "{{name}}: {{reason}}",
     whatsappTitle: "הודעות וואטסאפ (רשות)",
+    // SA3 (REQ item 223): a proposal's WhatsApp text in the preview.
+    previewWhatsapp: "בוואטסאפ (אם תשלח/י):",
     whatsappHelp: "ההצעות כבר הגיעו לאפליקציה. אפשר לשלוח גם בוואטסאפ למי שצריך.",
     done: "סיום",
     /** REQ §13.138 (h): leaving the board with anything unsent. */

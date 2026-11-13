@@ -448,4 +448,36 @@ begin
   perform set_config('request.headers', '', true);
   raise notice 'held_notices.sql (send-all preview): all assertions passed';
 end $$;
+
+-- SA3 (REQ item 223): the preview also shows each draft proposal's WhatsApp text per party, and still sends nothing.
+do $$
+declare
+  dept uuid := '00000000-0000-0000-0000-000000000001';
+  manager uuid := '00000000-0000-0000-0000-000000000102';
+  member uuid := '00000000-0000-0000-0000-000000000103';
+  home uuid := '00000000-0000-0000-0000-000000000010';
+  dest uuid := '00000000-0000-0000-0000-000000000011';
+  typ uuid := '00000000-0000-0000-0000-000000000021';
+  car uuid := '00000000-0000-0000-0000-000000000040';
+  w date := public.current_week_start() + 217;
+  t1 timestamptz; q uuid; rd uuid; dp uuid; prev jsonb;
+begin
+  t1 := ((w + 1) + time '08:00') at time zone 'Asia/Jerusalem';
+  insert into public.weeks(department_id, week_start, phase, open_at, close_at, publish_at)
+    values (dept, w, 'open', now() - interval '2 days', now() + interval '1 day', now() + interval '2 days');
+  perform set_config('request.jwt.claims', jsonb_build_object('sub', manager, 'role', 'authenticated')::text, true);
+  insert into public.requests(department_id, week_start, requester_id, filed_by, destination_id, ride_type_id, depart_at, return_at, trip_shape, status)
+    values (dept, w, member, member, dest, typ, t1, t1 + interval '2 hours', 'round_trip', 'assigned') returning id into q;
+  insert into public.rides(department_id, week_start, car_id, starts_at, ends_at, origin_id, destination_id, driver_id, status, created_by)
+    values (dept, w, car, t1, t1 + interval '2 hours', home, home, member, 'draft', manager) returning id into rd;
+  insert into public.ride_requests(ride_id, request_id, role, leg, car_mode) values (rd, q, 'driver', 'both', 'keep');
+  dp := public.create_proposal(q, rd, 'shift', jsonb_build_object('depart_at', t1 + interval '30 minutes', 'return_at', t1 + interval '2 hours 30 minutes'), 'sa3');
+  prev := public.preview_send_all(dept, w, null);
+  assert exists (select 1 from jsonb_array_elements(prev) e
+    where e ->> 'event' = 'whatsapp' and (e ->> 'recipient_id')::uuid = member and e ->> 'body' <> ''
+      and e -> 'keys' = jsonb_build_array('proposal:' || dp::text)),
+    format('SA3: the preview should hold the member''s WhatsApp text for the draft: %s', prev);
+  assert (select status = 'draft' from public.proposals where id = dp), 'SA3: the preview sent the draft';
+  raise notice 'held_notices.sql (send-all WhatsApp preview): all assertions passed';
+end $$;
 rollback;

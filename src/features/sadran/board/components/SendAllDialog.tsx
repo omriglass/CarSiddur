@@ -43,6 +43,9 @@ export interface SendAllDialogProps {
   held: readonly HeldNotice[];
 }
 
+/** Notices that reach the phone (the WhatsApp texts are the Sadran's own to send). */
+const noticeCount = (items: readonly { event: string }[]) => items.filter((item) => item.event !== "whatsapp").length;
+
 export function SendAllDialog({ open, onOpenChange, departmentId, weekStart, drafts, held }: SendAllDialogProps) {
   const days = useMemo(
     () => [...new Set([...drafts.map((draft) => draft.day), ...held.flatMap((row) => (row.day ? [row.day] : []))])].sort(),
@@ -147,7 +150,7 @@ export function SendAllDialog({ open, onOpenChange, departmentId, weekStart, dra
                             checked={on === person.items.length ? true : on === 0 ? false : "indeterminate"}
                             onCheckedChange={(value) => setSkipped((prev) => toggleKeys(prev, person.items.flatMap((item) => item.keys), value === true))}
                           />
-                          {`${person.name} · ${sendAllCount("personNotices", person.items.length)}`}
+                          {[person.name, noticeCount(person.items) ? sendAllCount("personNotices", noticeCount(person.items)) : null].filter(Boolean).join(" · ")}
                         </label>
                         <ul className="mt-1 space-y-1 ps-6">
                           {person.items.map((item) => (
@@ -160,9 +163,11 @@ export function SendAllDialog({ open, onOpenChange, departmentId, weekStart, dra
                                   data-testid={`send-all-notice-${item.id}`}
                                   onCheckedChange={(value) => setSkipped((prev) => toggleKeys(prev, item.keys, value === true))}
                                 />
-                                <span className="min-w-0">
-                                  <span className="block text-xs font-medium">{item.title}</span>
-                                  <span className="block whitespace-pre-line text-xs text-muted-foreground">{item.body}</span>
+                                <span className="min-w-0" data-testid={item.event === "whatsapp" ? `send-all-whatsapp-${item.id}` : undefined}>
+                                  <span className="block text-xs font-medium">{item.event === "whatsapp" ? he.sendAll.previewWhatsapp : item.title}</span>
+                                  <span className="block whitespace-pre-line text-xs text-muted-foreground">
+                                    {item.event === "whatsapp" ? renderTemplate(item.body, { link: `${env.VITE_APP_URL}/p/…` }) : item.body}
+                                  </span>
                                 </span>
                               </label>
                             </li>

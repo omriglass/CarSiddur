@@ -641,7 +641,7 @@ Every assignment, unmet record and suggestion has a `reasonCode` and a Hebrew `r
 | `UNMET_NO_CAR_AT_ORIGIN` | `אין רכב פנוי שנמצא ב{origin} כדי לצאת משם ל{dest}` (new, REQUIREMENTS §13.93: an unmet explicit `one_way` leg) |
 | `UNMET_FREE_TEXT_ORIGIN` | `נקודת היציאה היא טקסט חופשי ולא מקום מוכר; לא ניתן לשבץ נסיעה ממנה אוטומטית` (new, REQUIREMENTS §13.93) |
 | `WARN_FIXED_RIDE_CONFLICT` | `נסיעה קבועה חופפת או צמודה מדי לנסיעה קבועה אחרת באותו רכב` (QB1) |
-| `WARN_FIXED_RIDE_OVER_CAPACITY` | `בנסיעה קבועה יש יותר נוסעים או ציוד ממה שהרכב מכיל` (R16B8: warning `FIXED_RIDE_OVER_CAPACITY`; the seat/luggage invariants check only the solver's own placements — a fixed ride is a fact, never a crash) |
+| `WARN_FIXED_RIDE_OVER_CAPACITY` | `בנסיעה קבועה יש יותר נוסעים או ציוד ממה שהרכב מכיל` (R16B8: warning `FIXED_RIDE_OVER_CAPACITY`; the seat/luggage invariants check only the solver's own placements — a fixed ride is a fact, never a crash; since 2026-11-13 (R19B3) the bridge's `FixedRide.passengers`/`luggageCount`/`towCount` are the larger leg's load per seat kind — `boardRideToFixedRide`, `src/features/sadran/applySolve.ts` — so an out-only and a return-only rider share a seat) |
 | `WARN_CHAIN_BROKEN` | `נסיעה קבועה מתחילה במקום שהרכב אינו נמצא בו בפועל` (new, REQUIREMENTS §13.93 — replaces `WARN_FIXED_RIDE_LOCATION_MISMATCH`) |
 | `WARN_CAR_AWAY_AT_WEEK_END` | `{car} מסיים/ת את השבוע ב{place} ולא בבסיסו/ה` (new, REQUIREMENTS §13.93 — replaces `WARN_CAR_AWAY_AT_DAY_END`) |
 
