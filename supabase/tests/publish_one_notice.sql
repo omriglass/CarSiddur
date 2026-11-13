@@ -1,5 +1,5 @@
 -- R13U9 (owner 2026-10-23: "I don't want people to get used to ignoring notifs"): a publish sends each member ONE notice.
--- Offers that lapse at publish are lines of it (no separate "ההצעה שקיבלת פגה"), the publishing Sadran gets no
+-- (Offers no longer lapse at publish — a pending offer blocks its day, REQ item 230 f.) The publishing Sadran gets no
 -- per-proposal "expired" notice, newly published days and changes on days already public share one notice, and a
 -- waitlisted one-way line keeps its day and time. Transactional (begin … rollback).
 begin;
@@ -55,7 +55,16 @@ set constraints all deferred;
 set local role authenticated;
 do $$
 declare dept uuid:='00000000-0000-0000-0000-000000000001'; w date:=public.current_week_start()+238;
+  p uuid;
 begin
+  -- REQ item 230 (f): the sent offers block their days; the Sadran withdraws them (no message, REQ §13.160), then publishes
+  begin
+    perform public.publish_siddur(dept,w,'[]'::jsonb,public.publish_scores_fingerprint(dept,w),'[]'::jsonb,array[w+1,w+2,w+3],true);
+    raise exception 'published over pending offers';
+  exception when raise_exception then if sqlerrm<>'publication_proposals_pending' then raise; end if; end;
+  for p in select x.id from public.proposals x join public.requests q on q.id=x.request_id where q.week_start=w and x.status='sent' order by x.id loop
+    perform public.withdraw_proposal(p);
+  end loop;
   perform public.publish_siddur(dept,w,'[]'::jsonb,public.publish_scores_fingerprint(dept,w),'[]'::jsonb,array[w+1,w+2,w+3],true);
 end $$;
 reset role;
@@ -64,16 +73,16 @@ declare dept uuid:='00000000-0000-0000-0000-000000000001'; w date:=public.curren
   manager uuid:='00000000-0000-0000-0000-000000000102';
   m1 uuid:='00000000-0000-0000-0000-000000000103'; body text; n int;
 begin
-  assert (select count(*) from public.proposals p join public.requests q on q.id=p.request_id where q.week_start=w and q.requester_id=m1 and p.status='expired')=2,
-    'both offers lapse at publish';
+  assert (select count(*) from public.proposals p join public.requests q on q.id=p.request_id where q.week_start=w and q.requester_id=m1 and p.status='withdrawn')=2,
+    'both offers were withdrawn before publishing';
   -- (the setup's own notices — window opened, offers sent — are not the publish's; one transaction, one now())
   select count(*) into n from public.notifications where recipient_id=m1 and week_start=w and event not in ('window_open','proposal_received');
   assert n=1, format('m1 gets ONE notice for the publish, got %s: %s', n,
     (select string_agg(event||coalesce(':'||(data->>'variant'),''),', ') from public.notifications where recipient_id=m1 and week_start=w
      and event not in ('window_open','proposal_received')));
   select body_he into body from public.notifications where recipient_id=m1 and week_start=w and event='published';
-  assert array_length(string_to_array(body,chr(10)),1)=3, 'two lapsed offers and the one-way line, got: '||coalesce(body,'<none>');
-  assert (length(body)-length(replace(body,'ההצעה פגה','')))/length('ההצעה פגה')=2, 'each lapsed offer is a line: '||body;
+  assert array_length(string_to_array(body,chr(10)),1)=3, 'the two waitlisted round trips and the one-way line, got: '||coalesce(body,'<none>');
+  assert body not like '%ההצעה פגה%', 'nothing lapses at publish any more: '||body;
   assert body like '%'||public.day_date_label(w+3)||' 09:15%', 'the one-way line keeps its day and time: '||body;
   assert not exists(select 1 from public.notifications where recipient_id=manager and week_start=w and event='proposal_answered'),
     'the publishing Sadran is not told about each lapsed offer';

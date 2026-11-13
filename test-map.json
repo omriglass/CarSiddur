@@ -863,6 +863,7 @@
         "supabase/migrations/**/*unified_ride_people*",
         "supabase/tests/ride_passengers.sql",
         "supabase/tests/leave_merged_ride.sql",
+        "supabase/tests/qa20_fixes.sql",
         "supabase/migrations/**/*leave_merged_ride*",
         "supabase/migrations/**/*split_ride_companion*",
         "supabase/tests/split_ride_companion.sql",
@@ -883,6 +884,7 @@
       ],
       "sql": [
         "leave_merged_ride.sql",
+        "qa20_fixes.sql",
         "ride_passengers.sql",
         "split_ride_companion.sql"
       ],

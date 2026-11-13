@@ -131,17 +131,20 @@ declare dept uuid:='00000000-0000-0000-0000-000000000001'; w date:=public.curren
 begin
   select * into before_prop from public.proposals where id=(select id from publication_ids where k='proposal');
   scores:=pg_temp.publication_scores(dept,w);
+  -- REQ item 230 (f), owner 2026-11-14: a pending proposal blocks its day, and p_allow_unanswered does not bypass it.
   begin
     perform public.publish_siddur(dept,w,scores->'profiles',public.publish_scores_fingerprint(dept,w),scores->'policies',array[w+2],false);
-    raise exception 'unanswered publication did not require acknowledgment';
-  exception when raise_exception then if sqlerrm<>'publication_unanswered' then raise;end if;end;
+    raise exception 'published over a pending proposal';
+  exception when raise_exception then if sqlerrm<>'publication_proposals_pending' then raise;end if;end;
+  begin
+    perform public.publish_siddur(dept,w,scores->'profiles',public.publish_scores_fingerprint(dept,w),scores->'policies',array[w+2],true);
+    raise exception 'p_allow_unanswered bypassed a pending proposal';
+  exception when raise_exception then if sqlerrm<>'publication_proposals_pending' then raise;end if;end;
+  perform public.withdraw_proposal(before_prop.id);
+  scores:=pg_temp.publication_scores(dept,w);   -- the withdrawal settled the request
   perform public.publish_siddur(dept,w,scores->'profiles',public.publish_scores_fingerprint(dept,w),scores->'policies',array[w+2],true);
-  -- Publishing the proposal's own day (Tuesday, forced through with p_allow_unanswered)
-  -- now expires it immediately (publish_siddur calls expire_proposals() at the end) —
-  -- there is no timer any more; once a day is published its proposals are settled.
-  -- REQ §13.100 b: a Sadran shift/merge proposal survives its day being published (it may still be answered).
-  assert (select status='sent' from public.proposals where id=before_prop.id),'publishing the proposal''s day must not expire a Sadran shift proposal';
   assert (select published_days=array[w+1,w+2] from public.weeks where department_id=dept and week_start=w),'incremental publication hid earlier day';
+  scores:=pg_temp.publication_scores(dept,w);   -- publishing Tuesday placed the request whose proposal was withdrawn
   begin
     perform public.publish_siddur(dept,w,scores->'profiles',public.publish_scores_fingerprint(dept,w),scores->'policies',array[w+3],false);
     raise exception 'missing driver did not require acknowledgment';
@@ -157,7 +160,6 @@ begin
   assert (select count(*)=ride_count from public.rides where department_id=dept and week_start=w),'unpublish deleted rides';
   assert (select count(*)=link_count from public.ride_requests rr join public.rides r on r.id=rr.ride_id where r.department_id=dept and r.week_start=w),'unpublish deleted assignments';
   assert (select count(*)=versions from public.siddur_versions where department_id=dept and week_start=w),'unpublish erased history';
-  assert (select status='sent' from public.proposals where id=before_prop.id),'unpublishing changed a still-sent Sadran proposal';
   begin perform public.reopen_week(dept,w,'open',old_fingerprint);raise exception 'stale reopening accepted';
   exception when sqlstate 'P0409' then null;end;
   perform public.reopen_week(dept,w,'open',public.publish_scores_fingerprint(dept,w));

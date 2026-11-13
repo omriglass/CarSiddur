@@ -1004,7 +1004,7 @@ begin
      or coalesce(current_setting('app.notify_now', true), '') = 'on' then   -- R15M2: a live-week cancellation
     return false;
   end if;
-  if _event not in ('outcome_changed', 'car_swapped', 'waitlist_resolved') or _recipient = v_actor then
+  if _event not in ('outcome_changed', 'car_swapped', 'waitlist_resolved', 'private_car_changed') or _recipient = v_actor then
     return false;
   end if;
   begin
@@ -3394,7 +3394,7 @@ CREATE OR REPLACE FUNCTION "public"."_notify_private_car_owners"("p_ride" "uuid"
 declare
   v_actor uuid := (select auth.uid());
   v_car record; v_ride record; v_day date; v_actor_name text;
-  o record; v_old record; v_names jsonb; v_old_ids uuid[]; v_notif uuid;
+  o record; v_old record; v_names jsonb; v_old_ids uuid[]; v_notif uuid; v_held boolean;
 begin
   if v_actor is null or p_car is null or p_ride is null then return; end if;
   if coalesce(current_setting('app.publishing', true), '') = 'on' then return; end if;
@@ -3414,9 +3414,12 @@ begin
   loop
     perform pg_advisory_xact_lock(hashtextextended(format('private_car_changed:%s:%s:%s', p_car, v_day, o.profile_id), 0));
     v_names := '[]'::jsonb; v_old_ids := null;
+    -- R20B4: on the board the notice is held with the rider's (REQ §13.138 c) - it then neither merges into nor
+    -- replaces the one already delivered; "שלח" sends it.
+    v_held := public._board_hold_applies(o.profile_id, 'private_car_changed', v_ride.department_id, v_ride.week_start);
     for v_old in
       select n.id, n.data from public.notifications n
-      where n.recipient_id = o.profile_id and n.event = 'private_car_changed' and n.read_at is null
+      where not v_held and n.recipient_id = o.profile_id and n.event = 'private_car_changed' and n.read_at is null
         and n.data ->> 'car_id' = p_car::text and n.data ->> 'day' = v_day::text
       order by n.created_at, n.id
     loop
@@ -6744,6 +6747,34 @@ end $$;
 
 
 ALTER FUNCTION "public"."agree_proposal_offline"("p_proposal_id" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."agree_proposals_offline"("p_department_id" "uuid", "p_week_start" "date", "p_days" "date"[]) RETURNS "jsonb"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare v_id uuid; v_res jsonb; v_applied int := 0; v_waiting int := 0; v_stale int := 0;
+begin
+  if not public.can_manage_week(p_department_id, p_week_start) then
+    raise exception 'not_authorized' using errcode = 'P0001';
+  end if;
+  -- the proposals publication_readiness counts as pending on those days (plan B has its own blocker)
+  for v_id in
+    select p.id from public.proposals p join public.requests q on q.id = p.request_id
+     where p.department_id = p_department_id and p.week_start = p_week_start and p.status = 'sent' and p.type <> 'alternative'
+       and (coalesce(q.depart_at, q.return_at) at time zone 'Asia/Jerusalem')::date = any(p_days)
+     order by p.created_at, p.id
+  loop
+    v_res := public.agree_proposal_offline(v_id);
+    if v_res ->> 'status' = 'waiting' then v_waiting := v_waiting + 1;
+    elsif v_res ->> 'status' = 'withdrawn_stale' then v_stale := v_stale + 1;
+    else v_applied := v_applied + 1; end if;
+  end loop;
+  return jsonb_build_object('applied', v_applied, 'waiting', v_waiting, 'withdrawn_stale', v_stale);
+end $$;
+
+
+ALTER FUNCTION "public"."agree_proposals_offline"("p_department_id" "uuid", "p_week_start" "date", "p_days" "date"[]) OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."alternative_served_weight"("p_department_id" "uuid") RETURNS numeric
@@ -12833,7 +12864,7 @@ declare
   v_mine uuid[];            -- the leaver's requests on the ride
   v_x_request uuid;         -- the request X drives on (X's own, or the one X is a companion on); null = an added passenger
   v_x_companion_of_mine boolean := false;
-  v_by text; v_driver_name text; v_route text; v_day text; v_car text; v_range text; p record;
+  v_by text; v_driver_name text; v_route text; v_day text; v_car text; v_range text; p record; v_actor_name text;
 begin
   if not public.is_approved() then raise exception 'not_authorized' using errcode = 'P0001'; end if;
   select * into r from public.rides where id = p_ride_id for update;
@@ -12867,7 +12898,10 @@ begin
   if p_new_driver is not null then
     if p_new_driver = v_leaver
        or not exists (select 1 from public.profiles pr where pr.id = p_new_driver and pr.approval_status = 'approved' and not pr.does_not_drive)
-       or not exists (select 1 from public.department_members dm where dm.department_id = r.department_id and dm.profile_id = p_new_driver and dm.removed_at is null) then
+       or not exists (select 1 from public.department_members dm where dm.department_id = r.department_id and dm.profile_id = p_new_driver and dm.removed_at is null)
+       -- Q5 (owner 2026-11-14): never a rider at the wheel of a הקפצה - the rider is the one being driven
+       or exists (select 1 from public.ride_requests rr join public.requests q on q.id = rr.request_id
+                  where rr.ride_id = r.id and q.trip_type = 'drop_off') then
       raise exception 'handover_driver_invalid' using errcode = 'P0001';
     end if;
     v_x_companion_of_mine := exists (select 1 from public.request_companions rc where rc.request_id = any(v_mine) and rc.profile_id = p_new_driver);
@@ -12906,7 +12940,9 @@ begin
   else
     delete from public.ride_requests where ride_id = r.id and request_id = any(v_mine);
     perform set_config('app.system_status_transition', 'on', true);
-    update public.requests set status = 'withdrawn', status_reason = 'WITHDRAWN_BY_MEMBER' where id = any(v_mine);
+    update public.requests set status = 'withdrawn',
+      status_reason = case when v_actor = v_leaver then 'WITHDRAWN_BY_MEMBER' else 'SADRAN_REMOVED_DRIVER' end   -- R20B2
+      where id = any(v_mine);
     perform set_config('app.system_status_transition', v_prev_flag, true);
     if p_new_driver is null then
       update public.rides set driver_id = null, needs_driver = true where id = r.id;
@@ -12922,6 +12958,16 @@ begin
   perform public.assert_ride_driver(r.id);
   perform public.assert_ride_seats_fit(r.id);
 
+  -- R20B2: the driver someone else took off is always told, published day or not - their own request ended
+  if v_actor <> v_leaver then
+    select full_name into v_actor_name from public.profiles where id = v_actor;
+    perform public.enqueue_notification(v_leaver, 'outcome_changed', r.department_id, r.week_start,
+      jsonb_build_object('byName', coalesce(v_actor_name, ''), 'day', public.day_date_label(r.starts_at),
+        'driverName', coalesce((select full_name from public.profiles where id = p_new_driver), '')),
+      jsonb_build_object('variant', case when v_x_companion_of_mine then 'removed_as_driver_handed' else 'removed_as_driver' end,
+        'ride_id', r.id, 'request_id', v_mine[1]),
+      format('removed_as_driver:%s:%s:%s', r.id, r.version, v_leaver));
+  end if;
   if public.is_day_public(r.department_id, r.week_start, (r.starts_at at time zone 'Asia/Jerusalem')::date) then
     select full_name into v_by from public.profiles where id = v_leaver;
     select name into v_car from public.cars where id = r.car_id;
@@ -16878,7 +16924,7 @@ CREATE OR REPLACE FUNCTION "public"."publication_conflict_details"("p_department
     LANGUAGE "plpgsql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
-declare r record; here uuid; res boolean; o uuid; nxt uuid;
+declare r record; here uuid; res boolean; o uuid; nxt uuid; v_tight uuid;
 begin
   for r in
     select * from public.rides where department_id=p_department_id and week_start=p_week_start and status<>'cancelled'
@@ -16895,6 +16941,16 @@ begin
       and tstzrange(other.starts_at,other.ends_at,'[)') && tstzrange(r.starts_at,r.ends_at,'[)') order by other.starts_at limit 1;
     if o is not null then reason:='car_overlap'; other_ride_id:=o; return next; end if;
     other_ride_id:=null;
+    -- R20B1: the next ride on the car starts inside this ride's turnaround (the ride trigger refuses it on publish);
+    -- consecutive days of one series need none, and an approved shorter turnaround is in blocked_until already.
+    if o is null and not r.draft_hold then
+      select nx.id into v_tight from public.rides nx
+       where nx.id<>r.id and nx.car_id=r.car_id and nx.status<>'cancelled' and not nx.draft_hold and not nx.planning_conflict
+         and not r.planning_conflict and nx.starts_at>=r.ends_at and nx.starts_at<r.blocked_until
+         and not (r.series_id is not null and nx.series_id=r.series_id)
+       order by nx.starts_at, nx.id limit 1;
+      if v_tight is not null then reason:='turnaround'; other_ride_id:=v_tight; return next; other_ride_id:=null; end if;
+    end if;
     if exists(select 1 from public.car_maintenance_blocks b where b.car_id=r.car_id
       and tstzrange(b.starts_at,b.ends_at,'[)') && tstzrange(r.starts_at,r.ends_at,'[)')) then reason:='maintenance'; return next; end if;
     if not exists(select 1 from public.cars c where c.id=r.car_id and c.department_id=p_department_id and c.status='active') then
@@ -17120,8 +17176,13 @@ begin
   if exists(select 1 from jsonb_array_elements(readiness) item
     where (item->>'day')::date=any(v_days) and coalesce((item->>'heldNotices')::int,0)>0)
   then raise exception 'publication_held_notices';end if;
+  -- R20B7 (owner 2026-11-14): a pending proposal blocks the day, not bypassable - a late "yes" must never change a
+  -- published ride behind the Sadran's back. Answer it, withdraw it, or mark it agreed (agree_proposals_offline).
+  if exists(select 1 from jsonb_array_elements(readiness) item
+    where (item->>'day')::date=any(v_days) and (item->>'pendingProposals')::int>0)
+  then raise exception 'publication_proposals_pending';end if;
   if not coalesce(p_allow_unanswered,false) and exists(select 1 from jsonb_array_elements(readiness) item
-    where (item->>'day')::date=any(v_days) and ((item->>'incompleteAssignments')::int>0 or (item->>'pendingProposals')::int>0))
+    where (item->>'day')::date=any(v_days) and (item->>'incompleteAssignments')::int>0)
   then raise exception 'publication_unanswered';end if;
   -- R12M3 (REQ §13.119): rides still without a driver are not "unanswered"; the UI asks "publish anyway?" and sends
   -- p_allow_driverless (the older p_allow_unanswered keeps meaning "publish despite everything open", driverless included).
@@ -23507,7 +23568,7 @@ declare
   v_applying text := coalesce(nullif(current_setting('app.applying_proposal', true), ''), '');
   v_old uuid; v_n int; v_cuts int[]; v_bounds int[]; v_p int; v_from int; v_to int; v_len int; v_sid uuid;
   v_parts jsonb := '[]'::jsonb; v_ids uuid[]; v_head uuid; v_prop uuid; v_parts_text text; v_route text; v_name text;
-  x record; v_notif uuid;
+  x record; v_notif uuid; v_rides uuid[]; v_public boolean;
 begin
   select * into q from public.requests where id = p_request_id;
   if q.id is null or q.series_id is null then raise exception 'request_not_found' using errcode = 'P0001'; end if;
@@ -23556,6 +23617,7 @@ begin
     end if;
   end loop;
 
+  v_rides := array(select r.id from public.rides r where r.series_id = v_old and r.status <> 'cancelled');
   v_bounds := array[0] || v_cuts || array[v_n];
   for v_p in 1 .. cardinality(v_bounds) - 1 loop
     v_from := v_bounds[v_p] + 1; v_to := v_bounds[v_p + 1]; v_len := v_to - v_from + 1;
@@ -23571,13 +23633,26 @@ begin
     v_parts := v_parts || jsonb_build_array(jsonb_build_object('series_id', v_sid, 'request_ids', to_jsonb(v_ids),
       'first', (select d from pg_temp._split_days where i = v_from), 'last', (select d from pg_temp._split_days where i = v_to)));
   end loop;
+  -- R20B1 (owner 2026-11-14): the parts keep the car across the cut with no turnaround, as the series did (Mon ends
+  -- 23:59, Tue starts 00:00). The earlier ride carries the real gap as its turnaround override, which every check
+  -- (the ride trigger, publication, the solver, the board) already honours; refresh_car_turnarounds keeps it.
+  update public.rides a set turnaround_override_minutes = (extract(epoch from (b.starts_at - a.ends_at)) / 60)::smallint
+    from public.rides b
+   where a.id = any(v_rides) and b.id = any(v_rides) and b.car_id = a.car_id and b.id <> a.id
+     and not (a.series_id is not null and a.series_id = b.series_id)
+     and b.starts_at >= a.ends_at
+     and b.starts_at < a.ends_at + make_interval(mins => public.required_turnaround_minutes(a.department_id, a.week_start));
   -- cancelled rides of days that left the series follow their own day's part (or none)
   update public.rides r set series_id = null where r.series_id = v_old and r.status = 'cancelled'
     and not exists (select 1 from public.requests y where y.series_id = v_old
                     and (y.depart_at at time zone 'Asia/Jerusalem')::date = (r.starts_at at time zone 'Asia/Jerusalem')::date);
   perform set_config('app.system_status_transition', v_prev_flag, true);
 
-  -- (d) one notice per person on the ride other than the actor
+  -- (d) one notice per person on the ride other than the actor - only when one of its days is published (R20B3:
+  -- before that nobody sees the series, as for every other unpublished change)
+  v_public := exists (select 1 from pg_temp._split_days s join public.requests y on y.id = s.request_id
+                      where public.is_day_public(y.department_id, y.week_start, s.d));
+  if not v_public then return jsonb_build_object('parts', v_parts); end if;
   select string_agg(case when (pt ->> 'first') = (pt ->> 'last') then public.day_date_label((pt ->> 'first')::date)
                          else public.day_date_label((pt ->> 'first')::date) || '–' || public.day_date_label((pt ->> 'last')::date) end,
                     ', ' order by ord)
@@ -34989,6 +35064,12 @@ GRANT ALL ON FUNCTION "public"."advance_week_phases"("p_now" timestamp with time
 REVOKE ALL ON FUNCTION "public"."agree_proposal_offline"("p_proposal_id" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."agree_proposal_offline"("p_proposal_id" "uuid") TO "service_role";
 GRANT ALL ON FUNCTION "public"."agree_proposal_offline"("p_proposal_id" "uuid") TO "authenticated";
+
+
+
+REVOKE ALL ON FUNCTION "public"."agree_proposals_offline"("p_department_id" "uuid", "p_week_start" "date", "p_days" "date"[]) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."agree_proposals_offline"("p_department_id" "uuid", "p_week_start" "date", "p_days" "date"[]) TO "service_role";
+GRANT ALL ON FUNCTION "public"."agree_proposals_offline"("p_department_id" "uuid", "p_week_start" "date", "p_days" "date"[]) TO "authenticated";
 
 
 

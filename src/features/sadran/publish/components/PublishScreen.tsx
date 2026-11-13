@@ -29,6 +29,7 @@ import {
   useCarsForDepartment,
   usePublicationConflicts,
   usePublicationReadiness,
+  useAgreeProposalsOfflineMutation,
   usePublishSiddurMutation,
   useProposalsForWeek,
   useSiddurVersions,
@@ -61,6 +62,8 @@ export function PublishScreen({ departmentId, weekStart }: PublishScreenProps) {
   const versionsQuery = useSiddurVersions(departmentId, weekStart);
   const proposalsQuery = useProposalsForWeek(departmentId, weekStart);
   const publishMutation = usePublishSiddurMutation();
+  const agreeAll = useAgreeProposalsOfflineMutation();
+  const [agreeOpen, setAgreeOpen] = useState(false);
 
   const versions = versionsQuery.data ?? [];
   const previousVersion = versions[0] ?? null;
@@ -82,7 +85,7 @@ export function PublishScreen({ departmentId, weekStart }: PublishScreenProps) {
     const anchor = request ? requestStart(request) : null;
     return request && anchor ? [{ id: proposal.id, name: request.requester_full_name ?? "", day: dateKey(anchor), plan: request.alternative ? alternativePlanText(request.alternative) : "" }] : [];
   });
-  const blocksDay = (day: PublicationDay) => day.conflictRides > 0 || day.draftProposals > 0 || (day.heldNotices ?? 0) > 0 || (day.alternativeProposals ?? 0) > 0;
+  const blocksDay = (day: PublicationDay) => day.conflictRides > 0 || day.pendingProposals > 0 || day.draftProposals > 0 || (day.heldNotices ?? 0) > 0 || (day.alternativeProposals ?? 0) > 0;
   const allDays = readiness.map((day) => day.day);
   const readyDays = readiness.filter((day) => day.ready).map((day) => day.day);
   // R7U2: the "choose days" list pre-ticks only days that are ready, not yet published and not past.
@@ -100,22 +103,15 @@ export function PublishScreen({ departmentId, weekStart }: PublishScreenProps) {
     const anchor = request.trip_shape === "one_way_from" ? request.return_at : request.depart_at;
     return anchor && chosenDays.includes(dateKey(anchor));
   });
-  // R4U4, R13B10: sent proposals publishing expires (all but a Sadran-made shift/merge, `expire_proposals`) - list them.
-  const expiringProposals = (proposalsQuery.data ?? []).filter((proposal) => expiresAtPublish(proposal) && proposal.status === "sent")
+  // R20B7 (owner 2026-11-14): a sent proposal blocks its day until it is answered, withdrawn or marked agreed here.
+  const pendingRows = (proposalsQuery.data ?? []).filter((proposal) => proposal.status === "sent" && proposal.type !== "alternative")
     .flatMap((proposal) => {
       const request = (requestsQuery.data ?? []).find((r) => r.id === proposal.request_id);
       const anchor = request ? requestStart(request) : null;
-      return request && anchor && (confirmDays ?? []).includes(dateKey(anchor))
-        ? [{ id: proposal.id, name: request.requester_full_name ?? "", type: proposal.type, day: dateKey(anchor) }] : [];
-    });
-  // R5U3: the sent proposals publishing keeps (a Sadran-made shift/merge) stay pending; show who and until when.
-  const pendingProposalRows = (proposalsQuery.data ?? []).filter((proposal) => !expiresAtPublish(proposal) && proposal.status === "sent")
-    .flatMap((proposal) => {
-      const request = (requestsQuery.data ?? []).find((r) => r.id === proposal.request_id);
-      const anchor = request ? requestStart(request) : null;
-      return request && anchor && (confirmDays ?? []).includes(dateKey(anchor))
-        ? [{ id: proposal.id, name: request.requester_full_name ?? "", type: proposal.type, day: dateKey(anchor), expires: proposal.expires_at }] : [];
-    });
+      return request && anchor ? [{ id: proposal.id, name: request.requester_full_name ?? "", type: proposal.type, day: dateKey(anchor) }] : [];
+    })
+    .sort((a, b) => a.day.localeCompare(b.day) || a.name.localeCompare(b.name));
+  const pendingDays = [...new Set(pendingRows.map((row) => row.day))];
   const countLabel = (count: number, many: "unresolved" | "pending" | "missingDriver") =>
     count === 1 ? t(`publicationFlow.${many}One` as TranslationKey) : tv(`publicationFlow.${many}` as TranslationKey, { count: String(count) });
   const previewQueries = [requestsQuery, ridesQuery, versionsQuery];
@@ -158,7 +154,7 @@ export function PublishScreen({ departmentId, weekStart }: PublishScreenProps) {
     if (chosen.some(blocksDay)) return;
     // `unresolvedRequests` no longer blocks publication (REQ §13.75) — an unresolved request is
     // auto-approved or grouped at publication time, `incompleteAssignments` is the real defect.
-    if (chosen.some((day) => day.incompleteAssignments > 0 || day.pendingProposals > 0)) {
+    if (chosen.some((day) => day.incompleteAssignments > 0)) {
       setConfirmDays(days);
     } else if (chosen.some((day) => day.missingDriverRides > 0)) {
       // R12M3: driverless rides alone ask their own question and send p_allow_driverless.
@@ -256,6 +252,36 @@ export function PublishScreen({ departmentId, weekStart }: PublishScreenProps) {
           </ul>
         </CardContent></Card>
       ) : null}
+      {pendingRows.length ? (
+        <Card className="border-amber-500/60" data-testid="publish-pending"><CardContent className="space-y-2 p-4 text-sm">
+          <h2 className="font-medium">{he.publicationFlow.pendingBlockTitle}</h2>
+          <p className="text-muted-foreground">{he.publicationFlow.pendingBlockHelp}</p>
+          <ul className="space-y-1">
+            {pendingRows.map((row) => (
+              <li key={row.id} data-testid="publish-pending-row"><span className="font-medium">{dateLabel(row.day)}</span>{" · "}{tv("boardDrafts.publishRow", { name: row.name, type: t(`proposal.type.${row.type}` as TranslationKey) })}</li>
+            ))}
+          </ul>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" size="sm" onClick={() => setAgreeOpen(true)} data-testid="publish-agree-all">{he.publicationFlow.agreeAll}</Button>
+            <Button variant="ghost" size="sm" onClick={() => navigate(paths.sadran.board(departmentId, weekStart))}>{he.boardDrafts.publishOpenBoard}</Button>
+          </div>
+        </CardContent></Card>
+      ) : null}
+      <ConfirmDialog
+        open={agreeOpen}
+        onOpenChange={setAgreeOpen}
+        title={he.publicationFlow.agreeAllTitle}
+        description={tv("publicationFlow.agreeAllHelp", { count: String(pendingRows.length) })}
+        confirmLabel={he.publicationFlow.agreeAllConfirm}
+        loading={agreeAll.isPending}
+        onConfirm={() => agreeAll.mutate({ departmentId, weekStart, days: pendingDays }, {
+          onSuccess: (result) => {
+            setAgreeOpen(false);
+            toast.success(result.applied === pendingRows.length ? he.publicationFlow.agreeAllDone
+              : tv("publicationFlow.agreeAllPartial", { applied: String(result.applied), total: String(pendingRows.length) }));
+          },
+        })}
+      />
       <p className="text-sm text-muted-foreground">{he.publishScores.help}</p>
       <RideChangeAnswers departmentId={departmentId} weekStart={weekStart} canManage />
       {savedScores.length ? <Card><CardContent className="overflow-x-auto p-4">
@@ -383,29 +409,12 @@ export function PublishScreen({ departmentId, weekStart }: PublishScreenProps) {
         loading={publishMutation.isPending}
         onConfirm={() => confirmDays && void handlePublish(confirmDays, true)}
       >
-        <ul className="space-y-2 text-sm">{readiness.filter((day) => confirmDays?.includes(day.day) && (day.unresolvedRequests || day.pendingProposals || day.missingDriverRides)).map((day) => <li key={day.day}>
+        <ul className="space-y-2 text-sm">{readiness.filter((day) => confirmDays?.includes(day.day) && (day.unresolvedRequests || day.missingDriverRides)).map((day) => <li key={day.day}>
           <span className="font-medium">{dateLabel(day.day)}</span>{" · "}{[
             day.unresolvedRequests ? countLabel(day.unresolvedRequests, "unresolved") : null,
-            day.pendingProposals ? countLabel(day.pendingProposals, "pending") : null,
             day.missingDriverRides ? countLabel(day.missingDriverRides, "missingDriver") : null,
           ].filter(Boolean).join(" · ")}
         </li>)}</ul>
-        {expiringProposals.length ? (
-          <div className="mt-3 space-y-1 text-sm" data-testid="publish-expiring-proposals">
-            <p className="font-medium text-maintenance">{he.publicationFlow.expiringTitle}</p>
-            <p className="text-muted-foreground">{he.publicationFlow.expiringWhoIsTold}</p>
-            <ul className="list-disc ps-5">{expiringProposals.map((row) => <li key={row.id}>{tv("publicationFlow.expiringRow", { name: row.name, type: t(`proposal.type.${row.type}` as TranslationKey), day: dateLabel(row.day) })}</li>)}</ul>
-          </div>
-        ) : null}
-        {pendingProposalRows.length ? (
-          <div className="mt-3 space-y-1 text-sm" data-testid="publish-pending-proposals">
-            <p className="font-medium">{he.publicationFlow.pendingTitle}</p>
-            <ul className="list-disc ps-5">{pendingProposalRows.map((row) => <li key={row.id}>{tv(row.expires ? "publicationFlow.pendingRow" : "publicationFlow.pendingRowNoExpiry", {
-              name: row.name, type: t(`proposal.type.${row.type}` as TranslationKey), day: dateLabel(row.day),
-              expires: row.expires ? formatDayDate(row.expires) + " " + formatTime(new Date(row.expires)) : "",
-            })}</li>)}</ul>
-          </div>
-        ) : null}
       </ConfirmDialog>
     </div>
   );

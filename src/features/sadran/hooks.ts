@@ -539,6 +539,17 @@ export function useAgreeProposalOfflineMutation() {
   });
 }
 
+/** R20B7: "mark all as agreed" on the publish screen. */
+export function useAgreeProposalsOfflineMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ departmentId, weekStart, days }: { departmentId: string; weekStart: string; days: string[] }) =>
+      api.agreeProposalsOffline(departmentId, weekStart, days),
+    onSettled: (_data, _error, { departmentId, weekStart }) => invalidateBoard(queryClient, departmentId, weekStart),
+    onError: showErrorToast,
+  });
+}
+
 /** REQ §13.138 (c): the week's held board notices. */
 export function useHeldNoticesQuery(departmentId: string | undefined, weekStart: string | undefined) {
   return useQuery({

@@ -1172,6 +1172,13 @@ export async function closeWeekRequests(departmentId: string, weekStart: string)
   await rpc("close_week_requests", { p_department_id: departmentId, p_week_start: weekStart });
 }
 
+/** R20B7 (owner 2026-11-14): mark every pending proposal of these days agreed with the member, so the days can be published. */
+export async function agreeProposalsOffline(departmentId: string, weekStart: string, days: string[]): Promise<{ applied: number; waiting: number; withdrawnStale: number }> {
+  const data = (await rpc("agree_proposals_offline", { p_department_id: departmentId, p_week_start: weekStart, p_days: days })) as
+    { applied?: number; waiting?: number; withdrawn_stale?: number } | null;
+  return { applied: data?.applied ?? 0, waiting: data?.waiting ?? 0, withdrawnStale: data?.withdrawn_stale ?? 0 };
+}
+
 export async function publishSiddur(departmentId: string, weekStart: string, scores: Json, fingerprint: string, policyScores: Json, options: PublicationOptions = {}): Promise<string> {
   return rpc("publish_siddur", { p_department_id: departmentId, p_week_start: weekStart,
     p_profile_scores: scores, p_expected_fingerprint: fingerprint, p_policy_scores: policyScores,

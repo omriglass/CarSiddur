@@ -331,6 +331,7 @@ begin
   perform pg_temp.expect_refused('weeks.ensure_department_weeks', format('select public.ensure_department_weeks(%L)', dept_b));
   perform pg_temp.expect_refused('weeks.publication_conflicts', format('select public.publication_conflicts(%L, %L)', dept_b, week_b));
   perform pg_temp.expect_refused('weeks.publication_readiness', format('select public.publication_readiness(%L, %L)', dept_b, week_b));
+  perform pg_temp.expect_refused('proposals.agree_proposals_offline', format('select public.agree_proposals_offline(%L, %L, array[%L::date])', dept_b, week_b, week_b));
   perform pg_temp.expect_refused('weeks.publish_scores_fingerprint', format('select public.publish_scores_fingerprint(%L, %L)', dept_b, week_b));
   perform pg_temp.expect_refused('weeks.solver_state_fingerprint', format('select public.solver_state_fingerprint(%L, %L)', dept_b, week_b));
   perform pg_temp.expect_refused('weeks.record_solver_preview',
@@ -447,7 +448,7 @@ declare
     'update_ride_public_notes','add_ride_passengers','set_ride_passengers','remove_ride_person',
     'log_car_care','report_car_issue','log_car_kilometrage','set_car_kilometrage','submit_car_checklist','upsert_car_checklist_item','move_car_checklist_item','delete_car_checklist_item','request_car_tasks','withdraw_car_task','complete_car_task','merge_destination','suggest_destination','car_mileage_totals',
     'admin_approve_member','admin_update_member','admin_set_sadran_assignments',
-    'create_proposal','send_proposal','send_draft_proposals','flush_held_notices','preview_send_all','send_all_board_changes','agree_proposal_offline','proposal_car_conflicts','discard_proposal','withdraw_proposal','apply_proposal','record_answer_on_behalf','proposal_party_texts',
+    'create_proposal','send_proposal','send_draft_proposals','flush_held_notices','preview_send_all','send_all_board_changes','agree_proposal_offline','agree_proposals_offline','proposal_car_conflicts','discard_proposal','withdraw_proposal','apply_proposal','record_answer_on_behalf','proposal_party_texts',
     'open_week','reopen_week','set_week_phase','set_week_close_at','close_week_requests','ensure_department_weeks',
     'publication_readiness','publication_conflicts','publish_siddur','record_solver_preview','form_waitlist_groups',
     'publish_scores_fingerprint','solver_state_fingerprint','sadran_contact_of','fairness_stats','department_stats','joinable_rides_for_request',

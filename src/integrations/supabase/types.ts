@@ -6386,6 +6386,14 @@ export type Database = {
       }
       advance_week_phases: { Args: { p_now?: string }; Returns: number }
       agree_proposal_offline: { Args: { p_proposal_id: string }; Returns: Json }
+      agree_proposals_offline: {
+        Args: {
+          p_days: string[]
+          p_department_id: string
+          p_week_start: string
+        }
+        Returns: Json
+      }
       alternative_served_weight: {
         Args: { p_department_id: string }
         Returns: number

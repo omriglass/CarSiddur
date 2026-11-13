@@ -43,6 +43,13 @@ describe("mergedLeaveOptions (REQ item 229)", () => {
     expect(mergedLeaveOptions(merged([p("d", "driver", "me", "q1"), p("g", "requester", "g1", "q2")]), "other", all)).toBeNull();
   });
 
+  it("never offers a rider the wheel of a הקפצה (Q5): only 'no driver' remains", () => {
+    const people = [p("d", "driver", "me", "q1"), p("g", "requester", "g1", "q2")];
+    const ride = { driver_id: "me", status: "confirmed", series_id: null, people,
+      served: [{ request_id: "q2", role: "passenger", leg: "both", trip_type: "drop_off" }] } as never;
+    expect(mergedLeaveOptions(ride, "me", all)).toEqual({ candidates: [], noDriver: true });
+  });
+
   it("when my request carries others, only its companions may take it over, and there is no 'no driver'", () => {
     const options = mergedLeaveOptions(merged([
       p("d", "driver", "me", "q1"), p("a", "companion", "c1", "q1"), p("g", "requester", "g1", "q2"),
