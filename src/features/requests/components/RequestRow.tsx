@@ -60,6 +60,8 @@ interface RequestRowProps {
   onCancelRide?: (row: DisplayRow) => void;
   /** REQ §13.103 c: "קיצור הבקשה" on a multi-day request. */
   onShorten?: (row: DisplayRow) => void;
+  /** SP1 (REQ item 228): "פיצול" on a multi-day request. */
+  onSplit?: (row: DisplayRow) => void;
   onOptOutChange?: (row: DisplayRow, optOut: boolean) => void;
   /** REQ §13.101 h (QM8): the member's own active private cars in this department. */
   ownCars?: { id: string; name: string }[];
@@ -111,6 +113,7 @@ export function RequestRow({
   onWithdraw,
   onCancelRide,
   onShorten,
+  onSplit,
   onOptOutChange,
   ownCars = [],
   onPlaceOnOwnCar,
@@ -258,6 +261,11 @@ export function RequestRow({
           {row.seriesLegs && row.status !== "withdrawn" && row.status !== "cancelled" && onShorten ? (
             <Button size="sm" variant="outline" onClick={() => onShorten(row)}>
               {he.request.shortenSeries}
+            </Button>
+          ) : null}
+          {row.seriesLegs && row.seriesLegs.length > 1 && row.status !== "withdrawn" && row.status !== "cancelled" && onSplit ? (
+            <Button size="sm" variant="outline" onClick={() => onSplit(row)} data-testid="request-row-split">
+              {he.request.splitSeries}
             </Button>
           ) : null}
           {/* R13M5: the driver cancelled and nobody left on the ride drives. */}

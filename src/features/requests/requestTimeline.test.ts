@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { he } from "@/i18n/he";
+import { he, tv } from "@/i18n/he";
 
 import { requestTimeline } from "./requestTimeline";
 
@@ -41,5 +41,15 @@ describe("requestTimeline (REQ §13.204)", () => {
 
   it("drops an event kind it does not know", () => {
     expect(requestTimeline([ev("something_new", {})])).toEqual([]);
+  });
+});
+
+describe("SP1 split in the history", () => {
+  it("names the part's length, or an ordinary request", () => {
+    const lines = requestTimeline([
+      ev("split", { count: 3, old_count: 5 }),
+      ev("split", { count: 1, old_count: 3 }),
+    ]);
+    expect(lines.map((l) => l.what)).toEqual([tv("requestHistory.split", { count: "3" }), he.requestHistory.splitToOne]);
   });
 });

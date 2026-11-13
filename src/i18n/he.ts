@@ -907,6 +907,7 @@ export const he = {
     tiresNoneChecked: "סמנו לפחות צמיג אחד לפני השמירה",
     carNotDiesel: "רק רכב סולר צריך אוראה",
     carLastOwner: "צריך להשאיר לרכב לפחות בעלים אחד",
+    seriesSplitInvalid: "אי אפשר לפצל כך — בחרו יום בתוך הנסיעה",
     kilometrageLowerThanLast: "הקילומטראז׳ נמוך מהקריאה האחרונה. אם הקריאה האחרונה שגויה, אחראי/ת הרכב או מנהל/ת הרכבים יכולים לתקן אותה",
     invalidKilometrage: "יש להזין קילומטראז׳ תקין (מספר שלם)",
     seriesCarUnavailable: "הרכב לא פנוי לכל ימי הבקשה הרב-יומית",

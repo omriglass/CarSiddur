@@ -62,6 +62,10 @@ function sentence(event: RequestHistoryEvent): Pick<TimelineLine, "what" | "deta
       return { what: tv("requestHistory.rideTimes", { from: whenLabel(d.old_starts, d.old_ends), to: whenLabel(d.starts, d.ends) }) };
     case "ride_cancelled":
       return { what: tv("requestHistory.rideCancelled", { car: str(d.car) ?? "" }) };
+    case "split": {
+      const count = typeof d.count === "number" ? d.count : 1;
+      return { what: count > 1 ? tv("requestHistory.split", { count: String(count) }) : he.requestHistory.splitToOne };
+    }
     case "proposal": {
       const status = str(d.status);
       return { what: status && status in PROPOSAL ? PROPOSAL[status as keyof typeof PROPOSAL] : PROPOSAL.other };

@@ -522,6 +522,13 @@ from (values
 cross join unnest(array['inbox','push']::public.notification_channel[]) as ch
 on conflict (event,channel,(coalesce(variant,''))) do nothing;
 
+-- REQ item 228 (d): a multi-day ride was split (same rows as 20261113180000_split_series.sql).
+insert into public.notification_templates (event, channel, variant, title, body, default_title, default_body)
+select 'ride_edited'::public.notification_event, ch, 'series_split',
+  '{{byName}} פיצל/ה את הנסיעה הרב-יומית שלך', '{{route}} · {{parts}}', '{{byName}} פיצל/ה את הנסיעה הרב-יומית שלך', '{{route}} · {{parts}}'
+from unnest(array['inbox','push']::public.notification_channel[]) as ch
+on conflict (event,channel,(coalesce(variant,''))) do nothing;
+
 -- REQ item 227 (d): private car owners (same rows as 20261113170300_private_car_owner_notices.sql).
 insert into public.notification_templates (event, channel, variant, title, body, default_title, default_body)
 select 'private_car_changed'::public.notification_event, ch, t.variant, t.title, t.body, t.title, t.body

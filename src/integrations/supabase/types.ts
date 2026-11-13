@@ -8090,6 +8090,14 @@ export type Database = {
         }
         Returns: string
       }
+      split_series: {
+        Args: {
+          p_cut_after: number[]
+          p_expected_version?: number
+          p_request_id: string
+        }
+        Returns: Json
+      }
       stop_request_template: {
         Args: { p_template_id: string }
         Returns: undefined
