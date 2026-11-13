@@ -82,6 +82,11 @@ export async function handOverOwnRide(rideId: string, expectedVersion: number, n
   await rpc("hand_over_own_ride", { p_ride_id: rideId, p_expected_version: expectedVersion, p_new_driver: newDriver });
 }
 
+/** REQ item 229: the driver (or the Sadran for them) leaves a merged ride — `newDriver` drives, or null = no driver. */
+export async function leaveMergedRide(rideId: string, expectedVersion: number, newDriver: string | null): Promise<void> {
+  await rpc("leave_merged_ride", { p_ride_id: rideId, p_expected_version: expectedVersion, ...(newDriver ? { p_new_driver: newDriver } : {}) });
+}
+
 /**
  * O28-8: just these rides of the week, as `week_board_rides` returns them (`week_board_rides_subset`, same rows
  * and RLS) — a ride the caller can no longer see (e.g. cancelled) is simply absent.

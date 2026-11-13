@@ -50,6 +50,7 @@ import { TripTypeChange } from "./TripTypeChange";
 import { WithdrawDuplicateAction } from "./WithdrawDuplicateAction";
 import { RequestHistoryDialog } from "@/features/requests/components/RequestHistoryDialog";
 import { SplitSeriesDialog } from "@/features/requests/components/SplitSeriesDialog";
+import { LeaveMergedRideActions } from "@/features/rides/components/LeaveMergedRideActions";
 import { seriesFirstDay } from "@/features/requests/split";
 import { busyDriverIds, personDayEntries } from "../driverBusy";
 import { RideDriverPicker, type DriverCandidate } from "./RideDriverPicker";
@@ -581,6 +582,8 @@ export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenCha
                   {onUnassign && !isPlanning && ride.series_id ? (
                     <p className="text-xs text-muted-foreground">{he.sadranBoard.seriesUnassignHint}</p>
                   ) : null}
+                  {/* REQ item 229: the Sadran takes the driver off a merged ride (another driver, or none). */}
+                  {!isPlanning && !cancelled && ride.driver_id ? <LeaveMergedRideActions ride={ride} onDone={() => onOpenChange(false)} /> : null}
                   {/* SP1 (REQ item 228): split a multi-day ride; the parts then move to other cars on their own. */}
                   {splitTarget && !isPlanning && !cancelled ? (
                     <div className="space-y-1">

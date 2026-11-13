@@ -862,6 +862,8 @@
         "supabase/migrations/**/*ride_people*",
         "supabase/migrations/**/*unified_ride_people*",
         "supabase/tests/ride_passengers.sql",
+        "supabase/tests/leave_merged_ride.sql",
+        "supabase/migrations/**/*leave_merged_ride*",
         "supabase/migrations/**/*split_ride_companion*",
         "supabase/tests/split_ride_companion.sql",
         "src/features/sadran/board/components/MergedPassengerDialog.tsx",
@@ -880,6 +882,7 @@
         "src/features/sadran/board/reservationPeople.test.ts"
       ],
       "sql": [
+        "leave_merged_ride.sql",
         "ride_passengers.sql",
         "split_ride_companion.sql"
       ],

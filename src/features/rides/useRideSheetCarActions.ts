@@ -4,8 +4,8 @@ import { useDepartmentMembers } from "@/features/auth/useDepartmentMembers";
 import type { Week } from "@/features/siddur/api";
 
 import type { BoardRide } from "./api";
-import { handOverCandidates } from "./handOver";
-import { useHandOverOwnRideMutation } from "./hooks";
+import { handOverCandidates, mergedLeaveOptions } from "./handOver";
+import { useHandOverOwnRideMutation, useLeaveMergedRideMutation } from "./hooks";
 import { ownCarMoveTargets, rideDayPublished } from "./ownCarMove";
 import { useOwnCarMove } from "./useOwnCarMove";
 
@@ -24,22 +24,31 @@ export function useRideSheetCarActions({ departmentId, profileId, myRequestIds, 
   const { myCars, moveRideToCar, moving } = useOwnCarMove(profileId);
   const membersQuery = useDepartmentMembers(departmentId);
   const handOver = useHandOverOwnRideMutation();
+  const leaveMerged = useLeaveMergedRideMutation();
 
   /** Props for `RideDetailSheet`; empty when the ride is null or no action applies. */
   function sheetProps(ride: BoardRide | null, onDone: () => void) {
     if (!ride?.id || ride.version == null || !isMember) return {};
     const targetIds = ownCarMoveTargets({ ride, myCarIds: myCars.map((car) => car.id), dayPublished: rideDayPublished(week, ride.starts_at), now });
-    const candidates = handOverCandidates(ride, profileId, myRequestIds, membersQuery.data ?? []);
+    // REQ item 229: on a merge the driver leaves through `leave_merged_ride` (another driver, or none); else §13.129 (b).
+    const merged = mergedLeaveOptions(ride, profileId, membersQuery.data ?? []);
+    const candidates = merged ? merged.candidates : handOverCandidates(ride, profileId, myRequestIds, membersQuery.data ?? []);
     const { id, version, department_id, week_start } = ride;
+    const leave = (newDriver: string | null) => department_id && week_start
+      ? leaveMerged.mutate({ rideId: id, expectedVersion: version, newDriver, departmentId: department_id, weekStart: week_start }, { onSuccess: onDone })
+      : undefined;
     return {
       moveToCarOptions: myCars.filter((car) => targetIds.includes(car.id)),
       onMoveToCar: (carId: string) => void moveRideToCar(ride, carId, onDone),
       movingToCar: moving,
       handOverOptions: candidates,
       onHandOver: department_id && week_start
-        ? (newDriver: string) => handOver.mutate({ rideId: id, expectedVersion: version, newDriver, departmentId: department_id, weekStart: week_start }, { onSuccess: onDone })
+        ? (newDriver: string) => merged
+          ? leave(newDriver)
+          : handOver.mutate({ rideId: id, expectedVersion: version, newDriver, departmentId: department_id, weekStart: week_start }, { onSuccess: onDone })
         : undefined,
-      handingOver: handOver.isPending,
+      onLeaveNoDriver: merged?.noDriver && department_id && week_start ? () => leave(null) : undefined,
+      handingOver: handOver.isPending || leaveMerged.isPending,
     };
   }
 

@@ -157,3 +157,38 @@ test("entering the waiting list while driving a ride then asks first and goes ah
     await cleanup(WEEK);
   }
 });
+
+test("the driver leaves a merged ride; the guest drives it, same car and hours (REQ item 229)", { tag: ["@siddur"] }, async ({ browser }) => {
+  test.slow();
+  const WEEK = "2041-04-28";
+  const { service, at, base, home, ride } = await fixture(WEEK);
+  const member1 = await newSignedInPage(browser, SEEDED_USERS.member1);
+  try {
+    const { data: own } = await service.from("ride_requests").select("request_id").eq("ride_id", ride.id).eq("role", "driver").single();
+    const { data: guest, error } = await service.from("requests").insert(
+      { ...base, requester_id: MEMBER2, filed_by: MEMBER2, origin_id: home, destination_id: BINYAMINA, trip_shape: "round_trip", depart_at: at("08:30"), return_at: at("17:45"), status: "merged" },
+    ).select("id").single();
+    if (error) throw error;
+    const { error: linkError } = await service.from("ride_requests").insert({ ride_id: ride.id, request_id: guest!.id, role: "passenger", leg: "both", car_mode: "passenger" });
+    if (linkError) throw linkError;
+
+    const page = member1.page;
+    await page.setViewportSize({ width: 1440, height: 1400 });
+    await page.goto(`/siddur/${NEVO_DEPARTMENT_ID}/${WEEK}`);
+    await page.locator(`[data-ride-id="${ride.id}"]:visible`).click();
+    await page.getByTestId("ride-peek-open").click();
+    await page.getByRole("button", { name: he.action.cancelRide, exact: true }).click();
+    const dialog = page.getByRole("dialog").filter({ hasText: he.request.cancelConfirmTitle });
+    await expect(dialog.getByTestId("leave-no-driver")).toBeVisible();
+    await dialog.getByRole("button", { name: tv("rideDetail.handOverOption", { name: SEEDED_USERS.member2.fullName }) }).click();
+
+    await expect.poll(async () => (await service.from("rides").select("driver_id").eq("id", ride.id).single()).data?.driver_id).toBe(MEMBER2);
+    const { data: after } = await service.from("rides").select("status, starts_at, ends_at, car_id").eq("id", ride.id).single();
+    expect(after!.status).not.toBe("cancelled");
+    expect(Date.parse(after!.ends_at)).toBe(Date.parse(ride.ends_at));
+    expect((await service.from("requests").select("status").eq("id", own!.request_id).single()).data?.status).toBe("withdrawn");
+  } finally {
+    await member1.context.close().catch(() => undefined);
+    await cleanup(WEEK);
+  }
+});

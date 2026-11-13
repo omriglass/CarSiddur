@@ -491,6 +491,14 @@ export const heMember = {
     /** REQ §13.129 (b): the driver leaves the ride, a companion/added passenger who drives takes over. */
     handOverOption: "להסיר אותי — {{name}} ינהג/תנהג",
     cancelForAll: "ביטול הנסיעה לכולם",
+    // REQ item 229
+    leaveNoDriver: "להסיר אותי — צריך נהג/ת",
+    removeDriverTitle: "להוריד את {{name}} מהנהיגה",
+    removeDriverOption: "{{name}} ינהג/תנהג",
+    removeDriverNone: "בלי נהג/ת — הנסיעה תחכה לנהג/ת",
+    removeDriverHelp: "הנסיעה נשארת על אותו רכב ובאותן שעות; הבקשה של הנהג/ת מבוטלת.",
+    removeDriverConfirm: "הבקשה של {{name}} תבוטל, וכל מי שבנסיעה יקבל/תקבל הודעה.",
+    removeDriverConfirmButton: "אישור",
     title: "פרטי הנסיעה",
     driver: "נהג/ת",
     chauffeur: "הסעה · מסיע/ה",

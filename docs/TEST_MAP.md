@@ -364,7 +364,7 @@ matching `*proposal*`; `e2e/proposal.spec.ts`, `proposal-retry.spec.ts`, `board-
 
 **Automated**:
 - Vitest: `npx vitest run src/lib/ridePassengerSummary.test.ts src/lib/ridePublicDetails.test.ts src/features/siddur/ridePeople.test.ts src/features/siddur/addPassengers.test.ts src/features/sadran/board/reservationPeople.test.ts`
-- SQL: `ride_passengers.sql`
+- SQL: `ride_passengers.sql`, `leave_merged_ride.sql` (REQ item 229)
 - Playwright: `npx playwright test --grep "@ride-passengers"` (coverage gap — see below)
 
 **QA script**:

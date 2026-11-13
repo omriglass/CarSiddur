@@ -16,6 +16,7 @@ import {
   fetchCarNeighbours,
   fetchRideChanges,
   handOverOwnRide,
+  leaveMergedRide,
   releaseRideDriver,
   removeRidePerson,
   requestMakeRoom,
@@ -76,6 +77,19 @@ export function useRemoveRidePassengerMutation() {
     mutationFn: ({ rideId, expectedVersion, key }: {
       rideId: string; expectedVersion: number; key: string; departmentId: string; weekStart: string;
     }) => removeRidePerson(rideId, expectedVersion, key),
+    onSuccess: (_data, { departmentId, weekStart, rideId }) => {
+      void invalidateWeekData(client, departmentId, weekStart, [rideId]);
+    },
+    onError: showErrorToast,
+  });
+}
+
+/** REQ item 229: the driver leaves a merged ride. */
+export function useLeaveMergedRideMutation() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ rideId, expectedVersion, newDriver }: { rideId: string; expectedVersion: number; newDriver: string | null; departmentId: string; weekStart: string }) =>
+      leaveMergedRide(rideId, expectedVersion, newDriver),
     onSuccess: (_data, { departmentId, weekStart, rideId }) => {
       void invalidateWeekData(client, departmentId, weekStart, [rideId]);
     },
