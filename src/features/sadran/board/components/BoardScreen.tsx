@@ -84,6 +84,7 @@ import { DropAskDialog } from "./DropAskDialog";
 import { ProposalActionSheet } from "./ProposalActionSheet";
 import { PolicyChip } from "./PolicyChip";
 import { ReservationDialog } from "./ReservationDialog";
+import { LiveEventsStrip } from "./LiveEventsStrip";
 import { RideSheet } from "./RideSheet";
 import { UnmetList } from "./UnmetList";
 import { carsFreeForRequest, placementMinutes } from "../placeOnCar";
@@ -483,6 +484,12 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
         </div>
       ) : null}
 
+      {/* R20M1: what others did on published days since the Sadran last looked. */}
+      <LiveEventsStrip key={`${departmentId}|${weekStart}`} departmentId={departmentId} weekStart={weekStart} enabled={(thisWeekRow?.published_days?.length ?? 0) > 0}
+        onOpenEvent={(event) => {
+          if (event.starts_at) board.setSelectedDay(dateKey(event.starts_at));
+          if (event.ride_id && board.rides.some((ride) => ride.id === event.ride_id)) dnd.setSelectedRideId(event.ride_id);
+        }} />
       <WeekStrip weekStart={weekStart} counts={board.dayCounts} selected={board.selectedDay} onSelect={board.setSelectedDay} />
       {maintenanceEditing.dialog}
 

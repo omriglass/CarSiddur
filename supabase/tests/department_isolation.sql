@@ -225,6 +225,8 @@ begin
   perform pg_temp.expect_refused('rides.restore_removed_reservation', format('select public.restore_removed_reservation(%L)', ride_b_removed));
   -- TODO UN1: the board's undo of department B's week
   perform pg_temp.expect_refused('board.board_changes_since', format('select public.board_changes_since(%L, %L)', dept_b, week_b));
+  perform pg_temp.expect_refused('board.board_live_events', format('select public.board_live_events(%L, %L)', dept_b, week_b));
+  perform pg_temp.expect_refused('board.mark_board_seen', format('select public.mark_board_seen(%L, %L)', dept_b, week_b));
   perform pg_temp.expect_refused('board.undo_board_change', format('select public.undo_board_change(%L, %L, array[1]::bigint[])', dept_b, week_b));
   perform pg_temp.expect_refused('rides.cancel_ride', format('select public.cancel_ride(%L, %L, %L)', ride_b, 'attack', ride_b_version));
   -- REQ §13.101: placement / request features
@@ -444,7 +446,7 @@ declare
   iso_covered text[] := array[
     'submit_request','withdraw_request','set_manual_boost','set_freed_slot_opt_out','set_request_children','answer_short_turnaround',
     'set_request_companions','withdraw_all_requests','submit_series_request','enter_waiting_list','apply_solver_result',
-    'edit_ride','cancel_ride','unassign_ride','restore_removed_reservation','board_changes_since','undo_board_change','unmerge_request','split_ride_companion','merge_preview','merge_previews','set_request_trip_type','switch_request_plan','ride_route','request_ride_change','request_ride_shorten','ride_shorten_options','ride_shorten_options_for_request','set_ride_editors','ride_editor_withdraw_request','ride_editor_cancel_ride','respond_ride_change','cancel_ride_change',
+    'edit_ride','cancel_ride','unassign_ride','restore_removed_reservation','board_changes_since','board_live_events','mark_board_seen','undo_board_change','unmerge_request','split_ride_companion','merge_preview','merge_previews','set_request_trip_type','switch_request_plan','ride_route','request_ride_change','request_ride_shorten','ride_shorten_options','ride_shorten_options_for_request','set_ride_editors','ride_editor_withdraw_request','ride_editor_cancel_ride','respond_ride_change','cancel_ride_change',
     'update_ride_public_notes','add_ride_passengers','set_ride_passengers','remove_ride_person',
     'log_car_care','report_car_issue','log_car_kilometrage','set_car_kilometrage','submit_car_checklist','upsert_car_checklist_item','move_car_checklist_item','delete_car_checklist_item','request_car_tasks','withdraw_car_task','complete_car_task','merge_destination','suggest_destination','car_mileage_totals',
     'admin_approve_member','admin_update_member','admin_set_sadran_assignments',

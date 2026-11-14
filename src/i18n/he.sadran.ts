@@ -803,6 +803,20 @@ export const heSadran = {
     closedReason: "סיבת הסגירה: {{reason}}",
   },
   /** REQ §13.101 (d): the same named child on two overlapping requests of different parents. */
+  /** R20M1 (REQ item 233, owner wording 2026-11-14): the board strip of others' published-day events. */
+  liveEvents: {
+    title: "מאז שהסתכלת לאחרונה",
+    titleCount: "מאז שהסתכלת לאחרונה ({{count}})",
+    driverLeft: "{{name}} כבר לא נוהג/ת בנסיעה",
+    driverHanded: "{{name}} העביר/ה את הנהיגה ל{{other}}",
+    cancelled: "{{name}} ביטל/ה את הנסיעה",
+    freedPlaced: "{{name}} קיבל/ה את הרכב שהתפנה",
+    joined: "{{names}} הצטרף/ה לנסיעה של {{owner}}",
+    joinedMany: "{{names}} הצטרפו לנסיעה של {{owner}}",
+    joinedNoOwner: "{{names}} הצטרף/ה לנסיעה",
+    joinedManyNoOwner: "{{names}} הצטרפו לנסיעה",
+    proposalExpired: "ההצעה ל{{name}} פגה בלי תשובה",
+  },
   duplicateChild: {
     banner: "ילד/ה {{child}} מופיע/ה בשתי בקשות חופפות",
     line: "{{a}} ו{{b}} · {{dayTime}}",

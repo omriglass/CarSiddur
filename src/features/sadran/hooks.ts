@@ -559,6 +559,26 @@ export function useHeldNoticesQuery(departmentId: string | undefined, weekStart:
   });
 }
 
+/** R20M1 (REQ item 233): others' published-day events and the caller's marker; only for a week with published days. */
+export function useBoardLiveEventsQuery(departmentId: string | undefined, weekStart: string | undefined, enabled: boolean) {
+  return useQuery({
+    queryKey: sadranKeys.liveEvents(departmentId ?? "", weekStart ?? ""),
+    queryFn: () => api.fetchBoardLiveEvents(departmentId as string, weekStart as string),
+    enabled: enabled && !!departmentId && !!weekStart,
+  });
+}
+
+/** R20M1: the Sadran opened the strip. */
+export function useMarkBoardSeenMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ departmentId, weekStart }: { departmentId: string; weekStart: string }) => api.markBoardSeen(departmentId, weekStart),
+    onSuccess: (seen, { departmentId, weekStart }) => {
+      queryClient.setQueryData<api.BoardLiveEvents>(sadranKeys.liveEvents(departmentId, weekStart), (old) => old ? { ...old, seenAuditId: Math.max(old.seenAuditId, seen) } : old);
+    },
+  });
+}
+
 /** REQ §13.138 (d): "שלח את כל ההצעות" for the ticked days — the drafts, then the held board notices. */
 export function useSendAllMutation() {
   const queryClient = useQueryClient();

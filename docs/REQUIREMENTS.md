@@ -768,6 +768,13 @@ One canonical `notification_event` list now has **24** events (was 22, CLAUDE.md
   - (e) Hours a replaced published ride gives up outside the new span are offered like any change (§231), and the "הרכב יתפנה לאחרים" line shows before the save when someone waiting would get them.
   - Implemented in `20261114180000`; suite `extend_to_series.sql`, e2e `multi-day-edit.spec.ts`.
 
+233. **The Sadran sees what others did on published days, quietly (owner 2026-11-14, R20M1; docs/TODO.md QA run 20 Q4).**
+  - (a) The board shows a collapsed strip **"מאז שהסתכלת לאחרונה"** with a count badge of what is new: on any published day (live week, or a day published early), a driver left a ride ("דנה כבר לא נוהג/ת בנסיעה"), handed the wheel on ("דנה העביר/ה את הנהיגה ליוסי"), a booked request was cancelled ("דנה ביטל/ה את הנסיעה"), a freed car was given to someone ("יוסי קיבל/ה את הרכב שהתפנה"), someone joined a ride ("יוסי הצטרף/ה לנסיעה של דנה"; several in one action — "…הצטרפו…"), a proposal closed unanswered ("ההצעה לדנה פגה בלי תשובה"). Each line ends with "· day hour · car" and opens its day and ride.
+  - (b) Only others' actions (members, the cron, another Sadran), never the viewer's own. The last 7 days, at most 50 lines. Without a marker yet, what is older than 24 hours counts as seen.
+  - (c) **Opening the strip counts as looked**: the badge resets and the new lines stay highlighted for the rest of the visit. The marker is per Sadran and week, kept on the server (a phone and a computer agree). The badge shows on the strip only.
+  - (d) No push and no inbox notice (notification noise, owner's top priority).
+  - Implemented in `20261114190000`; suite `board_live_events.sql`, e2e `board-live-events.spec.ts`.
+
 ## Owner TODO amendments — 2026-09-07
 
 These amendments take precedence over older behavior descriptions above.

@@ -650,6 +650,8 @@
         "supabase/migrations/**/*day_readiness*",
         "supabase/migrations/**/*car_chain*",
         "supabase/tests/board_undo.sql",
+        "supabase/tests/board_live_events.sql",
+        "e2e/board-live-events.spec.ts",
         "supabase/migrations/**/*undo*",
         "supabase/tests/todo_board_semantics.sql",
         "supabase/tests/coordinator_planning.sql",
@@ -755,7 +757,8 @@
         "keep_car_at_destination.sql",
         "plan_switch.sql",
         "on_behalf_requests.sql",
-        "merge_long_detour.sql"
+        "merge_long_detour.sql",
+        "board_live_events.sql"
       ],
       "playwrightTags": [
         "@board"
@@ -774,7 +777,8 @@
         "Move a ride via the sheet's car selector; confirm it persists (REQ §13.42)",
         "Confirm a private car's board row is hidden on days with no ride (REQ §13.80)",
         "Confirm a weekly-assigned member sees only their assigned week (REQ §13.42)",
-        "Remove the return leg of a relay pair; confirm the remaining leg becomes a standalone chauffeur ride (or goes back to unmet) with no relocation ride created (REQ §13.93, 2026-10-04)"
+        "Remove the return leg of a relay pair; confirm the remaining leg becomes a standalone chauffeur ride (or goes back to unmet) with no relocation ride created (REQ §13.93, 2026-10-04)",
+        "On a published week, as a member cancel a ride and add a passenger to another; as the Sadran the board strip \"מאז שהסתכלת לאחרונה\" shows a badge of 2, opening it lists both lines and clears the badge (REQ item 233)"
       ]
     },
     {

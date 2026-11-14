@@ -1225,3 +1225,42 @@ export async function fetchAuditLog(departmentId: string, weekStart: string): Pr
   if (error) throw toAppError(error);
   return data ?? [];
 }
+
+/** R20M1 (REQ item 233): what others did on the week's published days — the board strip "since you last looked". */
+export type BoardLiveEventKind = "driver_left" | "driver_handed" | "cancelled" | "freed_placed" | "joined" | "proposal_expired";
+export interface BoardLiveEvent {
+  /** The audit row; later events have larger ids. */
+  id: number;
+  kind: BoardLiveEventKind;
+  at: string;
+  /** The ride to open on the board; null when it is gone (a cancel). */
+  ride_id: string | null;
+  starts_at: string | null;
+  car_name: string | null;
+  person_name: string | null;
+  /** driver_handed: the new driver. */
+  other_name: string | null;
+  /** joined: whose ride it was. */
+  owner_name: string | null;
+  /** joined: everyone added in that one action. */
+  names: string[] | null;
+}
+export interface BoardLiveEvents {
+  /** The caller's marker: events with a larger id are new to them. */
+  seenAuditId: number;
+  /** Newest first, at most 50, the last 7 days. */
+  events: BoardLiveEvent[];
+}
+
+export async function fetchBoardLiveEvents(departmentId: string, weekStart: string): Promise<BoardLiveEvents> {
+  const raw = await fetchWeekPart<{ seen_audit_id?: number | string; events?: BoardLiveEvent[] } | null>(departmentId, weekStart, "liveEvents");
+  return {
+    seenAuditId: Number(raw?.seen_audit_id ?? 0),
+    events: (raw?.events ?? []).map((event) => ({ ...event, id: Number(event.id) })),
+  };
+}
+
+/** R20M1: opening the strip — everything up to now counts as seen; resolves the new marker. */
+export async function markBoardSeen(departmentId: string, weekStart: string): Promise<number> {
+  return Number(await rpc("mark_board_seen", { p_department_id: departmentId, p_week_start: weekStart }));
+}

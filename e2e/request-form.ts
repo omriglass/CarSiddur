@@ -45,6 +45,7 @@ export const FIXTURE_WEEKS = {
   myRidesOptions: "2045-02-26",
   rideMembersEdit: "2045-03-05",
   multiDayEdit: "2045-03-12",
+  liveEvents: "2045-03-19",
 } as const;
 
 /** `yyyy-MM-dd` of the `index`-th day (0 = Sunday) of a week. */

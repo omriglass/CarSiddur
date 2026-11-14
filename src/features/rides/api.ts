@@ -22,7 +22,7 @@ export type BoardRide = Database["public"]["Views"]["v_board_rides"]["Row"];
  */
 export type WeekPart =
   | "week" | "rides" | "requests" | "proposals" | "freedOffers" | "heldNotices"
-  | "carLocations" | "waitlistGroups" | "waitlistHolds" | "siddurWaitlist" | "rideChanges";
+  | "carLocations" | "waitlistGroups" | "waitlistHolds" | "siddurWaitlist" | "rideChanges" | "liveEvents";
 
 const weekParts = createWeekPartsBatcher({
   fetch: async (departmentId, weekStart, parts) => {

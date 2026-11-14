@@ -160,6 +160,51 @@ export type Database = {
           },
         ]
       }
+      board_seen_marks: {
+        Row: {
+          created_at: string
+          department_id: string
+          id: string
+          profile_id: string
+          seen_audit_id: number
+          updated_at: string
+          week_start: string
+        }
+        Insert: {
+          created_at?: string
+          department_id: string
+          id?: string
+          profile_id: string
+          seen_audit_id?: number
+          updated_at?: string
+          week_start: string
+        }
+        Update: {
+          created_at?: string
+          department_id?: string
+          id?: string
+          profile_id?: string
+          seen_audit_id?: number
+          updated_at?: string
+          week_start?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "board_seen_marks_department_id_week_start_fkey"
+            columns: ["department_id", "week_start"]
+            isOneToOne: false
+            referencedRelation: "weeks"
+            referencedColumns: ["department_id", "week_start"]
+          },
+          {
+            foreignKeyName: "board_seen_marks_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       car_access_codes: {
         Row: {
           access_code: string | null
@@ -6536,6 +6581,10 @@ export type Database = {
         }
         Returns: Json
       }
+      board_live_events: {
+        Args: { p_department_id: string; p_week_start: string }
+        Returns: Json
+      }
       board_rides_by_ids: {
         Args: { p_ride_ids: string[] }
         Returns: {
@@ -7101,6 +7150,10 @@ export type Database = {
       log_car_kilometrage: {
         Args: { p_car_id: string; p_km: number }
         Returns: string
+      }
+      mark_board_seen: {
+        Args: { p_department_id: string; p_week_start: string }
+        Returns: number
       }
       mark_car_move: {
         Args: {
