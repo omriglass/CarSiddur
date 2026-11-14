@@ -2740,6 +2740,17 @@ $$;
 ALTER FUNCTION "public"."_frag"("_key" "text", "_vars" "jsonb") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."_freed_car_kept_out"() RETURNS boolean
+    LANGUAGE "sql" STABLE
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  select coalesce(nullif(current_setting('request.headers', true), '')::jsonb ->> 'x-freed-car', '') = 'keep';
+$$;
+
+
+ALTER FUNCTION "public"."_freed_car_kept_out"() OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."_freed_cause_note"("p_offer_id" "uuid") RETURNS "text"
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -4042,6 +4053,7 @@ declare
   v_ride public.rides%rowtype; v_offer_id uuid;
   v_ta interval; v_day_start timestamptz; v_day_end timestamptz;
   v_prev record; v_next record; v_gap_start timestamptz; v_gap_end timestamptz; v_maint timestamptz;
+  v_keep boolean := public._freed_car_kept_out(); v_car text; v_by text;
 begin
   select * into v_ride from public.rides where id = p_ride_id;
   if v_ride.id is null or p_to <= p_from or p_to <= now() then return null; end if;
@@ -4074,6 +4086,26 @@ begin
                     when v_next.origin_id is distinct from p_place then p_to
                     else greatest(v_next.starts_at - v_ta, p_to) end;
   if v_maint is not null then v_gap_end := greatest(least(v_gap_end, v_maint), p_to); end if;
+
+  -- REQ item 237: "אסתדר מחוץ לאפליקציה" — nobody waiting is offered the hours. A closed row records it; the
+  -- Sadranim (not the actor) get one inbox message, never a push.
+  if v_keep then
+    insert into public.freed_slot_offers (department_id, week_start, car_id, cancelled_ride_id, starts_at, ends_at, expires_at,
+      cause_kind, cause_actor, cause_owner_id, kept_ride, status, resolved_at, resolved_by, close_reason)
+    values (v_ride.department_id, v_ride.week_start, p_car_id, p_ride_id, v_gap_start, v_gap_end, greatest(p_from, now()),
+      p_kind, (select auth.uid()), public._ride_owner_id(p_ride_id), p_kept, 'closed', now(), (select auth.uid()), 'kept_out')
+    returning id into v_offer_id;
+    select name into v_car from public.cars where id = p_car_id;
+    select full_name into v_by from public.profiles where id = (select auth.uid());
+    perform public._notify_inbox_only(s.profile_id, 'claim_contested', v_ride.department_id,
+      jsonb_build_object('byName', coalesce(v_by, ''), 'car', coalesce(v_car, ''), 'day', public.day_date_label(p_from),
+        'timeRange', to_char(p_from at time zone 'Asia/Jerusalem', 'HH24:MI') || '–' || to_char(p_to at time zone 'Asia/Jerusalem', 'HH24:MI')),
+      jsonb_build_object('offer_id', v_offer_id, 'ride_id', p_ride_id, 'week_start', v_ride.week_start, 'variant', 'freed_kept_out'),
+      format('freed_kept_out:%s', v_offer_id))
+    from public.sadranim_of(v_ride.department_id, v_ride.week_start) as s(profile_id)
+    where s.profile_id is distinct from (select auth.uid());
+    return null;
+  end if;
 
   -- a ride shortened again while its earlier freed hours are still open: the newer offer replaces the open one
   update public.freed_slot_offers set status = 'closed', resolved_at = now(), close_reason = 'superseded'
@@ -35343,6 +35375,11 @@ GRANT ALL ON FUNCTION "public"."_flush_held_notices"("p_department_id" "uuid", "
 
 REVOKE ALL ON FUNCTION "public"."_frag"("_key" "text", "_vars" "jsonb") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."_frag"("_key" "text", "_vars" "jsonb") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."_freed_car_kept_out"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_freed_car_kept_out"() TO "service_role";
 
 
 

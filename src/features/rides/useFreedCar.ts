@@ -3,7 +3,7 @@
 //    appears when the answer comes within the budget, and never afterwards (no jumping text).
 //  * `useFreedCarGate()` — a save that asks nothing today (ride sheet edit, a published request edit): it waits up to
 //    the budget, saves at once when nobody waiting would get the car, and otherwise asks first ("הרכב יתפנה לאחרים",
-//    the line, "לשמור" / "חזרה").
+//    the line, "לשמור" / "לשמור בלי להעביר את הרכב" (REQ item 237) / "חזרה").
 import { useEffect, useRef, useState } from "react";
 
 import type { FreedCarPreviewRequest } from "./api";
@@ -22,22 +22,25 @@ export function useFreedCarLine(request: FreedCarPreviewRequest | null): string 
   return line && line.key === key ? line.text : null;
 }
 
+/** The answer: "free" = go ahead (nobody affected, or "לשמור"), "keep" = go ahead but offer the hours to nobody, false = "חזרה". */
+export type FreedCarAnswer = "free" | "keep" | false;
+
 export interface FreedCarGate {
   /** Saves at once when nobody waiting would get the car (or no answer in time); otherwise asks first. */
-  run: (request: FreedCarPreviewRequest | null, save: () => void) => Promise<void>;
-  /** The same as an awaitable answer: true = go ahead (nobody affected, or "לשמור"), false = "חזרה". */
-  ask: (request: FreedCarPreviewRequest | null) => Promise<boolean>;
+  run: (request: FreedCarPreviewRequest | null, save: (keepOut: boolean) => void) => Promise<void>;
+  /** The same as an awaitable answer. */
+  ask: (request: FreedCarPreviewRequest | null) => Promise<FreedCarAnswer>;
   /** A check is running (keep the save button busy). */
   checking: boolean;
-  dialog: { open: boolean; line: string; onConfirm: () => void; onBack: () => void };
+  dialog: { open: boolean; line: string; onConfirm: () => void; onKeepOut: () => void; onBack: () => void };
 }
 
 export function useFreedCarGate(): FreedCarGate {
-  const [pending, setPending] = useState<{ line: string; answer: (ok: boolean) => void } | null>(null);
+  const [pending, setPending] = useState<{ line: string; answer: (answer: FreedCarAnswer) => void } | null>(null);
   const [checking, setChecking] = useState(false);
   const busy = useRef(false);
-  async function ask(request: FreedCarPreviewRequest | null): Promise<boolean> {
-    if (!request) return true;
+  async function ask(request: FreedCarPreviewRequest | null): Promise<FreedCarAnswer> {
+    if (!request) return "free";
     if (busy.current) return false;
     busy.current = true;
     setChecking(true);
@@ -48,22 +51,23 @@ export function useFreedCarGate(): FreedCarGate {
       busy.current = false;
       setChecking(false);
     }
-    if (!line) return true;
+    if (!line) return "free";
     const text = line;
-    return new Promise<boolean>((resolve) => setPending({ line: text, answer: resolve }));
+    return new Promise<FreedCarAnswer>((resolve) => setPending({ line: text, answer: resolve }));
   }
-  async function run(request: FreedCarPreviewRequest | null, save: () => void) {
-    if (await ask(request)) save();
+  async function run(request: FreedCarPreviewRequest | null, save: (keepOut: boolean) => void) {
+    const answer = await ask(request);
+    if (answer) save(answer === "keep");
   }
-  function settle(ok: boolean) {
+  function settle(answer: FreedCarAnswer) {
     const next = pending;
     setPending(null);
-    next?.answer(ok);
+    next?.answer(answer);
   }
   return {
     run,
     ask,
     checking,
-    dialog: { open: !!pending, line: pending?.line ?? "", onConfirm: () => settle(true), onBack: () => settle(false) },
+    dialog: { open: !!pending, line: pending?.line ?? "", onConfirm: () => settle("free"), onKeepOut: () => settle("keep"), onBack: () => settle(false) },
   };
 }

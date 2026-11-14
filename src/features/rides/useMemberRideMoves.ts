@@ -17,6 +17,7 @@ import { useBoardRides } from "@/features/siddur/hooks";
 import { siddurKeys } from "@/features/siddur/queryKeys";
 import { conflictingRides, moveOnRideDay, shortTurnaroundNextRide } from "@/features/siddur/rideEditing";
 import { he, tv } from "@/i18n/he";
+import { withFreedCarChoice } from "@/lib/appSurface";
 import { askShortTurnaround } from "@/lib/shortTurnaround";
 import { dateKey, formatTime, TZ } from "@/lib/time";
 import { effectiveWeekSettings } from "@/lib/weekSettings";
@@ -140,13 +141,14 @@ export function useMemberRideMoves({ departmentId, weekStart, week, profileId, m
       starts_at: move.startsAt, ends_at: move.endsAt, origin_id: ride.origin_id, destination_id: ride.destination_id,
       driver_id: ride.driver_id, ...(allowShortTurnaround ? { allow_short_turnaround: true } : {}) };
     // FC1 (REQ item 231): a move that frees the car for someone waiting asks first ("הרכב יתפנה לאחרים")
-    await freedGate.run(editRidePreview(input, move.expectedVersion), () => void saveEdit(input, move.expectedVersion));
+    await freedGate.run(editRidePreview(input, move.expectedVersion), (keepOut) => void saveEdit(input, move.expectedVersion, keepOut));
   }
 
-  async function saveEdit(input: EditRideInput, expectedVersion: number) {
+  async function saveEdit(input: EditRideInput, expectedVersion: number, keepOut = false) {
     if (!departmentId || !weekStart) return;
     try {
-      await editMutation.mutateAsync({ input, expectedVersion, departmentId, weekStart });
+      // REQ item 237: "לשמור בלי להעביר את הרכב" — the save's calls carry the keep header
+      await withFreedCarChoice(keepOut, () => editMutation.mutateAsync({ input, expectedVersion, departmentId, weekStart }));
       await queryClient.invalidateQueries({ queryKey: siddurKeys.boardRides(departmentId, weekStart) });
       await queryClient.invalidateQueries({ queryKey: siddurKeys.carLocations(departmentId, weekStart) });
       onDone?.();

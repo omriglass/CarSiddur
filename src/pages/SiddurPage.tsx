@@ -1,3 +1,4 @@
+import { withFreedCarChoice } from "@/lib/appSurface";
 import { carOwnerIds, isCarOwner } from "@/lib/carOwners";
 import { cancelRidePreview, removeMePreview } from "@/features/rides/freedCarRequests";
 import { FreedCarConfirmDialog } from "@/features/rides/FreedCarConfirmDialog";
@@ -876,14 +877,16 @@ export function SiddurPage() {
         homeDestinationId={homeDestinationId}
         onOpenChange={(open) => !open && setSelectedRideId(null)}
         onRemoveOwnRide={selectedRide?.id && (selectedRide.driver_id === profileId || (!!selectedRide.driver_id && editorOwnerIds.has(selectedRide.driver_id))) && !volunteerDriverOf(selectedRide) && selectedRide.version != null
-          ? () => cancelRideMutation.mutate({ rideId: selectedRide.id!, expectedVersion: selectedRide.version!, reason: "CANCELLED_BY_MEMBER", asEditor: selectedRide.driver_id !== profileId }, { onSuccess: () => setSelectedRideId(null) })
+          ? (keepOut: boolean) => void withFreedCarChoice(keepOut, () => cancelRideMutation.mutateAsync({ rideId: selectedRide.id!, expectedVersion: selectedRide.version!, reason: "CANCELLED_BY_MEMBER", asEditor: selectedRide.driver_id !== profileId }))
+            .then(() => setSelectedRideId(null), () => undefined)
           : undefined}
         removingOwnRide={cancelRideMutation.isPending}
         onRemoveMe={(() => {
           const myKey = selectedRide ? myRidePersonKey(selectedRide, profileId) : null;
           if (!selectedRide?.id || !myKey || selectedRide.version == null || !selectedRide.department_id || !selectedRide.week_start) return undefined;
           const { id, version, department_id, week_start } = selectedRide;
-          return () => removeMeMutation.mutate({ rideId: id, expectedVersion: version, key: myKey, departmentId: department_id, weekStart: week_start }, { onSuccess: () => setSelectedRideId(null) });
+          return (keepOut: boolean) => void withFreedCarChoice(keepOut, () => removeMeMutation.mutateAsync({ rideId: id, expectedVersion: version, key: myKey, departmentId: department_id, weekStart: week_start }))
+            .then(() => setSelectedRideId(null), () => undefined);
         })()}
         removingMe={removeMeMutation.isPending}
         freedPreview={{

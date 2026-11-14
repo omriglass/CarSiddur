@@ -820,6 +820,10 @@ export const heMember = {
     confirmTitle: "הרכב יתפנה לאחרים",
     confirmSave: "לשמור",
     confirmBack: "חזרה",
+    /** REQ item 237: the third answer of every freed-car prompt — nobody waiting is offered the hours. */
+    keepOutSave: "לשמור בלי להעביר את הרכב — אסתדר מחוץ לאפליקציה",
+    keepOutCancel: "לבטל בלי להעביר את הרכב — אסתדר מחוץ לאפליקציה",
+    keepOutLeave: "לצאת בלי להעביר את הרכב — אסתדר מחוץ לאפליקציה",
   },
   /**
    * `/my/history` (REQ §13 item 91, owner 2026-09-16, E3): a small, lazily loaded, read-only

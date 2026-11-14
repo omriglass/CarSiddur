@@ -35,7 +35,7 @@ import { siddurKeys } from "@/features/siddur/queryKeys";
 import { paths } from "@/app/routes";
 import { useSaveReservationMutation } from "@/features/planning/hooks";
 import { he, t, tv } from "@/i18n/he";
-import { asRequestFormSave } from "@/lib/appSurface";
+import { asRequestFormSave, withFreedCarChoice } from "@/lib/appSurface";
 import { showErrorToast } from "@/lib/rpc";
 import { formatTime, weekdayIndex } from "@/lib/time";
 import { DEFAULT_HOP_MINUTES } from "@/lib/rideRoute";
@@ -346,6 +346,8 @@ export function RequestForm({
   const submitMutation = useSubmitRequestMutation({ deferInvalidation: true });
   const freedGate = useFreedCarGate();
   const freedAskedRef = useRef(false);
+  /** REQ item 237: the member answered "לשמור בלי להעביר את הרכב" in this save. */
+  const freedKeepRef = useRef(false);
   const submitSeriesMutation = useSubmitSeriesRequestMutation({ deferInvalidation: true });
   const joinableRidesMutation = useJoinableRidesMutation();
   const setCompanionsMutation = useSetRequestCompanionsMutation({ deferInvalidation: true });
@@ -913,6 +915,7 @@ export function RequestForm({
   async function submitChecked(formValues: RequestFormValues) {
     overlapConfirmedRef.current = false;
     freedAskedRef.current = false;
+    freedKeepRef.current = false;
     if (joinGroup && joinWindow) {
       const times = buildPayload(formValues, {});
       if (!fitsJoinWindow(times.depart_at, times.return_at, joinGroup, joinWindow)) {
@@ -1046,7 +1049,8 @@ export function RequestForm({
 
   // REQ §13.169 (c): every call of one save is marked as the request form's, so the riders get one notice of it.
   function performSubmit(formValues: RequestFormValues, options: SubmitOptions = {}) {
-    return asRequestFormSave(() => performSubmitCalls(formValues, options));
+    // REQ item 237: once "לשמור בלי להעביר את הרכב" is chosen, the rest of the save's calls carry the keep header.
+    return asRequestFormSave(() => withFreedCarChoice(() => freedKeepRef.current, () => performSubmitCalls(formValues, options)));
   }
 
   async function performSubmitCalls(formValues: RequestFormValues, options: SubmitOptions = {}) {
@@ -1125,6 +1129,7 @@ export function RequestForm({
           const go = await freedGate.ask({ action: "submit_series_request", args: { payload: { ...payload, short_turnaround_ask: true } } });
           if (!go) return;
           freedAskedRef.current = true;
+          freedKeepRef.current = go === "keep";
         }
         const raw = await submitSeriesMutation.mutateAsync(payload);
         const seriesResult = raw as unknown as SubmitSeriesRequestResult | null;
@@ -1174,6 +1179,7 @@ export function RequestForm({
         const go = await freedGate.ask({ action: "submit_request", args: { payload: { ...payload, short_turnaround_ask: true } } });
         if (!go) return;
         freedAskedRef.current = true;
+        freedKeepRef.current = go === "keep";
       }
       const raw = await submitMutation.mutateAsync(payload);
       const result = raw as unknown as SubmitRequestResult | null;

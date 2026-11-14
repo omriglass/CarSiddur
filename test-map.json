@@ -263,6 +263,8 @@
         "supabase/migrations/**/*waitlist_groups_plan_b*",
         "supabase/tests/freed_car_options.sql",
         "supabase/tests/freed_car_cause.sql",
+        "supabase/tests/freed_car_kept_out.sql",
+        "src/lib/appSurface.ts",
         "src/solver/freedSlotRun.ts",
         "src/features/rides/freedCarPreview.ts",
         "src/features/rides/freedCarRequests.ts",
@@ -292,11 +294,14 @@
         "src/features/waitlist",
         "src/features/requests/joinableRides.test.ts",
         "src/solver/__tests__/freedSlotRun.test.ts",
-        "src/features/rides/freedCarPreview.test.ts"
+        "src/features/rides/freedCarPreview.test.ts",
+        "src/features/rides/useFreedCar.test.tsx",
+        "src/lib/appSurface.test.ts"
       ],
       "sql": [
         "freed_car_options.sql",
         "freed_car_cause.sql",
+        "freed_car_kept_out.sql",
         "qa_run17_fixes.sql",
         "waitlist_groups.sql",
         "waitlist_group_hold.sql",

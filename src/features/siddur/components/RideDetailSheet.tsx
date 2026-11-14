@@ -33,6 +33,7 @@ import { peopleOf } from "@/features/rides/ridePeople";
 import type { HandOverCandidate } from "@/features/rides/handOver";
 import type { OwnCar } from "@/features/rides/useOwnCarMove";
 import type { FreedCarPreviewRequest } from "@/features/rides/api";
+import { KeepOutButton } from "@/features/rides/FreedCarConfirmDialog";
 import { useFreedCarLine } from "@/features/rides/useFreedCar";
 
 /**
@@ -79,10 +80,11 @@ interface RideDetailSheetProps {
   coordinatorNotes?: string;
   canEditPublicNotes?: boolean;
   /** Available only when the signed-in member has a request served by this ride. */
-  onRemoveOwnRide?: () => void;
+  /** `keepOut`: "לבטל בלי להעביר את הרכב" (REQ item 237). */
+  onRemoveOwnRide?: (keepOut: boolean) => void;
   removingOwnRide?: boolean;
   /** REQ §13.128: a non-driver passenger removes only themselves (`remove_ride_person`), never the whole ride. */
-  onRemoveMe?: () => void;
+  onRemoveMe?: (keepOut: boolean) => void;
   removingMe?: boolean;
   /**
    * FC1 (REQ item 231): the exact calls "cancel ride" / "remove me" will send — while their confirmation is open, it
@@ -281,9 +283,13 @@ export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = 
                     confirmLabel={leavingSomeonesRide ? he.rideDetail.leaveRideConfirm : removingMyRequest ? t("action.cancelRide") : he.rideDetail.removeMe}
                     destructive
                     loading={removingMe}
-                    onConfirm={() => { setConfirmRemoveMe(false); onRemoveMe(); }}
+                    onConfirm={() => { setConfirmRemoveMe(false); onRemoveMe(false); }}
                   >
                     {removeMeFreedLine ? <p className="text-sm" data-testid="freed-car-line">{removeMeFreedLine}</p> : null}
+                    {removeMeFreedLine ? (
+                      <KeepOutButton label={removingMyRequest && !leavingSomeonesRide ? he.freedCar.keepOutCancel : he.freedCar.keepOutLeave} disabled={removingMe}
+                        onClick={() => { setConfirmRemoveMe(false); onRemoveMe(true); }} />
+                    ) : null}
                   </ConfirmDialog>
                 </>
               ) : onRemoveOwnRide ? (
@@ -299,9 +305,15 @@ export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = 
                     confirmLabel={(handOverOptions.length && onHandOver) || onLeaveNoDriver ? he.rideDetail.cancelForAll : t("action.cancelRide")}
                     destructive
                     loading={removingOwnRide || handingOver}
-                    onConfirm={() => { setConfirmCancel(false); onRemoveOwnRide(); }}
+                    onConfirm={() => { setConfirmCancel(false); onRemoveOwnRide(false); }}
                   >
                     {cancelFreedLine ? <p className="mb-2 text-sm" data-testid="freed-car-line">{cancelFreedLine}</p> : null}
+                    {cancelFreedLine ? (
+                      <div className="mb-2">
+                        <KeepOutButton label={he.freedCar.keepOutCancel} disabled={removingOwnRide || handingOver}
+                          onClick={() => { setConfirmCancel(false); onRemoveOwnRide(true); }} />
+                      </div>
+                    ) : null}
                     {/* REQ §13.129 (b): the driver may instead hand the ride to someone on it who drives. */}
                     {(handOverOptions.length && onHandOver) || onLeaveNoDriver ? (
                       <div className="space-y-2">

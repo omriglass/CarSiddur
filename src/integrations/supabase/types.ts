@@ -5901,6 +5901,7 @@ export type Database = {
         Returns: number
       }
       _frag: { Args: { _key: string; _vars?: Json }; Returns: string }
+      _freed_car_kept_out: { Args: never; Returns: boolean }
       _freed_cause_note: { Args: { p_offer_id: string }; Returns: string }
       _guest_edit_stays: {
         Args: {
