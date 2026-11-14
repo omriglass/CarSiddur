@@ -126,6 +126,25 @@ interface RideDetailSheetProps {
  */
 export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = null, onOpenChange, editor, coordinatorNotes, canEditPublicNotes, onRemoveOwnRide, removingOwnRide = false, onRemoveMe, removingMe = false, freedPreview, editRequestLinks = [], showAddPassengers = false, weekRides, moveToCarOptions = [], onMoveToCar, movingToCar = false, handOverOptions = [], onHandOver, onLeaveNoDriver, leaveNoDriverDialog, handingOver = false }: RideDetailSheetProps) {
   const [confirmCancel, setConfirmCancel] = useState(false);
+  const [notDriving, setNotDriving] = useState(false);
+  const canLeaveDriving = (handOverOptions.length > 0 && !!onHandOver) || !!onLeaveNoDriver;
+  /** The driver's ways out of the ride: hand it to someone on it who drives, or leave it waiting for a driver. */
+  const leaveChoices = (close: () => void) => (
+    <div className="space-y-2">
+      {onHandOver ? handOverOptions.map((option) => (
+        <Button key={option.id} type="button" className="w-full" variant="outline" disabled={handingOver} data-testid="hand-over-option"
+          onClick={() => { close(); onHandOver(option.id); }}>
+          {tv("rideDetail.handOverOption", { name: option.name })}
+        </Button>
+      )) : null}
+      {onLeaveNoDriver ? (
+        <Button type="button" className="w-full" variant="outline" disabled={handingOver} data-testid="leave-no-driver"
+          onClick={() => { close(); onLeaveNoDriver(); }}>
+          {he.rideDetail.leaveNoDriver}
+        </Button>
+      ) : null}
+    </div>
+  );
   const viewerId = useSession().session?.user.id;
   const [confirmRemoveMe, setConfirmRemoveMe] = useState(false);
   const cancelFreedLine = useFreedCarLine(confirmCancel ? freedPreview?.cancel ?? null : null);
@@ -297,6 +316,11 @@ export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = 
                 </>
               ) : onRemoveOwnRide ? (
                 <>
+                  {canLeaveDriving ? (
+                    <Button className="w-full" size="lg" variant="outline" disabled={handingOver} onClick={() => setNotDriving(true)} data-testid="not-driving-this">
+                      {he.rideDetail.notDrivingThis}
+                    </Button>
+                  ) : null}
                   <Button className="w-full" size="lg" variant="destructive" disabled={removingOwnRide} onClick={() => setConfirmCancel(true)}>
                     {t("action.cancelRide")}
                   </Button>
@@ -305,7 +329,7 @@ export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = 
                     open={confirmCancel}
                     onOpenChange={setConfirmCancel}
                     title={he.request.cancelConfirmTitle}
-                    confirmLabel={(handOverOptions.length && onHandOver) || onLeaveNoDriver ? he.rideDetail.cancelForAll : t("action.cancelRide")}
+                    confirmLabel={canLeaveDriving ? he.rideDetail.cancelForAll : t("action.cancelRide")}
                     destructive
                     loading={removingOwnRide || handingOver}
                     onConfirm={() => { setConfirmCancel(false); onRemoveOwnRide(false); }}
@@ -318,22 +342,20 @@ export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = 
                       </div>
                     ) : null}
                     {/* REQ §13.129 (b): the driver may instead hand the ride to someone on it who drives. */}
-                    {(handOverOptions.length && onHandOver) || onLeaveNoDriver ? (
-                      <div className="space-y-2">
-                        {onHandOver ? handOverOptions.map((option) => (
-                          <Button key={option.id} type="button" className="w-full" variant="outline" disabled={handingOver} data-testid="hand-over-option"
-                            onClick={() => { setConfirmCancel(false); onHandOver(option.id); }}>
-                            {tv("rideDetail.handOverOption", { name: option.name })}
-                          </Button>
-                        )) : null}
-                        {onLeaveNoDriver ? (
-                          <Button type="button" className="w-full" variant="outline" disabled={handingOver} data-testid="leave-no-driver"
-                            onClick={() => { setConfirmCancel(false); onLeaveNoDriver(); }}>
-                            {he.rideDetail.leaveNoDriver}
-                          </Button>
-                        ) : null}
-                      </div>
-                    ) : null}
+                    {canLeaveDriving ? leaveChoices(() => setConfirmCancel(false)) : null}
+                  </ConfirmDialog>
+                  {/* R20U4 (owner 2026-11-14): the same choices under their own name, not only inside "בטל נסיעה". */}
+                  <ConfirmDialog
+                    open={notDriving}
+                    onOpenChange={setNotDriving}
+                    title={he.rideDetail.notDrivingThis}
+                    description={he.rideDetail.removeDriverHelp}
+                    cancelLabel={he.freedCar.confirmBack}
+                    hideConfirm
+                    loading={handingOver}
+                    onConfirm={() => undefined}
+                  >
+                    {leaveChoices(() => setNotDriving(false))}
                   </ConfirmDialog>
                 </>
               ) : null}

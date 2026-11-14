@@ -17490,6 +17490,13 @@ begin
           v_join_line := v_join_line || ' · ' || public._frag('join.return_via', jsonb_build_object('stops', v_ret_stops));
         end if;
         if v_cont <> '' then v_join_line := v_join_line || ' · ' || v_cont; end if;
+        -- R20U6: an out-only join of a request with a return says the return is not part of this proposal, while no ride carries it.
+        if v_leg_raw = 'out' and q.return_at is not null
+           and not exists (select 1 from public.ride_requests rr join public.rides x on x.id = rr.ride_id
+                           where rr.request_id = q.id and x.status <> 'cancelled' and rr.leg in ('both', 'return')) then
+          v_join_line := v_join_line || ' · ' || public._frag('join.return_uncovered',
+            jsonb_build_object('time', public._hhmm(q.return_at)));
+        end if;
       end if;
       v_title_change := case when v_time_change <> '' then public._frag('title.change', jsonb_build_object('change', v_time_change)) else '' end;
     else

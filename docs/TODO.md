@@ -1709,13 +1709,15 @@ Pass 1 `qa-p1` (seed 9313, 40 members, 170 requests): a normal Sadran and member
 - R20U1 — ✅ 2026-11-14 (REQ item 230 k). (med) At 390 px, the "החלפה עם…" submenu opens to the left and is clipped; the car names are cut off (p1).
 - R20U2 — ✅ 2026-11-14 (REQ item 230 k, a row of the day's cars in the card view). (med) On a phone, the car-name menu (the glance and the swap) exists only in the table view (eye menu, "טבלה"); the default card view has no car menu (p3, both the siddur and the board).
 - R20U3 — ✅ 2026-11-14 (REQ item 230 l). (med) The car page's report and log actions sit behind a tiny unlabelled icon, and the natural targets do nothing: the "עוד לא תיעדו שטיפה" and "קילומטראז׳" cards. Fix: those cards open the matching step (p3).
-- R20U4 — (low-med) A driver who wants to leave a merged ride finds the options only under "בטל נסיעה", in a dialog titled "בטוח/ה שברצונך לבטל את הנסיעה?". A separate "אני לא נוהג/ת בנסיעה הזו" entry would be clearer (p1, p3).
+- R20U4 — ✅ 2026-11-14 (REQ item 239 a). (low-med) A driver who wants to leave a merged ride finds the options only under "בטל נסיעה", in a dialog titled "בטוח/ה שברצונך לבטל את הנסיעה?". A separate "אני לא נוהג/ת בנסיעה הזו" entry would be clearer (p1, p3).
 - R20U5 — ✅ 2026-11-14 (REQ item 230 m). (low, verified) The split dialog's "2 + 1" is drawn left-to-right and reads "1 then 2" to a Hebrew reader. Label the parts by days instead.
-- R20U6 — (low) A one-leg merge proposal says "הלוך בלבד — יציאה 06:30 במקום 11:00" but not that the 13:00 return stays uncovered (p1 רון, d14b1a4a).
+- R20U6 — ✅ 2026-11-14 (REQ item 239 b). (low) A one-leg merge proposal says "הלוך בלבד — יציאה 06:30 במקום 11:00" but not that the 13:00 return stays uncovered (p1 רון, d14b1a4a).
 - R20U7 — (low) Assigning a volunteer driver is trial and error: `person_busy`, then the next name. There is no "who is free at these hours" (p2: four tries for one ride).
 - R20U8 — (low) At phone width, the publish page is 10,000–12,000 px tall (a flat list of every request), and the board header takes about 2 screens. The duplicate-children banners cannot be collapsed (p1, p3).
-- R20U9 — (low, verified) On the car page, "מיקום קבוע" shows blank for a car based at home (expected "בית (ברירת מחדל)").
-- R20U10 — (low) For a member, a shared car's page shows the whole edit form greyed out, and an empty "קוד הרכב" looks the same as a hidden one (p3).
+- R20U9 — ✅ 2026-11-14 (REQ item 239 c; Radix Select read "" as no value). (low, verified) On the car page, "מיקום קבוע" shows blank for a car based at home (expected "בית (ברירת מחדל)").
+- R20U10 — ✅ 2026-11-14 (REQ item 239 c). (low) For a member, a shared car's page shows the whole edit form greyed out, and an empty "קוד הרכב" looks the same as a hidden one (p3).
+
+- **Owner answers 2026-11-14 (UI):** U4 — a separate ride-sheet entry "אני לא נוהג/ת בנסיעה הזו" for the driver of a ride others are on; it opens the existing leave choices, "בטל נסיעה" unchanged. U6 — the member's text adds "החזרה ב־13:00 לא כלולה בהצעה ועדיין מחכה לרכב." (only the return: a return-only join still names no departure, R2B4/R3B6). U10 — members see a read-only details list, not the greyed form; an empty code reads "לא הוגדר", a hidden one is absent.
 
 **Half-built**
 - R20H1 — Cancelling one day of a multi-day ride is possible only by splitting day by day and then cancelling that day: about 8 taps over 3 screens, with no hint. "ביטול" cancels every day, and "קיצור" trims only the ends (p3).

@@ -212,8 +212,9 @@ test("the driver leaves with nobody driving; the ride shrinks to the guest's hou
     await page.goto(`/siddur/${NEVO_DEPARTMENT_ID}/${WEEK}`);
     await page.locator(`[data-ride-id="${ride.id}"]:visible`).click();
     await page.getByTestId("ride-peek-open").click();
-    await page.getByRole("button", { name: he.action.cancelRide, exact: true }).click();
-    await page.getByRole("dialog").filter({ hasText: he.request.cancelConfirmTitle }).getByTestId("leave-no-driver").click();
+    // R20U4: the driver's own entry, beside "בטל נסיעה", opens the same choices.
+    await page.getByTestId("not-driving-this").click();
+    await page.getByRole("dialog").filter({ hasText: he.rideDetail.notDrivingThis }).getByTestId("leave-no-driver").click();
 
     const question = page.getByRole("dialog").filter({ hasText: he.rideDetail.leaveFitTitle });
     await expect(question).toBeVisible();

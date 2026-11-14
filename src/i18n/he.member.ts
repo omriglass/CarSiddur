@@ -519,6 +519,8 @@ export const heMember = {
     cancelForAll: "ביטול הנסיעה לכולם",
     // REQ item 229
     leaveNoDriver: "להסיר אותי — צריך נהג/ת",
+    /** R20U4 (owner 2026-11-14): the driver's own way out of a ride others are on, beside "בטל נסיעה". */
+    notDrivingThis: "אני לא נוהג/ת בנסיעה הזו",
     removeDriverTitle: "להוריד את {{name}} מהנהיגה",
     removeDriverOption: "{{name}} ינהג/תנהג",
     removeDriverNone: "בלי נהג/ת — הנסיעה תחכה לנהג/ת",
@@ -1304,6 +1306,8 @@ export const heMember = {
     fieldResponsible: "אחראי/ת רכב",
     fieldResponsibleNone: "ללא אחראי/ת (הודעות יגיעו למנהלי המערכת)",
     fieldResponsibleReadonlyHelp: "רק מנהל/ת מערכת יכול/ה לשנות את האחראי/ת על הרכב",
+    /** R20U10 (owner 2026-11-14): an empty code on the read-only details list; a code the viewer may not read is left out. */
+    codeUnset: "לא הוגדר",
     privateStateOn: "רכב פרטי — בשימוש {{name}}",
     privateStateOnNoName: "רכב פרטי (מושאל)",
     privateSwitchLabel: "רכב פרטי (מושאל)",

@@ -15,6 +15,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CarForm, type ResponsibleOption } from "@/features/admin/cars/components/CarForm";
+import { CarDetailsList } from "./CarDetailsList";
 import type { Car } from "@/features/admin/cars/api";
 import { useAllDepartmentMembers, useAllProfiles } from "@/features/admin/members/hooks";
 import { CarSparkle } from "@/components/CarSparkle";
@@ -153,10 +154,12 @@ interface CarManageScreenProps {
    * anything else a future caller wants next to the title.
    */
   headerActions?: ReactNode;
+  /** R20U10: whether the viewer may read the car's codes (a member of its department, or an admin). */
+  codeVisible?: boolean;
 }
 
 /** `/cars/:carId` (UX_FLOWS.md §5.11 "Car page"). */
-export function CarManageScreen({ car, isAdmin, canEdit, canManageCar, canDefineChecklist = false, canSetStatusOnly = false, canManageOwners = false, headerActions }: CarManageScreenProps) {
+export function CarManageScreen({ car, isAdmin, canEdit, canManageCar, canDefineChecklist = false, canSetStatusOnly = false, canManageOwners = false, codeVisible = true, headerActions }: CarManageScreenProps) {
   const washed = useRecentlyWashedCarIds(car.department_id);
   const issuesQuery = useCarIssueHistoryQuery(car.id);
   const careEventsQuery = useCarCareHistoryQuery(car.id);
@@ -255,15 +258,22 @@ export function CarManageScreen({ car, isAdmin, canEdit, canManageCar, canDefine
         </TabsList>
 
         <TabsContent value="details" className="pt-4">
+          {canEdit ? (
           <CarForm
             car={car}
             showDepartmentField={false}
             canEditResponsible={isAdmin}
             canEditSeatConfigs={isAdmin || (canEdit && car.type === "temporary")}
-            readOnly={!canEdit}
             responsibleOptions={responsibleOptions}
             onSaved={() => undefined}
           />
+          ) : (
+            <CarDetailsList
+              car={car}
+              responsibleName={responsibleOptions.find((o) => o.id === car.responsible_id)?.name ?? null}
+              codeVisible={codeVisible}
+            />
+          )}
         </TabsContent>
 
         <TabsContent value="history" className="space-y-4 pt-4">

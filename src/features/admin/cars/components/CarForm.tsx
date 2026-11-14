@@ -23,6 +23,9 @@ import type { Car } from "../api";
 
 import type { Passengers } from "@/solver";
 
+/** R20U9: Radix Select treats "" as "no value" (a blank trigger), so "none" / "home" needs a real value. */
+const NONE = "__none";
+
 export interface ResponsibleOption {
   id: string;
   name: string;
@@ -281,8 +284,8 @@ export function CarForm({
               {canEditResponsible ? (
                 <>
                   <Select
-                    value={field.value ?? ""}
-                    onValueChange={(value) => field.onChange(value === "" ? null : value)}
+                    value={field.value ?? NONE}
+                    onValueChange={(value) => field.onChange(value === NONE ? null : value)}
                   >
                     <FormControl>
                       <SelectTrigger>
@@ -290,7 +293,7 @@ export function CarForm({
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      <SelectItem value="">{he.adminCars.fieldResponsibleNone}</SelectItem>
+                      <SelectItem value={NONE}>{he.adminCars.fieldResponsibleNone}</SelectItem>
                       {responsibleOptions.map((option) => (
                         <SelectItem key={option.id} value={option.id}>
                           {option.name}
@@ -317,14 +320,14 @@ export function CarForm({
           render={({ field }) => (
             <FormItem>
               <FormLabel>{he.adminCars.fieldBaseLocation}</FormLabel>
-              <Select value={field.value ?? ""} onValueChange={(value) => field.onChange(value === "" ? null : value)}>
+              <Select value={field.value ?? NONE} onValueChange={(value) => field.onChange(value === NONE ? null : value)}>
                 <FormControl>
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                 </FormControl>
                 <SelectContent>
-                  <SelectItem value="">{he.adminCars.fieldBaseLocationHome}</SelectItem>
+                  <SelectItem value={NONE}>{he.adminCars.fieldBaseLocationHome}</SelectItem>
                   {(baseLocationDestinationsQuery.data ?? []).map((destination) => (
                     <SelectItem key={destination.id} value={destination.id}>
                       {destination.name}
