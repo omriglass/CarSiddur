@@ -312,3 +312,20 @@ export async function memberMergeRide(input: { rideId: string; sourceRideId: str
     p_wait: input.wait, p_allow_long_detour: input.allowLongDetour, p_agreed: input.agreed, p_allow_small_trunk: input.allowSmallTrunk,
   });
 }
+
+/** FC1 (REQ item 231): the actions `freed_car_preview` can try (and roll back) to see whom a freed car would go to. */
+export type FreedCarAction =
+  | "cancel_ride" | "ride_editor_cancel_ride" | "withdraw_request" | "ride_editor_withdraw_request"
+  | "edit_ride" | "submit_request" | "sadran_cancel_ride" | "remove_ride_person";
+
+export interface FreedCarPreviewRequest {
+  action: FreedCarAction;
+  /** Exactly the arguments the real RPC will be sent. */
+  args: Record<string, unknown>;
+}
+
+/** FC1: the ranking input of every freed-car offer the action would open (the action itself is rolled back). */
+export async function previewFreedCar(request: FreedCarPreviewRequest): Promise<unknown[]> {
+  const data = (await rpc("freed_car_preview", { p_action: request.action, p_args: request.args as unknown as Json })) as { inputs?: unknown[] } | null;
+  return data?.inputs ?? [];
+}

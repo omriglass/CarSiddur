@@ -1,4 +1,6 @@
 import { carOwnerIds, isCarOwner } from "@/lib/carOwners";
+import { cancelRidePreview, removeMePreview } from "@/features/rides/freedCarRequests";
+import { FreedCarConfirmDialog } from "@/features/rides/FreedCarConfirmDialog";
 import { useMaintenanceGridEditing } from "@/features/fleet/useMaintenanceGridEditing";
 import { DayCarsStrip } from "@/components/DayCarsStrip";
 import { CarGlance } from "@/features/cars/components/CarGlance";
@@ -884,6 +886,10 @@ export function SiddurPage() {
           return () => removeMeMutation.mutate({ rideId: id, expectedVersion: version, key: myKey, departmentId: department_id, weekStart: week_start }, { onSuccess: () => setSelectedRideId(null) });
         })()}
         removingMe={removeMeMutation.isPending}
+        freedPreview={{
+          cancel: cancelRidePreview(selectedRide, !!selectedRide && selectedRide.driver_id !== profileId),
+          removeMe: removeMePreview(selectedRide, selectedRide ? myRidePersonKey(selectedRide, profileId) : null),
+        }}
         editRequestLinks={editLinksForRide}
         editor={selectedRide?.needs_driver && canEditWeek && selectedRide.ends_at && Date.parse(selectedRide.ends_at) > now.getTime() ? (
           <VolunteerDriverPanel ride={selectedRide} onDone={() => setSelectedRideId(null)}
@@ -933,6 +939,7 @@ export function SiddurPage() {
 
       {rideMoves.makeRoomElement}
       <ConfirmDialog {...rideMoves.ownCarDialog} />
+      <FreedCarConfirmDialog dialog={rideMoves.freedCarDialog} />
       {rideMoves.memberMergeElement}
 
       {isMyDepartment ? (

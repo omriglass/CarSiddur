@@ -32,6 +32,8 @@ import { parseRideRoute, routeHasIntermediates } from "@/lib/rideRoute";
 import { peopleOf } from "@/features/rides/ridePeople";
 import type { HandOverCandidate } from "@/features/rides/handOver";
 import type { OwnCar } from "@/features/rides/useOwnCarMove";
+import type { FreedCarPreviewRequest } from "@/features/rides/api";
+import { useFreedCarLine } from "@/features/rides/useFreedCar";
 
 /**
  * "<driver> ו<passengers> ל/מ<real destination>" (UX_FLOWS.md §20 — the
@@ -82,6 +84,11 @@ interface RideDetailSheetProps {
   /** REQ §13.128: a non-driver passenger removes only themselves (`remove_ride_person`), never the whole ride. */
   onRemoveMe?: () => void;
   removingMe?: boolean;
+  /**
+   * FC1 (REQ item 231): the exact calls "cancel ride" / "remove me" will send — while their confirmation is open, it
+   * says who waiting would get the freed car.
+   */
+  freedPreview?: { cancel?: FreedCarPreviewRequest | null; removeMe?: FreedCarPreviewRequest | null };
   /** The edit entries: the member's own / related request, or every request on the ride (REQ §13.169 a). */
   editRequestLinks?: readonly { href: string; label: string }[];
   /**
@@ -112,10 +119,12 @@ interface RideDetailSheetProps {
  * §13.85; the `/requests/new?ride=` prefill path itself is untouched, still reachable from the
  * joinable-rides dialog after a waiting-list outcome).
  */
-export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = null, onOpenChange, editor, coordinatorNotes, canEditPublicNotes, onRemoveOwnRide, removingOwnRide = false, onRemoveMe, removingMe = false, editRequestLinks = [], showAddPassengers = false, weekRides, moveToCarOptions = [], onMoveToCar, movingToCar = false, handOverOptions = [], onHandOver, onLeaveNoDriver, handingOver = false }: RideDetailSheetProps) {
+export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = null, onOpenChange, editor, coordinatorNotes, canEditPublicNotes, onRemoveOwnRide, removingOwnRide = false, onRemoveMe, removingMe = false, freedPreview, editRequestLinks = [], showAddPassengers = false, weekRides, moveToCarOptions = [], onMoveToCar, movingToCar = false, handOverOptions = [], onHandOver, onLeaveNoDriver, handingOver = false }: RideDetailSheetProps) {
   const [confirmCancel, setConfirmCancel] = useState(false);
   const viewerId = useSession().session?.user.id;
   const [confirmRemoveMe, setConfirmRemoveMe] = useState(false);
+  const cancelFreedLine = useFreedCarLine(confirmCancel ? freedPreview?.cancel ?? null : null);
+  const removeMeFreedLine = useFreedCarLine(confirmRemoveMe ? freedPreview?.removeMe ?? null : null);
   const [moveCarId, setMoveCarId] = useState<string | null>(null);
   // `servedOf()` already maps `v_board_rides.served[].child_names` onto each entry's
   // `childNames` (`applySolve.ts`) — no more hand-rolled mapping needed here.
@@ -273,7 +282,9 @@ export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = 
                     destructive
                     loading={removingMe}
                     onConfirm={() => { setConfirmRemoveMe(false); onRemoveMe(); }}
-                  />
+                  >
+                    {removeMeFreedLine ? <p className="text-sm" data-testid="freed-car-line">{removeMeFreedLine}</p> : null}
+                  </ConfirmDialog>
                 </>
               ) : onRemoveOwnRide ? (
                 <>
@@ -290,6 +301,7 @@ export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = 
                     loading={removingOwnRide || handingOver}
                     onConfirm={() => { setConfirmCancel(false); onRemoveOwnRide(); }}
                   >
+                    {cancelFreedLine ? <p className="mb-2 text-sm" data-testid="freed-car-line">{cancelFreedLine}</p> : null}
                     {/* REQ §13.129 (b): the driver may instead hand the ride to someone on it who drives. */}
                     {(handOverOptions.length && onHandOver) || onLeaveNoDriver ? (
                       <div className="space-y-2">

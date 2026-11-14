@@ -151,6 +151,10 @@ test.describe("freed slot (live week, single candidate)", { tag: ["@waitlist", "
     // Owner 2026-10-13: one red "ביטול" on the /my item (it cancels the ride once placed).
     await member1.page.locator("[data-request-id]").getByRole("button", { name: "ביטול", exact: true }).first().click();
     await expect(member1.page.getByRole("heading", { name: "לבטל את הנסיעה?" })).toBeVisible();
+    // FC1 (REQ item 231): before confirming, the dialog says who waiting gets the freed car (the real cancel, tried and
+    // rolled back, ranked in the browser like the edge function ranks it)
+    await expect(member1.page.getByTestId("freed-car-line"))
+      .toHaveText(`בעקבות השינוי ${SEEDED_USERS.member2.fullName} יקבל/תקבל את הרכב בשעות האלה. תודה!`, { timeout: 5_000 });
     await member1.page.getByRole("dialog").getByRole("button", { name: "בטל נסיעה" }).click();
 
     // `runConfirmAction()` (`HomePage.tsx`, moved from the deleted `RequestsListPage.tsx`) closes
@@ -205,7 +209,8 @@ test.describe("freed slot (live week, single candidate)", { tag: ["@waitlist", "
     const member2 = await newSignedInPage(browser, SEEDED_USERS.member2);
     try {
       await member2.page.goto("/inbox");
-      await expect(member2.page.getByText("שובצת לרכב שהתפנה")).toBeVisible({ timeout: 10_000 });
+      // FC1: the title names the cause
+      await expect(member2.page.getByText(`שובצת לרכב שהתפנה (הנסיעה של ${SEEDED_USERS.member1.fullName} בוטלה)`)).toBeVisible({ timeout: 10_000 });
     } finally {
       await member2.context.close();
     }

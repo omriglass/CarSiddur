@@ -255,6 +255,13 @@
         "supabase/migrations/**/*freed_candidates*",
         "supabase/migrations/**/*waitlist_groups_plan_b*",
         "supabase/tests/freed_car_options.sql",
+        "supabase/tests/freed_car_cause.sql",
+        "src/solver/freedSlotRun.ts",
+        "src/features/rides/freedCarPreview.ts",
+        "src/features/rides/freedCarRequests.ts",
+        "src/features/rides/useFreedCar.ts",
+        "src/features/rides/FreedCarConfirmDialog.tsx",
+        "supabase/functions/on-ride-cancelled/**",
         "supabase/tests/qa_run17_fixes.sql",
         "scripts/qa/freed-car-scenario.sql",
         "src/features/sadran/claims/**",
@@ -276,10 +283,13 @@
       ],
       "vitest": [
         "src/features/waitlist",
-        "src/features/requests/joinableRides.test.ts"
+        "src/features/requests/joinableRides.test.ts",
+        "src/solver/__tests__/freedSlotRun.test.ts",
+        "src/features/rides/freedCarPreview.test.ts"
       ],
       "sql": [
         "freed_car_options.sql",
+        "freed_car_cause.sql",
         "qa_run17_fixes.sql",
         "waitlist_groups.sql",
         "waitlist_group_hold.sql",
@@ -304,6 +314,7 @@
         "13.183"
       ],
       "qaChecklist": [
+        "Freed car cause (REQ item 231): on a published day with someone waiting for the hours, shorten a ride on the ride sheet - 'הרכב יתפנה לאחרים' names who gets the car; save; the person waiting (and their companion) gets 'שובצת לרכב שהתפנה (הנסיעה של X קוצרה)' with car, day and hours; the cancel confirmations of the ride sheet and 'הנסיעות שלי' show the same line; nobody waiting = no line, no extra dialog",
         "Freed car vs plan B (REQ §13.168): run scripts/qa/freed-car-scenario.sql on a disposable stack with the edge function wired; cancel the ride; the Sadran sees the board banner and the options page (recommendation, plan-B badge), gives a combination or sends two to a discussion; a candidate steps out from 'my rides'; a plan-B member who gets the car loses the plan B, one not chosen keeps it",
         "Submit against a published day with no free car; confirm waitlist + joinable-rides dialog (REQ §13.83)",
         "Tap the join-ride button; confirm it joins the ride and withdraws the waitlisted request (REQ §13.83)",

@@ -797,6 +797,22 @@ export const heMember = {
     withdrawClaimBody: "תצא/י מהשיקולים על הרכב הזה. הבקשה שלך (או תוכנית ב׳) נשארת כמו שהיא, ועדיין יוצעו לך רכבים שיתפנו.",
   },
   /**
+   * FC1 (owner wording 2026-11-14, REQ item 231): what a change that frees a shared car will cause, shown before the
+   * person confirms it (only when someone waiting would get the car).
+   */
+  freedCar: {
+    lineOne: "בעקבות השינוי {{name}} יקבל/תקבל את הרכב בשעות האלה. תודה!",
+    lineGroup: "{{names}} ייכנסו לדיון על הרכב. תודה!",
+    lineSadran: "בעקבות השינוי, {{names}} יקבלו את הרכב, בהתייעצות עם הסדרן/ית. תודה!",
+    /** A lone candidate the Sadran still decides on (it would leave a plan B that works). */
+    lineSadranOne: "בעקבות השינוי, {{name}} יקבל/תקבל את הרכב, בהתייעצות עם הסדרן/ית. תודה!",
+    and: "ו־",
+    or: "או",
+    confirmTitle: "הרכב יתפנה לאחרים",
+    confirmSave: "לשמור",
+    confirmBack: "חזרה",
+  },
+  /**
    * `/my/history` (REQ §13 item 91, owner 2026-09-16, E3): a small, lazily loaded, read-only
    * list of past requests/rides — reachable only from a link at the bottom of `/my`, "not
    * important, must not slow anything" (owner A4).

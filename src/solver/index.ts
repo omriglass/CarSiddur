@@ -33,6 +33,8 @@ export { fits, dominates, slack, sum, luggageFits, towFits, needsFit, chauffeurL
 export { ruleRegistry, type RuleType } from './rules/index';
 export { alternativeServedWeightOf, DEFAULT_ALTERNATIVE_SERVED_WEIGHT } from './rules/fairness';
 export { freedSlotOptions, matchFreedSlot } from './live';
+export { freedSlotInputFrom, freedWeekDays, runFreedSlot, MAX_STORED_FREED_OPTIONS } from './freedSlotRun';
+export type { FreedSlotOutcome, FreedSlotRaw, FreedSlotRawCandidate, FreedSlotRunResult } from './freedSlotRun';
 export { CarTimeline, buildTimelines } from './timeline';
 export type { NormalizedRequest, NormalizedLeg, SeriesLeg, SeriesUnit } from './slots';
 // REQUIREMENTS §13.93 (docs/SOLVER.md §1.3a): origin helpers, for callers

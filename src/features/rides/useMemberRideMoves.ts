@@ -11,6 +11,7 @@ import { toast } from "sonner";
 
 import { useCarSeatConfigs, useCars, useMaintenanceBlocks } from "@/features/fleet/hooks";
 import { useDepartmentSettings, useEditRideMutation } from "@/features/sadran/hooks";
+import type { EditRideInput } from "@/features/sadran/api";
 import type { Week } from "@/features/siddur/api";
 import { useBoardRides } from "@/features/siddur/hooks";
 import { siddurKeys } from "@/features/siddur/queryKeys";
@@ -21,7 +22,9 @@ import { dateKey, formatTime, TZ } from "@/lib/time";
 import { effectiveWeekSettings } from "@/lib/weekSettings";
 
 import type { RideMove } from "./api";
+import { editRidePreview } from "./freedCarRequests";
 import { useRideChanges } from "./hooks";
+import { useFreedCarGate } from "./useFreedCar";
 import { canMoveOntoMyCar, rideDayPublished } from "./ownCarMove";
 import { isRideRelated, rideMovableByMember } from "./relatedRide";
 import { isRideDayEditable } from "./rideDayEditable";
@@ -56,6 +59,7 @@ export function useMemberRideMoves({ departmentId, weekStart, week, profileId, m
   const settingsQuery = useDepartmentSettings(departmentId);
   const editMutation = useEditRideMutation();
   const makeRoom = useMakeRoom({ onDone });
+  const freedGate = useFreedCarGate();
   // REQ §13.129 (a): a drag of someone else's ride onto my private car waits for the owner's confirmation.
   const [ownCarMove, setOwnCarMove] = useState<RideMove | null>(null);
   const { myCars } = useOwnCarMove(profileId);
@@ -132,13 +136,17 @@ export function useMemberRideMoves({ departmentId, weekStart, week, profileId, m
         return;
       }
     }
+    const input = { id: move.rideId, department_id: departmentId, week_start: weekStart, car_id: move.carId,
+      starts_at: move.startsAt, ends_at: move.endsAt, origin_id: ride.origin_id, destination_id: ride.destination_id,
+      driver_id: ride.driver_id, ...(allowShortTurnaround ? { allow_short_turnaround: true } : {}) };
+    // FC1 (REQ item 231): a move that frees the car for someone waiting asks first ("הרכב יתפנה לאחרים")
+    await freedGate.run(editRidePreview(input, move.expectedVersion), () => void saveEdit(input, move.expectedVersion));
+  }
+
+  async function saveEdit(input: EditRideInput, expectedVersion: number) {
+    if (!departmentId || !weekStart) return;
     try {
-      await editMutation.mutateAsync({
-        input: { id: move.rideId, department_id: departmentId, week_start: weekStart, car_id: move.carId,
-          starts_at: move.startsAt, ends_at: move.endsAt, origin_id: ride.origin_id, destination_id: ride.destination_id,
-          driver_id: ride.driver_id, ...(allowShortTurnaround ? { allow_short_turnaround: true } : {}) },
-        expectedVersion: move.expectedVersion, departmentId, weekStart,
-      });
+      await editMutation.mutateAsync({ input, expectedVersion, departmentId, weekStart });
       await queryClient.invalidateQueries({ queryKey: siddurKeys.boardRides(departmentId, weekStart) });
       await queryClient.invalidateQueries({ queryKey: siddurKeys.carLocations(departmentId, weekStart) });
       onDone?.();
@@ -207,6 +215,8 @@ export function useMemberRideMoves({ departmentId, weekStart, week, profileId, m
   };
 
   return {
+    /** FC1: "הרכב יתפנה לאחרים" before a move that gives the car to someone waiting (`FreedCarConfirmDialog`). */
+    freedCarDialog: freedGate.dialog,
     ownsEditableRide,
     canDragRide,
     ownCarDialog,

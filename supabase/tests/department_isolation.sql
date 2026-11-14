@@ -463,6 +463,8 @@ declare
   -- the completeness check below groups by proname.
   iso_exempt text[] := array[
     'my_car_tasks:caller_scoped', 'my_ride_editor_links:caller_scoped', 'my_ride_owners:caller_scoped',
+    -- FC1: runs one of the covered RPCs above as the caller (their own checks refuse another department) and rolls it back.
+    'freed_car_preview:delegates-rolled-back',
     -- PF1 / DC1: the policies' once-per-query sets — only the caller's own departments, weeks, requests and proposals.
     'my_department_ids:caller_scoped', 'my_sadran_department_ids:caller_scoped', 'my_sadran_weeks:caller_scoped',
     'my_department_access:caller_scoped', 'my_owned_car_ids:caller_scoped', 'my_guarded_request_ids:caller_scoped', 'my_companion_request_ids:caller_scoped', 'my_proposal_ids:caller_scoped',

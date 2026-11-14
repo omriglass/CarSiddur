@@ -1681,6 +1681,9 @@ export type Database = {
         Row: {
           cancelled_ride_id: string
           car_id: string
+          cause_actor: string | null
+          cause_kind: string | null
+          cause_owner_id: string | null
           close_reason: string | null
           created_at: string
           department_id: string
@@ -1689,6 +1692,7 @@ export type Database = {
           expires_at: string
           group_id: string | null
           id: string
+          kept_ride: boolean
           options: Json
           resolved_at: string | null
           resolved_by: string | null
@@ -1700,6 +1704,9 @@ export type Database = {
         Insert: {
           cancelled_ride_id: string
           car_id: string
+          cause_actor?: string | null
+          cause_kind?: string | null
+          cause_owner_id?: string | null
           close_reason?: string | null
           created_at?: string
           department_id: string
@@ -1708,6 +1715,7 @@ export type Database = {
           expires_at: string
           group_id?: string | null
           id?: string
+          kept_ride?: boolean
           options?: Json
           resolved_at?: string | null
           resolved_by?: string | null
@@ -1719,6 +1727,9 @@ export type Database = {
         Update: {
           cancelled_ride_id?: string
           car_id?: string
+          cause_actor?: string | null
+          cause_kind?: string | null
+          cause_owner_id?: string | null
           close_reason?: string | null
           created_at?: string
           department_id?: string
@@ -1727,6 +1738,7 @@ export type Database = {
           expires_at?: string
           group_id?: string | null
           id?: string
+          kept_ride?: boolean
           options?: Json
           resolved_at?: string | null
           resolved_by?: string | null
@@ -5832,6 +5844,7 @@ export type Database = {
       _edit_series_request: { Args: { payload: Json }; Returns: Json }
       _fit_ride_to_its_legs: { Args: { p_ride_id: string }; Returns: boolean }
       _flex_floor: { Args: { i: string }; Returns: string }
+      _flex_minutes_json: { Args: { p: string }; Returns: Json }
       _flush_held_notices: {
         Args: {
           p_days: string[]
@@ -5842,6 +5855,7 @@ export type Database = {
         Returns: number
       }
       _frag: { Args: { _key: string; _vars?: Json }; Returns: string }
+      _freed_cause_note: { Args: { p_offer_id: string }; Returns: string }
       _held_request_view: { Args: { p_request: string }; Returns: Json }
       _held_ride_view: { Args: { p_ride: string }; Returns: Json }
       _held_tagged: { Args: { p_data: Json }; Returns: Json }
@@ -5984,6 +5998,19 @@ export type Database = {
         Returns: undefined
       }
       _offer_freed_slot: { Args: { p_ride_id: string }; Returns: string }
+      _offer_freed_time: {
+        Args: {
+          p_car_id: string
+          p_exclude?: string
+          p_from: string
+          p_kept: boolean
+          p_kind: string
+          p_place: string
+          p_ride_id: string
+          p_to: string
+        }
+        Returns: string
+      }
       _person_busy_mode: { Args: { p_allow: boolean }; Returns: undefined }
       _person_busy_rides: {
         Args: {
@@ -5996,6 +6023,16 @@ export type Database = {
         Returns: {
           ride_id: string
           span: unknown
+        }[]
+      }
+      _place_travel_for_week: {
+        Args: { p_department_id: string; p_week_start: string }
+        Returns: {
+          destination_id: string
+          distance_km: number
+          origin_id: string
+          source: string
+          travel_minutes: number
         }[]
       }
       _proposal_apply_trial: {
@@ -6091,6 +6128,7 @@ export type Database = {
         Args: { p_ride_id: string; p_viewer: string }
         Returns: string
       }
+      _ride_owner_id: { Args: { p_ride_id: string }; Returns: string }
       _ride_person_ids: {
         Args: { p_ride_id: string }
         Returns: {
@@ -6926,6 +6964,10 @@ export type Database = {
         Args: { p_offer_id: string; p_request_id: string }
         Returns: boolean
       }
+      freed_car_preview: {
+        Args: { p_action: string; p_args: Json }
+        Returns: Json
+      }
       freed_offer_group: { Args: { _offer: string }; Returns: string }
       freed_slot_candidates: {
         Args: { _offer: string }
@@ -6940,6 +6982,7 @@ export type Database = {
         Args: { _offer: string }
         Returns: string[]
       }
+      freed_slot_rank_input: { Args: { p_offer_id: string }; Returns: Json }
       gen_random_bytes: { Args: { count: number }; Returns: string }
       gen_salt: { Args: { type: string }; Returns: string }
       generate_token: { Args: never; Returns: string }

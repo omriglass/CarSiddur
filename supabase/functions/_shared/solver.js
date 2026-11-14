@@ -4801,6 +4801,175 @@ function freedSlotOptions(items, freedWindow, bufferSlots) {
   return found.map((option, index) => ({ ...option, recommended: index === 0 }));
 }
 
+// src/solver/freedSlotRun.ts
+var SLOT_MS2 = 15 * 60 * 1e3;
+var DAY_SLOTS = 96;
+var MAX_STORED_FREED_OPTIONS = 30;
+var toSlotFloor2 = (ms, weekStartMs) => Math.floor((ms - weekStartMs) / SLOT_MS2);
+var toSlotCeil2 = (ms, weekStartMs) => Math.ceil((ms - weekStartMs) / SLOT_MS2);
+function freedWeekDays(dayEndTime) {
+  const [hh, mm] = dayEndTime.split(":");
+  const dayEndOffset = minutesToSlots(Number(hh) * 60 + Number(mm ?? 0));
+  return Array.from({ length: 7 }, (_, i) => ({
+    dayIndex: i,
+    startSlot: i * DAY_SLOTS,
+    endSlot: i * DAY_SLOTS + DAY_SLOTS,
+    dayEndSlot: i * DAY_SLOTS + Math.min(dayEndOffset, DAY_SLOTS - 1)
+  }));
+}
+function freedSlotInputFrom(raw) {
+  if (!raw.car || !raw.policy) return null;
+  const weekStartMs = raw.weekStartMs;
+  const days = freedWeekDays(raw.dayEndTime);
+  const weekSlots = days[days.length - 1].endSlot;
+  const config = {
+    bufferMinutes: raw.settings.turnaroundMinutes,
+    detour: { maxMinutes: raw.settings.detourMaxMinutes, maxKm: raw.settings.detourMaxKm },
+    beyondFlexMaxMinutes: 120,
+    defaultTravelMinutes: 60,
+    chauffeurDwellMinutes: raw.settings.chauffeurDwellMinutes,
+    ...raw.settings.stopMinutes != null ? { stopMinutes: raw.settings.stopMinutes } : {},
+    improvementBudget: 5e3,
+    perRequestBudget: 200,
+    externalHints: { cabMaxMinutes: 90, rentalMinHours: 30, ptMinScore: 0.6 }
+  };
+  const features = raw.car.features ?? [];
+  const car = {
+    id: raw.car.id,
+    name: raw.car.name,
+    type: raw.car.type,
+    ...raw.car.ownerMemberId ? { ownerMemberId: raw.car.ownerMemberId } : {},
+    seatConfigs: raw.car.seatConfigs,
+    features,
+    // REQ §13.101 (a): a car with the `large_trunk` feature takes large luggage (yes/no).
+    luggageCapacity: features.includes("large_trunk") ? 1 : 0,
+    ...features.includes("tow_hitch") ? { towHitch: true } : {},
+    maintenance: raw.car.maintenance.map((b) => ({
+      start: Math.max(0, toSlotFloor2(b.startsMs, weekStartMs)),
+      end: Math.min(weekSlots, toSlotCeil2(b.endsMs, weekStartMs))
+    })),
+    startLocationId: raw.car.startLocationId ?? raw.homeLocationId,
+    ...raw.car.baseLocationId ? { baseLocationId: raw.car.baseLocationId } : {}
+  };
+  const bufferSlots = minutesToSlots(config.bufferMinutes);
+  const timeline = buildTimelines([car], bufferSlots, weekSlots, raw.homeLocationId).get(car.id);
+  for (const ride of raw.otherRides) {
+    timeline.forceAdd({
+      rideId: ride.id,
+      // REQ §13.100 (QB1/QB7): a series' consecutive-day pieces are contiguous by construction (no buffer).
+      ...ride.seriesId ? { seriesId: ride.seriesId } : {},
+      window: { start: toSlotFloor2(ride.startsMs, weekStartMs), end: toSlotCeil2(ride.endsMs, weekStartMs) },
+      startLocationId: ride.originId,
+      endLocationId: ride.destinationId,
+      overnightAck: ride.overnightAck,
+      ...ride.locationNeutral ? { locationNeutral: true } : {}
+    });
+  }
+  const destinations = {};
+  for (const d of raw.destinations) {
+    destinations[d.id] = {
+      id: d.id,
+      ...d.name != null ? { name: d.name } : {},
+      zone: d.zone,
+      ...d.distanceKm != null ? { distanceKm: Number(d.distanceKm) } : {},
+      ...d.travelMinutes != null ? { travelMinutes: d.travelMinutes } : {},
+      ...d.publicTransportScore != null ? { publicTransportScore: d.publicTransportScore / 5 } : {}
+    };
+  }
+  if (!destinations[raw.homeLocationId]) destinations[raw.homeLocationId] = { id: raw.homeLocationId, zone: "home" };
+  const candidates = raw.candidates.map((c) => ({
+    id: c.id,
+    memberId: c.memberId,
+    departmentId: c.departmentId,
+    destinationId: c.destinationId,
+    rideType: c.rideType,
+    tripShape: c.tripShape,
+    ...c.originId ? { originId: c.originId } : {},
+    originIsFreeText: c.originIsFreeText,
+    tripType: c.tripType,
+    ...c.departureMs != null ? { departureMs: c.departureMs } : {},
+    ...c.returnMs != null ? { returnMs: c.returnMs } : {},
+    flexDeparture: c.flexDeparture,
+    flexReturn: c.flexReturn,
+    ...c.durationLocked ? { durationLocked: true } : {},
+    passengers: c.passengers,
+    coRiderMemberIds: [],
+    luggage: c.luggage,
+    ...c.towHitch ? { towHitch: true } : {},
+    needsCarAtDestination: c.needsCarAtDestination,
+    submittedAtMs: c.submittedAtMs,
+    isLate: c.isLate,
+    ...c.manualBoost > 0 ? { manualBoost: { value: c.manualBoost, reason: c.manualBoostReason } } : {},
+    ...c.stops.length ? { stops: c.stops.map((s) => s.locationId ? { leg: s.leg, locationId: s.locationId } : { leg: s.leg }) } : {}
+  }));
+  for (const r of candidates) {
+    if (!destinations[r.destinationId]) destinations[r.destinationId] = { id: r.destinationId, zone: "unknown" };
+  }
+  const freedWindow = { start: toSlotFloor2(raw.offer.startsMs, weekStartMs), end: toSlotCeil2(raw.offer.endsMs, weekStartMs) };
+  const travel = raw.travel.map((t) => ({
+    fromId: t.fromId,
+    toId: t.toId,
+    ...t.distanceKm != null ? { distanceKm: Number(t.distanceKm) } : {},
+    ...t.travelMinutes != null ? { travelMinutes: t.travelMinutes } : {}
+  }));
+  const fairness2 = {};
+  for (const c of raw.candidates) fairness2[c.memberId] = { deficit: Number(c.fairnessDeficit) };
+  return {
+    input: {
+      car,
+      timeline,
+      freedWindow,
+      freedLocationId: raw.freedLocationId ?? raw.homeLocationId,
+      candidates,
+      destinations,
+      policy: raw.policy,
+      stats: { fairness: fairness2, usualCarId: {} },
+      config,
+      week: { startMs: weekStartMs, days },
+      homeLocationId: raw.homeLocationId,
+      travel
+    },
+    freedWindow,
+    bufferSlots
+  };
+}
+function runFreedSlot(raw) {
+  if (raw.offer.status === "open" && raw.offer.groupId) return { ranked: [], options: [], outcome: { kind: "held" } };
+  const built = raw.candidates.length ? freedSlotInputFrom(raw) : null;
+  if (!built) return { ranked: [], options: [], outcome: { kind: "none" } };
+  const { input, freedWindow, bufferSlots } = built;
+  const byId2 = new Map(raw.candidates.map((c) => [c.id, c]));
+  const matched = matchFreedSlot(input, { priorityRequestIds: raw.priorityRequestIds });
+  const ranked = matched.map((c) => ({ requestId: c.requestId, requesterId: byId2.get(c.requestId)?.memberId ?? "", score: c.score, reason: c.reason }));
+  const requestById = new Map(input.candidates.map((r) => [r.id, r]));
+  const items = matched.flatMap((c) => {
+    const r = requestById.get(c.requestId);
+    if (!r) return [];
+    const window = r.departureMs !== void 0 && r.returnMs !== void 0 ? { start: toSlotFloor2(r.departureMs, raw.weekStartMs), end: toSlotCeil2(r.returnMs, raw.weekStartMs) } : c.window;
+    return [{ requestId: c.requestId, window, score: c.score, planB: byId2.get(c.requestId)?.planB ?? false }];
+  });
+  const options = freedSlotOptions(items, freedWindow, bufferSlots).slice(0, MAX_STORED_FREED_OPTIONS).map((o) => ({
+    request_ids: o.requestIds,
+    score: Math.round(o.score * 1e4) / 1e4,
+    unused_minutes: o.unusedSlots * 15,
+    plan_b: o.planB,
+    recommended: o.recommended
+  }));
+  const nameOf = (id) => byId2.get(id)?.name ?? "";
+  let outcome;
+  const groupMembers = raw.group?.members ?? [];
+  if (ranked.length && groupMembers.some((m) => ranked.some((c) => c.requestId === m.requestId))) {
+    outcome = { kind: "group", requestIds: groupMembers.map((m) => m.requestId), names: groupMembers.map((m) => m.name) };
+  } else if (ranked.length === 0) {
+    outcome = { kind: "none" };
+  } else if (ranked.length === 1 && !byId2.get(ranked[0].requestId)?.planB) {
+    outcome = { kind: "auto", requestId: ranked[0].requestId, name: nameOf(ranked[0].requestId) };
+  } else {
+    outcome = { kind: "sadran", requestIds: ranked.map((c) => c.requestId), names: ranked.map((c) => nameOf(c.requestId)) };
+  }
+  return { ranked, options, outcome };
+}
+
 // src/solver/index.ts
 function peopleOf(nr) {
   return nr.passengers.adults + nr.passengers.childSeats + nr.passengers.boosters - 1;
@@ -5204,6 +5373,7 @@ function solveExpanded(input) {
 export {
   CarTimeline,
   DEFAULT_ALTERNATIVE_SERVED_WEIGHT,
+  MAX_STORED_FREED_OPTIONS,
   PolicyParamsError,
   SolverInvariantError,
   alternativeServedWeightOf,
@@ -5212,12 +5382,15 @@ export {
   dominates,
   effectiveTripType,
   fits,
+  freedSlotInputFrom,
   freedSlotOptions,
+  freedWeekDays,
   luggageFits,
   matchFreedSlot,
   needsFit,
   originIdOf,
   ruleRegistry,
+  runFreedSlot,
   slack,
   solve,
   sortUnits,

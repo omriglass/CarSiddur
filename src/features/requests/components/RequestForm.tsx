@@ -11,6 +11,8 @@ import { toast } from "sonner";
 import { CharCount } from "@/components/CharCount";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { FreedCarConfirmDialog } from "@/features/rides/FreedCarConfirmDialog";
+import { useFreedCarGate } from "@/features/rides/useFreedCar";
 import { SheetPortalContext } from "@/components/SheetPortalContext";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -337,6 +339,8 @@ export function RequestForm({
 
   // One refresh after the follow-up calls (`refreshAfterSubmit`), not one per call.
   const submitMutation = useSubmitRequestMutation({ deferInvalidation: true });
+  const freedGate = useFreedCarGate();
+  const freedAskedRef = useRef(false);
   const submitSeriesMutation = useSubmitSeriesRequestMutation({ deferInvalidation: true });
   const joinableRidesMutation = useJoinableRidesMutation();
   const setCompanionsMutation = useSetRequestCompanionsMutation({ deferInvalidation: true });
@@ -901,6 +905,7 @@ export function RequestForm({
 
   async function submitChecked(formValues: RequestFormValues) {
     overlapConfirmedRef.current = false;
+    freedAskedRef.current = false;
     if (joinGroup && joinWindow) {
       const times = buildPayload(formValues, {});
       if (!fitsJoinWindow(times.depart_at, times.return_at, joinGroup, joinWindow)) {
@@ -1138,6 +1143,13 @@ export function RequestForm({
         return;
       }
 
+      // FC1 (REQ item 231): a published edit that frees the car for someone waiting asks first ("הרכב יתפנה לאחרים");
+      // asked once per save, not again on the release / overlap questions that may follow.
+      if (mode === "edit" && initial?.id && !freedAskedRef.current && (initial.status === "assigned" || initial.status === "merged")) {
+        const go = await freedGate.ask({ action: "submit_request", args: { payload: { ...payload, short_turnaround_ask: true } } });
+        if (!go) return;
+        freedAskedRef.current = true;
+      }
       const raw = await submitMutation.mutateAsync(payload);
       const result = raw as unknown as SubmitRequestResult | null;
       const requestId = result?.request_id ?? initial?.id;
@@ -1691,7 +1703,7 @@ export function RequestForm({
             type="submit"
             className="w-full"
             size="lg"
-            disabled={submitMutation.isPending || submitSeriesMutation.isPending || saveReservationMutation.isPending || (!!quickContext && (isPast || invalidTime))}
+            disabled={submitMutation.isPending || submitSeriesMutation.isPending || saveReservationMutation.isPending || freedGate.checking || (!!quickContext && (isPast || invalidTime))}
             title={quickContext && isPast ? t("quickRequest.pastSlotTooltip") : undefined}
           >
             {isReservation
@@ -1709,6 +1721,7 @@ export function RequestForm({
         </div>
       </div>
     </form>
+    <FreedCarConfirmDialog dialog={freedGate.dialog} loading={submitMutation.isPending} />
     <ConfirmDialog
       open={!!pendingOnBehalf}
       onOpenChange={(open) => { if (!open) setPendingOnBehalf(null); }}
