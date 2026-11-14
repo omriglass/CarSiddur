@@ -750,7 +750,8 @@ One canonical `notification_event` list now has **24** events (was 22, CLAUDE.md
   - (k) **The car-name menu works at phone width and in the card view** (R20U1, R20U2, amends item 226 c). "החלפה עם…" opens its list of cars inside the menu, not beside it. The card view of the siddur and of the board starts with a row of the day's cars; tapping one opens the same menu as the table's car header.
   - (l) **The car page's wash and kilometrage cards log** (R20U3): "שטפתי את הרכב" on the wash card and "רישום קריאה" on the kilometrage card open that step of the car report dialog.
   - (m) The split dialog names the day the second part starts ("מ־ג׳ 17.11"), not "2 + 1", which read backwards in Hebrew (R20U5).
-  - Implemented in `20261114100000` and `20261114110000`; suites `qa20_fixes.sql`, `series_edit.sql`.
+  - (n) **A host's edit in an open week keeps its guests when they still fit** (Q2, owner 2026-11-14). Editing a request whose unpublished-day ride carries a merged guest no longer drops the guest silently: the host's ride is put back on the same car at the new hours, and each guest rides on while the merge rule still holds (no refusal, no turnaround conflict, not far from the guest's own time). A guest who no longer fits returns to waiting, and the board's unmet card says "ירד/ה מנסיעה מאוחדת: הבקשה של הנהג/ת השתנתה". Nobody is notified (the day is unpublished).
+  - Implemented in `20261114100000`, `20261114110000` and `20261114120000`; suites `qa20_fixes.sql`, `series_edit.sql`.
 
 ## Owner TODO amendments — 2026-09-07
 

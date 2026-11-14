@@ -5875,6 +5875,10 @@ export type Database = {
         }
         Returns: Record<string, unknown>
       }
+      _keep_guests_after_host_edit: {
+        Args: { p_guests: Json; p_host: string; p_host_reason: string }
+        Returns: Json
+      }
       _long_detour_mode: { Args: { p_allow: boolean }; Returns: undefined }
       _maintenance_quarter_ceil: { Args: { p_t: string }; Returns: string }
       _maintenance_quarter_floor: { Args: { p_t: string }; Returns: string }

@@ -106,6 +106,43 @@ begin
     raise exception 'a member marked proposals agreed';
   exception when raise_exception then if sqlerrm <> 'not_authorized' then raise; end if; end;
 
+  -- (5) Q2: the host edits an open-week request; the guest stays when the new hours still fit, else waits with a marker
+  insert into public.requests(department_id, week_start, requester_id, filed_by, origin_id, destination_id, ride_type_id,
+      depart_at, return_at, trip_shape, trip_type, status)
+    values (dept, w, m1, m1, home, haifa, typ, ((w + 5) + time '08:00') at time zone 'Asia/Jerusalem',
+            ((w + 5) + time '12:00') at time zone 'Asia/Jerusalem', 'round_trip', 'round_trip', 'assigned') returning id into qc;
+  insert into public.requests(department_id, week_start, requester_id, filed_by, origin_id, destination_id, ride_type_id,
+      depart_at, return_at, trip_shape, trip_type, status)
+    values (dept, w, m2, m2, home, haifa, typ, ((w + 5) + time '08:00') at time zone 'Asia/Jerusalem',
+            ((w + 5) + time '12:00') at time zone 'Asia/Jerusalem', 'round_trip', 'round_trip', 'merged') returning id into qd;
+  insert into public.rides(department_id, week_start, car_id, starts_at, ends_at, origin_id, destination_id, driver_id, status, created_by)
+    values (dept, w, car1, ((w + 5) + time '08:00') at time zone 'Asia/Jerusalem', ((w + 5) + time '12:00') at time zone 'Asia/Jerusalem',
+            home, home, m1, 'draft', manager) returning id into rc;
+  insert into public.ride_requests(ride_id, request_id, role, leg, car_mode) values (rc, qc, 'driver', 'both', 'keep'), (rc, qd, 'passenger', 'both', 'passenger');
+  perform set_config('request.jwt.claims', jsonb_build_object('sub', m1, 'role', 'authenticated')::text, true);
+  res := public.submit_request(jsonb_build_object('request_id', qc, 'expected_version', (select version from public.requests where id = qc),
+    'department_id', dept, 'week_start', w, 'destination_id', haifa, 'ride_type_id', typ, 'trip_type', 'round_trip', 'adults', 1,
+    'depart_at', ((w + 5) + time '08:30') at time zone 'Asia/Jerusalem', 'return_at', ((w + 5) + time '12:30') at time zone 'Asia/Jerusalem'));
+  select rd.id into rx from public.rides rd join public.ride_requests rr on rr.ride_id = rd.id
+  where rr.request_id = qc and rd.status <> 'cancelled';
+  assert rx is not null and (select car_id = car1 and status = 'draft' and starts_at = ((w + 5) + time '08:30') at time zone 'Asia/Jerusalem'
+                             from public.rides where id = rx), format('the host keeps the car at the new hours, got %s', res);
+  assert exists (select 1 from public.ride_requests where ride_id = rx and request_id = qd and role = 'passenger'),
+    'the guest rides on: 30 minutes later still fits';
+  assert (select status = 'merged' from public.requests where id = qd), 'the guest is still merged';
+  res := public.submit_request(jsonb_build_object('request_id', qc, 'expected_version', (select version from public.requests where id = qc),
+    'department_id', dept, 'week_start', w, 'destination_id', haifa, 'ride_type_id', typ, 'trip_type', 'round_trip', 'adults', 1,
+    'depart_at', ((w + 5) + time '15:00') at time zone 'Asia/Jerusalem', 'return_at', ((w + 5) + time '19:00') at time zone 'Asia/Jerusalem'));
+  select rd.id into ry from public.rides rd join public.ride_requests rr on rr.ride_id = rd.id
+  where rr.request_id = qc and rd.status <> 'cancelled';
+  assert ry is not null and (select car_id = car1 from public.rides where id = ry), 'the host keeps the car again';
+  assert not exists (select 1 from public.ride_requests rr join public.rides rd on rd.id = rr.ride_id
+                     where rr.request_id = qd and rd.status <> 'cancelled'), 'seven hours later does not fit the guest';
+  assert (select status = 'submitted' and status_reason = 'HOST_EDITED' from public.requests where id = qd),
+    'the guest waits again, with the marker for the Sadran';
+  select count(*) into n from public.notifications where recipient_id = m2 and data ->> 'request_id' = qd::text;
+  assert n = 0, format('an unpublished day tells the guest nothing, got %s', n);
+
   raise notice 'qa20_fixes.sql: all assertions passed';
 end $$;
 

@@ -1760,7 +1760,7 @@ Lost:
 
 **Questions for the owner:** Q1 R20B1 (split), Q2 a member's own edit in an open week unplaces a merged guest silently (p1, two cases), Q3 R20B7 (publish expiring proposals), Q4 R20M1 (Sadran live events), Q5 whether a volunteer driver's "אני לא יכול/ה לנהוג" should also offer the hand-over (p1). Answers (owner 2026-11-14):
 - Q1 split: keep the turnaround exemption between parts that came from one split (the split stays one tap). Readiness counts a real turnaround conflict, and the publish error names the car and rides.
-- Q2: the guest stays on the ride when the host's new hours still fit them. Otherwise only the guest's request returns to waiting, and the Sadran sees a marker.
+- Q2: the guest stays on the ride when the host's new hours still fit them. Otherwise only the guest's request returns to waiting, and the Sadran sees a marker. ✅ 2026-11-14 (REQ item 230 n, `20261114120000`).
 - Q3: publishing leaves pending proposals open, as the dialog says. An answer after publish still applies.
 - Q4: a quiet "since you last looked" strip on the live-week board (driver left, cancelled, freed car placed, joined, proposal expired), with a badge. No new pushes.
 - Q5: a volunteer driver may hand the wheel to someone riding along, but no one riding a הקפצה is ever offered its wheel (✅ REQ item 230 d).

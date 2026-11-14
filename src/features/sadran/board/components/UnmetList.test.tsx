@@ -67,6 +67,13 @@ describe("one-way unmet cards", () => {
     expect(screen.getByTestId("unmet-reason")).toHaveTextContent(tv("unmetCard.notPlacedBecause", { reason: "אין רכב פנוי" }));
   });
 
+  it("marks a guest the host's edit took off a merged ride (R20 Q2)", () => {
+    const { rerender } = render(<UnmetList items={[item]} onAction={vi.fn()} />);
+    expect(screen.queryByTestId("unmet-host-edited")).not.toBeInTheDocument();
+    rerender(<UnmetList items={[{ ...item, request: { ...request, status_reason: "HOST_EDITED" } as WeekRequestRow }]} onAction={vi.fn()} />);
+    expect(screen.getByTestId("unmet-host-edited")).toHaveTextContent(he.unmetCard.hostEdited);
+  });
+
   it("a click on the grip never places a request", () => {
     const drop = vi.fn();
     render(<UnmetList items={[item]} onAction={vi.fn()} onDragDrop={drop} />);

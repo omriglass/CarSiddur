@@ -337,6 +337,12 @@ export function UnmetList({ items, onAction, onOpenProposal, onDecision, dayStar
               {item.request.ride_description ? <p className="whitespace-pre-wrap break-words">{item.request.ride_description}</p> : null}
               {item.request.notes ? <p className="whitespace-pre-wrap break-words"><span className="font-medium">{he.field.notes}: </span>{item.request.notes}</p> : null}
               {fallbackLine(item.request) ? <p className="font-medium" data-testid="unmet-fallback">{fallbackLine(item.request)}</p> : null}
+              {/* R20 Q2: the merged ride this guest rode on changed with its host's edit, and the guest no longer fit. */}
+              {item.request.status_reason === "HOST_EDITED" ? (
+                <p className="w-fit rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-950 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-100" data-testid="unmet-host-edited">
+                  {he.unmetCard.hostEdited}
+                </p>
+              ) : null}
               <WindowSummaryLine
                 row={{ durationLocked: item.request.duration_locked, departAt: item.request.depart_at, returnAt: item.request.return_at, flexReturnLate: item.request.flex_return_late }}
                 testId="unmet-window"

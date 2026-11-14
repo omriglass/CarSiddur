@@ -2749,6 +2749,85 @@ end $$;
 ALTER FUNCTION "public"."_joiner_times"("_ride_id" "uuid", "_request_id" "uuid", "_leg" "public"."ride_leg", OUT "dep" timestamp with time zone, OUT "ret" timestamp with time zone) OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."_keep_guests_after_host_edit"("p_host" "uuid", "p_guests" "jsonb", "p_host_reason" "text") RETURNS "jsonb"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  q public.requests%rowtype; g record; v_car uuid; v_ride uuid; v_ride_row public.rides%rowtype; v_chk jsonb;
+  v_ok boolean; v_kept int := 0; v_dropped int := 0;
+  v_prev text := coalesce(nullif(current_setting('app.system_status_transition', true), ''), 'off');
+begin
+  if p_guests is null or jsonb_array_length(p_guests) = 0 then return jsonb_build_object('kept', 0, 'dropped', 0); end if;
+  select * into q from public.requests where id = p_host;
+  v_car := (p_guests -> 0 ->> 'car_id')::uuid;
+  perform set_config('app.system_status_transition', 'on', true);
+
+  -- the host's ride now: one this edit placed (preferring the old car), else the old car again at the new hours
+  if q.id is not null and q.status not in ('withdrawn', 'cancelled') then
+    select rd.id into v_ride from public.ride_requests rr join public.rides rd on rd.id = rr.ride_id
+    where rr.request_id = p_host and rd.status <> 'cancelled'
+    order by (rd.car_id = v_car) desc, rd.starts_at, rd.id limit 1;
+    if v_ride is null and q.trip_type in ('round_trip', 'one_way') then
+      begin
+        v_ride := public.place_request_on_car(p_host, v_car, false, (select auth.uid()), null, null, null,
+                                              coalesce(p_host_reason, 'SADRAN_ASSIGNED'));
+      exception when others then v_ride := null;
+      end;
+    end if;
+  end if;
+  if v_ride is not null then
+    select * into v_ride_row from public.rides where id = v_ride;
+    -- a guest is put back only on an unpublished day's ride, where nobody has been told anything yet
+    if v_ride_row.status <> 'draft' then v_ride := null; end if;
+  end if;
+
+  for g in select * from jsonb_to_recordset(p_guests) as x(ride_id uuid, car_id uuid, request_id uuid, role public.ride_role,
+             leg public.ride_leg, car_mode public.leg_car_mode, status public.request_status, status_reason text) loop
+    -- withdrawn meanwhile, or already on another ride: nothing to do
+    continue when not exists (select 1 from public.requests r where r.id = g.request_id and r.status = 'submitted')
+      or exists (select 1 from public.ride_requests rr join public.rides rd on rd.id = rr.ride_id
+                 where rr.request_id = g.request_id and rd.status <> 'cancelled');
+    v_ok := false;
+    if v_ride is not null and g.role = 'passenger' then
+      begin
+        v_chk := public._merge_check(v_ride, g.request_id, g.leg);
+        if coalesce((v_chk ->> 'ok')::boolean, false)
+           and not coalesce((v_chk ->> 'turnaround_conflict')::boolean, false)
+           and not coalesce((v_chk ->> 'time_far')::boolean, false) then
+          insert into public.ride_requests (ride_id, request_id, role, leg, car_mode, detour_minutes)
+          values (v_ride, g.request_id, 'passenger', g.leg, g.car_mode,
+                  greatest(coalesce((v_chk ->> 'added_out_minutes')::int, 0), coalesce((v_chk ->> 'added_return_minutes')::int, 0))::smallint);
+          update public.rides set starts_at = least(starts_at, (v_chk ->> 'new_starts_at')::timestamptz),
+                                  ends_at = greatest(ends_at, (v_chk ->> 'new_ends_at')::timestamptz)
+          where id = v_ride
+            and ((v_chk ->> 'new_starts_at')::timestamptz < starts_at or (v_chk ->> 'new_ends_at')::timestamptz > ends_at);
+          perform public.assert_ride_request_day(v_ride);
+          perform public.assert_ride_seats_fit(v_ride);
+          perform public.assert_car_chain(v_ride_row.car_id, v_ride_row.week_start);
+          update public.requests set status = coalesce(g.status, 'merged'), status_reason = g.status_reason
+          where id = g.request_id;
+          v_ok := true;
+        end if;
+      exception when others then v_ok := false;   -- the sub-block is rolled back: the guest is not on the ride
+      end;
+    end if;
+    if v_ok then
+      v_kept := v_kept + 1;
+    else
+      update public.requests set status_reason = 'HOST_EDITED' where id = g.request_id and status = 'submitted';
+      v_dropped := v_dropped + 1;
+    end if;
+  end loop;
+  perform set_config('app.system_status_transition', v_prev, true);
+  return jsonb_build_object('kept', v_kept, 'dropped', v_dropped, 'ride_id', v_ride);
+end;
+$$;
+
+
+ALTER FUNCTION "public"."_keep_guests_after_host_edit"("p_host" "uuid", "p_guests" "jsonb", "p_host_reason" "text") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."_long_detour_mode"("p_allow" boolean) RETURNS "void"
     LANGUAGE "plpgsql"
     SET "search_path" TO 'public', 'pg_temp'
@@ -23874,6 +23953,7 @@ declare
   -- REQ §13.169 (b): an edit may move the request to another rider (who drives); (c) a save from the request form.
   v_requester_changed boolean := false;
   v_form_notice boolean := public._ride_edit_notice_applies();
+  v_host_guests jsonb := '[]'::jsonb;   -- R20 Q2: the guests riding on the draft ride this request hosts
 begin
   -- REQ §13.190: the browser asks before a short turnaround (`short_turnaround_ask`: try_auto_approve names the car's
   -- next ride instead of waitlisting) and retries with `allow_short_turnaround` once the member said yes.
@@ -24274,6 +24354,21 @@ begin
   if coalesce((payload->>'reserve_missing_driver')::boolean,false) and (
     v_request_id is not null or (v_requester_id is distinct from v_actor and not coalesce(v_member_flow, false)) or v_week.phase<>'live' or v_trip_shape='round_trip' or v_trip_type<>'drop_off' or v_join_ride_id is not null
   ) then raise exception 'invalid_quick_reservation';end if;
+  -- R20 Q2 (owner 2026-11-14): the guests on a draft ride this request hosts (the same "host" test as
+  -- release_request_draft_rides, which cancels such a ride) - put back after the edit when they still fit.
+  if v_request_id is not null then
+    select coalesce(jsonb_agg(jsonb_build_object('ride_id', rd.id, 'car_id', rd.car_id, 'request_id', g.request_id,
+             'role', g.role, 'leg', g.leg, 'car_mode', g.car_mode, 'status', gq.status, 'status_reason', gq.status_reason)
+             order by g.created_at, g.request_id), '[]'::jsonb) into v_host_guests
+    from public.rides rd
+    join public.ride_requests h on h.ride_id = rd.id and h.request_id = v_request_id
+    join public.ride_requests g on g.ride_id = rd.id and g.request_id <> v_request_id
+    join public.requests gq on gq.id = g.request_id
+    where rd.status = 'draft'
+      and (h.role = 'driver' or rd.driver_id is not distinct from v_existing.requester_id
+           or (select b.request_id from public.ride_requests b where b.ride_id = rd.id
+               order by (b.role = 'driver') desc, b.created_at, b.request_id limit 1) = v_request_id);
+  end if;
   if v_request_id is not null then perform public.release_request_draft_rides(v_request_id); end if;
   if v_request_id is not null and v_published_edit and coalesce((v_booking ->> 'has_booking')::boolean, false) then
     -- confirmed (or probed) release of the old booking; the request starts over as `submitted`.
@@ -24862,6 +24957,11 @@ begin
           format('companion_time_changed:%s:%s:%s', v_request_id, v_companion, clock_timestamp()));
       end loop;
     end if;
+  end if;
+
+  -- R20 Q2: the host's guests stay on the ride when the new hours still fit them; the others wait with a marker.
+  if jsonb_array_length(v_host_guests) > 0 then
+    perform public._keep_guests_after_host_edit(v_request_id, v_host_guests, v_existing.status_reason);
   end if;
 
   -- R14B8: /my reads submitted until the day is published (REQ §13.109 a), so a member's form must not announce
@@ -34305,6 +34405,11 @@ GRANT ALL ON FUNCTION "public"."_is_ride_editor"("p_department" "uuid", "p_owner
 
 REVOKE ALL ON FUNCTION "public"."_joiner_times"("_ride_id" "uuid", "_request_id" "uuid", "_leg" "public"."ride_leg", OUT "dep" timestamp with time zone, OUT "ret" timestamp with time zone) FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."_joiner_times"("_ride_id" "uuid", "_request_id" "uuid", "_leg" "public"."ride_leg", OUT "dep" timestamp with time zone, OUT "ret" timestamp with time zone) TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."_keep_guests_after_host_edit"("p_host" "uuid", "p_guests" "jsonb", "p_host_reason" "text") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_keep_guests_after_host_edit"("p_host" "uuid", "p_guests" "jsonb", "p_host_reason" "text") TO "service_role";
 
 
 

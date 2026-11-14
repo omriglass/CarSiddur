@@ -727,6 +727,8 @@ export const heSadran = {
     whatsapp: "הודעה בוואטסאפ",
     whatsappGreeting: "היי {{name}}, אני פונה אליך בכובע של הסידור לגבי הבקשה ל{{destination}} ב{{day}}.",
     filedAt: "הוגשה {{when}}",
+    // R20 Q2: the host of the merged ride this request rode on changed their request, and the guest no longer fit.
+    hostEdited: "ירד/ה מנסיעה מאוחדת: הבקשה של הנהג/ת השתנתה",
     scoreLine: "ציון {{score}}",
     placeOnCar: "שבץ ברכב…",
     placeOnCarTitle: "שיבוץ של {{name}} ברכב",

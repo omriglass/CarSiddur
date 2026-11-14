@@ -45,6 +45,7 @@ export const STATUS_REASON_CODES = [
   "FREED_SLOT_APPROVED",
   "FREED_SLOT_AUTO",
   "GUEST_NOW_DRIVES",
+  "HOST_EDITED",
   "NO_HOME_LOCATION",
   "PROPOSAL_APPLIED",
   "PROPOSAL_APPLIED_PENDING_ASSIGNMENT",
@@ -797,6 +798,8 @@ export const he = {
     UNSAFE_ISSUE: "הרכב הוצא משימוש עקב תקלה",
     // R13B12: the driver cancelled and a guest who drives took the ride over.
     GUEST_NOW_DRIVES: "הנהג/ת ביטל/ה, והנסיעה נשארה — עם נהג/ת מבין הנוסעים",
+    // R20 Q2: the member whose ride this request had joined changed their hours, and they no longer fit this request.
+    HOST_EDITED: "הנסיעה שצורפת אליה השתנתה ולא מתאימה עוד לבקשה שלך. הבקשה ממתינה לשיבוץ מחדש",
     SERIES_SHORTENED: "ההזמנה קוצרה לפי הצעת הסדרן — היום הזה לא נכלל",
     WAITLISTED_CONTESTED: "כמה חברים/ות מבקשים/ות רכב בשעות חופפות. אפשר לסמן ביניכם/ן מי נוסע/ת.",
     WAITLISTED_NOT_CHOSEN: "הפעם נוסע/ת חבר/ה אחר/ת. הבקשה נשארת ברשימת ההמתנה.",
