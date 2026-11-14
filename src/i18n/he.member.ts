@@ -522,7 +522,12 @@ export const heMember = {
     removeDriverTitle: "להוריד את {{name}} מהנהיגה",
     removeDriverOption: "{{name}} ינהג/תנהג",
     removeDriverNone: "בלי נהג/ת — הנסיעה תחכה לנהג/ת",
-    removeDriverHelp: "הנסיעה נשארת על אותו רכב ובאותן שעות; הבקשה של הנהג/ת מבוטלת.",
+    removeDriverHelp: "הנסיעה נשארת על אותו רכב; הבקשה של הנהג/ת מבוטלת.",
+    // R20B15 (owner 2026-11-14): the ride left with no driver can shrink to the hours of those still on it.
+    leaveFitTitle: "לקצר את הנסיעה?",
+    leaveFitBody: "בלי {{name}} הנסיעה צריכה רק {{range}}. לקצר אותה ולשחרר את הרכב בשאר השעות?",
+    leaveFitShrink: "לקצר ל־{{range}}",
+    leaveFitKeep: "להשאיר {{range}}",
     removeDriverConfirm: "הבקשה של {{name}} תבוטל, וכל מי שבנסיעה יקבל/תקבל הודעה.",
     removeDriverConfirmButton: "אישור",
     title: "פרטי הנסיעה",

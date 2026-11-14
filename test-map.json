@@ -903,18 +903,23 @@
         "src/features/rides/components/RidePublicNotesEditor.tsx",
         "src/features/rides/api.ts",
         "src/features/rides/hooks.ts",
-        "src/features/rides/keys.ts"
+        "src/features/rides/keys.ts",
+        "src/features/rides/useLeaveNoDriver.tsx",
+        "src/features/rides/useLeaveNoDriver.test.tsx",
+        "supabase/migrations/**/*leave_ride_fit*"
       ],
       "vitest": [
         "src/lib/ridePassengerSummary.test.ts",
         "src/lib/ridePublicDetails.test.ts",
         "src/features/siddur/ridePeople.test.ts",
         "src/features/siddur/addPassengers.test.ts",
-        "src/features/sadran/board/reservationPeople.test.ts"
+        "src/features/sadran/board/reservationPeople.test.ts",
+        "src/features/rides/useLeaveNoDriver.test.tsx"
       ],
       "sql": [
         "leave_merged_ride.sql",
         "qa20_fixes.sql",
+        "qa20_low_bugs.sql",
         "ride_passengers.sql",
         "split_ride_companion.sql"
       ],

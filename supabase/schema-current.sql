@@ -12602,7 +12602,8 @@ declare
 begin
   if (select auth.uid()) is null or not public.is_approved() then raise exception 'not_authorized' using errcode = '42501'; end if;
   if p_action not in ('cancel_ride', 'ride_editor_cancel_ride', 'withdraw_request', 'ride_editor_withdraw_request',
-                      'edit_ride', 'submit_request', 'submit_series_request', 'sadran_cancel_ride', 'remove_ride_person') then
+                      'edit_ride', 'submit_request', 'submit_series_request', 'sadran_cancel_ride', 'remove_ride_person',
+                      'leave_merged_ride_fit') then
     raise exception 'freed_preview_unknown_action' using errcode = 'P0001';
   end if;
   begin
@@ -12628,6 +12629,8 @@ begin
           coalesce((select array_agg(x::uuid) from jsonb_array_elements_text(p_args -> 'p_continue_request_ids') x), '{}'));
       when 'remove_ride_person' then
         perform public.remove_ride_person((p_args ->> 'p_ride_id')::uuid, (p_args ->> 'p_expected_version')::int, p_args ->> 'p_key');
+      when 'leave_merged_ride_fit' then
+        perform public.leave_merged_ride_fit((p_args ->> 'p_ride_id')::uuid, (p_args ->> 'p_expected_version')::int);
     end case;
     -- the commit-time checks (the freed-time offer among them) run now, inside this block
     set constraints all immediate;
@@ -13882,6 +13885,12 @@ begin
   end if;
   perform public.assert_ride_driver(r.id);
   perform public.assert_ride_seats_fit(r.id);
+  -- R20B15 (owner 2026-11-14): "לקצר" — a ride left with no driver shrinks to the hours of those still on it
+  -- (leave_merged_ride_fit), before the riders are told, so their notice shows the new hours.
+  if p_new_driver is null and not v_x_companion_of_mine and coalesce(current_setting('app.leave_fit_ride', true), '') = 'on' then
+    perform public._fit_ride_to_its_legs(r.id);
+    select * into r from public.rides where id = r.id;
+  end if;
 
   -- R20B2: the driver someone else took off is always told, published day or not - their own request ended
   if v_actor <> v_leaver then
@@ -13927,6 +13936,48 @@ end $$;
 
 
 ALTER FUNCTION "public"."leave_merged_ride"("p_ride_id" "uuid", "p_expected_version" integer, "p_new_driver" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."leave_merged_ride_fit"("p_ride_id" "uuid", "p_expected_version" integer) RETURNS "jsonb"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare v jsonb; r public.rides%rowtype;
+begin
+  perform set_config('app.leave_fit_ride', 'on', true);
+  v := public.leave_merged_ride(p_ride_id, p_expected_version, null);
+  perform set_config('app.leave_fit_ride', '', true);
+  select * into r from public.rides where id = p_ride_id;
+  return v || jsonb_build_object('starts_at', r.starts_at, 'ends_at', r.ends_at);
+end $$;
+
+
+ALTER FUNCTION "public"."leave_merged_ride_fit"("p_ride_id" "uuid", "p_expected_version" integer) OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."leave_ride_fit_preview"("p_ride_id" "uuid", "p_expected_version" integer) RETURNS "jsonb"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare r0 public.rides%rowtype; v_s timestamptz; v_e timestamptz;
+begin
+  select * into r0 from public.rides where id = p_ride_id;
+  if not found then return null; end if;
+  begin
+    perform set_config('app.leave_fit_ride', 'on', true);
+    perform public.leave_merged_ride(p_ride_id, p_expected_version, null);
+    select starts_at, ends_at into v_s, v_e from public.rides where id = p_ride_id;
+    raise exception 'leave_fit_preview_rollback' using errcode = 'P0001';
+  exception when others then
+    if sqlerrm <> 'leave_fit_preview_rollback' then v_s := null; v_e := null; end if;
+  end;
+  perform set_config('app.leave_fit_ride', '', true);
+  if v_s is null or (v_s, v_e) = (r0.starts_at, r0.ends_at) then return null; end if;
+  return jsonb_build_object('starts_at', v_s, 'ends_at', v_e);
+end $$;
+
+
+ALTER FUNCTION "public"."leave_ride_fit_preview"("p_ride_id" "uuid", "p_expected_version" integer) OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."link_typed_places_on_approval"() RETURNS "trigger"
@@ -37124,6 +37175,18 @@ GRANT ALL ON FUNCTION "public"."joinable_rides_for_request"("p_request_id" "uuid
 REVOKE ALL ON FUNCTION "public"."leave_merged_ride"("p_ride_id" "uuid", "p_expected_version" integer, "p_new_driver" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."leave_merged_ride"("p_ride_id" "uuid", "p_expected_version" integer, "p_new_driver" "uuid") TO "service_role";
 GRANT ALL ON FUNCTION "public"."leave_merged_ride"("p_ride_id" "uuid", "p_expected_version" integer, "p_new_driver" "uuid") TO "authenticated";
+
+
+
+REVOKE ALL ON FUNCTION "public"."leave_merged_ride_fit"("p_ride_id" "uuid", "p_expected_version" integer) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."leave_merged_ride_fit"("p_ride_id" "uuid", "p_expected_version" integer) TO "service_role";
+GRANT ALL ON FUNCTION "public"."leave_merged_ride_fit"("p_ride_id" "uuid", "p_expected_version" integer) TO "authenticated";
+
+
+
+REVOKE ALL ON FUNCTION "public"."leave_ride_fit_preview"("p_ride_id" "uuid", "p_expected_version" integer) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."leave_ride_fit_preview"("p_ride_id" "uuid", "p_expected_version" integer) TO "service_role";
+GRANT ALL ON FUNCTION "public"."leave_ride_fit_preview"("p_ride_id" "uuid", "p_expected_version" integer) TO "authenticated";
 
 
 

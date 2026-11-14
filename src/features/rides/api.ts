@@ -87,6 +87,17 @@ export async function leaveMergedRide(rideId: string, expectedVersion: number, n
   await rpc("leave_merged_ride", { p_ride_id: rideId, p_expected_version: expectedVersion, ...(newDriver ? { p_new_driver: newDriver } : {}) });
 }
 
+/** R20B15: the hours a ride left with no driver would shrink to (those still on it), or null when nothing would change. */
+export async function leaveRideFitPreview(rideId: string, expectedVersion: number): Promise<{ startsAt: string; endsAt: string } | null> {
+  const data = (await rpc("leave_ride_fit_preview", { p_ride_id: rideId, p_expected_version: expectedVersion })) as { starts_at?: string; ends_at?: string } | null;
+  return data?.starts_at && data.ends_at ? { startsAt: data.starts_at, endsAt: data.ends_at } : null;
+}
+
+/** R20B15: "לקצר" — leave with no driver and shrink the ride to the hours of those still on it, in one step. */
+export async function leaveMergedRideFit(rideId: string, expectedVersion: number): Promise<void> {
+  await rpc("leave_merged_ride_fit", { p_ride_id: rideId, p_expected_version: expectedVersion });
+}
+
 /**
  * O28-8: just these rides of the week, as `week_board_rides` returns them (`week_board_rides_subset`, same rows
  * and RLS) — a ride the caller can no longer see (e.g. cancelled) is simply absent.
@@ -316,7 +327,8 @@ export async function memberMergeRide(input: { rideId: string; sourceRideId: str
 /** FC1 (REQ item 231): the actions `freed_car_preview` can try (and roll back) to see whom a freed car would go to. */
 export type FreedCarAction =
   | "cancel_ride" | "ride_editor_cancel_ride" | "withdraw_request" | "ride_editor_withdraw_request"
-  | "edit_ride" | "submit_request" | "submit_series_request" | "sadran_cancel_ride" | "remove_ride_person";
+  | "edit_ride" | "submit_request" | "submit_series_request" | "sadran_cancel_ride" | "remove_ride_person"
+  | "leave_merged_ride_fit";
 
 export interface FreedCarPreviewRequest {
   action: FreedCarAction;

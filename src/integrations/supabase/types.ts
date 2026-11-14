@@ -7154,6 +7154,14 @@ export type Database = {
         }
         Returns: Json
       }
+      leave_merged_ride_fit: {
+        Args: { p_expected_version: number; p_ride_id: string }
+        Returns: Json
+      }
+      leave_ride_fit_preview: {
+        Args: { p_expected_version: number; p_ride_id: string }
+        Returns: Json
+      }
       log_car_care: {
         Args: {
           _car_id: string

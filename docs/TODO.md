@@ -1699,7 +1699,7 @@ Pass 1 `qa-p1` (seed 9313, 40 members, 170 requests): a normal Sadran and member
 - R20B12 — ✅ fixed 2026-11-14 (REQ item 238) — (low) A late request that lands on the waiting list gives the Sadran two notices, `late_request` and `waitlisted_request` (p1 טליה). The requirements say one.
 - R20B13 — ✅ fixed 2026-11-14 (REQ item 238) — (low) "העבר לרכב שלי" on a driverless ride confirms "X ינהג/תנהג ברכב…", but the ride stays without a driver (p2 fbd4375c).
 - R20B14 — ✅ fixed 2026-11-14 (REQ item 238) — (low) After editing an already-waitlisted request, the notice says "הרכב הקודם שוחרר" although there was no car (p3 m26).
-- R20B15 — (low) A ride that loses its driver and becomes a הקפצה keeps its whole round-trip span (e.g. 06:45–18:00), blocking the car all day (p2, p3).
+- R20B15 — ✅ fixed 2026-11-14 (REQ item 238 f, "לקצר את הנסיעה?") — (low) A ride that loses its driver and becomes a הקפצה keeps its whole round-trip span (e.g. 06:45–18:00), blocking the car all day (p2, p3).
 - R20B16 — ✅ fixed 2026-11-14 (REQ item 238) — (low) The outcome notice after a member accepts a "deny" proposal is vague: "שינוי בסידור שלך — ד׳ 18.11" with the body "ד׳ 18.11 06:30" (p2 m13).
 - R20B17 — (low, not checked) A second per-day auto-fill placed 3 more Monday requests that the first run had left (p2).
 - R20B18 — ✅ fixed 2026-11-14 (REQ item 238) — (low) `propose origin` names a car that is busy all day. The member accepts, the proposal is withdrawn as stale, and she is told "ההצעה שאישרת בוטלה" (p2, req 73fb9d48).

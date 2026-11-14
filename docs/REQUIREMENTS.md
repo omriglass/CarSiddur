@@ -792,7 +792,8 @@ One canonical `notification_event` list now has **24** events (was 22, CLAUDE.md
   - (c) **An edit of a request that already waited** (R20B14): "העריכה נשמרה — הבקשה ממתינה לשיבוץ" / "{{route}} · {{day}}. עדיין לא נמצא רכב מתאים; תעודכן/י כשיהיה שיבוץ" (no "הרכב הקודם שוחרר" when there was no car).
   - (d) **Accepting "no car"** (R20B16): "הבקשה נסגרה — לא נמצא רכב" / "אישרת שאין רכב {{route}} ביום {{day}} — הבקשה נסגרה", like "arrange it yourself" (`deny_accepted`).
   - (e) **An origin proposal only when it would apply** (R20B18): sending one ("take car C from Y") first tries it and rolls back, like a shift that names a car (R5B3); a car that is not free there is refused before the member is asked ("הרכב כבר לא פנוי בנקודת היציאה הזו — יש להריץ הצעה חדשה"), so a member never accepts a proposal that is withdrawn as stale.
-  - Implemented in `20261114230000`–`20261114230200`; suite `qa20_low_bugs.sql`.
+  - (f) **A ride left with no driver may shrink** (R20B15; amends item 229, "the ride keeps car and hours"): when the driver leaves a merged ride with nobody driving ("בלי נהג/ת", or "להסיר אותי — צריך נהג/ת") and those still on it need fewer hours, the person is asked "לקצר את הנסיעה?" — "בלי דנה הנסיעה צריכה רק 07:00–07:45. לקצר אותה ולשחרר את הרכב בשאר השעות?" with "לקצר ל־07:00–07:45" / "להשאיר 06:45–18:00" / "חזרה". Shrinking keeps the car, fits the ride to its riders' own legs, and the riders' notice shows the new hours; freed hours are offered like any change (§231, with the "הרכב יתפנה לאחרים" line).
+  - Implemented in `20261114230000`–`20261114230300`; suite `qa20_low_bugs.sql`, e2e `merged-ride-parts.spec.ts` (R20B15).
 
 ## Owner TODO amendments — 2026-09-07
 

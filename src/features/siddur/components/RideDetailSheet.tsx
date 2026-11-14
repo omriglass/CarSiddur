@@ -110,6 +110,8 @@ interface RideDetailSheetProps {
   handOverOptions?: readonly HandOverCandidate[];
   /** REQ item 229: on a merge, the driver may leave with nobody driving (the ride waits for a driver). */
   onLeaveNoDriver?: () => void;
+  /** R20B15: the "לקצר את הנסיעה?" question `onLeaveNoDriver` may open (`useLeaveNoDriver`). */
+  leaveNoDriverDialog?: ReactNode;
   onHandOver?: (newDriverId: string) => void;
   handingOver?: boolean;
 }
@@ -122,7 +124,7 @@ interface RideDetailSheetProps {
  * §13.85; the `/requests/new?ride=` prefill path itself is untouched, still reachable from the
  * joinable-rides dialog after a waiting-list outcome).
  */
-export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = null, onOpenChange, editor, coordinatorNotes, canEditPublicNotes, onRemoveOwnRide, removingOwnRide = false, onRemoveMe, removingMe = false, freedPreview, editRequestLinks = [], showAddPassengers = false, weekRides, moveToCarOptions = [], onMoveToCar, movingToCar = false, handOverOptions = [], onHandOver, onLeaveNoDriver, handingOver = false }: RideDetailSheetProps) {
+export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = null, onOpenChange, editor, coordinatorNotes, canEditPublicNotes, onRemoveOwnRide, removingOwnRide = false, onRemoveMe, removingMe = false, freedPreview, editRequestLinks = [], showAddPassengers = false, weekRides, moveToCarOptions = [], onMoveToCar, movingToCar = false, handOverOptions = [], onHandOver, onLeaveNoDriver, leaveNoDriverDialog, handingOver = false }: RideDetailSheetProps) {
   const [confirmCancel, setConfirmCancel] = useState(false);
   const viewerId = useSession().session?.user.id;
   const [confirmRemoveMe, setConfirmRemoveMe] = useState(false);
@@ -338,6 +340,7 @@ export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = 
             </div>
           </>
         ) : null}
+        {leaveNoDriverDialog}
       </PortalSheetContent>
     </Sheet>
   );

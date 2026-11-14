@@ -7,6 +7,7 @@ import type { BoardRide } from "./api";
 import { handOverCandidates, mergedLeaveOptions } from "./handOver";
 import { useHandOverOwnRideMutation, useLeaveMergedRideMutation } from "./hooks";
 import { ownCarMoveTargets, rideDayPublished } from "./ownCarMove";
+import { useLeaveNoDriver } from "./useLeaveNoDriver";
 import { useOwnCarMove } from "./useOwnCarMove";
 
 export interface RideSheetCarActionsOptions {
@@ -25,6 +26,8 @@ export function useRideSheetCarActions({ departmentId, profileId, myRequestIds, 
   const membersQuery = useDepartmentMembers(departmentId);
   const handOver = useHandOverOwnRideMutation();
   const leaveMerged = useLeaveMergedRideMutation();
+  // R20B15: leaving with nobody driving may first ask "לקצר את הנסיעה?".
+  const leaveNoDriver = useLeaveNoDriver();
 
   /** Props for `RideDetailSheet`; empty when the ride is null or no action applies. */
   function sheetProps(ride: BoardRide | null, onDone: () => void) {
@@ -47,8 +50,9 @@ export function useRideSheetCarActions({ departmentId, profileId, myRequestIds, 
           ? leave(newDriver)
           : handOver.mutate({ rideId: id, expectedVersion: version, newDriver, departmentId: department_id, weekStart: week_start }, { onSuccess: onDone })
         : undefined,
-      onLeaveNoDriver: merged?.noDriver && department_id && week_start ? () => leave(null) : undefined,
-      handingOver: handOver.isPending || leaveMerged.isPending,
+      onLeaveNoDriver: merged?.noDriver && department_id && week_start ? () => void leaveNoDriver.start(ride, ride.driver_name ?? "", onDone) : undefined,
+      handingOver: handOver.isPending || leaveMerged.isPending || leaveNoDriver.busy,
+      leaveNoDriverDialog: leaveNoDriver.dialog,
     };
   }
 

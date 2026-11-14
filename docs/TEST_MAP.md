@@ -366,7 +366,7 @@ matching `*proposal*`; `e2e/proposal.spec.ts`, `proposal-retry.spec.ts`, `board-
 
 **Automated**:
 - Vitest: `npx vitest run src/lib/ridePassengerSummary.test.ts src/lib/ridePublicDetails.test.ts src/features/siddur/ridePeople.test.ts src/features/siddur/addPassengers.test.ts src/features/sadran/board/reservationPeople.test.ts`
-- SQL: `ride_passengers.sql`, `leave_merged_ride.sql` (REQ item 229), `qa20_fixes.sql` (REQ item 230)
+- SQL: `ride_passengers.sql`, `leave_merged_ride.sql` (REQ item 229; the "לקצר" shrink, REQ item 238 f: `qa20_low_bugs.sql` TEST 5, Vitest `src/features/rides/useLeaveNoDriver.test.tsx`, e2e `merged-ride-parts.spec.ts` R20B15), `qa20_fixes.sql` (REQ item 230)
 - Playwright: `npx playwright test --grep "@ride-passengers"` (coverage gap — see below)
 
 **QA script**:

@@ -3,6 +3,7 @@
 --   TEST 2  R20B14  editing a request that was already waiting (no car before) does not say "the previous car was released"
 --   TEST 3  R20B16  accepting a "deny" proposal has its own notice (`deny_accepted`), not the generic "your siddur changed"
 --   TEST 4  R20B18  sending an origin proposal is refused when the named car is not free there (`origin_change_unavailable`)
+--   TEST 5  R20B15  the driver taken off a merged ride: "לקצר" shrinks the ride to the hours of those still on it
 -- Transactional, rolled back at the end.
 begin;
 create temporary table qlb(k text primary key, id uuid, d date);
@@ -152,6 +153,66 @@ begin
   assert (select status from public.proposals where id = p) = 'sent', 'TEST 4 FAILED: a free car: the proposal is sent';
   assert (select origin_id from public.requests where id = q) is distinct from binyamina, 'TEST 4 FAILED: nothing applied before the answer';
   raise notice 'TEST 4 passed: an origin proposal is sent only when it would apply';
+end $$;
+
+-- TEST 5: "בלי נהג/ת" — shrink the ride to the riders left, or keep it
+do $$
+declare
+  dept uuid := '00000000-0000-0000-0000-000000000001';
+  manager uuid := '00000000-0000-0000-0000-000000000102';
+  m3 uuid := '00000000-0000-0000-0000-000000000103';   -- driver, 08:00-18:00
+  m4 uuid := '00000000-0000-0000-0000-000000000104';   -- guest, 10:00-12:00
+  home uuid := '00000000-0000-0000-0000-000000000010';
+  haifa uuid := '00000000-0000-0000-0000-000000000011';
+  typ uuid := '00000000-0000-0000-0000-000000000021';
+  car40 uuid := '00000000-0000-0000-0000-000000000040';
+  w date := public.current_week_start() + 861;
+  d0 timestamptz := ((w + 1) + time '00:00') at time zone 'Asia/Jerusalem';
+  qA uuid; qB uuid; rA uuid; pub uuid; pv jsonb; res jsonb; n public.notifications%rowtype;
+begin
+  update public.cars set status = 'active' where id = car40;
+  insert into public.weeks(department_id, week_start, phase, open_at, close_at, publish_at)
+    values (dept, w, 'open', now() - interval '2 days', now() + interval '1 day', now() + interval '2 days');
+  insert into public.requests(department_id, week_start, requester_id, filed_by, origin_id, destination_id, ride_type_id, depart_at, return_at, trip_shape, status)
+    values (dept, w, m3, m3, home, haifa, typ, d0 + interval '8 hours', d0 + interval '18 hours', 'round_trip', 'assigned') returning id into qA;
+  insert into public.requests(department_id, week_start, requester_id, filed_by, origin_id, destination_id, ride_type_id, depart_at, return_at, trip_shape, status)
+    values (dept, w, m4, m4, home, haifa, typ, d0 + interval '10 hours', d0 + interval '12 hours', 'round_trip', 'merged') returning id into qB;
+  insert into public.rides(department_id, week_start, car_id, starts_at, ends_at, origin_id, destination_id, driver_id, status, created_by)
+    values (dept, w, car40, d0 + interval '8 hours', d0 + interval '18 hours', home, home, m3, 'draft', manager) returning id into rA;
+  insert into public.ride_requests(ride_id, request_id, role, leg, car_mode) values (rA, qA, 'driver', 'both', 'keep');
+  insert into public.ride_requests(ride_id, request_id, role, leg, car_mode) values (rA, qB, 'passenger', 'both', 'passenger');
+  insert into public.siddur_versions(department_id, week_start, snapshot, published_by) values (dept, w, '{}', manager) returning id into pub;
+  perform set_config('app.in_publish', 'on', true);
+  update public.weeks set phase = 'published', published_version_id = pub, published_at = now(), published_days = array[w + 1]
+    where department_id = dept and week_start = w;
+  update public.rides set status = 'confirmed' where id = rA;
+  perform set_config('app.in_publish', 'off', true);
+
+  perform set_config('request.jwt.claims', jsonb_build_object('sub', manager, 'role', 'authenticated')::text, true);
+  pv := public.leave_ride_fit_preview(rA, (select version from public.rides where id = rA));
+  assert (pv ->> 'starts_at')::timestamptz = d0 + interval '10 hours' and (pv ->> 'ends_at')::timestamptz = d0 + interval '12 hours',
+    format('TEST 5 FAILED: the preview offers the guest''s 10:00-12:00, got %s', pv);
+  assert (select driver_id = m3 and starts_at = d0 + interval '8 hours' from public.rides where id = rA)
+     and (select status = 'assigned' from public.requests where id = qA), 'TEST 5 FAILED: the preview changes nothing';
+  assert not exists (select 1 from public.notifications where data ->> 'ride_id' = rA::text), 'TEST 5 FAILED: the preview tells nobody';
+
+  res := public.leave_merged_ride_fit(rA, (select version from public.rides where id = rA));
+  assert (select driver_id is null and needs_driver and car_id = car40 and starts_at = d0 + interval '10 hours' and ends_at = d0 + interval '12 hours'
+          from public.rides where id = rA), 'TEST 5 FAILED: the ride waits for a driver at the guest''s hours';
+  assert (select status = 'withdrawn' from public.requests where id = qA), 'TEST 5 FAILED: the driver''s request is withdrawn';
+  select * into n from public.notifications where recipient_id = m4 and data ->> 'variant' = 'driver_cancelled_plain' and data ->> 'ride_id' = rA::text;
+  assert n.body_he like '%10:00–12:00%', format('TEST 5 FAILED: the rider is told the new hours, got %s', n.body_he);
+
+  -- nothing to shrink (the guest needs the whole ride): no preview, so no question
+  perform set_config('request.jwt.claims', jsonb_build_object('sub', manager, 'role', 'authenticated')::text, true);
+  update public.rides set driver_id = m4, needs_driver = false where id = rA;
+  insert into public.requests(department_id, week_start, requester_id, filed_by, origin_id, destination_id, ride_type_id, depart_at, return_at, trip_shape, status)
+    values (dept, w, m3, m3, home, haifa, typ, d0 + interval '10 hours', d0 + interval '12 hours', 'round_trip', 'merged') returning id into qA;
+  insert into public.ride_requests(ride_id, request_id, role, leg, car_mode) values (rA, qA, 'passenger', 'both', 'passenger');
+  update public.ride_requests set role = 'driver', car_mode = 'keep' where ride_id = rA and request_id = qB;
+  assert public.leave_ride_fit_preview(rA, (select version from public.rides where id = rA)) is null,
+    'TEST 5 FAILED: no shorter hours, no preview';
+  raise notice 'TEST 5 passed: "לקצר" shrinks the ride to the riders left';
 end $$;
 
 rollback;
