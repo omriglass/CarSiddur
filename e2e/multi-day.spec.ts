@@ -116,6 +116,11 @@ test.describe("multi-day requests", { tag: ["@request-form"] }, () => {
       const dayIndex = Number(new Date(`${day}T12:00:00Z`).getUTCDay());
       await page.getByRole("radio").nth(dayIndex).click();
       await expect(page.getByText(expectedMarker, { exact: true })).toBeVisible();
+      // R20H2: every day's ride sheet offers "פיצול", not only the first day's.
+      await page.getByText(expectedMarker, { exact: true }).click();
+      await page.getByRole("button", { name: "פרטי הנסיעה" }).click();
+      await page.getByRole("tab", { name: "פעולות" }).click();
+      await expect(page.getByTestId("ride-sheet-split")).toBeVisible();
     }
 
     await service.from("requests").delete().eq("series_id", seriesId);
