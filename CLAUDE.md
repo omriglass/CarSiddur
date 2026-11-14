@@ -187,6 +187,7 @@ e2e/
   driver-wanted.spec.ts          REQ §13.170: a driverless הקפצה asks on WhatsApp who can drive (rider, day, place, hour, link); `/ride/<id>` "אני אקח" takes the wheel
   anyone-edits-rides.spec.ts     REQ §13.169: department switch on — a member edits another member's ride from the siddur, moves it to the driving rider; one merged `ride_edited` notice
   merge-verdict.spec.ts          merge popup enables/refuses legs from the server's merge_preview verdict (REQ §13.108 e)
+  one-way-pair-drop.spec.ts      board: "לשבץ את שתיהן" places a lone one-way pair; a leg from where the car is not standing asks "לשבץ בכל זאת?" (REQ item 241)
   large-trunk-waiver.spec.ts     board: dropping a large-luggage request on a small car asks "לשבץ בכל זאת?"; confirm marks the waiver, decline leaves it unmet (REQ §13.111 a)
   member.spec.ts                 member area flows
   multi-day.spec.ts              multi-day ("series") request: one card/badge, linked legs, cascading withdraw, board day markers

@@ -676,6 +676,7 @@
         "e2e/board.spec.ts",
         "e2e/board-mobile.spec.ts",
         "e2e/board-coordination.spec.ts",
+        "e2e/one-way-pair-drop.spec.ts",
         "e2e/board-drafts.spec.ts",
         "e2e/merged-ride.spec.ts",
         "e2e/merge-verdict.spec.ts",
