@@ -902,11 +902,18 @@ export type HostGuestDecision = "keep" | "release";
  * R20 Q2 redo (owner 2026-11-14): a guest of the shared ride an edit no longer fits. `far` = the new hours are far
  * from the guest's own (keep or release); `cannot` = the guest cannot stay (`reason`), so only release.
  */
+/** Owner 2026-11-14: far from the guest's hours, a too-long detour, no big trunk for the guest's luggage. */
+export type HostGuestWarning = "far" | "detour" | "luggage";
+
 export interface HostGuestQuestion {
   request_id: string;
   name: string;
-  kind: "far" | "cannot";
-  reason: "seats" | "luggage" | "detour" | "day" | "busy" | "other" | null;
+  /** warn = may stay (the editor decides, one question per warning); cannot = only "save anyway" (back to waiting). */
+  kind: "warn" | "cannot";
+  warnings?: HostGuestWarning[];
+  reason: "seats" | "day" | "busy" | "other" | null;
+  /** The detour's extra driving (both legs), for the "detour" warning. */
+  added_minutes?: number;
   wanted_at: string | null;
   ride_at: string | null;
 }

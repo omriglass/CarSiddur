@@ -148,7 +148,8 @@ begin
     if sqlerrm <> 'host_edit_guests' then raise; end if;
     get stacked diagnostics dtl = pg_exception_detail;
   end;
-  assert dtl -> 'guests' -> 0 ->> 'request_id' = qd::text and dtl -> 'guests' -> 0 ->> 'kind' = 'far'
+  assert dtl -> 'guests' -> 0 ->> 'request_id' = qd::text and dtl -> 'guests' -> 0 ->> 'kind' = 'warn'
+     and dtl -> 'guests' -> 0 -> 'warnings' = '["far"]'::jsonb
      and (dtl -> 'guests' -> 0 ->> 'wanted_at')::timestamptz = ((w + 5) + time '08:00') at time zone 'Asia/Jerusalem'
      and (dtl -> 'guests' -> 0 ->> 'ride_at')::timestamptz = ((w + 5) + time '15:00') at time zone 'Asia/Jerusalem',
     format('the question names the guest, both times, and that the guest may stay: %s', dtl);
@@ -165,6 +166,37 @@ begin
   assert ry is not null and (select car_id = car1 from public.rides where id = ry), 'the host keeps the car again';
   assert exists (select 1 from public.ride_requests where ride_id = ry and request_id = qd and role = 'passenger')
      and (select status = 'merged' from public.requests where id = qd), 'the editor kept the guest despite the far hours';
+  -- owner 2026-11-14: large luggage on a car without a big trunk and a too-long detour are warnings too - the editor
+  -- may keep the guest (the car need is waived, the detour accepted)
+  update public.cars set features = array_remove(coalesce(features, '{}'), 'large_trunk') where id = car1;
+  update public.requests set has_luggage = true, destination_id = bin where id = qd;
+  update public.department_settings set detour_limit_minutes = 0, detour_limit_km = 0 where department_id = dept;
+  dtl := null;
+  begin
+    perform public.submit_request(jsonb_build_object('request_id', qc, 'expected_version', (select version from public.requests where id = qc),
+      'department_id', dept, 'week_start', w, 'destination_id', haifa, 'ride_type_id', typ, 'trip_type', 'round_trip', 'adults', 1,
+      'depart_at', ((w + 5) + time '15:30') at time zone 'Asia/Jerusalem', 'return_at', ((w + 5) + time '19:00') at time zone 'Asia/Jerusalem'));
+    raise exception 'luggage and a long detour were decided without asking';
+  exception when raise_exception then
+    if sqlerrm <> 'host_edit_guests' then raise; end if;
+    get stacked diagnostics dtl = pg_exception_detail;
+  end;
+  assert dtl -> 'guests' -> 0 ->> 'kind' = 'warn' and dtl -> 'guests' -> 0 -> 'warnings' = '["far", "detour", "luggage"]'::jsonb
+     and (dtl -> 'guests' -> 0 ->> 'added_minutes')::int > 0,
+    format('far, a long detour (with its minutes) and no big trunk are each asked about: %s', dtl);
+  res := public.submit_request(jsonb_build_object('request_id', qc, 'expected_version', (select version from public.requests where id = qc),
+    'department_id', dept, 'week_start', w, 'destination_id', haifa, 'ride_type_id', typ, 'trip_type', 'round_trip', 'adults', 1,
+    'depart_at', ((w + 5) + time '15:30') at time zone 'Asia/Jerusalem', 'return_at', ((w + 5) + time '19:00') at time zone 'Asia/Jerusalem',
+    'host_guests', jsonb_build_object(qd::text, 'keep')));
+  assert exists (select 1 from public.ride_requests rr join public.rides rd on rd.id = rr.ride_id
+                 where rr.request_id = qd and rd.status <> 'cancelled' and rd.car_id = car1 and rr.detour_minutes > 0),
+    'kept: the guest rides on with the long detour';
+  assert (select luggage_waived_at is not null and luggage_waived_by = m1 from public.requests where id = qd),
+    'kept: the car need is waived by the editor';
+  assert coalesce(current_setting('app.small_trunk', true), '') = '' and coalesce(current_setting('app.long_detour', true), '') = '',
+    'the waiver switches are restored';
+  update public.requests set has_luggage = false, luggage_waived_at = null, luggage_waived_by = null, destination_id = haifa where id = qd;
+  update public.department_settings set detour_limit_minutes = 20, detour_limit_km = 15 where department_id = dept;
   -- another day: the guest cannot stay, so the only answer is the waiting list
   dtl := null;
   begin

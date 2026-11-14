@@ -2695,8 +2695,6 @@ CREATE OR REPLACE FUNCTION "public"."_host_edit_guest_reason"("p_code" "text") R
     AS $$
   select case
     when p_code in ('seats', 'seat_config_violation') then 'seats'
-    when p_code in ('luggage', 'luggage_capacity_violation', 'needs_large_trunk', 'merge_luggage_needs_large_trunk') then 'luggage'
-    when p_code in ('detour', 'merge_detour_too_long') then 'detour'
     when p_code in ('window', 'day', 'ride_request_day_mismatch') then 'day'
     when p_code in ('turnaround', 'maintenance', 'merge_turnaround_conflict', 'ride_conflicts_with_maintenance',
                     'rides_no_overlap', 'car_unavailable') then 'busy'
@@ -2774,8 +2772,10 @@ CREATE OR REPLACE FUNCTION "public"."_keep_guests_after_host_edit"("p_host" "uui
 declare
   q public.requests%rowtype; gq public.requests%rowtype; g record; v_car uuid; v_ride uuid;
   v_ride_row public.rides%rowtype; v_chk jsonb;
-  v_ok boolean; v_far boolean; v_reason text; v_kept int := 0; v_dropped int := 0; v_asks jsonb := '[]'::jsonb;
+  v_ok boolean; v_warns text[]; v_reason text; v_kept int := 0; v_dropped int := 0; v_asks jsonb := '[]'::jsonb;
   v_prev text := coalesce(nullif(current_setting('app.system_status_transition', true), ''), 'off');
+  v_prev_trunk text := coalesce(current_setting('app.small_trunk', true), '');
+  v_prev_detour text := coalesce(current_setting('app.long_detour', true), '');
 begin
   if p_guests is null or jsonb_array_length(p_guests) = 0 then return jsonb_build_object('kept', 0, 'dropped', 0); end if;
   select * into q from public.requests where id = p_host;
@@ -2809,7 +2809,7 @@ begin
       or exists (select 1 from public.ride_requests rr join public.rides rd on rd.id = rr.ride_id
                  where rr.request_id = g.request_id and rd.status <> 'cancelled');
     select * into gq from public.requests where id = g.request_id;
-    v_ok := false; v_far := false; v_reason := null;
+    v_ok := false; v_warns := '{}'; v_reason := null; v_chk := null;
     if g.decision = 'release' then
       null;   -- the editor sent this guest back to the waiting list
     elsif v_ride is null or g.role <> 'passenger' then
@@ -2817,8 +2817,15 @@ begin
         and (coalesce(gq.depart_at, gq.return_at) at time zone 'Asia/Jerusalem')::date
             <> (coalesce(q.depart_at, q.return_at) at time zone 'Asia/Jerusalem')::date then 'day' else 'other' end;
     else
+      -- large luggage and a long detour are only reported (warnings), and a kept guest's car need is waived
+      -- by assert_ride_seats_fit, as for any placement by hand
+      perform set_config('app.small_trunk', 'allow', true);
+      perform set_config('app.long_detour', 'allow', true);
       v_chk := public._merge_check(v_ride, g.request_id, g.leg);
-      v_far := coalesce((v_chk ->> 'time_far')::boolean, false);
+      v_warns := array_remove(array[
+        case when coalesce((v_chk ->> 'time_far')::boolean, false) then 'far' end,
+        case when coalesce((v_chk ->> 'detour_problem')::boolean, false) then 'detour' end,
+        case when coalesce((v_chk ->> 'luggage_problem')::boolean, false) then 'luggage' end], null);
       if coalesce((v_chk ->> 'turnaround_conflict')::boolean, false) then
         v_reason := 'busy';
       elsif not coalesce((v_chk ->> 'ok')::boolean, false) and (v_chk ->> 'code') is distinct from 'time_far' then
@@ -2835,19 +2842,22 @@ begin
           perform public.assert_ride_request_day(v_ride);
           perform public.assert_ride_seats_fit(v_ride);
           perform public.assert_car_chain(v_ride_row.car_id, v_ride_row.week_start);
-          -- far from the guest's own hours: it would fit, but only the editor's "keep" puts the guest back
-          if v_far and g.decision is distinct from 'keep' then raise exception 'host_edit_guest_far'; end if;
+          -- far from the guest's hours, a long detour, no big trunk: it would fit, but only the editor's "keep"
+          -- puts the guest back
+          if cardinality(v_warns) > 0 and g.decision is distinct from 'keep' then raise exception 'host_edit_guest_warn'; end if;
           update public.requests set status = coalesce(g.status, 'merged'), status_reason = g.status_reason
           where id = g.request_id;
           v_ok := true;
         exception when others then   -- the sub-block is rolled back: the guest is not on the ride
           v_ok := false;
-          if sqlerrm <> 'host_edit_guest_far' then
-            v_far := false;
+          if sqlerrm <> 'host_edit_guest_warn' then
+            v_warns := '{}';
             v_reason := public._host_edit_guest_reason(case when sqlstate = '23P01' then 'turnaround' else sqlerrm end);
           end if;
         end;
       end if;
+      perform set_config('app.small_trunk', v_prev_trunk, true);
+      perform set_config('app.long_detour', v_prev_detour, true);
     end if;
     if v_ok then
       v_kept := v_kept + 1;
@@ -2858,8 +2868,10 @@ begin
       v_asks := v_asks || jsonb_build_object(
         'request_id', g.request_id,
         'name', (select p.full_name from public.profiles p where p.id = gq.requester_id),
-        'kind', case when v_reason is null then 'far' else 'cannot' end,
+        'kind', case when v_reason is null then 'warn' else 'cannot' end,
+        'warnings', case when v_reason is null then to_jsonb(v_warns) else '[]'::jsonb end,
         'reason', v_reason,
+        'added_minutes', coalesce((v_chk ->> 'added_out_minutes')::int, 0) + coalesce((v_chk ->> 'added_return_minutes')::int, 0),
         'wanted_at', case when g.leg = 'return' then gq.return_at else coalesce(gq.depart_at, gq.return_at) end,
         'ride_at', case when g.leg = 'return' then q.return_at else coalesce(q.depart_at, q.return_at) end);
     end if;
