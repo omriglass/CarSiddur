@@ -774,6 +774,12 @@ One canonical `notification_event` list now has **24** events (was 22, CLAUDE.md
   - (c) **Opening the strip counts as looked**: the badge resets and the new lines stay highlighted for the rest of the visit. The marker is per Sadran and week, kept on the server (a phone and a computer agree). The badge shows on the strip only.
   - (d) No push and no inbox notice (notification noise, owner's top priority).
   - Implemented in `20261114190000`; suite `board_live_events.sql`, e2e `board-live-events.spec.ts`.
+234. **Auto-fill never moves a person into two rides at once (owner 2026-11-14, R20B5; docs/TODO.md QA run 20).**
+  - (a) When the solver moves a request within its flexibility, or seats it in another ride, the new hours may not overlap another ride of anyone on it. Busy means riding: the driver and the passengers, each only for the legs they ride (a passenger who rides one direction is busy only for that direction). A requester who is not on a ride is free.
+  - (b) Only the solver's own moves are checked: requests filed overlapping are placed as filed, as before (submit already warns).
+  - (c) A request left unmet only for this reason tells the Sadran: "{member} כבר בנסיעה אחרת בשעות האלה".
+  - (d) The check must not make the solver noticeably slower; missing a rare case is acceptable (SOLVER.md §3.7b).
+  - Implemented in `src/solver/personBusy.ts`; test `personBusy.test.ts`.
 
 ## Owner TODO amendments — 2026-09-07
 

@@ -7,6 +7,8 @@
 // and CLAUDE.md hard rule 5 for the purity contract this package upholds.
 
 import { runSeriesRepair, suggestForSeries } from './seriesRepair';
+import { bestPlacementWithinFlex } from './flexibility';
+import { buildPersonBook, busyWindowsFor, ridersOf, type PersonBook } from './personBusy';
 import { buildUnits, runGreedy, sortUnits, toAssignments, type Placed, type PlacedSingle } from './greedy';
 import { runImprove } from './improve';
 import { runPooling, runRideAlong, seatAsGuest } from './pooling';
@@ -157,6 +159,22 @@ function noCarReason(
  * A drop-off with a pickup is solved as two independent one-way legs (REQUIREMENTS
  * §13.94, docs/SOLVER.md §1.3a) — see `dropOffSplit.ts`.
  */
+/**
+ * R20B5 (SOLVER §3.7b): the rider whose other ride is all that keeps `nr` off a car — some fitting shared car could
+ * take it within its flexibility, but only at hours that rider is already in another ride. Undefined otherwise.
+ */
+function personBusyMember(input: SolverInput, nr: NormalizedRequest, timelines: Map<string, CarTimeline>, people: PersonBook): string | undefined {
+  if (!nr.legs[0] || nr.isPassengerOnly || busyWindowsFor(people, nr).length === 0) return undefined;
+  const busy = busyWindowsFor(people, nr);
+  const blocked = input.cars.some((car) => {
+    if (car.type !== 'shared' || !fits(car, nr.passengers) || !needsFit(car, nr.luggage ? 1 : 0, nr.tow ? 1 : 0)) return false;
+    const tl = timelines.get(car.id);
+    return !!tl && !!bestPlacementWithinFlex(tl, nr) && !bestPlacementWithinFlex(tl, nr, { busy });
+  });
+  if (!blocked) return undefined;
+  return ridersOf(nr).find((memberId) => busyWindowsFor(people, nr, [], memberId).length > 0);
+}
+
 export function solve(input: SolverInput): SolverOutput {
   return applyFallbacks(input, solveBase(input), solveBase);
 }
@@ -276,21 +294,23 @@ function solveExpanded(input: SolverInput): SolverOutput {
 
   const byRequestId = new Map(normalized.map((nr) => [nr.id, nr]));
   const units = buildUnits(roundTrips, pairs, byRequestId, scores, seriesUnits);
-  const { placed, unmetUnits } = runGreedy(units, timelines, input);
+  // R20B5 (SOLVER §3.7b): people's busy hours, read off the fixed rides' riders and this run's own blocks.
+  const people = buildPersonBook(input, normalized, timelines);
+  const { placed, unmetUnits } = runGreedy(units, timelines, input, people);
 
   const placedSingles = placed.filter((p): p is PlacedSingle => p.kind === 'single');
-  const improveResult = runImprove(unmetUnits, placedSingles, timelines, input, scores);
+  const improveResult = runImprove(unmetUnits, placedSingles, timelines, input, scores, people);
 
   // REQ item 136 (e) (SOLVER §3.16): a multi-day series that still has no car moves the short rides blocking one
   // (inside their own flexibility). Runs before pooling, so no pooled host/guest is ever a blocker.
-  const seriesRepair = runSeriesRepair(improveResult.stillUnmetUnits, [...placedSingles, ...improveResult.newlyPlaced], timelines, input);
+  const seriesRepair = runSeriesRepair(improveResult.stillUnmetUnits, [...placedSingles, ...improveResult.newlyPlaced], timelines, input, people);
 
   // REQ §136 a (SOLVER §3.6.4): pooling pass, then the unmet units retry on the freed capacity.
   // Pooling runs after the improvement pass, so a host or guest is never relocated by `runImprove`.
   let finalPlaced: Placed[] = [...placed, ...improveResult.newlyPlaced, ...seriesRepair.newlyPlaced];
   let stillUnmetUnits = seriesRepair.stillUnmetUnits;
   if (input.config.sharedRides !== false) {
-    const pooling = runPooling(finalPlaced, stillUnmetUnits, timelines, input, scores, carsMap);
+    const pooling = runPooling(finalPlaced, stillUnmetUnits, timelines, input, scores, carsMap, people);
     finalPlaced = pooling.placed;
     stillUnmetUnits = pooling.unmetUnits;
   }
@@ -310,7 +330,7 @@ function solveExpanded(input: SolverInput): SolverOutput {
   const rideAlongPool = new Map<string, NormalizedRequest>();
   for (const nr of [...unpaired, ...ownPairFallback, ...passengerOnly]) rideAlongPool.set(nr.id, nr);
   const rideAlongIds = input.config.sharedRides !== false
-    ? runRideAlong([...rideAlongPool.values()], finalPlaced, timelines, input, scores, carsMap)
+    ? runRideAlong([...rideAlongPool.values()], finalPlaced, timelines, input, scores, carsMap, people)
     : new Set<string>();
   // REQ item 136 (f) (SOLVER §3.6.5): the fixing stage — on the finished plan, swap cars between placed rides
   // when that answers more preferences (window-preserving, never unplaces, never breaks a requirement).
@@ -359,7 +379,7 @@ function solveExpanded(input: SolverInput): SolverOutput {
   const healedNoDriverIds = new Set([...rideAlongIds, ...shortRides.healedIds, ...healedNoDriverSingleIds]);
 
   // REQ item 136 (b) (SOLVER §3.6.7): a driverless ride never takes a car a driver needs.
-  const driverFirst = evictDriverlessForDrivers(stillUnmetUnits, finalPlaced, [...healed, ...healedNoDriver], timelines, input);
+  const driverFirst = evictDriverlessForDrivers(stillUnmetUnits, finalPlaced, [...healed, ...healedNoDriver], timelines, input, people);
   const evictedIds = driverFirst.evicted;
   // an evicted leg first tries to ride along with the driver who took its car (or any other ride passing by)
   const survivors = finalPlaced.filter((p) => !(p.kind === 'single' && driverFirst.removedRideIds.has(`ride:${p.nr.id}`)));
@@ -371,7 +391,7 @@ function solveExpanded(input: SolverInput): SolverOutput {
   if (input.config.sharedRides !== false) {
     for (const nr of evictedOrder) {
       const side = nr.legs[0]?.side ?? 'both';
-      if (seatAsGuest(nr, side, hostsAfter, timelines, input, carsMap)) evictedIds.delete(nr.id);
+      if (seatAsGuest(nr, side, hostsAfter, timelines, input, carsMap, people)) evictedIds.delete(nr.id);
     }
   }
   const solverAssignments = toAssignments(hostsAfter, input, carsMap);
@@ -451,6 +471,7 @@ function solveExpanded(input: SolverInput): SolverOutput {
       // R8B14: an explicit one-way leg says why for real (stranded next ride vs no car at the origin vs busy).
       const oneWayCause = nr.tripType === 'one_way' ? oneWayUnmetCause(nr, timelines, input) : { strands: false, atOrigin: false, awayAtWeekEnd: false };
       const takenBy = evictedIds.get(nr.id);
+      const busyMember = personBusyMember(input, nr, timelines, people);
       const origin = requestOriginName(input, nr.request, nr.originId);
       const dest = requestDestName(input, nr.request);
       // R13B17: the code always matches the text; the plain "no car" path names the real blocker.
@@ -470,6 +491,8 @@ function solveExpanded(input: SolverInput): SolverOutput {
         ? { code: 'UNMET_ONE_WAY_STRANDS_CAR', text: reason('UNMET_ONE_WAY_STRANDS_CAR', { origin, dest }) }
         : oneWayCause.awayAtWeekEnd
         ? { code: 'UNMET_ONE_WAY_AWAY_AT_WEEK_END', text: reason('UNMET_ONE_WAY_AWAY_AT_WEEK_END', { dest }) }
+        : busyMember !== undefined
+        ? { code: 'UNMET_PERSON_BUSY', text: reason('UNMET_PERSON_BUSY', { member: memberName(input, busyMember) || memberName(input, nr.request.memberId) }) }
         : noCarReason(input, nr, timelines);
       return {
         requestId: nr.id,

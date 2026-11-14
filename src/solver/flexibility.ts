@@ -11,6 +11,7 @@
 import type { NormalizedRequest, NormalizedLeg } from './slots';
 import { minutesToSlots, slotsToMinutes } from './slots';
 import type { CarTimeline, Gap } from './timeline';
+import { freeStretches } from './personBusy';
 import type { Window } from './types';
 
 export interface Placement {
@@ -101,22 +102,26 @@ function placeInGap(nr: NormalizedRequest, leg: NormalizedLeg, gap: Gap, widenSl
 export function bestPlacementWithinFlex(
   tl: CarTimeline,
   nr: NormalizedRequest,
-  opts: { widenMinutes?: number } = {},
+  opts: { widenMinutes?: number; busy?: readonly Window[] } = {},
 ): Placement | null {
   const leg = nr.legs[0];
   if (!leg) return null;
   const widenSlots = minutesToSlots(opts.widenMinutes ?? 0);
   let best: Placement | null = null;
-  for (const gap of tl.gaps()) {
-    if (gap.locationId !== leg.originId) continue;
-    const candidate = placeInGap(nr, leg, gap, widenSlots);
-    if (!candidate) continue;
-    if (
-      !best ||
-      candidate.cost < best.cost ||
-      (candidate.cost === best.cost && candidate.window.start < best.window.start)
-    ) {
-      best = candidate;
+  for (const carGap of tl.gaps()) {
+    if (carGap.locationId !== leg.originId) continue;
+    // R20B5 (SOLVER §3.7b): the request's riders' other rides cut the car's gap into the stretches they are free.
+    const stretches = opts.busy?.length ? freeStretches(carGap.window, opts.busy) : [carGap.window];
+    for (const window of stretches) {
+      const candidate = placeInGap(nr, leg, { window, locationId: carGap.locationId }, widenSlots);
+      if (!candidate) continue;
+      if (
+        !best ||
+        candidate.cost < best.cost ||
+        (candidate.cost === best.cost && candidate.window.start < best.window.start)
+      ) {
+        best = candidate;
+      }
     }
   }
   return best;

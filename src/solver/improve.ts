@@ -16,6 +16,7 @@
 
 import { carsByPreference } from './carPreference';
 import { bestPlacementWithinFlex } from './flexibility';
+import { busyWindowsFor, clearOf, type PersonBook } from './personBusy';
 import { compareUnitsByPriority, type PlacedSingle, type Unit } from './greedy';
 import { fits, needsFit } from './seatFit';
 import { reason } from './reasons';
@@ -45,6 +46,8 @@ export function runImprove(
   timelines: Map<string, CarTimeline>,
   input: SolverInput,
   scores: Map<string, { total: number }>,
+  /** R20B5 (SOLVER §3.7b): a moved ride never overlaps another ride of the same person */
+  people?: PersonBook,
 ): ImproveResult {
   const config: SolverConfig = input.config;
   const sharedCars = [...input.cars].filter((c) => c.type === 'shared').sort((a, b) => (a.id < b.id ? -1 : 1));
@@ -103,7 +106,7 @@ export function runImprove(
       // Depth 1: relocate each blocker individually.
       for (const b of blockers) {
         if (solved || budgetState.exhausted || perReq <= 0) break;
-        const result = tryRelocateSetAndPlace(nr, car, [b], sharedCars, timelines, input, budgetState, () => {
+        const result = tryRelocateSetAndPlace(nr, car, [b], sharedCars, timelines, input, budgetState, people, () => {
           perReq--;
         });
         if (result) {
@@ -117,7 +120,7 @@ export function runImprove(
       if (!solved && blockers.length === 2 && !budgetState.exhausted && perReq > 0) {
         const [b1, b2] = blockers;
         if (b1 && b2) {
-          const result = tryRelocateSetAndPlace(nr, car, [b1, b2], sharedCars, timelines, input, budgetState, () => {
+          const result = tryRelocateSetAndPlace(nr, car, [b1, b2], sharedCars, timelines, input, budgetState, people, () => {
             perReq--;
           });
           if (result) {
@@ -177,6 +180,7 @@ function tryRelocateSetAndPlace(
   timelines: Map<string, CarTimeline>,
   input: SolverInput,
   budgetState: BudgetState,
+  people: PersonBook | undefined,
   spend: () => void,
 ): RelocationOutcome | null {
   const tl = timelines.get(car.id);
@@ -205,7 +209,7 @@ function tryRelocateSetAndPlace(
       spend();
       const bufferSlots = Math.round(input.config.bufferMinutes / 15);
       const compressed = closeGapSameCar(nr, b, bufferSlots);
-      if (compressed) {
+      if (compressed && clearOf(compressed.bWindow, busyWindowsFor(people, b.nr)) && clearOf(compressed.uWindow, busyWindowsFor(people, nr))) {
         const bOriginal = tl.remove(`ride:${b.nr.id}`);
         const bFits = tl.isFree(compressed.bWindow, b.nr.legs[0]?.originId ?? input.homeLocationId);
         if (bFits) {
@@ -278,7 +282,7 @@ function tryRelocateSetAndPlace(
       if (!fits(target, b.nr.passengers) || !needsFit(target, b.nr.luggage ? 1 : 0, b.nr.tow ? 1 : 0)) continue;
       const targetTl = timelines.get(target.id);
       if (!targetTl) continue;
-      const placement = bestPlacementWithinFlex(targetTl, b.nr);
+      const placement = bestPlacementWithinFlex(targetTl, b.nr, { busy: busyWindowsFor(people, b.nr, [`ride:${b.nr.id}`]) });
       if (!placement) continue;
       const targetBaseline = baselineOf(target.id, targetTl);
       const probe = {
@@ -311,7 +315,7 @@ function tryRelocateSetAndPlace(
     newTargets.push({ blocker: b, targetCarId: placedTarget.targetCarId, window: placedTarget.window });
   }
 
-  const placement = ok ? bestPlacementWithinFlex(tl, nr) : null;
+  const placement = ok ? bestPlacementWithinFlex(tl, nr, { busy: busyWindowsFor(people, nr) }) : null;
   if (ok && placement) {
     const leg = nr.legs[0];
     tl.add({

@@ -9,6 +9,7 @@
 // Deterministic: unmet requests in priority order, candidates and combinations in id order.
 
 import { compareUnitsByPriority, runGreedy, type Placed, type PlacedSingle, type Unit } from './greedy';
+import type { PersonBook } from './personBusy';
 import { eligibleDriverMemberId, minutesToSlots } from './slots';
 import type { Block, CarTimeline } from './timeline';
 import type { Assignment, SolverInput, Window } from './types';
@@ -44,6 +45,7 @@ export function evictDriverlessForDrivers(
   chauffeurRides: Assignment[],
   timelines: Map<string, CarTimeline>,
   input: SolverInput,
+  people?: PersonBook,
 ): DriverFirstResult {
   const result: DriverFirstResult = { newPlaced: [], placedUnitIds: new Set(), removedRideIds: new Set(), evicted: new Map() };
   const evictables: Evictable[] = [];
@@ -86,7 +88,7 @@ export function evictDriverlessForDrivers(
         const block = timelines.get(e.carId)?.remove(e.rideId);
         if (block) removed.push({ e, block });
       }
-      const retry = runGreedy([unit], timelines, input);
+      const retry = runGreedy([unit], timelines, input, people);
       if (retry.placed.length > 0) {
         result.newPlaced.push(...retry.placed);
         result.placedUnitIds.add(unit.id);

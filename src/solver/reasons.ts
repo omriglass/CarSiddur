@@ -38,6 +38,8 @@ const TEMPLATES: Record<string, string> = {
   UNMET_NO_CAR_AT_ORIGIN: 'אין רכב פנוי שנמצא ב{origin} כדי לצאת משם ל{dest}',
   UNMET_ONE_WAY_AWAY_AT_WEEK_END: 'נסיעה בכיוון אחד ל{dest} תשאיר את הרכב שם בסוף השבוע, ואין נסיעה שמחזירה אותו; אפשר לבקש הלוך-חזור או לצרף נסיעה חוזרת מ{dest}',
   UNMET_ONE_WAY_STRANDS_CAR: 'יש רכב פנוי ב{origin}, אבל נסיעה בכיוון אחד ל{dest} תשאיר אותו שם והוא נדרש לנסיעה הבאה שלו; אפשר לשבץ יחד עם נסיעה חוזרת מ{dest}',
+  // R20B5 (SOLVER §3.7b, owner wording 2026-11-14): a car is free only at hours its rider is already in another ride.
+  UNMET_PERSON_BUSY: '{member} כבר בנסיעה אחרת בשעות האלה',
   UNMET_CAR_TO_DRIVER: 'הרכב ניתן ל{member}, שנוהג/ת בעצמ/ה, ולכן ההסעה ל{dest} (בלי נהג/ת קבוע/ה) חזרה לרשימת הממתינים',
   UNMET_FREE_TEXT_ORIGIN: 'נקודת היציאה היא טקסט חופשי ולא מקום מוכר; לא ניתן לשבץ נסיעה ממנה אוטומטית',
 
