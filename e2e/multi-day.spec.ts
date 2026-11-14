@@ -2,7 +2,8 @@ import { createClient } from "@supabase/supabase-js";
 import { expect, test } from "@playwright/test";
 import { formatInTimeZone } from "date-fns-tz";
 import { he, t, tv } from "../src/i18n/he";
-import { getWeekStart, NEVO_DEPARTMENT_ID, SEEDED_USERS, serviceRoleClient, signIn, SUPABASE_ANON_KEY, SUPABASE_URL, submitRequestForm } from "./helpers";
+import { formatDayDate } from "../src/lib/dayLabels";
+import { getWeekStart, NEVO_DEPARTMENT_ID, openRideDetails, SEEDED_USERS, serviceRoleClient, signIn, SUPABASE_ANON_KEY, SUPABASE_URL, submitRequestForm } from "./helpers";
 
 // Multi-day ("series") requests (REQ §13.77, UX_FLOWS §3.3/§3.4, built 2026-09-10): a round
 // trip whose return is a later calendar day files one `submit_request` per day, all sharing
@@ -143,5 +144,80 @@ test.describe("multi-day requests", { tag: ["@request-form"] }, () => {
     await service.from("requests").delete().eq("series_id", seriesId);
     await service.from("requests").delete().eq("department_id", NEVO_DEPARTMENT_ID).eq("destination_text", DESTINATION);
     await service.from("rides").delete().eq("department_id", NEVO_DEPARTMENT_ID).eq("week_start", openWeekStart).eq("car_id", sharedCar!.id).gte("starts_at", `${day0}T00:00:00Z`).lt("starts_at", `${day2}T23:59:59Z`);
+  });
+
+  test("R20H1: the driver cancels only one day of a two-day ride from the siddur; the other day keeps the car", async ({ page }) => {
+    const service = serviceRoleClient();
+    const liveWeekStart = await getWeekStart("live");
+    const dayKey = (offset: number) => formatInTimeZone(new Date(Date.now() + offset * 86_400_000), TZ, "yyyy-MM-dd");
+    const [day1, day2] = [dayKey(1), dayKey(2)];
+    const weekEnd = new Date(Date.parse(`${liveWeekStart}T00:00:00Z`) + 6 * 86_400_000).toISOString().slice(0, 10);
+    test.skip(day2 > weekEnd, "the next two days are not both in the live week today");
+    await service.from("requests").delete().eq("department_id", NEVO_DEPARTMENT_ID).eq("destination_text", DESTINATION);
+
+    // a shared car with no ride on either day
+    const { data: cars } = await service.from("cars").select("id").eq("department_id", NEVO_DEPARTMENT_ID).eq("type", "shared").eq("status", "active").order("id");
+    const { data: busy } = await service.from("rides").select("car_id").neq("status", "cancelled")
+      .gte("ends_at", `${day1}T00:00:00+02:00`).lt("starts_at", `${day2}T23:59:59+02:00`);
+    const carId = (cars ?? []).map((c) => c.id as string).find((id) => !(busy ?? []).some((r) => r.car_id === id));
+    test.skip(!carId, "no shared car is free on both days");
+
+    const sadranClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { auth: { persistSession: false } });
+    const { error: authError } = await sadranClient.auth.signInWithPassword(SEEDED_USERS.sadran);
+    if (authError) throw authError;
+    const { data: submitResult, error: submitError } = await sadranClient.rpc("submit_series_request", {
+      payload: {
+        department_id: NEVO_DEPARTMENT_ID, requester_id: MEMBER_ID, ride_type_id: "00000000-0000-0000-0000-000000000021",
+        destination_text: DESTINATION, trip_shape: "round_trip", adults: 1,
+        depart_at: `${day1}T06:00:00+02:00`, return_at: `${day2}T07:00:00+02:00`,
+      },
+    });
+    if (submitError) throw submitError;
+    const seriesId = (submitResult as { series_id: string }).series_id;
+    try {
+      // a live week places the series at once when a car is free (auto-approve); otherwise place it on the free car
+      const placedRides = async () => (await service.from("rides").select("id, starts_at, car_id").eq("series_id", seriesId).neq("status", "cancelled").order("starts_at")).data ?? [];
+      if ((await placedRides()).length < 2) {
+        const { error: placeError } = await service.rpc("place_series", { p_series_id: seriesId, p_car_id: carId! });
+        if (placeError) throw placeError;
+      }
+      const dayRides = await placedRides();
+      expect(dayRides.length).toBe(2);
+      const placedCar = dayRides[0]!.car_id;
+
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await signIn(page, SEEDED_USERS.member1);
+      await page.goto(`/siddur/${NEVO_DEPARTMENT_ID}/${liveWeekStart}`);
+      await page.getByRole("radio").nth(new Date(`${day1}T12:00:00Z`).getUTCDay()).click();
+      // the 06:00–23:59 block is taller than the screen: its summary popup must still open on screen
+      await openRideDetails(page, page.locator(`[data-ride-id="${dayRides[0]!.id}"]:visible`));
+      await page.getByRole("dialog").getByRole("button", { name: t("action.cancelRide"), exact: true }).click();
+      await expect(page.getByText(he.request.seriesCancelTitle)).toBeVisible();
+      await expect(page.getByRole("button", { name: he.request.cancelAllDays })).toBeVisible();
+      const dayLabel = tv("request.cancelOnlyDay", { day: "" }).trim();
+      await expect(page.getByTestId("cancel-only-day")).toContainText(dayLabel);
+      await page.getByTestId("cancel-only-day").click();
+      // the usual freed-car check may ask first when someone waiting would get the car
+      const freedConfirm = page.getByRole("button", { name: he.freedCar.confirmSave, exact: true });
+      const done = page.getByText(tv("request.cancelOnlyDayDone", { day: formatDayDate(dayRides[0]!.starts_at as string) }));
+      await expect(freedConfirm.or(done)).toBeVisible({ timeout: 15_000 });
+      if (await freedConfirm.isVisible()) await freedConfirm.click();
+      await expect(done).toBeVisible();
+
+      await expect.poll(async () => {
+        const { data } = await service.from("requests").select("status, series_id").eq("department_id", NEVO_DEPARTMENT_ID).eq("destination_text", DESTINATION).order("depart_at");
+        return (data ?? []).map((row) => `${row.status === "assigned" ? "placed" : "not placed"}:${row.series_id ? "series" : "single"}`).join(",");
+      }).toBe("not placed:single,placed:single");
+      const { data: after } = await service.from("rides").select("status, car_id").in("id", dayRides.map((r) => r.id));
+      expect(after?.map((r) => r.status === "cancelled").sort()).toEqual([false, true]);
+      expect(after?.find((r) => r.status !== "cancelled")?.car_id).toBe(placedCar);
+    } finally {
+      const { data: reqs } = await service.from("requests").select("id").eq("department_id", NEVO_DEPARTMENT_ID).eq("destination_text", DESTINATION);
+      const ids = (reqs ?? []).map((r) => r.id as string);
+      const { data: links } = ids.length ? await service.from("ride_requests").select("ride_id").in("request_id", ids) : { data: [] };
+      const rideIds = [...new Set((links ?? []).map((l) => l.ride_id as string))];
+      if (rideIds.length) { await service.from("ride_requests").delete().in("ride_id", rideIds); await service.from("rides").delete().in("id", rideIds); }
+      if (ids.length) await service.from("requests").delete().in("id", ids);
+    }
   });
 });

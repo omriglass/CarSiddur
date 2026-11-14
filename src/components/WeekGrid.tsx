@@ -25,6 +25,7 @@ import { RideDeltaLine } from "./RideDeltaLine";
 import type { RideDeltaView } from "@/features/sadran/requestDelta";
 import { clampRideVertical, minutesFromClientY, snapTimeShift } from "./weekGridGeometry";
 import { HOLD_TO_DRAG_MS, holdStartOf, isDragAttempt, setTouchScrollLocked, watchHold, type HoldStart } from "./holdGesture";
+import { peekAnchorOf } from "./peekAnchor";
 
 /**
  * Cars × time grid for one day (component inventory `WeekGrid`, UX_FLOWS.md
@@ -1685,7 +1686,7 @@ export function WeekGrid({
     <div className="theme-grid-neutral min-w-0 bg-background text-foreground">
     {notesPeek && peekRide ? (
       <Popover open onOpenChange={(open) => { if (!open) setNotesPeek(null); }}>
-        <PopoverAnchor virtualRef={{ current: notesPeek.el }} />
+        <PopoverAnchor virtualRef={{ current: peekAnchorOf(notesPeek.el) }} />
         <PopoverContent
           ref={notesPeekRef}
           // Focus stays on the ride: moving it into the popup could scroll the page, and a scroll closes the popup.

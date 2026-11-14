@@ -326,7 +326,7 @@ async function cmdPlace(board: Board, args: Args): Promise<void> {
   const placement = unmetPlacement(dctx, req, car.id, window.startsAt);
   if (!placement) throw new UsageError("cannot place: one-way request without a destination place");
   if (!requestWithinFlex(req, window.startsAt, window.endsAt)) {
-    throw new UsageError(`window ${t(window.startsAt)}-${t(window.endsAt)} is outside the request's flexibility: send a shift proposal instead: propose ${short(request.id)} shift --car ${JSON.stringify(car.name)} --depart ${t(window.startsAt)}${req.return_at ? ` --return ${t(window.endsAt)}` : ""}`);
+    throw new UsageError(`window ${t(window.startsAt)}-${t(window.endsAt)} is outside the request's flexibility: send a shift proposal instead: propose ${short(request.id)} shift --car ${JSON.stringify(car.name)} --depart ${t(window.startsAt)}${req.return_at ? ` --return ${t(window.endsAt)}` : ""}${notThere || strands ? " --chain-break" : ""}`);
   }
   if (notThere && tripTypeOf(req) === "one_way") console.log(`note: the board asks "לשבץ בכל זאת?" — ${notThereLine}; someone has to bring the car there. Placing it.`);
   if (strands) {
@@ -544,6 +544,9 @@ async function cmdPropose(board: Board, args: Args): Promise<void> {
       if (flag(args, "depart")) payload.depart_at = startsAt;
       if (flag(args, "return")) payload.return_at = endsAt;
     }
+    // CH1 / R20H3: the Sadran's "לשבץ בכל זאת" - leave the car where its next ride does not start, or start a one-way
+    // leg where the car is not standing (the board sends this flag after the question).
+    if (has(args, "chain-break")) payload.allow_chain_break = true;
   } else if (type === "origin") {
     payload.origin_id = (resolvePlace(board, need(flag(args, "origin"), "--origin") as string) as { presetId: string }).presetId;
     payload.car_id = resolveCar(board, need(flag(args, "car"), "--car") as string).id;
@@ -813,7 +816,7 @@ function usage(): void {
   merge <req> <ride> [--leg out|return|both] [--draft] | unmerge <ride> <req>
   trip-type <req> <round_trip|one_way|drop_off>
   edit-route <ride|req> [--origin P] [--dest P] [--stop P]... [--return-stop P]... [--clear-stops] [--draft]
-  propose <req> shift [--car C --depart HH:MM --return HH:MM --day D --ride R --no-places] | origin --origin P --car C | deny [--reason T] | external [--hint cab|rental|public_transport|private|waive] [--reason T] | alternative [--car C --depart HH:MM] [--return HH:MM (pickup from the drop-off place only; default pickup + drive)] [--return-car C (pickup car)]  [--draft]  (no --car/--depart = the solver's useAlternative numbers)
+  propose <req> shift [--car C --depart HH:MM --return HH:MM --day D --ride R --no-places --chain-break] | origin --origin P --car C | deny [--reason T] | external [--hint cab|rental|public_transport|private|waive] [--reason T] | alternative [--car C --depart HH:MM] [--return HH:MM (pickup from the drop-off place only; default pickup + drive)] [--return-car C (pickup car)]  [--draft]  (no --car/--depart = the solver's useAlternative numbers)
   send <proposal> | withdraw <proposal> | discard <proposal> | apply <proposal>
   unassign <ride> | cancel-ride <ride> [reason] [--close <req>,...] [--continue <req>,...] | close <req> [reason] | restore <req> | reserve <car> <day> <HH:MM-HH:MM> <note> | car-move <car> <from> <to> <HH:MM> [--day D] [--minutes N]
   message <memberEmail> <text> | messages [--new]
