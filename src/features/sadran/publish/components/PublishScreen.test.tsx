@@ -179,3 +179,14 @@ describe("publication choices", () => {
     await waitFor(() => expect(mocks.publish).toHaveBeenCalledExactlyOnceWith({ departmentId, weekStart, days, allowUnanswered: false, allowDriverless: false }));
   });
 });
+
+describe("R20U8: the notify list is closed until asked for", () => {
+  it("shows its title with the count; the list sits inside a closed section", () => {
+    show();
+    const section = screen.getByTestId("publish-notify");
+    expect(section.tagName).toBe("DETAILS");
+    expect(section.hasAttribute("open")).toBe(false);
+    expect(within(section).getByTestId("publish-notify-title").tagName).toBe("SUMMARY");
+    expect(within(section).getByTestId("publish-notify-list")).toBeInTheDocument();
+  });
+});

@@ -363,10 +363,14 @@ export function PublishScreen({ departmentId, weekStart }: PublishScreenProps) {
         </Card>
       ) : null}
 
+      {/* R20U8: every person's every request made the page 10,000+ px tall on a phone — closed until asked for. */}
       <Card>
-        <CardContent className="space-y-2 p-4 text-sm">
-          <h2 className="font-medium" data-testid="publish-notify-title">{tv("sadranPublish.notifyListTitle", { count: String(notices.notified.length) })}</h2>
-          <ul className="space-y-2 text-muted-foreground" data-testid="publish-notify-list">
+        <CardContent className="p-4 text-sm">
+          <details data-testid="publish-notify">
+          <summary className="min-h-11 cursor-pointer content-center font-medium" data-testid="publish-notify-title">
+            {tv("sadranPublish.notifyListTitle", { count: String(notices.notified.length) })}
+          </summary>
+          <ul className="mt-2 space-y-2 text-muted-foreground" data-testid="publish-notify-list">
             {notices.notified.map((person) => (
               <li key={person.requesterId} className="space-y-0.5">
                 {person.requests.map((r) => {
@@ -381,6 +385,7 @@ export function PublishScreen({ departmentId, weekStart }: PublishScreenProps) {
               </li>
             ))}
           </ul>
+          </details>
         </CardContent>
       </Card>
 

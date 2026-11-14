@@ -20999,6 +20999,27 @@ $$;
 ALTER FUNCTION "public"."resume_request_template"("p_template_id" "uuid") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."ride_busy_people"("p_ride_id" "uuid") RETURNS SETOF "uuid"
+    LANGUAGE "plpgsql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare r public.rides%rowtype;
+begin
+  select * into r from public.rides where id = p_ride_id;
+  if r.id is null or not public.can_manage_week(r.department_id, r.week_start) then
+    raise exception 'not_authorized' using errcode = '42501';
+  end if;
+  return query
+    select m.profile_id from public.department_members m
+    where m.department_id = r.department_id and m.removed_at is null
+      and exists (select 1 from public._person_busy_rides(m.profile_id, tstzrange(r.starts_at, r.ends_at, '[)'), r.id))
+    order by m.profile_id;
+end $$;
+
+
+ALTER FUNCTION "public"."ride_busy_people"("p_ride_id" "uuid") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."ride_change_requests_clear_inbox"() RETURNS "trigger"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -38117,6 +38138,12 @@ GRANT ALL ON FUNCTION "public"."restore_removed_reservation"("p_ride_id" "uuid")
 REVOKE ALL ON FUNCTION "public"."resume_request_template"("p_template_id" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."resume_request_template"("p_template_id" "uuid") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."resume_request_template"("p_template_id" "uuid") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."ride_busy_people"("p_ride_id" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."ride_busy_people"("p_ride_id" "uuid") TO "service_role";
+GRANT ALL ON FUNCTION "public"."ride_busy_people"("p_ride_id" "uuid") TO "authenticated";
 
 
 

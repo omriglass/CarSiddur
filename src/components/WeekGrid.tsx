@@ -1,6 +1,6 @@
 import { CarFront, ChevronDown, Pin, Clock3, UserRoundX, Star, X } from "lucide-react";
 import type { MouseEvent, PointerEvent as ReactPointerEvent, ReactNode } from "react";
-import { Fragment, useEffect, useMemo, useRef, useState, useCallback, useSyncExternalStore } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, useCallback } from "react";
 
 import { CarMenu } from "@/components/CarMenu";
 import { CarSparkle } from "@/components/CarSparkle";
@@ -20,6 +20,7 @@ import { bottomNavInset, pageScroller, scrollerViewport } from "./pageScroller";
 import { DraftWatermark } from "./DraftWatermark";
 import { itemVisibilityStyle } from "./itemVisibility";
 import { RideNotes } from "./RideNotes";
+import { useIsDesktop } from "./useIsDesktop";
 import { RideDeltaLine } from "./RideDeltaLine";
 import type { RideDeltaView } from "@/features/sadran/requestDelta";
 import { clampRideVertical, minutesFromClientY, snapTimeShift } from "./weekGridGeometry";
@@ -356,13 +357,6 @@ const DEFAULT_END = 24 * 60;
 const HOUR_COL_WIDTH_PX = 36;
 const CAR_COL_WIDTH_PX = 96;
 const HEADER_ROW_HEIGHT_PX = 48;
-const DESKTOP_QUERY = "(min-width: 1024px)";
-function subscribeDesktop(cb: () => void) {
-  if (typeof window.matchMedia !== "function") return () => {};
-  const mq = window.matchMedia(DESKTOP_QUERY);
-  mq.addEventListener("change", cb);
-  return () => mq.removeEventListener("change", cb);
-}
 /**
  * Owner 2026-10-10: on a phone the table scrolls with the page too (ONE scroller), exactly like `lg`+:
  * no `max-h-[70dvh]` box, car names in a `sticky` strip outside the box. Set to `false` to restore the
@@ -371,10 +365,6 @@ function subscribeDesktop(cb: () => void) {
  */
 export const PAGE_SCROLL_ON_PHONE = true;
 
-/** Tailwind `lg` and up: the table is part of the page (see `WeekGrid`). */
-function useIsDesktop(): boolean {
-  return useSyncExternalStore(subscribeDesktop, () => typeof window.matchMedia === "function" && window.matchMedia(DESKTOP_QUERY).matches, () => false);
-}
 
 const HOUR_ROW_HEIGHT_PX = 80;
 /** 15-min rides still render at least this tall so the label/time stay legible (UX_FLOWS §20). */

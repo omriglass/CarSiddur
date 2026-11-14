@@ -685,6 +685,11 @@ export async function setRideDriver(rideId: string, driverId: string | null, exp
   }));
 }
 
+/** R20U7: the department's members busy during the ride by the same check `set_ride_driver` asks about (any week or department). */
+export async function fetchRideBusyPeople(rideId: string): Promise<string[]> {
+  return (await rpc("ride_busy_people", { p_ride_id: rideId })) ?? [];
+}
+
 /** REQ §13.101 (e): the Sadran withdraws a request as a duplicate; the member is notified and may answer "not a duplicate". */
 export async function withdrawDuplicateRequest(requestId: string, expectedVersion: number): Promise<void> {
   await rpc("withdraw_duplicate_request", { p_request_id: requestId, p_expected_version: expectedVersion });

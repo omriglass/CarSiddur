@@ -24,6 +24,9 @@ export const sadranKeys = {
   /** REQ §13.138 (c): the week's held board notices (counter, send-all dialog). */
   heldNotices: (departmentId: string, weekStart: string) =>
     [...sadranKeys.week(departmentId, weekStart), "heldNotices"] as const,
+  /** R20U7: who the server's busy check finds busy during a ride (`ride_busy_people`), for the driver picker. */
+  rideBusyPeople: (departmentId: string, weekStart: string, rideId: string, version: number) =>
+    [...sadranKeys.week(departmentId, weekStart), "rideBusyPeople", rideId, version] as const,
   /** R20M1: the board strip "since you last looked". */
   liveEvents: (departmentId: string, weekStart: string) =>
     [...sadranKeys.week(departmentId, weekStart), "liveEvents"] as const,

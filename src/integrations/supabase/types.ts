@@ -7899,6 +7899,7 @@ export type Database = {
         Args: { p_template_id: string }
         Returns: undefined
       }
+      ride_busy_people: { Args: { p_ride_id: string }; Returns: string[] }
       ride_editor_cancel_ride: {
         Args: {
           p_expected_version?: number

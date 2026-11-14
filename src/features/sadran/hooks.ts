@@ -399,6 +399,16 @@ export function useSetRideDriverMutation() {
   });
 }
 
+/** R20U7: busy people for the volunteer-driver picker, from the server (only while the list is shown). */
+export function useRideBusyPeopleQuery(rideId: string, version: number, departmentId: string, weekStart: string, enabled: boolean) {
+  return useQuery({
+    queryKey: sadranKeys.rideBusyPeople(departmentId, weekStart, rideId, version),
+    queryFn: () => api.fetchRideBusyPeople(rideId),
+    enabled,
+    staleTime: 15_000,
+  });
+}
+
 export function useWithdrawDuplicateRequestMutation() {
   const queryClient = useQueryClient();
   return useMutation({

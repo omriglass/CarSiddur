@@ -63,7 +63,7 @@ describe("query cache policy: key factories", () => {
   checkFactory("sadranKeys", sadranKeys, {
     week: "live", weekRow: "weeks", boardRides: "live", carLocations: "live", weekRequestsWithNames: "live",
     cars: "catalog", seatConfigs: "catalog", destinations: "catalog", fairnessStats: "live", mileageTotals: "live",
-    heldNotices: "live", liveEvents: "live", carStartLocations: "live", mergePreviews: "live", mergePreview: "live", placeTravel: "live",
+    heldNotices: "live", liveEvents: "live", rideBusyPeople: "live", carStartLocations: "live", mergePreviews: "live", mergePreview: "live", placeTravel: "live",
     seriesLegs: "live", rideTypes: "catalog", departmentSettings: "catalog", activePolicy: "catalog",
     maintenanceBlocks: "live", solverRuns: "live", proposals: "live", proposalParties: "live", freedOffers: "live",
     freedCandidates: "live", siddurVersions: "live", auditLog: "live", departmentMembers: "permissions",

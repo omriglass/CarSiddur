@@ -5,6 +5,7 @@
 --   TEST 4  R20B18  sending an origin proposal is refused when the named car is not free there (`origin_change_unavailable`)
 --   TEST 5  R20B15  the driver taken off a merged ride: "לקצר" shrinks the ride to the hours of those still on it
 --   TEST 6  R20U6   a one-leg merge proposal tells the joiner the other leg is not part of it
+--   TEST 7  R20U7   `ride_busy_people`: the driver picker's busy list is the check `set_ride_driver` asks about
 -- Transactional, rolled back at the end.
 begin;
 create temporary table qlb(k text primary key, id uuid, d date);
@@ -250,6 +251,40 @@ begin
   line := public.proposal_reader_vars(p, m4) -> 'vars' ->> 'joinLine';
   assert line not like '%לא כלולה בהצעה%', format('TEST 6 FAILED: a both-legs join has no such line, got %s', line);
   raise notice 'TEST 6 passed: a one-leg merge says the other leg is not part of it';
+end $$;
+
+-- TEST 7: who is busy during a ride — the same rule as set_ride_driver's "person_busy" question
+do $$
+declare
+  dept uuid := '00000000-0000-0000-0000-000000000001';
+  manager uuid := '00000000-0000-0000-0000-000000000102';
+  m3 uuid := '00000000-0000-0000-0000-000000000103';
+  m4 uuid := '00000000-0000-0000-0000-000000000104';
+  home uuid := '00000000-0000-0000-0000-000000000010';
+  car40 uuid := '00000000-0000-0000-0000-000000000040';
+  car41 uuid := (select id from public.cars where department_id = '00000000-0000-0000-0000-000000000001' and id <> '00000000-0000-0000-0000-000000000040' order by id limit 1);
+  w date := public.current_week_start() + 889;
+  d0 timestamptz := ((w + 1) + time '00:00') at time zone 'Asia/Jerusalem';
+  rA uuid; rB uuid; busy uuid[]; refused boolean := false;
+begin
+  insert into public.weeks(department_id, week_start, phase, open_at, close_at, publish_at)
+    values (dept, w, 'open', now() - interval '2 days', now() + interval '1 day', now() + interval '2 days');
+  insert into public.rides(department_id, week_start, car_id, starts_at, ends_at, origin_id, destination_id, driver_id, status, created_by, needs_driver)
+    values (dept, w, car40, d0 + interval '8 hours', d0 + interval '12 hours', home, home, null, 'draft', manager, true) returning id into rA;
+  insert into public.rides(department_id, week_start, car_id, starts_at, ends_at, origin_id, destination_id, driver_id, status, created_by)
+    values (dept, w, car41, d0 + interval '11 hours', d0 + interval '14 hours', home, home, m3, 'draft', manager) returning id into rB;
+  perform set_config('request.jwt.claims', jsonb_build_object('sub', manager, 'role', 'authenticated')::text, true);
+  select array_agg(x) into busy from public.ride_busy_people(rA) x;
+  assert m3 = any(busy), format('TEST 7 FAILED: the driver of an overlapping ride is busy, got %s', busy);
+  assert not (m4 = any(coalesce(busy, '{}'))), 'TEST 7 FAILED: a member with nothing then is free';
+  assert not (manager = any(coalesce(busy, '{}'))), 'TEST 7 FAILED: the ride itself does not count';
+  perform set_config('request.jwt.claims', jsonb_build_object('sub', m4, 'role', 'authenticated')::text, true);
+  begin
+    perform public.ride_busy_people(rA);
+  exception when insufficient_privilege then refused := true;
+  end;
+  assert refused, 'TEST 7 FAILED: only the week''s Sadran (or an admin) asks';
+  raise notice 'TEST 7 passed: ride_busy_people is the set_ride_driver busy rule';
 end $$;
 
 rollback;

@@ -1712,8 +1712,8 @@ Pass 1 `qa-p1` (seed 9313, 40 members, 170 requests): a normal Sadran and member
 - R20U4 — ✅ 2026-11-14 (REQ item 239 a). (low-med) A driver who wants to leave a merged ride finds the options only under "בטל נסיעה", in a dialog titled "בטוח/ה שברצונך לבטל את הנסיעה?". A separate "אני לא נוהג/ת בנסיעה הזו" entry would be clearer (p1, p3).
 - R20U5 — ✅ 2026-11-14 (REQ item 230 m). (low, verified) The split dialog's "2 + 1" is drawn left-to-right and reads "1 then 2" to a Hebrew reader. Label the parts by days instead.
 - R20U6 — ✅ 2026-11-14 (REQ item 239 b). (low) A one-leg merge proposal says "הלוך בלבד — יציאה 06:30 במקום 11:00" but not that the 13:00 return stays uncovered (p1 רון, d14b1a4a).
-- R20U7 — (low) Assigning a volunteer driver is trial and error: `person_busy`, then the next name. There is no "who is free at these hours" (p2: four tries for one ride).
-- R20U8 — (low) At phone width, the publish page is 10,000–12,000 px tall (a flat list of every request), and the board header takes about 2 screens. The duplicate-children banners cannot be collapsed (p1, p3).
+- R20U7 — ✅ 2026-11-14 (REQ item 239 d, `ride_busy_people`). (low) Assigning a volunteer driver is trial and error: `person_busy`, then the next name. There is no "who is free at these hours" (p2: four tries for one ride).
+- R20U8 — ✅ 2026-11-14 (REQ item 239 e: the notify list and the duplicate-children warnings collapse; the live-events strip already did). (low) At phone width, the publish page is 10,000–12,000 px tall (a flat list of every request), and the board header takes about 2 screens. The duplicate-children banners cannot be collapsed (p1, p3).
 - R20U9 — ✅ 2026-11-14 (REQ item 239 c; Radix Select read "" as no value). (low, verified) On the car page, "מיקום קבוע" shows blank for a car based at home (expected "בית (ברירת מחדל)").
 - R20U10 — ✅ 2026-11-14 (REQ item 239 c). (low) For a member, a shared car's page shows the whole edit form greyed out, and an empty "קוד הרכב" looks the same as a hidden one (p3).
 
