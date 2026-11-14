@@ -314,6 +314,20 @@ begin
     end loop;
   end loop;
 
+  -- R20H5: an admin who is not a member of the department reads the children's names through both reads
+  -- (children_select lets admins in, as the children_admin_write_* policies do).
+  update public.department_members set removed_at = now() where department_id = dept and profile_id = admin_id;
+  view_rows := pg_temp.board_rows(admin_id, dept, wp, false);
+  function_rows := pg_temp.board_rows(admin_id, dept, wp, true);
+  assert view_rows = function_rows, 'R20H5: a non-member admin gets the same rows from both reads';
+  perform set_config('request.jwt.claims', json_build_object('sub', admin_id, 'role', 'authenticated')::text, true);
+  set local role authenticated;
+  assert (select count(*) from public.v_board_rides v, jsonb_array_elements(v.people) e
+           where v.id = r_pub and e ->> 'source' = 'child' and e ->> 'display_name' = 'wbr child') = 1,
+    'R20H5: a non-member admin sees the child''s name in v_board_rides';
+  reset role;
+  update public.department_members set removed_at = null where department_id = dept and profile_id = admin_id;
+
   -- anon: neither the view nor the function.
   assert not has_function_privilege('anon', 'public.week_board_rides(uuid, date)', 'execute'), 'anon must not execute week_board_rides';
   assert has_function_privilege('authenticated', 'public.week_board_rides(uuid, date)', 'execute'), 'authenticated executes week_board_rides';

@@ -34325,9 +34325,8 @@ CREATE POLICY "children_admin_write_update" ON "public"."children" FOR UPDATE TO
 
 
 
-CREATE POLICY "children_select" ON "public"."children" FOR SELECT TO "authenticated" USING ((( SELECT "public"."is_approved"() AS "is_approved") AND (EXISTS ( SELECT 1
-   FROM "public"."department_members" "dm"
-  WHERE (("dm"."department_id" = "children"."department_id") AND ("dm"."profile_id" = ( SELECT "auth"."uid"() AS "uid")) AND ("dm"."removed_at" IS NULL))))));
+CREATE POLICY "children_select" ON "public"."children" FOR SELECT TO "authenticated" USING ((( SELECT "public"."is_approved"() AS "is_approved") AND (( SELECT "public"."is_admin"() AS "is_admin") OR ("department_id" IN ( SELECT "d"."d"
+   FROM "public"."my_department_ids"() "d"("d"))))));
 
 
 
@@ -34894,11 +34893,11 @@ CREATE POLICY "ride_editors_select" ON "public"."ride_editors" FOR SELECT TO "au
 ALTER TABLE "public"."ride_passengers" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "ride_passengers_select" ON "public"."ride_passengers" FOR SELECT TO "authenticated" USING ((("department_id" IN ( SELECT "d"."d"
-   FROM "public"."my_department_ids"() "d"("d"))) AND ("public"."is_week_public"("department_id", "week_start") OR (( SELECT "public"."is_admin"() AS "is_admin") OR (("department_id" IN ( SELECT "d"."d"
+CREATE POLICY "ride_passengers_select" ON "public"."ride_passengers" FOR SELECT TO "authenticated" USING ((( SELECT "public"."is_admin"() AS "is_admin") OR (("department_id" IN ( SELECT "d"."d"
+   FROM "public"."my_department_ids"() "d"("d"))) AND ("public"."is_week_public"("department_id", "week_start") OR ("department_id" IN ( SELECT "d"."d"
    FROM "public"."my_sadran_department_ids"() "d"("d"))) OR (("department_id", "week_start") IN ( SELECT "w"."department_id",
     "w"."week_start"
-   FROM "public"."my_sadran_weeks"() "w"("department_id", "week_start"))))) OR ("person_id" = ( SELECT "auth"."uid"() AS "uid")))));
+   FROM "public"."my_sadran_weeks"() "w"("department_id", "week_start"))))) OR ("person_id" = ( SELECT "auth"."uid"() AS "uid"))));
 
 
 
