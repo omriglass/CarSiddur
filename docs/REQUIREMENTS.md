@@ -760,6 +760,14 @@ One canonical `notification_event` list now has **24** events (was 22, CLAUDE.md
   - (e) **The line never drifts from what happens**: the server tries the very action the button will send, with the caller's permissions, and rolls it back (`freed_car_preview`); the browser ranks the result with the same function the freed-car edge function uses (`runFreedSlot` on `freed_slot_rank_input()`). The line is left out when the answer is not there within 500 ms.
   - Implemented in `20261114170000`, `20261114170100` and `20261114170200`; suite `freed_car_cause.sql`.
 
+232. **A one-day ride becomes multi-day by editing (owner 2026-11-14, MD1; docs/TODO.md "One-day ride → multi-day by editing").**
+  - (a) Editing a one-day round trip offers "חזרה ביום אחר?" like a new request; saving with a later return day replaces the request with a multi-day one (§13.77). Before a car is assigned (an unpublished day, the waiting list) it is filed like a new multi-day request.
+  - (b) **A booked published day keeps its car**: the multi-day ride is placed only on the same car, free over the whole span (no other ride, no maintenance, every other need fits). A request riding in someone else's ride, or one whose driver drives others, is refused as an edit is today ("אין רכב פנוי בשעות החדשות" / "יש עוד נוסעים בנסיעה שלך").
+  - (c) **When the car is taken on a later day, the save stops and asks** (owner wording): another member's ride — "דנה צריך/ה את הרכב ביום ד׳ 18.11 בשעה 08:00. להקדים את שעת החזרה או לבטל את השינוי?"; maintenance — "הרכב בטיפול ביום ד׳ 18.11 מ־08:00. להקדים את שעת החזרה או לבטל את השינוי?". Buttons "להקדים את שעת החזרה ל־07:30" (the latest return that fits: the blocker's start minus the turnaround, on the 15-minute grid) / "לבטל את השינוי".
+  - (d) **The member's own ride with nobody else on it** — "יש לך כבר נסיעה ברכב הזה ביום ד׳ 18.11 בשעה 08:00. להחליף אותה בנסיעה הרב־יומית?" (the Sadran editing for the member: "לדנה כבר יש נסיעה…") with "להחליף את הנסיעה של יום ד׳" / "להקדים את שעת החזרה ל־07:30" / "לבטל את השינוי". When that ride ends after the new return, the replace button is two: "להחליף ולחזור ב־14:00" (the replaced ride's end) / "להחליף ולחזור ב־12:00" (the new return). Replacing withdraws the own ride and its request in the same save.
+  - (e) Hours a replaced published ride gives up outside the new span are offered like any change (§231), and the "הרכב יתפנה לאחרים" line shows before the save when someone waiting would get them.
+  - Implemented in `20261114180000`; suite `extend_to_series.sql`, e2e `multi-day-edit.spec.ts`.
+
 ## Owner TODO amendments — 2026-09-07
 
 These amendments take precedence over older behavior descriptions above.

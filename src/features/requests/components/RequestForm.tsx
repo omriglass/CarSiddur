@@ -90,7 +90,8 @@ import { extraAdultsFromStored, payloadSeatCounts, unnamedChildSeatsFromStored }
 import { overlapNames } from "../overlapNames";
 import { childOverlapMessage } from "../childOverlap";
 import { HostGuestsDialog } from "./HostGuestsDialog";
-import { affectedNames, editRefusal, carStaysAwayConfirmation, hostGuestsConfirmation, releaseConfirmation, shouldOfferJoinableRides, toastSeriesSubmitOutcome, toastSubmitOutcome } from "../submitOutcome";
+import { SeriesCarTakenDialog, type SeriesCarTakenQuestion } from "./SeriesCarTakenDialog";
+import { affectedNames, editRefusal, seriesCarTaken, carStaysAwayConfirmation, hostGuestsConfirmation, releaseConfirmation, shouldOfferJoinableRides, toastSeriesSubmitOutcome, toastSubmitOutcome } from "../submitOutcome";
 import { shouldSuggestChildcare } from "../childcareType";
 import { suggestionToFormValues } from "../templatePrefill";
 import { canSwapPlaces, swapRequestPlaces } from "../dropOffMode";
@@ -124,6 +125,10 @@ interface SubmitOptions {
   carAwayDeclined?: boolean;
   /** R20 Q2 redo: the answer per guest of the shared ride this request hosts. */
   hostGuests?: Record<string, HostGuestDecision>;
+  /** MD1: the answers to "the car is taken on a later day" (SeriesCarTakenDialog). */
+  returnEarlier?: boolean;
+  replaceRideId?: string;
+  keepLaterEnd?: boolean;
 }
 
 export interface QuickRequestCarOption {
@@ -643,7 +648,8 @@ export function RequestForm({
   // a new one, or editing a multi-day request over its whole span (owner 2026-10-22, REQ §13.142); the quick/carNow
   // variants are always about a single live day.
   const seriesEdit = mode === "edit" && !!initial?.seriesId;
-  const showReturnDayPicker = variant === "weekly" && (mode === "new" || seriesEdit) && tripShape === "round_trip";
+  // MD1 (REQ item 232): editing a one-day round trip may also turn it into a multi-day ride.
+  const showReturnDayPicker = variant === "weekly" && (mode === "new" || (mode === "edit" && !isReservation)) && tripShape === "round_trip";
   const returnDayValue = values.returnDay ?? day;
   // The return-day picker is collapsed behind a small "return another day" link because
   // multi-day requests are rare; a later return day keeps it expanded (UX_FLOWS.md §3.4). A series edit opens with it.
@@ -861,6 +867,7 @@ export function RequestForm({
   // R20 Q2 redo: the shared ride's guests the edit no longer fits, asked one at a time, then sent once with every answer.
   const [pendingHostGuests, setPendingHostGuests] = useState<{ values: RequestFormValues; options: SubmitOptions; guests: HostGuestQuestion[] } | null>(null);
   // REQ §13.158: the edit was refused (no car at the new hours) — nothing changed, the member stays on the form.
+  const [pendingCarTaken, setPendingCarTaken] = useState<{ values: RequestFormValues; options: SubmitOptions; question: SeriesCarTakenQuestion } | null>(null);
   const [editRefused, setEditRefused] = useState<{ reason: "discussion" | "no_car" | "riders"; groupId: string | null } | null>(null);
   // F4 (docs/TODO.md, owner A8-A10): a `waitlisted` outcome with nearby joinable rides holds off
   // the normal onDone/navigate — `afterJoinableDialog` runs it once the member picks "ask to
@@ -984,6 +991,8 @@ export function RequestForm({
       ...(options.confirmRelease ? { confirm_release: true } : {}),
       ...(options.allowCarAway ? { allow_car_away: true } : {}),
       ...(options.hostGuests ? { host_guests: options.hostGuests } : {}),
+      ...(options.returnEarlier ? { return_earlier: true } : {}),
+      ...(options.replaceRideId ? { replace_ride_id: options.replaceRideId, ...(options.keepLaterEnd ? { keep_later_end: true } : {}) } : {}),
       // REQ §13.211: a new request asks before waiting for the Sadran when a car is free but would stay at the destination.
       ...(mode === "new" && !isSeriesRequest && !options.carAwayDeclined ? { car_away_ask: true } : {}),
       // Owner 2026-10-11: "keep both" was answered — not left for the Sadran as a duplicate.
@@ -1111,8 +1120,24 @@ export function RequestForm({
         // Multi-day request (REQ §13.77): `submit_series_request` returns one `request_id`
         // per calendar day of the span — passengers/children apply to every leg so they show
         // on each day's ride, not just the first.
+        // MD1 + FC1: a booked one-day ride made multi-day may free hours for someone waiting — ask first.
+        if (mode === "edit" && !seriesEdit && initial?.id && !freedAskedRef.current && (initial.status === "assigned" || initial.status === "merged")) {
+          const go = await freedGate.ask({ action: "submit_series_request", args: { payload: { ...payload, short_turnaround_ask: true } } });
+          if (!go) return;
+          freedAskedRef.current = true;
+        }
         const raw = await submitSeriesMutation.mutateAsync(payload);
         const seriesResult = raw as unknown as SubmitSeriesRequestResult | null;
+        // MD1: the car is taken on a later day — ask (return earlier / replace my own ride / cancel the change).
+        const carTaken = seriesCarTaken(raw as unknown as SubmitRequestResult | null);
+        if (carTaken) {
+          setPendingCarTaken({
+            values: formValues,
+            options,
+            question: { ...carTaken, requestedReturn: payload.return_at ?? carTaken.latestReturn, editorIsRequester: !editingOthersRequest },
+          });
+          return;
+        }
         // REQ §13.158: an edit never costs the car — a refused one changed nothing.
         const seriesRefusal = editRefusal(raw as unknown as SubmitRequestResult | null);
         if (seriesRefusal) {
@@ -1722,6 +1747,20 @@ export function RequestForm({
       </div>
     </form>
     <FreedCarConfirmDialog dialog={freedGate.dialog} loading={submitMutation.isPending} />
+    <SeriesCarTakenDialog
+      question={pendingCarTaken?.question ?? null}
+      onCancel={() => setPendingCarTaken(null)}
+      onAnswer={(answer) => {
+        const pending = pendingCarTaken;
+        setPendingCarTaken(null);
+        if (!pending) return;
+        // a new answer may free other hours: the freed-car question is asked again for it
+        freedAskedRef.current = false;
+        void performSubmit(pending.values, answer.kind === "returnEarlier"
+          ? { ...pending.options, returnEarlier: true }
+          : { ...pending.options, replaceRideId: answer.rideId, keepLaterEnd: answer.keepLaterEnd });
+      }}
+    />
     <ConfirmDialog
       open={!!pendingOnBehalf}
       onOpenChange={(open) => { if (!open) setPendingOnBehalf(null); }}

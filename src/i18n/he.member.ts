@@ -121,6 +121,15 @@ export const heMember = {
     editRefusedRidersTitle: "יש עוד נוסעים בנסיעה שלך",
     editRefusedRidersBody: "את/ה נוהג/ת גם עבור אחרים, והרכב נשאר איתם בשעות שלהם — לכן השינוי לא נשמר והנסיעה נשארת כמו שהייתה. אפשר לתאם עם הנוסעים או לפנות לסדרן/ית.",
     editRefusedBack: "חזרה לטופס",
+    /** MD1 (owner-approved 2026-11-14): a one-day ride made multi-day, and its car is taken on a later day. */
+    carTakenRide: "{{name}} צריך/ה את הרכב ביום {{day}} בשעה {{time}}. להקדים את שעת החזרה או לבטל את השינוי?",
+    carTakenMaintenance: "הרכב בטיפול ביום {{day}} מ־{{time}}. להקדים את שעת החזרה או לבטל את השינוי?",
+    carTakenOwnMine: "יש לך כבר נסיעה ברכב הזה ביום {{day}} בשעה {{time}}. להחליף אותה בנסיעה הרב־יומית?",
+    carTakenOwnOther: "ל{{name}} כבר יש נסיעה ברכב הזה ביום {{day}} בשעה {{time}}. להחליף אותה בנסיעה הרב־יומית?",
+    carTakenReplace: "להחליף את הנסיעה של יום {{weekday}}",
+    carTakenReplaceReturn: "להחליף ולחזור ב־{{time}}",
+    carTakenReturnEarlier: "להקדים את שעת החזרה ל־{{time}}",
+    carTakenCancel: "לבטל את השינוי",
     releaseAffected: "מושפעים גם: {{names}}",
     /** OW1 (REQ §13.210): a change to one way leaves the booked car at the destination — ask instead of refusing. */
     // R20 Q2 redo (owner-approved 2026-11-14): a host's edit no longer fits a guest on the shared ride.

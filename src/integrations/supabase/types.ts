@@ -5842,6 +5842,7 @@ export type Database = {
         Returns: boolean
       }
       _edit_series_request: { Args: { payload: Json }; Returns: Json }
+      _extend_request_to_series: { Args: { payload: Json }; Returns: Json }
       _fit_ride_to_its_legs: { Args: { p_ride_id: string }; Returns: boolean }
       _flex_floor: { Args: { i: string }; Returns: string }
       _flex_minutes_json: { Args: { p: string }; Returns: Json }
@@ -6331,6 +6332,17 @@ export type Database = {
       _send_held: {
         Args: { h: Database["public"]["Tables"]["held_notices"]["Row"] }
         Returns: undefined
+      }
+      _series_span_blocker: {
+        Args: {
+          p_car_id: string
+          p_exclude: string[]
+          p_from: string
+          p_requester: string
+          p_ta: string
+          p_to: string
+        }
+        Returns: Json
       }
       _shares_child: {
         Args: { p_a: string; p_b: string; p_department: string }

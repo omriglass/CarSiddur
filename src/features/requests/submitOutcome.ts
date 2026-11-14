@@ -4,7 +4,7 @@ import { t, tv } from "@/i18n/he";
 import type { TripType } from "@/lib/enums";
 
 import { overlapRefusalMessage } from "./overlapNames";
-import type { HostGuestQuestion, SubmitRequestResult, SubmitSeriesRequestResult } from "./api";
+import type { HostGuestQuestion, SeriesBlocker, SubmitRequestResult, SubmitSeriesRequestResult } from "./api";
 
 export interface SubmitOutcomeContext {
   /** Resolves a `cars.id` to its display name (both variants already have `carsQuery.data`). */
@@ -139,8 +139,16 @@ export function hostGuestsConfirmation(result: SubmitRequestResult | null | unde
 export function editRefusal(
   result: SubmitRequestResult | null | undefined,
 ): { reason: "discussion" | "no_car" | "riders"; groupId: string | null } | null {
-  if (!result?.edit_refused) return null;
+  if (!result?.edit_refused || result.edit_refused === "car_taken") return null;
   return { reason: result.edit_refused, groupId: result.group_offer ?? null };
+}
+
+/** MD1 (REQ item 232): the multi-day edit's car is taken over the span — what blocks it and the latest return that fits. */
+export function seriesCarTaken(
+  result: SubmitRequestResult | null | undefined,
+): { blocker: SeriesBlocker; latestReturn: string } | null {
+  if (result?.edit_refused !== "car_taken" || !result.blocker || !result.latest_return) return null;
+  return { blocker: result.blocker, latestReturn: result.latest_return };
 }
 
 /** R14U4: the other people on a ride the member drives (empty when they drive nobody), from a probe or a release answer. */

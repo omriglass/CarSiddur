@@ -924,6 +924,15 @@ export interface HostGuestQuestion {
  * `try_auto_approve()` ran) — every other caller only ever read `request_id`/`is_late`/
  * `warnings`, which are unchanged.
  */
+export interface SeriesBlocker {
+  kind: "ride" | "own_ride" | "maintenance";
+  ride_id?: string;
+  starts_at: string;
+  ends_at: string;
+  person_id?: string | null;
+  name?: string | null;
+}
+
 export interface SubmitRequestResult {
   request_id: string;
   is_late: boolean;
@@ -956,7 +965,15 @@ export interface SubmitRequestResult {
    * changes nothing — `discussion` when an open waiting-list discussion holds the car then (`group_offer` = that
    * group), else `no_car`.
    */
-  edit_refused?: "discussion" | "no_car" | "riders";
+  edit_refused?: "discussion" | "no_car" | "riders" | "car_taken";
+  /**
+   * MD1 (REQ item 232), with `car_taken`: turning a booked one-day ride into a multi-day one needs the same car for the
+   * whole span, and this is the first thing on it — another member's ride (`name` = its owner), the requester's own
+   * ride with nobody else on it (replaceable), or maintenance. Nothing was changed.
+   */
+  blocker?: SeriesBlocker;
+  /** With `car_taken`: the latest return that fits (the blocker's start minus the turnaround). */
+  latest_return?: string;
   /**
    * REQ §13.101 f: a car takes the new hours, but the member drives others who would be left without a driver —
    * nothing was changed; resubmit with `confirm_release: true` to go ahead.
@@ -1091,9 +1108,9 @@ export interface SubmitSeriesRequestResult {
 /**
  * `submit_series_request(payload jsonb)` — the only write path for a multi-day request
  * (REQ §13.77): same payload shape as `submit_request`, except `return_at` is on a LATER
- * Jerusalem date than `depart_at` (`mapper.ts`'s `returnDay`-aware `return_at`). Never send
- * `request_id`/`expected_version` — editing a series is not supported in v1 (`series_edit_
- * not_supported`, MDR02); cancel and resubmit instead.
+ * Jerusalem date than `depart_at` (`mapper.ts`'s `returnDay`-aware `return_at`). An edit sends `series_id` (a series,
+ * REQ §13.142) or `request_id` (a one-day request turned multi-day, MD1 — refused `car_taken` when its car is not free
+ * for the whole span; answered with `return_earlier`, `replace_ride_id`, `keep_later_end`).
  */
 export async function submitSeriesRequest(payload: SubmitRequestPayload): Promise<Json> {
   // REQ §13.190 (TG2): the last day may end less than the turnaround before the car's next ride, after the question.
