@@ -16289,8 +16289,13 @@ begin
     v_end := greatest(public._round_up_ride_end(v_dep, v_dep + make_interval(mins => v_travel)), v_dep + interval '15 minutes');
     -- REQ §13.206: nothing tracks where a private car is (its owner takes care of it) - the location rules below
     -- are for shared cars only.
+    -- R20H3 (owner 2026-11-15): a Sadran who saw "לשבץ בכל זאת?" (payload `allow_chain_break`) may also start the leg
+    -- where the car is not standing (a lone return leg on a car left at home); the board's chain-break warning stays.
     if exists(select 1 from public.cars where id = v_car and type = 'shared')
-       and public.car_location_at(v_car, v_dep) is distinct from q.origin_id then
+       and public.car_location_at(v_car, v_dep) is distinct from q.origin_id
+       and not (v_manual and exists(select 1 from public.proposals pp
+         where pp.id::text = nullif(current_setting('app.applying_proposal', true), '')
+           and pp.created_via = 'sadran' and coalesce((pp.payload ->> 'allow_chain_break')::boolean, false))) then
       raise exception 'car_not_at_leg_origin' using errcode = 'P0001';
     end if;
     -- REQ §13.93 (CH1, owner 2026-11-07): a Sadran who saw "לשבץ בכל זאת?" (payload `allow_chain_break`) may leave the

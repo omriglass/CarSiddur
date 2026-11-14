@@ -3,6 +3,8 @@
 --           other way round, another day, or one that leaves before
 --   TEST 2  place_one_way_pair puts both on the car: the out-leg leaves the car at X, the return leg starts there
 --   TEST 3  refusals: a member may not call either; a pair that is not opposite legs
+--   TEST 4  (owner 2026-11-15) a lone return leg on a car standing at home: refused without the Sadran's
+--           "לשבץ בכל זאת?" (`allow_chain_break`), placed from Haifa with it
 -- Transactional, rolled back at the end.
 begin;
 
@@ -98,6 +100,43 @@ begin
     raise exception 'TEST 3 FAILED: two legs the same way were placed as a pair';
   exception when raise_exception then if sqlerrm <> 'one_way_pair_invalid' then raise; end if; end;
   raise notice 'TEST 3 passed: refusals';
+end $$;
+
+-- TEST 4
+create or replace function pg_temp.owp_shift(p_req uuid, p_requester uuid, p_payload jsonb) returns uuid
+language plpgsql as $f$
+declare prop uuid;
+begin
+  prop := public.create_proposal(p_req, null, 'shift', p_payload, 'x');
+  perform public.send_proposal(prop, '{}');
+  perform public.record_answer_on_behalf(prop, p_requester, true);
+  if (select status from public.proposals where id = prop) = 'accepted' then perform public.apply_proposal(prop); end if;
+  if (select status from public.proposals where id = prop) = 'withdrawn' then
+    raise exception '%', coalesce((select n.data ->> 'reason' from public.notifications n
+      where n.data ->> 'proposal_id' = prop::text and n.data ->> 'variant' = 'withdrawn_stale' order by n.created_at desc limit 1), 'shift_not_applied');
+  end if;
+  return (select applied_ride_id from public.proposals where id = prop);
+end $f$;
+do $$
+declare
+  car uuid := '00000000-0000-0000-0000-000000000041';
+  m104 uuid := '00000000-0000-0000-0000-000000000104';
+  home uuid := '00000000-0000-0000-0000-000000000010';
+  haifa uuid := '00000000-0000-0000-0000-000000000011';
+  q uuid := (select id from owp where k = 'qother'); rid uuid; r public.rides%rowtype;
+begin
+  assert public.car_location_at(car, (select depart_at from public.requests where id = q)) = home, 'setup: the car stands at home';
+  begin
+    perform pg_temp.owp_shift(q, m104, jsonb_build_object('car_id', car));
+    raise exception 'TEST 4 FAILED: placed from Haifa with no waiver';
+  exception when others then if sqlerrm not like '%car_not_at_leg_origin%' then raise; end if; end;
+  rid := pg_temp.owp_shift(q, m104, jsonb_build_object('car_id', car, 'allow_chain_break', true));
+  set constraints all immediate;
+  set constraints all deferred;
+  select * into r from public.rides where id = rid;
+  assert r.car_id = car and r.origin_id = haifa and r.destination_id = home and r.status <> 'cancelled',
+    format('TEST 4 FAILED: the leg is placed Haifa → home on the car, got %s', to_jsonb(r));
+  raise notice 'TEST 4 passed: the Sadran''s "לשבץ בכל זאת?" places a leg where the car is not';
 end $$;
 
 rollback;

@@ -215,6 +215,9 @@ export const heSadran = {
     chainBreakTitle: "לשבץ בכל זאת?",
     chainBreakBody: "{{car}} יישאר ב{{place}}, אבל הנסיעה הבאה שלו ב־{{time}} יוצאת מ{{nextPlace}}. צריך לדאוג שהרכב יגיע לשם.",
     chainBreakConfirm: "לשבץ בכל זאת",
+    /** R20H3 (owner 2026-11-15): a one-way leg from a place where the car is not standing. */
+    chainBreakNotThereBody: "{{car}} לא נמצא ב{{place}} בשעה הזו (הוא ב{{carAt}}). צריך לדאוג שהרכב יגיע לשם.",
+    chainBreakElsewhere: "מקום אחר",
     /** R20H3 (owner 2026-11-14): an unplaced opposite one-way leg fits the same car. */
     chainBreakPairBody: "הרכב יישאר ב{{place}}. לשבץ יחד עם החזרה של {{name}} ({{from}}→{{to}}, {{time}})?",
     chainBreakPairConfirm: "לשבץ את שתיהן",

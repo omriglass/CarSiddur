@@ -149,7 +149,7 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
   // REQ §13.129 (a): the owner of a private car (here: the Sadran) is asked before someone else's request/ride lands on it.
   const [ownCarAsk, setOwnCarAsk] = useState<{ name: string; carName: string; driverless: boolean; resolve: (ok: boolean) => void } | null>(null);
   // CH1 (REQ §13.93): "לשבץ בכל זאת?" before a one-way leg leaves the car where its next ride does not start.
-  const [chainBreakAsk, setChainBreakAsk] = useState<{ car: string; place: string; nextStart: string; nextPlace: string; partner: OneWayPartner | null; resolve: (answer: false | "one" | "both") => void } | null>(null);
+  const [chainBreakAsk, setChainBreakAsk] = useState<{ car: string; place: string; nextStart: string; nextPlace: string; partner: OneWayPartner | null; carAt?: string; resolve: (answer: false | "one" | "both") => void } | null>(null);
   const [guestHover, setGuestHover] = useState<{ guest: { requestId: string; name: string }; target: GuestDropTarget | null } | null>(null);
   // Item 136 (e): the open displacement checklist - a snapshot of the card and its suggestion (the card itself may
   // vanish from the unmet list while the Sadran works through the steps).
@@ -646,8 +646,16 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
     // QB23: the car must be at the request's origin when the window starts - refuse instead of
     // offering a shift/placement onto a car parked elsewhere (a connected pair's own other leg is exempt).
     const dropOrigin = legStartPlaceId(req, dropCtx.homeDestinationId);
+    let allowChainBreak = false;
     if (!connects && dropOrigin && originMismatch(dropCtx, carId, dropOrigin, window.startsAt)) {
-      toast.error(he.sadranBoard.carNotAtOriginToast); return;
+      if (tripTypeOf(req) !== "one_way") { toast.error(he.sadranBoard.carNotAtOriginToast); return; }
+      // R20H3 (owner 2026-11-15): a one-way leg from where the car is not standing is the Sadran's call too - asked, not refused.
+      const carAtId = carLocationAt(dropCtx, carId, window.startsAt);
+      const carAt = (board.destinationsQuery.data ?? []).find((d) => d.id === carAtId)?.name ?? he.sadranBoard.chainBreakElsewhere;
+      const answer = await new Promise<false | "one" | "both">((resolve) => setChainBreakAsk({
+        car: carsData.find((c) => c.id === carId)?.name ?? "", place: req.origin_resolved_name ?? "", nextStart: "", nextPlace: "", partner: null, carAt, resolve }));
+      if (!answer) return;
+      allowChainBreak = true;
     }
     if (!connects && chauffeurCarElsewhere(dropCtx, req, carId, window.startsAt)) {
       toast.error(he.sadranBoard.carNotAtOriginToast); return;
@@ -656,7 +664,6 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
     const placement = unmetPlacement(dropCtx, req, carId, window.startsAt);
     if (!placement) { toast.error(he.sadranBoard.invalidWindow); return; }
     // CH1 (REQ §13.93): leaving the car where its next ride does not start is the Sadran's call — asked, not refused.
-    let allowChainBreak = false;
     const stranded = !connects && tripTypeOf(req) === "one_way" && req.destination_id
       ? strandedNextRide(dropCtx, carId, req.destination_id, window.endsAt) : null;
     if (stranded?.starts_at) {

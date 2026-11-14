@@ -314,7 +314,10 @@ async function cmdPlace(board: Board, args: Args): Promise<void> {
   if (unavailable(dctx, car.id, window.startsAt, window.endsAt)) problems.push("car inactive or in maintenance then");
   if (!seatsFit(dctx, car.id, connects ? { adults: req.adults, childSeats: req.child_seats, boosters: req.boosters } : unmetRequestPassengers(req))) problems.push("seats do not fit");
   const originId = req.origin_id ?? board.scope.homeDestinationId;
-  if (!connects && originId && originMismatch(dctx, car.id, originId, window.startsAt)) problems.push(`car is at ${board.destName(carLocationAt(dctx, car.id, window.startsAt))} then, request starts at ${board.destName(originId)}`);
+  const notThere = !connects && !!originId && originMismatch(dctx, car.id, originId, window.startsAt);
+  const notThereLine = notThere ? `car is at ${board.destName(carLocationAt(dctx, car.id, window.startsAt))} then, request starts at ${board.destName(originId)}` : "";
+  // R20H3 (owner 2026-11-15): for a one-way leg the board asks "לשבץ בכל זאת?" instead of refusing.
+  if (notThere && tripTypeOf(req) !== "one_way") problems.push(notThereLine);
   // CH1: on the board a stranded next ride is a question ("לשבץ בכל זאת?"), not a refusal; R20H3: with --pair the
   // opposite unplaced one-way leg that fits is placed with it ("לשבץ את שתיהן").
   const strands = !connects && tripTypeOf(req) === "one_way" && !!req.destination_id && strandsNextRide(dctx, car.id, req.destination_id, window.endsAt);
@@ -325,6 +328,7 @@ async function cmdPlace(board: Board, args: Args): Promise<void> {
   if (!requestWithinFlex(req, window.startsAt, window.endsAt)) {
     throw new UsageError(`window ${t(window.startsAt)}-${t(window.endsAt)} is outside the request's flexibility: send a shift proposal instead: propose ${short(request.id)} shift --car ${JSON.stringify(car.name)} --depart ${t(window.startsAt)}${req.return_at ? ` --return ${t(window.endsAt)}` : ""}`);
   }
+  if (notThere && tripTypeOf(req) === "one_way") console.log(`note: the board asks "לשבץ בכל זאת?" — ${notThereLine}; someone has to bring the car there. Placing it.`);
   if (strands) {
     const partner = await api.fetchOneWayPartner(req.id, car.id, window.startsAt);
     if (has(args, "pair") && partner) {

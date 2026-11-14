@@ -877,7 +877,9 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
         open={!!dnd.chainBreakAsk}
         onOpenChange={(open) => { if (!open) dnd.answerChainBreakAsk(false); }}
         title={he.sadranBoard.chainBreakTitle}
-        description={tv("sadranBoard.chainBreakBody", { car: dnd.chainBreakAsk?.car ?? "", place: dnd.chainBreakAsk?.place ?? "", time: dnd.chainBreakAsk?.nextStart ?? "", nextPlace: dnd.chainBreakAsk?.nextPlace ?? "" })}
+        description={dnd.chainBreakAsk?.carAt
+          ? tv("sadranBoard.chainBreakNotThereBody", { car: dnd.chainBreakAsk.car, place: dnd.chainBreakAsk.place, carAt: dnd.chainBreakAsk.carAt })
+          : tv("sadranBoard.chainBreakBody", { car: dnd.chainBreakAsk?.car ?? "", place: dnd.chainBreakAsk?.place ?? "", time: dnd.chainBreakAsk?.nextStart ?? "", nextPlace: dnd.chainBreakAsk?.nextPlace ?? "" })}
         confirmLabel={he.sadranBoard.chainBreakConfirm}
         onConfirm={() => dnd.answerChainBreakAsk("one")}
       >
