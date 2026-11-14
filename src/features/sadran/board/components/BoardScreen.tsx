@@ -79,6 +79,7 @@ import type { PendingDraft } from "./SendAllDialog";
 import type { FewerDaysSupport } from "./FewerDaysAction";
 import type { ComposerPrefill } from "../draftInput";
 import { MergeWaitDialog } from "@/features/rides/components/MergeWaitDialog";
+import { ownCarMoveBody } from "@/features/rides/ownCarMove";
 import { MergePrefillDialog } from "./MergePrefillDialog";
 import { DropAskDialog } from "./DropAskDialog";
 import { ProposalActionSheet } from "./ProposalActionSheet";
@@ -859,7 +860,7 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
         open={!!dnd.ownCarAsk}
         onOpenChange={(open) => { if (!open) dnd.answerOwnCarAsk(false); }}
         title={tv("rideEditing.ownCarMoveTitle", { name: dnd.ownCarAsk?.name ?? "" })}
-        description={tv("rideEditing.ownCarMoveBody", { name: dnd.ownCarAsk?.name ?? "", car: dnd.ownCarAsk?.carName ?? "" })}
+        description={ownCarMoveBody(dnd.ownCarAsk?.driverless ? null : "driver", dnd.ownCarAsk?.name ?? "", dnd.ownCarAsk?.carName ?? "")}
         confirmLabel={he.rideEditing.ownCarMoveConfirm}
         onConfirm={() => dnd.answerOwnCarAsk(true)}
       />

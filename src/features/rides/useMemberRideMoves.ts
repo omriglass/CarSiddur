@@ -26,7 +26,7 @@ import type { RideMove } from "./api";
 import { editRidePreview } from "./freedCarRequests";
 import { useRideChanges } from "./hooks";
 import { useFreedCarGate } from "./useFreedCar";
-import { canMoveOntoMyCar, rideDayPublished } from "./ownCarMove";
+import { canMoveOntoMyCar, ownCarMoveBody, rideDayPublished } from "./ownCarMove";
 import { isRideRelated, rideMovableByMember } from "./relatedRide";
 import { isRideDayEditable } from "./rideDayEditable";
 import { servedOf } from "./servedOf";
@@ -206,7 +206,7 @@ export function useMemberRideMoves({ departmentId, weekStart, week, profileId, m
     open: !!ownCarMove,
     onOpenChange: (open: boolean) => { if (!open) setOwnCarMove(null); },
     title: tv("rideEditing.ownCarMoveTitle", { name: ownCarOwnerName }),
-    description: tv("rideEditing.ownCarMoveBody", { name: ownCarOwnerName, car: ownCarName }),
+    description: ownCarMoveBody(ownCarMoveRide?.driver_id, ownCarOwnerName, ownCarName),
     confirmLabel: he.rideEditing.ownCarMoveConfirm,
     loading: editMutation.isPending,
     onConfirm: () => {

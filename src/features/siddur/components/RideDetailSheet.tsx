@@ -35,6 +35,7 @@ import type { OwnCar } from "@/features/rides/useOwnCarMove";
 import type { FreedCarPreviewRequest } from "@/features/rides/api";
 import { KeepOutButton } from "@/features/rides/FreedCarConfirmDialog";
 import { useFreedCarLine } from "@/features/rides/useFreedCar";
+import { ownCarMoveBody } from "@/features/rides/ownCarMove";
 
 /**
  * "<driver> ו<passengers> ל/מ<real destination>" (UX_FLOWS.md §20 — the
@@ -254,7 +255,7 @@ export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = 
                     open={!!moveCar}
                     onOpenChange={(open) => { if (!open) setMoveCarId(null); }}
                     title={tv("rideEditing.ownCarMoveTitle", { name: rideOwnerName })}
-                    description={tv("rideEditing.ownCarMoveBody", { name: rideOwnerName, car: moveCar?.name ?? "" })}
+                    description={ownCarMoveBody(ride.driver_id, rideOwnerName, moveCar?.name ?? "")}
                     confirmLabel={he.rideEditing.ownCarMoveConfirm}
                     loading={movingToCar}
                     onConfirm={() => { if (moveCar) { setMoveCarId(null); onMoveToCar(moveCar.id); } }}

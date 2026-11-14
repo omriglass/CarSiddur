@@ -892,8 +892,8 @@ declare
     'request_waitlist_causes: delegates to waitlist_cause (related people / the week''s Sadran)',
     'ride_route_json: delegates to _ride_route_visible',
     'ride_shorten_options_for_request: delegates to _ride_shorten_request',
-    'sadranim_of: policy helper, who coordinates a week',
-    'submit_series_request: delegates to submit_request / _edit_series_request'
+    'sadranim_of: policy helper, who coordinates a week'
+    -- submit_series_request left this list in 20261114230000 (R20B12): it calls auth.uid() itself now.
   ];
   names text[] := (select array_agg(split_part(r, ':', 1)) from unnest(reviewed) r);
   bad text;

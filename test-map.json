@@ -12,7 +12,8 @@
     "vite.config.ts",
     "vitest.config.ts",
     "playwright.config.ts",
-    "scripts/perf/**", "scripts/impact.mjs",
+    "scripts/perf/**",
+    "scripts/impact.mjs",
     "scripts/impact.test.mjs",
     "scripts/release.mjs",
     "scripts/check-migrations.mjs",
@@ -1108,7 +1109,11 @@
         "supabase/migrations/**/*anyone_edits_rides*",
         "supabase/migrations/**/*submit_request_edit_moves_requester*",
         "supabase/migrations/**/*release_booking_by_related_editor*",
-        "src/lib/appSurface.ts"
+        "src/lib/appSurface.ts",
+        "supabase/tests/qa20_low_bugs.sql",
+        "supabase/migrations/**/*qa20_low*",
+        "supabase/migrations/**/*deny_accepted*",
+        "supabase/migrations/**/*origin_proposal_probe*"
       ],
       "vitest": [
         "src/features/inbox",
@@ -1116,17 +1121,18 @@
         "scripts/changelog-check.test.mjs"
       ],
       "sql": [
-        "notifications_semantics.sql",
-        "status_notifications.sql",
         "changelog.sql",
-        "qa_run13_rides.sql",
-        "publish_one_notice.sql",
-        "offer_replaces_notice.sql",
-        "leave_notices_merge.sql",
         "close_request.sql",
         "draft_holds.sql",
+        "leave_notices_merge.sql",
         "member_edit_companions.sql",
-        "ride_edited_notices.sql"
+        "notifications_semantics.sql",
+        "offer_replaces_notice.sql",
+        "publish_one_notice.sql",
+        "qa20_low_bugs.sql",
+        "qa_run13_rides.sql",
+        "ride_edited_notices.sql",
+        "status_notifications.sql"
       ],
       "playwrightTags": [
         "@notifications"

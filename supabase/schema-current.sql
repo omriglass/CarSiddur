@@ -7772,6 +7772,12 @@ begin
       v_vars := jsonb_build_object('route', coalesce(public.request_route_label(v_req.id), ''),
         'day', public.day_date_label(coalesce(v_old_dep, v_old_ret)));
     end if;
+    if v_prop.type = 'deny' then
+      -- R20B16 (owner 2026-11-14): accepting "no car" has its own notice, like "arrange it yourself".
+      v_variant := 'deny_accepted';
+      v_vars := jsonb_build_object('route', coalesce(public.request_route_label(v_req.id), ''),
+        'day', public.day_date_label(coalesce(v_old_dep, v_old_ret)));
+    end if;
     if v_prop.type = 'alternative' then
       v_variant := 'alternative_applied';
       v_vars := jsonb_build_object('route', coalesce(public.request_route_label(v_req.id), ''),
@@ -22965,7 +22971,9 @@ begin
   -- car that cannot take it — elsewhere at that time, too small, busy — is refused here with the reason, instead of
   -- the member accepting and the proposal being withdrawn as stale afterwards (several notices, nothing placed).
   -- ("כבר סיכמנו" — agree_proposal_offline — applies right after sending and handles a failure itself.)
-  if v_prop.type='shift' and v_prop.created_via='sadran' and v_prop.payload ? 'car_id'
+  -- R20B18 (QA run 20): so is an origin proposal ("take car C from Y") — a car busy there is refused before the member
+  -- is asked (`origin_change_unavailable`), never withdrawn as stale after they accepted. Drafts stay unchecked.
+  if ((v_prop.type='shift' and v_prop.payload ? 'car_id') or v_prop.type='origin') and v_prop.created_via='sadran'
      and coalesce(current_setting('app.defer_proposal_apply', true), '') <> 'on' then
     v_leg_txt := public._proposal_apply_trial(v_prop.id);
     if v_leg_txt is not null then raise exception '%', v_leg_txt using errcode='P0001'; end if;
@@ -25818,12 +25826,15 @@ begin
     -- REQ §13.169 (c): a requester who did not make the form's edit gets the riders' `ride_edited` notice instead.
     if not v_form_notice or v_requester_id = v_actor then
     perform public.enqueue_notification(v_requester_id, 'outcome_changed', v_department_id, v_week_start,
-      '{}'::jsonb, jsonb_build_object('variant', 'edit_waitlisted', 'request_id', v_request_id),
+      -- R20B14: a request that had no car before the edit does not say "the previous car was released".
+      '{}'::jsonb, jsonb_build_object('variant', case when v_old_edit_car is null then 'edit_still_waitlisted' else 'edit_waitlisted' end,
+        'request_id', v_request_id),
       format('edit_waitlisted:%s:%s', v_request_id, clock_timestamp()));
     end if;
   end if;
 
-  if v_is_late and not v_guest_stays and coalesce(v_auto_result->>'status','') <> 'assigned' and coalesce(v_series_index, 1) = 1 then
+  if v_is_late and not v_guest_stays and coalesce(v_auto_result->>'status','') <> 'assigned' and v_series_id is null then
+    -- R20B12: a multi-day request's one late notice is sent by submit_series_request, after its placement attempt.
     v_late_variant := case coalesce(v_auto_result->>'reason', '')
       when 'WAITLISTED_CONTESTED' then 'late_contested'
       when 'DUPLICATE_OVERLAP' then 'late_duplicate'
@@ -25918,7 +25929,7 @@ declare
   v_first_date date; v_last_date date; v_count int; v_series uuid := gen_random_uuid();
   v_d date; v_week date; v_first_week date; v_phase public.week_phase;
   v_ids uuid[] := '{}'; v_warnings jsonb := '[]'::jsonb; v_leg jsonb; v_auto jsonb;
-  v_prefer uuid;
+  v_prefer uuid; v_late boolean; v_late_variant text;
 begin
   -- REQ §13.142: an edit of an existing series replaces it (`_edit_series_request` calls back without series_id).
   if payload ? 'series_id' then
@@ -25970,6 +25981,10 @@ begin
   end loop;
 
   select w.phase into v_phase from public.weeks w where w.department_id = v_dept and w.week_start = v_first_week;
+  -- R20B12: a late multi-day request tells the Sadran once (`late_request`, after the placement attempt below);
+  -- try_auto_approve_series leaves out its own waiting-list notice while this is on.
+  v_late := coalesce((select q.is_late from public.requests q where q.id = v_ids[1]), false);
+  perform set_config('app.late_request_notice', case when v_late then 'on' else 'off' end, true);
   if v_phase in ('published', 'live') then
     -- REQ §13.142: an edited series keeps the car it had when that car is still free for the whole span.
     v_prefer := nullif(current_setting('app.series_prefer_car', true), '')::uuid;
@@ -25997,6 +26012,19 @@ begin
     exception when others then
       null;
     end;
+  end if;
+
+  perform set_config('app.late_request_notice', 'off', true);
+  if v_late and coalesce(v_auto ->> 'status', '') <> 'assigned' then
+    v_late_variant := case when coalesce(v_auto ->> 'status', '') = 'waitlisted' then 'late_waitlisted' end;
+    perform public.enqueue_notification(s.profile_id, 'late_request', v_dept, v_first_week,
+      jsonb_build_object('requestId', v_ids[1]::text),
+      jsonb_build_object('request_id', v_ids[1], 'series_id', v_series)
+        || case when v_late_variant is null then '{}'::jsonb else jsonb_build_object('variant', v_late_variant) end,
+      format('late_request:%s', v_ids[1]))
+    from public.sadranim_of(v_dept, v_first_week) as s(profile_id)
+    -- R13B15: the Sadran who made the change is not told about it.
+    where s.profile_id is distinct from (select auth.uid());
   end if;
 
   return jsonb_build_object('series_id', v_series, 'request_ids', to_jsonb(v_ids), 'warnings', v_warnings)
@@ -26705,7 +26733,9 @@ begin
     jsonb_build_object('requestId', v_head.id::text),
     jsonb_build_object('request_id', v_head.id, 'series_id', p_series_id),
     format('waitlisted_series:%s:%s', p_series_id, s.profile_id))
-  from public.sadranim_of(v_head.department_id, v_head.week_start) as s(profile_id);
+  from public.sadranim_of(v_head.department_id, v_head.week_start) as s(profile_id)
+  -- R20B12: a late series is told once, by submit_series_request's late notice.
+  where coalesce(current_setting('app.late_request_notice', true), 'off') <> 'on';
 
   return jsonb_build_object('status', 'waitlisted', 'reason', 'WAITLISTED_SERIES_NO_CAR', 'series_id', p_series_id);
 end $$;

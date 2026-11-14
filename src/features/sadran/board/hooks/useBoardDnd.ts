@@ -146,7 +146,7 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
   // R3B5: a drop whose live preview was red (invalid target) is applied only after an explicit confirmation.
   const [invalidDropConfirm, setInvalidDropConfirm] = useState<{ run: () => Promise<void> } | null>(null);
   // REQ §13.129 (a): the owner of a private car (here: the Sadran) is asked before someone else's request/ride lands on it.
-  const [ownCarAsk, setOwnCarAsk] = useState<{ name: string; carName: string; resolve: (ok: boolean) => void } | null>(null);
+  const [ownCarAsk, setOwnCarAsk] = useState<{ name: string; carName: string; driverless: boolean; resolve: (ok: boolean) => void } | null>(null);
   // CH1 (REQ §13.93): "לשבץ בכל זאת?" before a one-way leg leaves the car where its next ride does not start.
   const [chainBreakAsk, setChainBreakAsk] = useState<{ car: string; place: string; nextStart: string; nextPlace: string; resolve: (ok: boolean) => void } | null>(null);
   const [guestHover, setGuestHover] = useState<{ guest: { requestId: string; name: string }; target: GuestDropTarget | null } | null>(null);
@@ -205,10 +205,10 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
     return { ok: accepted, waived: accepted };
   }
   /** Resolves `true` when no confirmation applies (not my private car, or it is my own request/ride) or the owner confirmed. */
-  function confirmOwnCarMove(carId: string, personId: string | null | undefined, name: string | null | undefined): Promise<boolean> {
+  function confirmOwnCarMove(carId: string, personId: string | null | undefined, name: string | null | undefined, driverless = false): Promise<boolean> {
     const car = carsData.find((c) => c.id === carId);
     if (!car || car.type !== "temporary" || !isCarOwner(car, profileId) || personId === profileId) return Promise.resolve(true);
-    return new Promise<boolean>((resolve) => setOwnCarAsk({ name: name ?? "", carName: car.name, resolve }));
+    return new Promise<boolean>((resolve) => setOwnCarAsk({ name: name ?? "", carName: car.name, driverless, resolve }));
   }
   function answerOwnCarAsk(ok: boolean) {
     ownCarAsk?.resolve(ok);
@@ -854,7 +854,7 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
       && privateCarBlocks(dropCtx, carId, servedOf(ride).map((e) => requestsData.find((r) => r.id === e.request_id)).find((r) => r)?.requester_id))) {
       toast.error(he.sadranBoard.privateCarNotTarget); return;
     }
-    if (carId !== ride.car_id && !(await confirmOwnCarMove(carId, ride.driver_id, ride.driver_name ?? servedOf(ride).find((entry) => entry.requester)?.requester))) return;
+    if (carId !== ride.car_id && !(await confirmOwnCarMove(carId, ride.driver_id, ride.driver_name ?? servedOf(ride).find((entry) => entry.requester)?.requester, !ride.driver_id))) return;
     // R3B2: a needs-driver ride dropped on another ride is always a merge attempt (the host may itself
     // need a driver: refused below), never a plain move.
     if (ride.needs_driver && droppedOnRideId && droppedOnRideId !== rideId && rides.some((other) => other.id === droppedOnRideId && other.car_id === carId)) {

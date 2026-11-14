@@ -371,6 +371,8 @@ export const he = {
     /** REQ §13.129 (a): a private car's owner moves someone's ride onto their own car — verification notice. */
     ownCarMoveTitle: "להעביר את הנסיעה של {{name}} לרכב שלך?",
     ownCarMoveBody: "{{name}} ינהג/תנהג ברכב {{car}}. כל מי שבנסיעה יקבל/תקבל הודעה.",
+    // R20B13 (owner 2026-11-14): a ride with no driver moves to the private car and still waits for one.
+    ownCarMoveBodyNoDriver: "הנסיעה תעבור לרכב {{car}} ועדיין תחכה לנהג/ת. כל מי שבנסיעה יקבל/תקבל הודעה.",
     ownCarMoveConfirm: "העברה לרכב שלי",
     collisionTitle: "כבר קיימת נסיעה בזמן הזה",
     /** REQ §13.175 (d): my ride dragged onto someone's pickup / drop-off - take them along. */
