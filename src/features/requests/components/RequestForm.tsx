@@ -48,7 +48,7 @@ import type { DestinationValue } from "@/components/DestinationCombobox";
 
 import { invalidateSubmittedRequest } from "../submitInvalidation";
 import { fetchChildRequestOverlaps, fetchChildren, fetchRequestVersion, probeSubmitRequest } from "../api";
-import type { ChildOverlapRow, JoinableRideRow, RequestEditRow, SubmitRequestResult, SubmitSeriesRequestResult, TemplateSuggestion } from "../api";
+import type { ChildOverlapRow, HostGuestDecision, HostGuestQuestion, JoinableRideRow, RequestEditRow, SubmitRequestResult, SubmitSeriesRequestResult, TemplateSuggestion } from "../api";
 import { dayLabel } from "../dayLabel";
 import { CAR_NOW_DEFAULT_HOURS } from "../carNow";
 import { findOverlappingRequest } from "../duplicate";
@@ -87,7 +87,8 @@ import { isSeriesSubmission, seriesSpanDays } from "../series";
 import { extraAdultsFromStored, payloadSeatCounts, unnamedChildSeatsFromStored } from "../seatCounts";
 import { overlapNames } from "../overlapNames";
 import { childOverlapMessage } from "../childOverlap";
-import { affectedNames, editRefusal, carStaysAwayConfirmation, releaseConfirmation, shouldOfferJoinableRides, toastSeriesSubmitOutcome, toastSubmitOutcome } from "../submitOutcome";
+import { HostGuestsDialog } from "./HostGuestsDialog";
+import { affectedNames, editRefusal, carStaysAwayConfirmation, hostGuestsConfirmation, releaseConfirmation, shouldOfferJoinableRides, toastSeriesSubmitOutcome, toastSubmitOutcome } from "../submitOutcome";
 import { shouldSuggestChildcare } from "../childcareType";
 import { suggestionToFormValues } from "../templatePrefill";
 import { canSwapPlaces, swapRequestPlaces } from "../dropOffMode";
@@ -111,6 +112,17 @@ import { useJoinWaitlistDiscussionMutation, useWaitlistGroupHoldsQuery, useWaitl
 import { fitsJoinWindow, groupJoinWindow } from "@/features/waitlist/summary";
 import { GroupSummary } from "@/features/waitlist/components/GroupSummary";
 import { STAGE_ONE_FIELDS, isStageOneField } from "./requestForm/sentence/sentenceModel";
+
+/** The answers a save may carry on its next attempt (each set after the member answered a question). */
+interface SubmitOptions {
+  confirmRelease?: boolean;
+  confirmLose?: boolean;
+  ignoreChildOverlap?: boolean;
+  allowCarAway?: boolean;
+  carAwayDeclined?: boolean;
+  /** R20 Q2 redo: the answer per guest of the shared ride this request hosts. */
+  hostGuests?: Record<string, HostGuestDecision>;
+}
 
 export interface QuickRequestCarOption {
   id: string;
@@ -842,6 +854,8 @@ export function RequestForm({
   const [pendingRelease, setPendingRelease] = useState<{ values: RequestFormValues; names: string[] } | null>(null);
   // OW1 (REQ §13.210): a change to one way would leave the booked car at the destination — ask, then resubmit.
   const [pendingCarAway, setPendingCarAway] = useState<{ values: RequestFormValues; carName: string; nextRide: boolean } | null>(null);
+  // R20 Q2 redo: the shared ride's guests the edit no longer fits, asked one at a time, then sent once with every answer.
+  const [pendingHostGuests, setPendingHostGuests] = useState<{ values: RequestFormValues; options: SubmitOptions; guests: HostGuestQuestion[] } | null>(null);
   // REQ §13.158: the edit was refused (no car at the new hours) — nothing changed, the member stays on the form.
   const [editRefused, setEditRefused] = useState<{ reason: "discussion" | "no_car" | "riders"; groupId: string | null } | null>(null);
   // F4 (docs/TODO.md, owner A8-A10): a `waitlisted` outcome with nearby joinable rides holds off
@@ -926,7 +940,7 @@ export function RequestForm({
   }
 
   /** The `submit_request` payload of validated form values (also used by the unchanged probe). */
-  function buildPayload(formValues: RequestFormValues, options: { confirmRelease?: boolean; allowCarAway?: boolean; carAwayDeclined?: boolean }) {
+  function buildPayload(formValues: RequestFormValues, options: SubmitOptions) {
     const isSeriesRequest = isSeriesSubmit(formValues);
     const guestNamesList = guestPassengerNames(formValues.guestNames);
     // REQ §13.93: only a הקפצה without a pickup books the quick missing-driver ride; a
@@ -964,6 +978,7 @@ export function RequestForm({
       ...(waitlist ? { waitlist: true } : {}),
       ...(options.confirmRelease ? { confirm_release: true } : {}),
       ...(options.allowCarAway ? { allow_car_away: true } : {}),
+      ...(options.hostGuests ? { host_guests: options.hostGuests } : {}),
       // REQ §13.211: a new request asks before waiting for the Sadran when a car is free but would stay at the destination.
       ...(mode === "new" && !isSeriesRequest && !options.carAwayDeclined ? { car_away_ask: true } : {}),
       // Owner 2026-10-11: "keep both" was answered — not left for the Sadran as a duplicate.
@@ -1016,11 +1031,11 @@ export function RequestForm({
   }
 
   // REQ §13.169 (c): every call of one save is marked as the request form's, so the riders get one notice of it.
-  function performSubmit(formValues: RequestFormValues, options: { confirmRelease?: boolean; confirmLose?: boolean; ignoreChildOverlap?: boolean; allowCarAway?: boolean; carAwayDeclined?: boolean } = {}) {
+  function performSubmit(formValues: RequestFormValues, options: SubmitOptions = {}) {
     return asRequestFormSave(() => performSubmitCalls(formValues, options));
   }
 
-  async function performSubmitCalls(formValues: RequestFormValues, options: { confirmRelease?: boolean; confirmLose?: boolean; ignoreChildOverlap?: boolean; allowCarAway?: boolean; carAwayDeclined?: boolean } = {}) {
+  async function performSubmitCalls(formValues: RequestFormValues, options: SubmitOptions = {}) {
     if (quickContext && (isPast || invalidTime)) return;
     setSubmitError(null);
     // Editing a multi-day request always replaces the whole series, even when it shrinks to one day (REQ §13.142).
@@ -1137,6 +1152,12 @@ export function RequestForm({
       const refusal = editRefusal(result);
       if (refusal) {
         setEditRefused(refusal);
+        return;
+      }
+      // R20 Q2 redo (owner 2026-11-14): the new hours no longer fit a guest of the shared ride - ask about each guest.
+      const hostGuests = hostGuestsConfirmation(result);
+      if (hostGuests) {
+        setPendingHostGuests({ values: formValues, options, guests: hostGuests });
         return;
       }
       // REQ §13.101 f: a car takes the new hours but the member's passengers lose their driver — ask, then resubmit
@@ -1759,6 +1780,17 @@ export function RequestForm({
         const pending = pendingCarAway;
         setPendingCarAway(null);
         if (pending) void performSubmit(pending.values, { allowCarAway: true });
+      }}
+    />
+    <HostGuestsDialog
+      guests={pendingHostGuests?.guests ?? null}
+      initialDecisions={pendingHostGuests?.options.hostGuests}
+      loading={submitMutation.isPending}
+      onBack={() => setPendingHostGuests(null)}
+      onAnswered={(decisions) => {
+        const pending = pendingHostGuests;
+        setPendingHostGuests(null);
+        if (pending) void performSubmit(pending.values, { ...pending.options, ignoreChildOverlap: true, hostGuests: decisions });
       }}
     />
     <ConfirmDialog

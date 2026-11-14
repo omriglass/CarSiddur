@@ -4,7 +4,7 @@ import { t, tv } from "@/i18n/he";
 import type { TripType } from "@/lib/enums";
 
 import { overlapRefusalMessage } from "./overlapNames";
-import type { SubmitRequestResult, SubmitSeriesRequestResult } from "./api";
+import type { HostGuestQuestion, SubmitRequestResult, SubmitSeriesRequestResult } from "./api";
 
 export interface SubmitOutcomeContext {
   /** Resolves a `cars.id` to its display name (both variants already have `carsQuery.data`). */
@@ -127,6 +127,12 @@ export function releaseConfirmation(result: SubmitRequestResult | null | undefin
 export function carStaysAwayConfirmation(result: SubmitRequestResult | null | undefined): { carName: string; nextRide: boolean } | null {
   if (result?.needs_confirmation !== "car_stays_away") return null;
   return { carName: result.car_name ?? "", nextRide: !!result.next_ride };
+}
+
+/** R20 Q2 redo: the shared ride's guests the edit no longer fits (the server changed nothing), or `null`. */
+export function hostGuestsConfirmation(result: SubmitRequestResult | null | undefined): HostGuestQuestion[] | null {
+  if (result?.needs_confirmation !== "host_guests") return null;
+  return result.host_guests?.length ? result.host_guests : null;
 }
 
 /** REQ §13.158: a refused edit (nothing changed, the booking kept) — the reason and the discussion holding the car. */

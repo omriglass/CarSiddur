@@ -5863,6 +5863,7 @@ export type Database = {
         }
         Returns: undefined
       }
+      _host_edit_guest_reason: { Args: { p_code: string }; Returns: string }
       _is_ride_editor: {
         Args: { p_actor: string; p_department: string; p_owner: string }
         Returns: boolean

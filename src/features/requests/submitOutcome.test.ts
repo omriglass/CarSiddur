@@ -164,3 +164,14 @@ describe("affectedNames", () => {
     expect(affectedNames(null)).toEqual([]);
   });
 });
+
+describe("hostGuestsConfirmation (R20 Q2 redo)", () => {
+  it("returns the guests only for the host_guests question", async () => {
+    const { hostGuestsConfirmation } = await import("./submitOutcome");
+    const guest = { request_id: "g", name: "x", kind: "far" as const, reason: null, wanted_at: null, ride_at: null };
+    const result = { request_id: "r", is_late: false, warnings: [] };
+    expect(hostGuestsConfirmation(result)).toBeNull();
+    expect(hostGuestsConfirmation({ ...result, needs_confirmation: "host_guests", host_guests: [] })).toBeNull();
+    expect(hostGuestsConfirmation({ ...result, needs_confirmation: "host_guests", host_guests: [guest] })).toEqual([guest]);
+  });
+});

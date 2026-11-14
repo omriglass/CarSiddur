@@ -881,6 +881,8 @@ export interface SubmitRequestPayload {
   template_id?: string;
   /** REQ §13.101 f (QM5): re-submit of an edit the server asked to confirm (`needs_confirmation`). */
   confirm_release?: boolean;
+  /** R20 Q2 redo: the editor's answer per guest of the shared ride this request hosts (answer to `host_guests`). */
+  host_guests?: Record<string, HostGuestDecision>;
   /** OW1 (REQ §13.210): the member said yes to leaving the booked car at the destination (answer to `car_stays_away`). */
   allow_car_away?: boolean;
   /** REQ §13.211: a new one-way request asks (`car_stays_away`) instead of quietly waiting when a car is free but would be left at the destination. */
@@ -891,6 +893,22 @@ export interface SubmitRequestPayload {
   ask_small_trunk?: boolean;
   /** REQ §13.111 (a): the member confirmed it (set by the retry in `submitRequest`, never by a form). */
   allow_small_trunk?: boolean;
+}
+
+/** R20 Q2 redo: keep a guest on the shared ride despite the far hours, or send the guest back to the waiting list. */
+export type HostGuestDecision = "keep" | "release";
+
+/**
+ * R20 Q2 redo (owner 2026-11-14): a guest of the shared ride an edit no longer fits. `far` = the new hours are far
+ * from the guest's own (keep or release); `cannot` = the guest cannot stay (`reason`), so only release.
+ */
+export interface HostGuestQuestion {
+  request_id: string;
+  name: string;
+  kind: "far" | "cannot";
+  reason: "seats" | "luggage" | "detour" | "day" | "busy" | "other" | null;
+  wanted_at: string | null;
+  ride_at: string | null;
 }
 
 /**
@@ -936,7 +954,9 @@ export interface SubmitRequestResult {
    * REQ §13.101 f: a car takes the new hours, but the member drives others who would be left without a driver —
    * nothing was changed; resubmit with `confirm_release: true` to go ahead.
    */
-  needs_confirmation?: "release_to_waitlist" | "car_stays_away";
+  needs_confirmation?: "release_to_waitlist" | "car_stays_away" | "host_guests";
+  /** R20 Q2 redo, with `host_guests`: the guests the new hours no longer fit — nothing was changed until each is answered. */
+  host_guests?: HostGuestQuestion[];
   /** OW1 (REQ §13.210), with `car_stays_away`: the booked car, and whether a later ride of it is the reason (else the week's end). */
   car_name?: string;
   next_ride?: boolean;
@@ -1009,6 +1029,13 @@ export async function submitRequest(payload: SubmitRequestPayload): Promise<Json
   } catch (error) {
     // REQ §13.211: a new one-way request that would leave a car at the destination - nothing was filed; the form asks
     // with the same dialog as the edit (item 210) and sends again with `allow_car_away`, or without `car_away_ask`.
+    // R20 Q2 redo: the edit no longer fits a guest of the shared ride - nothing changed; the form asks per guest.
+    if (error instanceof AppError && error.code === "host_edit_guests") {
+      let guests: HostGuestQuestion[] = [];
+      try { guests = (JSON.parse(error.detail ?? "{}") as { guests?: HostGuestQuestion[] }).guests ?? []; } catch { /* asked with no list */ }
+      if (guests.length === 0) throw error;
+      return { ok: false, needs_confirmation: "host_guests", unchanged: false, host_guests: guests } as unknown as Json;
+    }
     if (!(error instanceof AppError) || error.code !== "car_stays_away") throw error;
     let detail: { car_name?: string; next_ride?: boolean } = {};
     try { detail = JSON.parse(error.detail ?? "{}") as typeof detail; } catch { /* generic words */ }

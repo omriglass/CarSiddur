@@ -123,6 +123,22 @@ export const heMember = {
     editRefusedBack: "חזרה לטופס",
     releaseAffected: "מושפעים גם: {{names}}",
     /** OW1 (REQ §13.210): a change to one way leaves the booked car at the destination — ask instead of refusing. */
+    // R20 Q2 redo (owner-approved 2026-11-14): a host's edit no longer fits a guest on the shared ride.
+    hostGuestTitle: "לשנות את הנסיעה המשותפת?",
+    hostGuestFarBody: "השעות החדשות רחוקות מהבקשה של {{name}} ({{name}} ביקש/ה לצאת ב־{{wanted}}, הנסיעה תצא ב־{{ride}}).",
+    hostGuestKeep: "להשאיר את {{name}} בנסיעה",
+    hostGuestRelease: "להחזיר את {{name}} לרשימת ההמתנה",
+    hostGuestCannotBody: "{{name}} לא יכול/ה להישאר בנסיעה ({{reason}}), ולכן יחזור/תחזור לרשימת ההמתנה.",
+    hostGuestSaveAnyway: "לשמור בכל זאת",
+    hostGuestBack: "חזרה",
+    hostGuestReason: {
+      seats: "אין מספיק מקומות ברכב",
+      luggage: "אין מקום לציוד",
+      detour: "העיקוף ארוך מדי",
+      day: "הנסיעה עברה ליום אחר",
+      busy: "הרכב לא פנוי בשעות האלה",
+      other: "הנסיעה החדשה לא מתאימה לבקשה",
+    },
     carStaysAwayTitle: "הרכב יישאר ביעד",
     carStaysAwayNextRide: "בנסיעה לכיוון אחד {{car}} לא חוזר, והנסיעה הבאה שלו יוצאת ממקום אחר.",
     carStaysAwayWeekEnd: "בנסיעה לכיוון אחד {{car}} לא חוזר, ואין אחריה נסיעה שמחזירה אותו.",

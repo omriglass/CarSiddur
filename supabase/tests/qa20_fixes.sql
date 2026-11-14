@@ -17,7 +17,7 @@ declare
   car1 uuid := '00000000-0000-0000-0000-000000000040';
   w date := public.current_week_start() + 861;
   mon timestamptz; tue timestamptz; thu timestamptz; sid uuid; qa uuid; qb uuid; ra uuid; rb uuid; rx uuid; ry uuid;
-  qc uuid; qd uuid; rc uuid; prop uuid; n int; res jsonb;
+  qc uuid; qd uuid; rc uuid; prop uuid; n int; res jsonb; dtl jsonb;
 begin
   mon := ((w + 1) + time '08:00') at time zone 'Asia/Jerusalem';
   tue := ((w + 2) + time '00:00') at time zone 'Asia/Jerusalem';
@@ -130,14 +130,62 @@ begin
   assert exists (select 1 from public.ride_requests where ride_id = rx and request_id = qd and role = 'passenger'),
     'the guest rides on: 30 minutes later still fits';
   assert (select status = 'merged' from public.requests where id = qd), 'the guest is still merged';
+  -- the form's probe: the host stays on the car (put back at the new hours), so no "you lose the car" warning
   res := public.submit_request(jsonb_build_object('request_id', qc, 'expected_version', (select version from public.requests where id = qc),
     'department_id', dept, 'week_start', w, 'destination_id', haifa, 'ride_type_id', typ, 'trip_type', 'round_trip', 'adults', 1,
-    'depart_at', ((w + 5) + time '15:00') at time zone 'Asia/Jerusalem', 'return_at', ((w + 5) + time '19:00') at time zone 'Asia/Jerusalem'));
+    'depart_at', ((w + 5) + time '15:00') at time zone 'Asia/Jerusalem', 'return_at', ((w + 5) + time '19:00') at time zone 'Asia/Jerusalem',
+    'probe_only', true));
+  assert (res ->> 'would_lose_booking')::boolean = false, format('the host keeps the car: %s', res);
+  assert exists (select 1 from public.ride_requests where ride_id = rx and request_id = qd), 'the probe changed nothing';
+  -- Q2 redo (owner 2026-11-14): seven hours later is far from the guest's own time - the save stops and asks,
+  -- changing nothing, until the editor answers for the guest
+  begin
+    perform public.submit_request(jsonb_build_object('request_id', qc, 'expected_version', (select version from public.requests where id = qc),
+      'department_id', dept, 'week_start', w, 'destination_id', haifa, 'ride_type_id', typ, 'trip_type', 'round_trip', 'adults', 1,
+      'depart_at', ((w + 5) + time '15:00') at time zone 'Asia/Jerusalem', 'return_at', ((w + 5) + time '19:00') at time zone 'Asia/Jerusalem'));
+    raise exception 'a far guest was decided without asking';
+  exception when raise_exception then
+    if sqlerrm <> 'host_edit_guests' then raise; end if;
+    get stacked diagnostics dtl = pg_exception_detail;
+  end;
+  assert dtl -> 'guests' -> 0 ->> 'request_id' = qd::text and dtl -> 'guests' -> 0 ->> 'kind' = 'far'
+     and (dtl -> 'guests' -> 0 ->> 'wanted_at')::timestamptz = ((w + 5) + time '08:00') at time zone 'Asia/Jerusalem'
+     and (dtl -> 'guests' -> 0 ->> 'ride_at')::timestamptz = ((w + 5) + time '15:00') at time zone 'Asia/Jerusalem',
+    format('the question names the guest, both times, and that the guest may stay: %s', dtl);
+  assert exists (select 1 from public.ride_requests rr join public.rides rd on rd.id = rr.ride_id
+                 where rr.request_id = qd and rd.id = rx and rd.status <> 'cancelled'
+                   and rd.starts_at = ((w + 5) + time '08:30') at time zone 'Asia/Jerusalem'), 'asking changed nothing';
+  -- "keep": the guest rides on at the new hours
+  res := public.submit_request(jsonb_build_object('request_id', qc, 'expected_version', (select version from public.requests where id = qc),
+    'department_id', dept, 'week_start', w, 'destination_id', haifa, 'ride_type_id', typ, 'trip_type', 'round_trip', 'adults', 1,
+    'depart_at', ((w + 5) + time '15:00') at time zone 'Asia/Jerusalem', 'return_at', ((w + 5) + time '19:00') at time zone 'Asia/Jerusalem',
+    'host_guests', jsonb_build_object(qd::text, 'keep')));
   select rd.id into ry from public.rides rd join public.ride_requests rr on rr.ride_id = rd.id
   where rr.request_id = qc and rd.status <> 'cancelled';
   assert ry is not null and (select car_id = car1 from public.rides where id = ry), 'the host keeps the car again';
+  assert exists (select 1 from public.ride_requests where ride_id = ry and request_id = qd and role = 'passenger')
+     and (select status = 'merged' from public.requests where id = qd), 'the editor kept the guest despite the far hours';
+  -- another day: the guest cannot stay, so the only answer is the waiting list
+  dtl := null;
+  begin
+    perform public.submit_request(jsonb_build_object('request_id', qc, 'expected_version', (select version from public.requests where id = qc),
+      'department_id', dept, 'week_start', w, 'destination_id', haifa, 'ride_type_id', typ, 'trip_type', 'round_trip', 'adults', 1,
+      'depart_at', ((w + 4) + time '08:00') at time zone 'Asia/Jerusalem', 'return_at', ((w + 4) + time '12:00') at time zone 'Asia/Jerusalem',
+      'host_guests', jsonb_build_object(qd::text, 'keep')));
+    raise exception 'a guest who cannot stay was decided without asking';
+  exception when raise_exception then
+    if sqlerrm <> 'host_edit_guests' then raise; end if;
+    get stacked diagnostics dtl = pg_exception_detail;
+  end;
+  assert dtl -> 'guests' -> 0 ->> 'kind' = 'cannot' and dtl -> 'guests' -> 0 ->> 'reason' = 'day',
+    format('another day: the guest cannot stay, %s', dtl);
+  -- "save anyway": the guest waits again, with the marker for the Sadran
+  res := public.submit_request(jsonb_build_object('request_id', qc, 'expected_version', (select version from public.requests where id = qc),
+    'department_id', dept, 'week_start', w, 'destination_id', haifa, 'ride_type_id', typ, 'trip_type', 'round_trip', 'adults', 1,
+    'depart_at', ((w + 4) + time '08:00') at time zone 'Asia/Jerusalem', 'return_at', ((w + 4) + time '12:00') at time zone 'Asia/Jerusalem',
+    'host_guests', jsonb_build_object(qd::text, 'release')));
   assert not exists (select 1 from public.ride_requests rr join public.rides rd on rd.id = rr.ride_id
-                     where rr.request_id = qd and rd.status <> 'cancelled'), 'seven hours later does not fit the guest';
+                     where rr.request_id = qd and rd.status <> 'cancelled'), 'the guest is off the ride';
   assert (select status = 'submitted' and status_reason = 'HOST_EDITED' from public.requests where id = qd),
     'the guest waits again, with the marker for the Sadran';
   select count(*) into n from public.notifications where recipient_id = m2 and data ->> 'request_id' = qd::text;
