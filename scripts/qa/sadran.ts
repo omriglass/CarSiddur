@@ -315,13 +315,24 @@ async function cmdPlace(board: Board, args: Args): Promise<void> {
   if (!seatsFit(dctx, car.id, connects ? { adults: req.adults, childSeats: req.child_seats, boosters: req.boosters } : unmetRequestPassengers(req))) problems.push("seats do not fit");
   const originId = req.origin_id ?? board.scope.homeDestinationId;
   if (!connects && originId && originMismatch(dctx, car.id, originId, window.startsAt)) problems.push(`car is at ${board.destName(carLocationAt(dctx, car.id, window.startsAt))} then, request starts at ${board.destName(originId)}`);
-  if (!connects && tripTypeOf(req) === "one_way" && req.destination_id && strandsNextRide(dctx, car.id, req.destination_id, window.endsAt)) problems.push("would strand the car's next ride (it starts elsewhere)");
+  // CH1: on the board a stranded next ride is a question ("לשבץ בכל זאת?"), not a refusal; R20H3: with --pair the
+  // opposite unplaced one-way leg that fits is placed with it ("לשבץ את שתיהן").
+  const strands = !connects && tripTypeOf(req) === "one_way" && !!req.destination_id && strandsNextRide(dctx, car.id, req.destination_id, window.endsAt);
   if (!isUnmetDropValid(dctx, item, car.id, minutes) && !problems.length) problems.push("overlaps another ride on the car");
   if (problems.length && !has(args, "force")) throw new UsageError(`the board would refuse this drop: ${problems.join("; ")} (use --force to send it to the server anyway)`);
   const placement = unmetPlacement(dctx, req, car.id, window.startsAt);
   if (!placement) throw new UsageError("cannot place: one-way request without a destination place");
   if (!requestWithinFlex(req, window.startsAt, window.endsAt)) {
     throw new UsageError(`window ${t(window.startsAt)}-${t(window.endsAt)} is outside the request's flexibility: send a shift proposal instead: propose ${short(request.id)} shift --car ${JSON.stringify(car.name)} --depart ${t(window.startsAt)}${req.return_at ? ` --return ${t(window.endsAt)}` : ""}`);
+  }
+  if (strands) {
+    const partner = await api.fetchOneWayPartner(req.id, car.id, window.startsAt);
+    if (has(args, "pair") && partner) {
+      const placed = await api.placeOneWayPair(req.id, partner.request_id, car.id, window.startsAt);
+      console.log(`placed both legs on ${car.name}: ${req.requester_full_name} -> ride ${short(placed.out_ride_id)}, then ${partner.requester_name} ${t(partner.depart_at)} -> ride ${short(placed.return_ride_id)} ("לשבץ את שתיהן")`);
+      return;
+    }
+    console.log(`note: the board asks "לשבץ בכל זאת?" — the car stays at ${req.destination_resolved_name ?? "the destination"} and its next ride starts elsewhere${partner ? `; the return leg of ${partner.requester_name} (${short(partner.request_id)}, ${t(partner.depart_at)}) fits too: add --pair for "לשבץ את שתיהן"` : ""}. Placing this leg alone.`);
   }
   const rideId = await api.editRide({
     department_id: board.scope.departmentId, week_start: board.scope.weekStart, car_id: car.id, starts_at: window.startsAt, ends_at: window.endsAt,
@@ -793,7 +804,7 @@ function usage(): void {
   console.log(`qa:sadran <command> [--out DIR] [--surface board|none] [--email E --password P] [--dept NAME|ID] [--week YYYY-MM-DD]
   week | day <date> | requests [<date>] [--status S] | proposals
   autofill [--day D] [--dry-run] | resolve-full [--dry-run]
-  place <req> <car> <HH:MM> [--leg out|return] [--force]
+  place <req> <car> <HH:MM> [--leg out|return] [--pair] [--force]
   move <ride> [--car C] [--start HH:MM] [--end HH:MM] [--propose [--draft]]
   merge <req> <ride> [--leg out|return|both] [--draft] | unmerge <ride> <req>
   trip-type <req> <round_trip|one_way|drop_off>

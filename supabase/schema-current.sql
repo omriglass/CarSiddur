@@ -15613,6 +15613,54 @@ $$;
 ALTER FUNCTION "public"."on_request_companion_added"() OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."one_way_partner"("p_request_id" "uuid", "p_car_id" "uuid", "p_out_dep" timestamp with time zone DEFAULT NULL::timestamp with time zone) RETURNS "jsonb"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  a public.requests%rowtype; c record; v_found jsonb;
+begin
+  select * into a from public.requests where id = p_request_id;
+  if a.id is null or not public.can_manage_week(a.department_id, a.week_start) then
+    raise exception 'not_authorized' using errcode = 'P0001';
+  end if;
+  if a.trip_type <> 'one_way' or a.origin_id is null or a.destination_id is null then return null; end if;
+  for c in
+    select b.id, b.depart_at, p.full_name, o.name as origin_name, d.name as destination_name
+      from public.requests b
+      left join public.profiles p on p.id = b.requester_id
+      left join public.destinations o on o.id = b.origin_id
+      left join public.destinations d on d.id = b.destination_id
+     where b.department_id = a.department_id and b.week_start = a.week_start and b.id <> a.id
+       and b.trip_type = 'one_way' and b.series_id is null
+       and b.status not in ('withdrawn', 'cancelled', 'draft', 'denied', 'external')
+       and b.origin_id = a.destination_id and b.destination_id = a.origin_id
+       and (b.depart_at at time zone 'Asia/Jerusalem')::date = (coalesce(p_out_dep, a.depart_at) at time zone 'Asia/Jerusalem')::date
+       and b.depart_at > coalesce(p_out_dep, a.depart_at)
+       and not exists (select 1 from public.ride_requests rr join public.rides r on r.id = rr.ride_id
+                        where rr.request_id = b.id and r.status <> 'cancelled')
+     order by b.depart_at, b.id
+  loop
+    begin
+      perform public.place_one_way_pair(a.id, c.id, p_car_id, p_out_dep);
+      set constraints all immediate;
+      set constraints all deferred;
+      raise exception 'one_way_pair_probe' using errcode = 'P0001';
+    exception when others then
+      if sqlerrm = 'one_way_pair_probe' then
+        v_found := jsonb_build_object('request_id', c.id, 'requester_name', c.full_name, 'depart_at', c.depart_at,
+          'origin_name', c.origin_name, 'destination_name', c.destination_name);
+      end if;
+    end;
+    exit when v_found is not null;
+  end loop;
+  return v_found;
+end $$;
+
+
+ALTER FUNCTION "public"."one_way_partner"("p_request_id" "uuid", "p_car_id" "uuid", "p_out_dep" timestamp with time zone) OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."open_week"("p_department_id" "uuid", "p_week_start" "date") RETURNS "uuid"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -16042,6 +16090,44 @@ end $$;
 
 
 ALTER FUNCTION "public"."place_on_own_car"("p_request_id" "uuid", "p_car_id" "uuid", "p_allow_small_trunk" boolean) OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."place_one_way_pair"("p_out" "uuid", "p_return" "uuid", "p_car" "uuid", "p_out_dep" timestamp with time zone DEFAULT NULL::timestamp with time zone) RETURNS "jsonb"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  a public.requests%rowtype; b public.requests%rowtype; v_actor uuid := (select auth.uid());
+  v_prev text := coalesce(current_setting('app.car_stays_away', true), ''); r1 uuid; r2 uuid;
+begin
+  select * into a from public.requests where id = p_out for update;
+  select * into b from public.requests where id = p_return for update;
+  if a.id is null or b.id is null then raise exception 'request_not_found' using errcode = 'P0001'; end if;
+  if v_actor is null or not public.can_manage_week(a.department_id, a.week_start) then
+    raise exception 'not_authorized' using errcode = 'P0001';
+  end if;
+  if a.id = b.id or b.department_id <> a.department_id or b.week_start <> a.week_start
+     or a.trip_type <> 'one_way' or b.trip_type <> 'one_way'
+     or a.origin_id is null or a.destination_id is null
+     or b.origin_id is distinct from a.destination_id or b.destination_id is distinct from a.origin_id
+     or a.series_id is not null or b.series_id is not null
+     or a.status in ('withdrawn', 'cancelled') or b.status in ('withdrawn', 'cancelled')
+     or (b.depart_at at time zone 'Asia/Jerusalem')::date <> (coalesce(p_out_dep, a.depart_at) at time zone 'Asia/Jerusalem')::date
+     or b.depart_at <= coalesce(p_out_dep, a.depart_at)
+     or exists (select 1 from public.ride_requests rr join public.rides r on r.id = rr.ride_id
+                where rr.request_id in (a.id, b.id) and r.status <> 'cancelled') then
+    raise exception 'one_way_pair_invalid' using errcode = 'P0001';
+  end if;
+
+  perform set_config('app.car_stays_away', p_car::text, true);
+  r1 := public.place_request_on_car(a.id, p_car, true, v_actor, null, coalesce(p_out_dep, a.depart_at), null, 'SADRAN_MANUAL');
+  perform set_config('app.car_stays_away', v_prev, true);
+  r2 := public.place_request_on_car(b.id, p_car, true, v_actor, null, b.depart_at, null, 'SADRAN_MANUAL');
+  return jsonb_build_object('out_ride_id', r1, 'return_ride_id', r2);
+end $$;
+
+
+ALTER FUNCTION "public"."place_one_way_pair"("p_out" "uuid", "p_return" "uuid", "p_car" "uuid", "p_out_dep" timestamp with time zone) OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."place_request_on_any_free_car"("p_request_id" "uuid", "p_actor" "uuid", "p_dep" timestamp with time zone, "p_ret" timestamp with time zone, "p_reason" "text") RETURNS "uuid"
@@ -37551,6 +37637,12 @@ GRANT ALL ON FUNCTION "public"."on_request_companion_added"() TO "service_role";
 
 
 
+REVOKE ALL ON FUNCTION "public"."one_way_partner"("p_request_id" "uuid", "p_car_id" "uuid", "p_out_dep" timestamp with time zone) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."one_way_partner"("p_request_id" "uuid", "p_car_id" "uuid", "p_out_dep" timestamp with time zone) TO "service_role";
+GRANT ALL ON FUNCTION "public"."one_way_partner"("p_request_id" "uuid", "p_car_id" "uuid", "p_out_dep" timestamp with time zone) TO "authenticated";
+
+
+
 REVOKE ALL ON FUNCTION "public"."open_week"("p_department_id" "uuid", "p_week_start" "date") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."open_week"("p_department_id" "uuid", "p_week_start" "date") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."open_week"("p_department_id" "uuid", "p_week_start" "date") TO "service_role";
@@ -37581,6 +37673,12 @@ GRANT ALL ON FUNCTION "public"."place_freed_slot_request"("p_offer_id" "uuid", "
 REVOKE ALL ON FUNCTION "public"."place_on_own_car"("p_request_id" "uuid", "p_car_id" "uuid", "p_allow_small_trunk" boolean) FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."place_on_own_car"("p_request_id" "uuid", "p_car_id" "uuid", "p_allow_small_trunk" boolean) TO "service_role";
 GRANT ALL ON FUNCTION "public"."place_on_own_car"("p_request_id" "uuid", "p_car_id" "uuid", "p_allow_small_trunk" boolean) TO "authenticated";
+
+
+
+REVOKE ALL ON FUNCTION "public"."place_one_way_pair"("p_out" "uuid", "p_return" "uuid", "p_car" "uuid", "p_out_dep" timestamp with time zone) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."place_one_way_pair"("p_out" "uuid", "p_return" "uuid", "p_car" "uuid", "p_out_dep" timestamp with time zone) TO "service_role";
+GRANT ALL ON FUNCTION "public"."place_one_way_pair"("p_out" "uuid", "p_return" "uuid", "p_car" "uuid", "p_out_dep" timestamp with time zone) TO "authenticated";
 
 
 

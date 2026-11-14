@@ -879,8 +879,22 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
         title={he.sadranBoard.chainBreakTitle}
         description={tv("sadranBoard.chainBreakBody", { car: dnd.chainBreakAsk?.car ?? "", place: dnd.chainBreakAsk?.place ?? "", time: dnd.chainBreakAsk?.nextStart ?? "", nextPlace: dnd.chainBreakAsk?.nextPlace ?? "" })}
         confirmLabel={he.sadranBoard.chainBreakConfirm}
-        onConfirm={() => dnd.answerChainBreakAsk(true)}
-      />
+        onConfirm={() => dnd.answerChainBreakAsk("one")}
+      >
+        {/* R20H3 (owner 2026-11-14): the opposite unplaced leg fits the same car - both at once. */}
+        {dnd.chainBreakAsk?.partner ? (
+          <div className="space-y-2" data-testid="chain-break-pair">
+            <p className="text-sm">{tv("sadranBoard.chainBreakPairBody", {
+              place: dnd.chainBreakAsk.place, name: dnd.chainBreakAsk.partner.requester_name ?? "",
+              from: dnd.chainBreakAsk.partner.origin_name ?? "", to: dnd.chainBreakAsk.partner.destination_name ?? "",
+              time: formatTime(new Date(dnd.chainBreakAsk.partner.depart_at)),
+            })}</p>
+            <Button className="w-full" data-testid="chain-break-pair-both" onClick={() => dnd.answerChainBreakAsk("both")}>
+              {he.sadranBoard.chainBreakPairConfirm}
+            </Button>
+          </div>
+        ) : null}
+      </ConfirmDialog>
       <ConfirmDialog
         open={!!dnd.invalidDropConfirm}
         onOpenChange={(open) => { if (!open) dnd.setInvalidDropConfirm(null); }}

@@ -7405,6 +7405,10 @@ export type Database = {
         Args: { _group_id: string; _new_profile?: string; _variant?: string }
         Returns: undefined
       }
+      one_way_partner: {
+        Args: { p_car_id: string; p_out_dep?: string; p_request_id: string }
+        Returns: Json
+      }
       open_week: {
         Args: { p_department_id: string; p_week_start: string }
         Returns: string
@@ -7432,6 +7436,15 @@ export type Database = {
           p_allow_small_trunk?: boolean
           p_car_id: string
           p_request_id: string
+        }
+        Returns: Json
+      }
+      place_one_way_pair: {
+        Args: {
+          p_car: string
+          p_out: string
+          p_out_dep?: string
+          p_return: string
         }
         Returns: Json
       }

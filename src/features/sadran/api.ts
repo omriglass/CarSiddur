@@ -1267,6 +1267,18 @@ export async function fetchBoardLiveEvents(departmentId: string, weekStart: stri
   };
 }
 
+/** R20H3: an unplaced one-way leg back from the dropped leg's destination that fits the same car with it. */
+export interface OneWayPartner { request_id: string; requester_name: string | null; depart_at: string; origin_name: string | null; destination_name: string | null }
+export async function fetchOneWayPartner(requestId: string, carId: string, outDepartAt: string): Promise<OneWayPartner | null> {
+  const data = await rpc("one_way_partner", { p_request_id: requestId, p_car_id: carId, p_out_dep: outDepartAt });
+  return (data as OneWayPartner | null) ?? null;
+}
+
+/** R20H3: "לשבץ את שתיהן" — both legs on the car in one call. */
+export async function placeOneWayPair(outId: string, returnId: string, carId: string, outDepartAt: string): Promise<{ out_ride_id: string; return_ride_id: string }> {
+  return (await rpc("place_one_way_pair", { p_out: outId, p_return: returnId, p_car: carId, p_out_dep: outDepartAt })) as { out_ride_id: string; return_ride_id: string };
+}
+
 /** R20M1: opening the strip — everything up to now counts as seen; resolves the new marker. */
 export async function markBoardSeen(departmentId: string, weekStart: string): Promise<number> {
   return Number(await rpc("mark_board_seen", { p_department_id: departmentId, p_week_start: weekStart }));

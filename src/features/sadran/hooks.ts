@@ -288,6 +288,17 @@ export function useCancelRideMutation() {
   });
 }
 
+/** R20H3: the board's "לשבץ את שתיהן" (`place_one_way_pair`). */
+export function usePlaceOneWayPairMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { outId: string; returnId: string; carId: string; outDepartAt: string; departmentId: string; weekStart: string }) =>
+      api.placeOneWayPair(input.outId, input.returnId, input.carId, input.outDepartAt),
+    onSuccess: (_data, { departmentId, weekStart }) => invalidateBoard(queryClient, departmentId, weekStart, []),
+    onError: showErrorToast,
+  });
+}
+
 /** R20H1: the board's "לבטל רק את ד׳ 16.9" on one day of a multi-day ride (`cancel_series_day`, as the Sadran). */
 export function useCancelSeriesDayBoardMutation(departmentId: string, weekStart: string) {
   const queryClient = useQueryClient();

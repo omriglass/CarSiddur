@@ -27,6 +27,11 @@ begin
   update public.weeks set published_days = array(select w + i from generate_series(0, 6) i), phase = 'published', published_version_id = v
   where department_id = dept and week_start = w;
   perform set_config('app.in_publish', 'off', true);
+  -- the seed's demo rides fall in the current week: on its first days they are still upcoming, and a car with upcoming
+  -- rides cannot be retired (cars_refuse_retire_with_rides) - they are not part of this suite
+  update public.rides set status = 'cancelled', cancelled_at = now(), cancelled_by = coalesce(driver_id, created_by), cancel_reason = 'TEST_SETUP'
+   where department_id = dept and status <> 'cancelled' and ends_at > now()
+     and car_id in (select id from public.cars where department_id = dept and type = 'shared');
   update public.cars set status = 'retired' where department_id = dept and type = 'shared';
   insert into qlb values ('w', null, w), ('w2', null, w2);
 end $$;

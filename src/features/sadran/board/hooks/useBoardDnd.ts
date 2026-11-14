@@ -79,14 +79,15 @@ import {
   useRestoreRemovedReservationMutation,
   useUnmergeRequestMutation,
   useCancelRideMutation,
+  usePlaceOneWayPairMutation,
 } from "../../hooks";
 import { useClaimRideDriverMutation, useCancelRideChangeMutation } from "@/features/rides/hooks";
-import { fetchMergePreview, fetchRideVersion } from "../../api";
+import { fetchMergePreview, fetchOneWayPartner, fetchRideVersion } from "../../api";
 import { useUndoStack } from "../useUndoStack";
 import { useBoardUndoRecorder } from "../boardUndo";
 import { servedOf, servedToEditRideLegs } from "../../solverRun";
 
-import type { BoardRide, EditRideInput, ProposalRow, RidePassengerInput, WeekRequestRow } from "../../api";
+import type { BoardRide, EditRideInput, OneWayPartner, ProposalRow, RidePassengerInput, WeekRequestRow } from "../../api";
 import type { Suggestion } from "@/solver";
 import type { useBoardData } from "./useBoardData";
 
@@ -148,7 +149,7 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
   // REQ §13.129 (a): the owner of a private car (here: the Sadran) is asked before someone else's request/ride lands on it.
   const [ownCarAsk, setOwnCarAsk] = useState<{ name: string; carName: string; driverless: boolean; resolve: (ok: boolean) => void } | null>(null);
   // CH1 (REQ §13.93): "לשבץ בכל זאת?" before a one-way leg leaves the car where its next ride does not start.
-  const [chainBreakAsk, setChainBreakAsk] = useState<{ car: string; place: string; nextStart: string; nextPlace: string; resolve: (ok: boolean) => void } | null>(null);
+  const [chainBreakAsk, setChainBreakAsk] = useState<{ car: string; place: string; nextStart: string; nextPlace: string; partner: OneWayPartner | null; resolve: (answer: false | "one" | "both") => void } | null>(null);
   const [guestHover, setGuestHover] = useState<{ guest: { requestId: string; name: string }; target: GuestDropTarget | null } | null>(null);
   // Item 136 (e): the open displacement checklist - a snapshot of the card and its suggestion (the card itself may
   // vanish from the unmet list while the Sadran works through the steps).
@@ -169,6 +170,7 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
   const cancelRideChangeMutation = useCancelRideChangeMutation();
   const cancelRideMutation = useCancelRideMutation();
   const unassignRideMutation = useUnassignRideMutation();
+  const placeOneWayPairMutation = usePlaceOneWayPairMutation();
   const restoreReservationMutation = useRestoreRemovedReservationMutation();
   const joinLegsMutation = useJoinDropOffLegsMutation();
   const unmergeRequestMutation = useUnmergeRequestMutation();
@@ -214,8 +216,8 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
     ownCarAsk?.resolve(ok);
     setOwnCarAsk(null);
   }
-  function answerChainBreakAsk(ok: boolean) {
-    chainBreakAsk?.resolve(ok);
+  function answerChainBreakAsk(answer: false | "one" | "both") {
+    chainBreakAsk?.resolve(answer);
     setChainBreakAsk(null);
   }
   const undoVersions = useRef(new Map<string, number>());
@@ -658,9 +660,30 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
     const stranded = !connects && tripTypeOf(req) === "one_way" && req.destination_id
       ? strandedNextRide(dropCtx, carId, req.destination_id, window.endsAt) : null;
     if (stranded?.starts_at) {
+      const withinFlex = requestWithinFlex(req, window.startsAt, window.endsAt);
+      // R20H3 (owner 2026-11-14): an unplaced return leg from there that fits the car too is offered with it.
+      const partner = withinFlex ? await fetchOneWayPartner(req.id, carId, window.startsAt).catch(() => null) : null;
       const ask = { car: carsData.find((c) => c.id === carId)?.name ?? "", place: req.destination_resolved_name ?? "",
-        nextStart: formatTime(new Date(stranded.starts_at)), nextPlace: stranded.origin_name ?? "" };
-      if (!(await new Promise<boolean>((resolve) => setChainBreakAsk({ ...ask, resolve })))) return;
+        nextStart: formatTime(new Date(stranded.starts_at)), nextPlace: stranded.origin_name ?? "", partner };
+      const answer = await new Promise<false | "one" | "both">((resolve) => setChainBreakAsk({ ...ask, resolve }));
+      if (!answer) return;
+      if (answer === "both" && partner) {
+        const outDepartAt = window.startsAt;
+        try {
+          let placed = await placeOneWayPairMutation.mutateAsync({ outId: req.id, returnId: partner.request_id, carId, outDepartAt, departmentId, weekStart });
+          undoStack.push({
+            label: req.requester_full_name ?? placed.out_ride_id,
+            run: async () => {
+              for (const rideId of [placed.return_ride_id, placed.out_ride_id]) {
+                await unassignRideMutation.mutateAsync({ rideId, expectedVersion: await fetchRideVersion(rideId), departmentId, weekStart });
+              }
+            },
+            redo: async () => { placed = await placeOneWayPairMutation.mutateAsync({ outId: req.id, returnId: partner.request_id, carId, outDepartAt, departmentId, weekStart }); },
+          });
+          toast.success(tv("sadranBoard.dragPlacedToast", { car: ask.car, start: formatMinutes(minutes) }));
+        } catch { /* The mutation shows the error. */ }
+        return;
+      }
       allowChainBreak = true;
     }
     if (!(await askSmallTrunk())) return;

@@ -250,6 +250,8 @@ begin
   assert public.leave_ride_fit_preview(ride_b, ride_b_version) is null, 'leave_ride_fit_preview must show nothing for another department';
   -- R20U7: who is busy during department B's ride
   perform pg_temp.expect_refused('rides.ride_busy_people', format('select public.ride_busy_people(%L)', ride_b));
+  perform pg_temp.expect_refused('requests.one_way_partner', format('select public.one_way_partner(%L, %L)', req_b, car_b));
+  perform pg_temp.expect_refused('requests.place_one_way_pair', format('select public.place_one_way_pair(%L, %L, %L)', req_b, req_b3, car_b));
   perform pg_temp.expect_refused('rides.cancel_series_day', format('select public.cancel_series_day(%L, %s, null, false, true)', ride_b, ride_b_version));
   perform pg_temp.expect_refused('requests.split_series', format('select public.split_series(%L, array[1], null)', req_b));
   perform pg_temp.expect_refused('requests.shorten_series', format('select public.shorten_series(%L, now() + interval ''10 days'', now() + interval ''12 days'')', req_b));
@@ -464,7 +466,7 @@ declare
     'create_policy_version','set_policy_active','policy_week_alignment','resolve_waitlist_group','cancel_waitlist_group','join_waitlist_discussion','waitlist_group_holds','siddur_waitlist','place_waiting_request',
     'place_travel_for_week','car_start_locations','set_my_default_origin','set_my_preferred_car','route_minutes_preview','request_notes','request_history',
     'my_co_guardians','set_ride_driver','withdraw_duplicate_request','restore_duplicate_request','close_request','restore_closed_request','sadran_cancel_ride','place_on_own_car','set_own_private_car','add_car_owner','remove_car_owner','child_request_overlaps',
-    'mark_car_move','shorten_series','split_series','leave_merged_ride','leave_merged_ride_fit','leave_ride_fit_preview','ride_busy_people','cancel_series_day','join_drop_off_legs','place_series_on_car',
+    'mark_car_move','shorten_series','split_series','leave_merged_ride','leave_merged_ride_fit','leave_ride_fit_preview','ride_busy_people','cancel_series_day','one_way_partner','place_one_way_pair','join_drop_off_legs','place_series_on_car',
     'create_car_maintenance','update_car_maintenance','delete_car_maintenance','report_car_issue_unsafe_maintenance'
   ];
   -- 'name:one-word-reason'. Duplicated names (day_date_label has two overloads) are fine —

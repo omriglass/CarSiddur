@@ -215,6 +215,9 @@ export const heSadran = {
     chainBreakTitle: "לשבץ בכל זאת?",
     chainBreakBody: "{{car}} יישאר ב{{place}}, אבל הנסיעה הבאה שלו ב־{{time}} יוצאת מ{{nextPlace}}. צריך לדאוג שהרכב יגיע לשם.",
     chainBreakConfirm: "לשבץ בכל זאת",
+    /** R20H3 (owner 2026-11-14): an unplaced opposite one-way leg fits the same car. */
+    chainBreakPairBody: "הרכב יישאר ב{{place}}. לשבץ יחד עם החזרה של {{name}} ({{from}}→{{to}}, {{time}})?",
+    chainBreakPairConfirm: "לשבץ את שתיהן",
     unassignedToast: "השיבוץ הוסר — הבקשות חזרו ללא שיבוץ",
     /** REQ §13.194: removing a reservation deletes it; the toast carries "ביטול". */
     reservationRemovedToast: "שמירת הזמן נמחקה",
