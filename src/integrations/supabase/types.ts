@@ -5902,6 +5902,21 @@ export type Database = {
       }
       _frag: { Args: { _key: string; _vars?: Json }; Returns: string }
       _freed_cause_note: { Args: { p_offer_id: string }; Returns: string }
+      _guest_edit_stays: {
+        Args: {
+          p_depart_at: string
+          p_needs_car: boolean
+          p_one_way_mode: Database["public"]["Enums"]["leg_car_mode"]
+          p_origin_id: string
+          p_origin_text: string
+          p_request_id: string
+          p_return_at: string
+          p_trip_shape: Database["public"]["Enums"]["trip_shape"]
+          p_trip_type: Database["public"]["Enums"]["trip_type"]
+          payload: Json
+        }
+        Returns: boolean
+      }
       _held_request_view: { Args: { p_request: string }; Returns: Json }
       _held_ride_view: { Args: { p_ride: string }; Returns: Json }
       _held_tagged: { Args: { p_data: Json }; Returns: Json }

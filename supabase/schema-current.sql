@@ -2755,6 +2755,46 @@ $$;
 ALTER FUNCTION "public"."_freed_cause_note"("p_offer_id" "uuid") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."_guest_edit_stays"("p_request_id" "uuid", "payload" "jsonb", "p_trip_type" "public"."trip_type", "p_trip_shape" "public"."trip_shape", "p_needs_car" boolean, "p_one_way_mode" "public"."leg_car_mode", "p_origin_id" "uuid", "p_origin_text" "text", "p_depart_at" timestamp with time zone, "p_return_at" timestamp with time zone) RETURNS boolean
+    LANGUAGE "plpgsql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  e public.requests%rowtype;
+begin
+  select * into e from public.requests where id = p_request_id;
+  if e.id is null or e.status not in ('assigned', 'merged') or e.series_id is not null then return false; end if;
+
+  -- the edit changes nothing but the hours (and how they were entered / their flexibility): the same check as an
+  -- unchanged save, with the time fields taken as stored
+  if not public._request_save_unchanged(p_request_id,
+       payload - array['flex_depart_early', 'flex_depart_late', 'flex_return_early', 'flex_return_late',
+                       'depart_anchor', 'arrive_by', 'return_anchor', 'leave_dest_at', 'duration_locked'],
+       p_trip_type, p_trip_shape, p_needs_car, p_one_way_mode, p_origin_id, p_origin_text,
+       e.depart_at, case when p_trip_shape = 'one_way_to' then e.kept_return_at else e.return_at end, true) then
+    return false;
+  end if;
+
+  -- a guest on every ride it is on (never its driver), on published rides only, and each hour that changed inside
+  -- the ride that carries that leg (an hour left as it was is fine even when the Sadran merged it a little off)
+  if not exists (select 1 from public.ride_requests rr join public.rides r on r.id = rr.ride_id
+                 where rr.request_id = p_request_id and r.status <> 'cancelled') then
+    return false;
+  end if;
+  return not exists (
+    select 1 from public.ride_requests rr join public.rides r on r.id = rr.ride_id
+    where rr.request_id = p_request_id and r.status <> 'cancelled'
+      and (r.status = 'draft' or rr.role = 'driver' or r.driver_id is not distinct from e.requester_id
+           or (rr.covers_out and p_depart_at is distinct from e.depart_at
+               and not (p_depart_at >= r.starts_at and p_depart_at < r.ends_at))
+           or (rr.covers_return and p_return_at is distinct from e.return_at
+               and not (p_return_at is not null and p_return_at > r.starts_at and p_return_at <= r.ends_at))));
+end $$;
+
+
+ALTER FUNCTION "public"."_guest_edit_stays"("p_request_id" "uuid", "payload" "jsonb", "p_trip_type" "public"."trip_type", "p_trip_shape" "public"."trip_shape", "p_needs_car" boolean, "p_one_way_mode" "public"."leg_car_mode", "p_origin_id" "uuid", "p_origin_text" "text", "p_depart_at" timestamp with time zone, "p_return_at" timestamp with time zone) OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."_held_request_view"("p_request" "uuid") RETURNS "jsonb"
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -24767,6 +24807,7 @@ declare
   v_requester_changed boolean := false;
   v_form_notice boolean := public._ride_edit_notice_applies();
   v_host_guests jsonb := '[]'::jsonb;
+  v_guest_stays boolean := false;   -- R20B8: a guest's new hours still fit the ride they ride in
   v_host_keeps boolean;   -- R20 Q2 redo: the probe of a host's edit, whether the host stays on the car   -- R20 Q2: the guests riding on the draft ride this request hosts
 begin
   -- REQ §13.190: the browser asks before a short turnaround (`short_turnaround_ask`: try_auto_approve names the car's
@@ -24940,6 +24981,11 @@ begin
       v_unchanged := false;
       v_neutral := false;
     end if;
+    -- R20B8 (REQ item 235): a guest in someone else's ride who only moves their own hours, still inside that ride's
+    -- hours, stays in it as it is (owner 2026-11-14); anything else goes the ordinary way below.
+    v_guest_stays := v_published_edit and not v_unchanged and not v_neutral and not v_requester_changed
+      and public._guest_edit_stays(v_request_id, payload, v_trip_type, v_trip_shape, v_needs_car, v_one_way_mode,
+        v_origin_id, v_origin_text, v_depart_at, v_return_at);
     -- REQ §13.102 (f), R2B20: the form asks before saving whether an edit would lose the current booking.
     -- R20 Q2 redo: a request hosting guests on an unpublished day's ride is put back on its car when it can be, so the
     -- probe tries the edit (every guest answered "release", so it never asks) and rolls it back.
@@ -25001,7 +25047,7 @@ begin
       return jsonb_build_object('ok', true, 'placement_neutral', true, 'unchanged', false, 'request_id', v_request_id,
         'status', v_existing.status, 'is_late', v_existing.is_late, 'warnings', '[]'::jsonb, 'overlaps', '[]'::jsonb);
     end if;
-    if v_published_edit then
+    if v_published_edit and not v_guest_stays then
       v_booking := public.request_booking_info(v_request_id);
       if (v_booking ->> 'has_booking')::boolean and coalesce(current_setting('app.edit_probe_inner', true), 'off') <> 'on' then
         -- Probe: run the whole edit (release + new placement) in a subtransaction. A clean move onto a
@@ -25511,7 +25557,12 @@ begin
       perform public._ask_request_overlap(v_requester_id, v_depart_at, v_return_at, v_request_id);
     end if;
   end if;
-  if coalesce((payload->>'reserve_missing_driver')::boolean,false) then
+  if v_guest_stays then
+    -- R20B8: nothing to place; the ride is unchanged (the Sadran got request_changed with the update above)
+    v_auto_result := jsonb_build_object('status', v_existing.status, 'reason', 'GUEST_STAYS',
+      'ride_id', (select rr.ride_id from public.ride_requests rr join public.rides r on r.id = rr.ride_id
+                  where rr.request_id = v_request_id and r.status <> 'cancelled' order by r.starts_at limit 1));
+  elsif coalesce((payload->>'reserve_missing_driver')::boolean,false) then
     v_auto_result:=public.reserve_live_one_way_slot(v_request_id);
     perform public.enqueue_notification(s.profile_id,'waitlisted_request',v_department_id,v_week_start,
       jsonb_build_object('requestId',v_request_id::text),jsonb_build_object('request_id',v_request_id,'ride_id',v_auto_result->>'ride_id'),
@@ -25712,7 +25763,7 @@ begin
   end if;
 
   -- REQ §13.101 (f): an edited request on a published/live day that found no car goes to the waiting list.
-  if v_published_edit and v_request_id is not null and coalesce(v_auto_result ->> 'status', '') <> 'assigned' then
+  if v_published_edit and not v_guest_stays and v_request_id is not null and coalesce(v_auto_result ->> 'status', '') <> 'assigned' then
     select status into v_status from public.requests where id = v_request_id;
     if v_status is distinct from 'waitlisted' then
       perform set_config('app.system_status_transition', 'on', true);
@@ -25740,7 +25791,7 @@ begin
     end if;
   end if;
 
-  if v_is_late and coalesce(v_auto_result->>'status','') <> 'assigned' and coalesce(v_series_index, 1) = 1 then
+  if v_is_late and not v_guest_stays and coalesce(v_auto_result->>'status','') <> 'assigned' and coalesce(v_series_index, 1) = 1 then
     v_late_variant := case coalesce(v_auto_result->>'reason', '')
       when 'WAITLISTED_CONTESTED' then 'late_contested'
       when 'DUPLICATE_OVERLAP' then 'late_duplicate'
@@ -35298,6 +35349,11 @@ GRANT ALL ON FUNCTION "public"."_frag"("_key" "text", "_vars" "jsonb") TO "servi
 
 REVOKE ALL ON FUNCTION "public"."_freed_cause_note"("p_offer_id" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."_freed_cause_note"("p_offer_id" "uuid") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."_guest_edit_stays"("p_request_id" "uuid", "payload" "jsonb", "p_trip_type" "public"."trip_type", "p_trip_shape" "public"."trip_shape", "p_needs_car" boolean, "p_one_way_mode" "public"."leg_car_mode", "p_origin_id" "uuid", "p_origin_text" "text", "p_depart_at" timestamp with time zone, "p_return_at" timestamp with time zone) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_guest_edit_stays"("p_request_id" "uuid", "payload" "jsonb", "p_trip_type" "public"."trip_type", "p_trip_shape" "public"."trip_shape", "p_needs_car" boolean, "p_one_way_mode" "public"."leg_car_mode", "p_origin_id" "uuid", "p_origin_text" "text", "p_depart_at" timestamp with time zone, "p_return_at" timestamp with time zone) TO "service_role";
 
 
 
