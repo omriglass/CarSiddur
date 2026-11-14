@@ -118,6 +118,8 @@ test.describe("freed slot (live week, single candidate)", { tag: ["@waitlist", "
       test.skip(!carId, "no shared car is free on the target day for the freed-slot fixture");
       const { error } = await client.from("rides").update({ starts_at: shift(ride!.starts_at), ends_at: shift(ride!.ends_at), car_id: carId! }).eq("id", CANCELLED_RIDE_ID);
       if (error) throw error;
+      // Moving the ride frees its old day's hours, which offers them like any edit would: not part of the test.
+      await client.from("freed_slot_offers").delete().eq("cancelled_ride_id", CANCELLED_RIDE_ID);
     }
   }
 
