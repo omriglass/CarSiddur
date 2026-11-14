@@ -781,13 +781,14 @@ export function RequestForm({
     return cars.length > 0 && !cars.some((c) => fits(c, passengers));
   }, [carsQuery.data, seatConfigsQuery.data, namedAdultCount, namedChildCount, values.boosters]);
 
+  const editedCarId = mode === "edit" && initial ? (myRequestsQuery.data ?? []).find((r) => r.id === initial.id)?.ride?.carId ?? null : null;
   const duplicate = useMemo(() => {
     if (!values.departTime && !values.returnTime) return null;
     // REQ §13.112 (c): a window request overlaps whatever its earliest block overlaps (the member's own other requests).
     const windowTimes = windowModeActive({ timeMode: values.timeMode, tripType: values.tripType, tripShape, day, returnDay: values.returnDay }) ? windowCarTimes({ windowHours: values.windowHours, windowStart: values.windowStart, windowEnd: values.windowEnd }) : null;
     // A malformed day/time gives no overlap hint instead of an `Invalid Date` crash (Safari, 2026-10-13).
-    const isoAt = (time: string) => {
-      const ms = toInstantMs(day, time);
+    const isoAt = (time: string, on: string = day) => {
+      const ms = toInstantMs(on, time);
       return Number.isNaN(ms) ? null : new Date(ms).toISOString();
     };
     const departAt = windowTimes
@@ -796,16 +797,19 @@ export function RequestForm({
     const returnAt = windowTimes
       ? isoAt(windowTimes.returnTime)
       : tripShape !== "one_way_to" && values.returnTime
-        ? isoAt(values.returnTime)
+        // MD1 (owner 2026-11-14): a multi-day ride overlaps whatever falls anywhere up to its return day.
+        ? isoAt(values.returnTime, isMultiDay ? returnDayValue : day)
         : null;
     // REQ §13.127: overlaps are the requester's own (a ride I filed for someone else is not mine).
     // R13B4: editing a multi-day request never overlaps its own days (they are replaced on save).
     const candidates = (myRequestsQuery.data ?? []).filter(
       (r) => r.requesterId === overlapRequesterId && r.departmentId === departmentId && !["withdrawn", "cancelled", "denied", "external"].includes(r.status)
-        && !(initial?.seriesId && r.seriesId === initial.seriesId),
+        && !(initial?.seriesId && r.seriesId === initial.seriesId)
+        // MD1: a multi-day edit asks about the edited ride's own car in the replace question (`SeriesCarTakenDialog`), never twice.
+        && !(isMultiDay && editedCarId && r.ride?.carId === editedCarId),
     );
     return findOverlappingRequest({ departAt, returnAt }, candidates, initial?.id);
-  }, [day, tripShape, values.departTime, values.returnTime, values.timeMode, values.tripType, values.returnDay, values.windowHours, values.windowStart, values.windowEnd, myRequestsQuery.data, departmentId, initial, overlapRequesterId]);
+  }, [day, tripShape, values.departTime, values.returnTime, values.timeMode, values.tripType, values.returnDay, values.windowHours, values.windowStart, values.windowEnd, myRequestsQuery.data, departmentId, initial, overlapRequesterId, isMultiDay, returnDayValue, editedCarId]);
 
   // Quick-variant-only: free-window pre-validation (server RPC remains the sole authority).
   const departTimeSafe = values.departTime || "08:00";

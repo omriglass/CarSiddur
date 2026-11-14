@@ -78,4 +78,55 @@ test.describe("one-day ride to multi-day", { tag: ["@request-form"] }, () => {
       await removeWeek(service, week);
     }
   });
+
+  test("own ride on day 2 on another car: the overlap question asks first", async ({ page }) => {
+    // MD1 (owner 2026-11-14): the multi-day edit overlaps a ride of mine on a different car — the ordinary overlap question.
+    const service = serviceRoleClient();
+    const week = FIXTURE_WEEKS.multiDayEdit;
+    const day1 = dayOfWeek(week, 1);
+    const day2 = dayOfWeek(week, 2);
+    const admin = await publishedFixtureWeek(week);
+    await admin.auth.signOut();
+    const requestIds: string[] = [];
+    try {
+      const ride = async (carId: string, requestId: string, day: string, from: string, to: string, until: string) => {
+        const { data, error } = await service.from("rides").insert({
+          department_id: NEVO_DEPARTMENT_ID, week_start: week, car_id: carId, driver_id: PROFILE_IDS.member1, created_by: PROFILE_IDS.member1,
+          starts_at: winterAt(day, from), ends_at: winterAt(day, to), blocked_until: winterAt(day, until),
+          origin_id: PLACES.home.id, destination_id: PLACES.home.id, status: "confirmed",
+        }).select("id").single();
+        if (error) throw error;
+        const { error: linkError } = await service.from("ride_requests").insert({ ride_id: data.id, request_id: requestId, role: "driver", leg: "both", car_mode: "keep" });
+        if (linkError) throw linkError;
+      };
+      const oneDay = await insertRequest(service, day1, {
+        week, requester: PROFILE_IDS.member1, depart: "10:00", return: "12:00", destinationId: PLACES.haifa.id, status: "assigned",
+      });
+      requestIds.push(oneDay);
+      await ride(await sharedCarIdByName(service, "יונדאי 1"), oneDay, day1, "10:00", "12:00", "12:30");
+      const other = await insertRequest(service, day2, {
+        week, requester: PROFILE_IDS.member1, depart: "08:00", return: "09:00", destinationId: PLACES.haifa.id, status: "assigned",
+      });
+      requestIds.push(other);
+      await ride(await sharedCarIdByName(service, "יונדאי 2"), other, day2, "08:00", "09:00", "09:30");
+
+      await signIn(page, SEEDED_USERS.member1);
+      await page.goto(paths.requests.edit(oneDay));
+      await page.getByRole("button", { name: t("request.returnAnotherDay"), exact: true }).click();
+      await page.getByRole("radiogroup", { name: t("request.returnDay") }).getByRole("radio").first().click();
+      const next = page.getByTestId("stage-next");
+      if (await next.isVisible()) await next.click();
+      await page.getByRole("button", { name: t("action.saveRequest"), exact: true }).click();
+      const overlap = page.getByRole("dialog", { name: t("request.overlapTitle") });
+      await expect(overlap).toBeVisible();
+      await expect(overlap.getByTestId("overlap-other")).toBeVisible();
+      await expect(page.getByTestId("series-car-taken")).toHaveCount(0);
+      await overlap.getByRole("button", { name: t("request.overlapBack") }).click();
+      await expect(overlap).toBeHidden();
+    } finally {
+      const { data: legs } = await service.from("requests").select("id").eq("requester_id", PROFILE_IDS.member1).eq("week_start", week);
+      await deleteRequests(service, [...new Set([...requestIds, ...(legs ?? []).map((l) => l.id as string)])]);
+      await removeWeek(service, week);
+    }
+  });
 });

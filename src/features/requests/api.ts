@@ -62,6 +62,8 @@ export interface MyRequestRide {
   originName: string;
   destinationName: string;
   carName: string | null;
+  /** MD1: the ride's car — a multi-day edit's overlap question skips rides on its own car (the replace question asks those). */
+  carId?: string | null;
   carType: CarType | null;
   driverName: string | null;
   isChauffeur: boolean;
@@ -197,7 +199,7 @@ const SELECT = `
       id, starts_at, ends_at, status, needs_driver, version,
       origin:destinations!rides_origin_id_fkey(name),
       destination:destinations!rides_destination_id_fkey(name),
-      car:cars(name, type, codes:car_access_codes(access_code, is_replaced, replacement_code)),
+      car:cars(id, name, type, codes:car_access_codes(access_code, is_replaced, replacement_code)),
       driver:profiles!rides_driver_id_fkey(full_name)
     )
   ),
@@ -305,6 +307,7 @@ interface RawRequestRow {
       origin: { name: string } | null;
       destination: { name: string } | null;
       car: {
+        id: string;
         name: string;
         type: CarType;
         codes: { access_code: string | null; is_replaced: boolean; replacement_code: string | null } | { access_code: string | null; is_replaced: boolean; replacement_code: string | null }[] | null;
@@ -468,6 +471,7 @@ function mapRow(row: RawRequestRow, profileId?: string, owners: ReadonlyMap<stri
                   ...(Array.isArray(ride.car.codes) ? ride.car.codes[0] : ride.car.codes),
                 })
               : null,
+            carId: ride.car?.id ?? null,
             carType: ride.car?.type ?? null,
             driverName: ride.driver?.full_name ?? null,
             isChauffeur: legWithRide.role === "passenger" && ride.driver?.full_name !== undefined,
