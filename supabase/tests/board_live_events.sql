@@ -4,6 +4,7 @@
 --           proposal_expired, freed_placed; the Sadran's own action and an unpublished day are left out
 --   TEST 2  mark_board_seen moves the marker past every listed event; week_parts carries the same answer
 --   TEST 3  a member may not read or mark the strip
+--   TEST 4  R20H4: a freed car that went to nobody is one line (freed_none, with the freed hours); a superseded offer is not
 -- The audit transaction id is set per action (app.audit_txid), as each action is its own transaction in the app.
 begin;
 create temporary table lv(k text primary key, id uuid, n bigint);
@@ -154,6 +155,34 @@ begin
   exception when sqlstate 'P0001' then if sqlerrm <> 'not_authorized' then raise; end if; end;
   begin perform public.mark_board_seen(dept, w); raise exception 'TEST 3 FAILED: a member marked the strip';
   exception when sqlstate 'P0001' then if sqlerrm <> 'not_authorized' then raise; end if; end;
+end $$;
+
+-- TEST 4
+do $$
+declare
+  res jsonb; ev jsonb; o1 uuid; o2 uuid;
+  dept uuid := '00000000-0000-0000-0000-000000000001'; w date := public.current_week_start() + 1421;
+  sadran uuid := '00000000-0000-0000-0000-000000000102';
+  car40 uuid := '00000000-0000-0000-0000-000000000040';
+  d0 timestamptz := ((w + 1) + time '00:00') at time zone 'Asia/Jerusalem';
+begin
+  perform pg_temp.lv_as(null, 990011);   -- the edge function
+  insert into public.freed_slot_offers(department_id, week_start, car_id, cancelled_ride_id, starts_at, ends_at, expires_at)
+  values (dept, w, car40, pg_temp.lv_id('rb'), d0 + interval '17 hours', d0 + interval '19 hours', now() + interval '1 hour') returning id into o1;
+  update public.freed_slot_offers set status = 'closed', resolved_at = now() where id = o1;
+  insert into public.freed_slot_offers(department_id, week_start, car_id, cancelled_ride_id, starts_at, ends_at, expires_at)
+  values (dept, w, car40, pg_temp.lv_id('rb'), d0 + interval '20 hours', d0 + interval '21 hours', now() + interval '1 hour') returning id into o2;
+  update public.freed_slot_offers set status = 'closed', resolved_at = now(), close_reason = 'superseded' where id = o2;
+  perform pg_temp.lv_as(sadran, 990012);
+  res := public.board_live_events(dept, w);
+  assert (select count(*) from jsonb_array_elements(res -> 'events') e where e ->> 'kind' = 'freed_none') = 1,
+    format('TEST 4 FAILED: one freed_none line (not the superseded offer), got %s', res);
+  ev := (select e from jsonb_array_elements(res -> 'events') e where e ->> 'kind' = 'freed_none');
+  assert (ev ->> 'starts_at')::timestamptz = d0 + interval '17 hours' and (ev ->> 'ends_at')::timestamptz = d0 + interval '19 hours'
+     and ev ->> 'car_name' is not null and ev ->> 'ride_id' is null and (ev ->> 'id')::bigint > (res ->> 'seen_audit_id')::bigint,
+    format('TEST 4 FAILED: the freed hours and car, new to the Sadran, got %s', ev);
+  assert (select e ->> 'ends_at' from jsonb_array_elements(res -> 'events') e where e ->> 'kind' = 'cancelled') is null,
+    'TEST 4 FAILED: other kinds carry no ends_at';
 end $$;
 
 rollback;

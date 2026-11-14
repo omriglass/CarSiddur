@@ -8672,7 +8672,8 @@ begin
            nullif(a.after ->> 'driver_id', '')::uuid as other_id,
            null::text[] as names,
            (a.after ->> 'starts_at')::timestamptz as starts_at,
-           (a.after ->> 'car_id')::uuid as car_id
+           (a.after ->> 'car_id')::uuid as car_id,
+           null::timestamptz as ends_at
       from recent a
      where a.table_name = 'rides' and a.action = 'update' and 'driver_id' = any(a.changed_columns)
        and a.before ->> 'driver_id' is not null and a.after ->> 'status' <> 'cancelled'
@@ -8691,7 +8692,7 @@ begin
                order by (r.status = 'cancelled') desc, r.starts_at, r.id limit 1)),
            coalesce(nullif(a.after ->> 'requester_id', ''), nullif(a.before ->> 'requester_id', ''))::uuid,
            null, null,
-           coalesce(a.before ->> 'depart_at', a.before ->> 'return_at')::timestamptz, null
+           coalesce(a.before ->> 'depart_at', a.before ->> 'return_at')::timestamptz, null, null
       from recent a
      where a.table_name = 'requests' and a.action = 'update'
        and 'status' = any(a.changed_columns)
@@ -8705,16 +8706,26 @@ begin
                and r.car_id = (a.after ->> 'car_id')::uuid
              order by r.starts_at limit 1),
            (select q.requester_id from public.requests q where q.id = (a.after ->> 'winning_request_id')::uuid),
-           null, null, (a.after ->> 'starts_at')::timestamptz, (a.after ->> 'car_id')::uuid
+           null, null, (a.after ->> 'starts_at')::timestamptz, (a.after ->> 'car_id')::uuid, null
       from recent a
      where a.table_name = 'freed_slot_offers' and a.action = 'update' and 'status' = any(a.changed_columns)
        and a.after ->> 'status' in ('auto_assigned', 'approved') and a.after ->> 'winning_request_id' is not null
+    union all
+    -- R20H4: a freed car went to nobody (no candidate fitted). A superseded, failed, Sadran-closed or
+    -- discussion-taken offer is not this: it has a close reason, a closer or a group.
+    select a.id, a.txid, a.at, 'freed_none', null, null, null, null,
+           (a.after ->> 'starts_at')::timestamptz, (a.after ->> 'car_id')::uuid, (a.after ->> 'ends_at')::timestamptz
+      from recent a
+     where a.table_name = 'freed_slot_offers' and a.action = 'update' and 'status' = any(a.changed_columns)
+       and a.before ->> 'status' = 'open' and a.after ->> 'status' = 'closed'
+       and a.after ->> 'winning_request_id' is null and a.after ->> 'close_reason' is null
+       and a.after ->> 'resolved_by' is null and a.after ->> 'group_id' is null
     union all
     -- someone joined a ride (one line per ride per action; a person moved within the action is not a join)
     select max(a.id), a.txid, max(a.at), 'joined', (a.after ->> 'ride_id')::uuid,
            null, null,
            array_agg(coalesce(p.full_name, ch.full_name, a.after ->> 'display_name') order by a.id),
-           null, null
+           null, null, null
       from recent a
       left join public.profiles p on p.id = nullif(a.after ->> 'person_id', '')::uuid
       left join public.children ch on ch.id = nullif(a.after ->> 'child_id', '')::uuid
@@ -8730,7 +8741,7 @@ begin
            (select q.requester_id from public.requests q where q.id = nullif(a.after ->> 'request_id', '')::uuid),
            null, null,
            (select coalesce(q.depart_at, q.return_at) from public.requests q where q.id = nullif(a.after ->> 'request_id', '')::uuid),
-           null
+           null, null
       from recent a
      where a.table_name = 'proposals' and a.action = 'update' and 'status' = any(a.changed_columns)
        and a.after ->> 'status' = 'expired'
@@ -8756,6 +8767,7 @@ begin
            'id', k.id, 'kind', k.kind, 'at', k.at,
            'ride_id', case when k.ride_status is not null and k.ride_status <> 'cancelled' then k.ride_id end,
            'starts_at', k.at_time,
+           'ends_at', k.ends_at,
            'car_name', (select c.name from public.cars c where c.id = k.the_car),
            'person_name', (select p.full_name from public.profiles p where p.id = k.person_id),
            'other_name', (select p.full_name from public.profiles p where p.id = k.other_id),

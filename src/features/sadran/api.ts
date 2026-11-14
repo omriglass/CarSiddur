@@ -1232,7 +1232,7 @@ export async function fetchAuditLog(departmentId: string, weekStart: string): Pr
 }
 
 /** R20M1 (REQ item 233): what others did on the week's published days — the board strip "since you last looked". */
-export type BoardLiveEventKind = "driver_left" | "driver_handed" | "cancelled" | "freed_placed" | "joined" | "proposal_expired";
+export type BoardLiveEventKind = "driver_left" | "driver_handed" | "cancelled" | "freed_placed" | "freed_none" | "joined" | "proposal_expired";
 export interface BoardLiveEvent {
   /** The audit row; later events have larger ids. */
   id: number;
@@ -1241,6 +1241,8 @@ export interface BoardLiveEvent {
   /** The ride to open on the board; null when it is gone (a cancel). */
   ride_id: string | null;
   starts_at: string | null;
+  /** freed_none (R20H4): the end of the freed hours; null for the other kinds. */
+  ends_at?: string | null;
   car_name: string | null;
   person_name: string | null;
   /** driver_handed: the new driver. */

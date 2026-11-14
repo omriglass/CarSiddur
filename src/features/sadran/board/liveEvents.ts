@@ -20,6 +20,11 @@ export function liveEventText(event: BoardLiveEvent): string {
       return tv("liveEvents.cancelled", { name });
     case "freed_placed":
       return tv("liveEvents.freedPlaced", { name });
+    case "freed_none": {
+      const from = event.starts_at ? formatTime(new Date(event.starts_at)) : "";
+      const until = event.ends_at ? formatTime(new Date(event.ends_at)) : "";
+      return tv("liveEvents.freedNone", { range: until ? `${from}–${until}` : from });
+    }
     case "proposal_expired":
       return tv("liveEvents.proposalExpired", { name });
     case "joined": {

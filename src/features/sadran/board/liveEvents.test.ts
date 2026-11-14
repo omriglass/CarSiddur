@@ -15,6 +15,9 @@ describe("liveEventText (owner wording 2026-11-14)", () => {
     expect(liveEventText(base)).toBe("דנה ביטל/ה את הנסיעה");
     expect(liveEventText({ ...base, kind: "freed_placed", person_name: "יוסי" })).toBe("יוסי קיבל/ה את הרכב שהתפנה");
     expect(liveEventText({ ...base, kind: "proposal_expired" })).toBe("ההצעה לדנה פגה בלי תשובה");
+    // R20H4: a freed car that went to nobody
+    expect(liveEventText({ ...base, kind: "freed_none", person_name: null, ends_at: "2026-11-18T10:00:00Z" }))
+      .toBe("הרכב שהתפנה (08:00–12:00) לא הוצע לאף אחד: אין בקשה מתאימה");
   });
 
   it("a join names everyone added in one action and whose ride it is", () => {
