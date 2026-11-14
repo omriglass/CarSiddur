@@ -7,7 +7,7 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Textarea } from "@/components/ui/textarea";
-import { he } from "@/i18n/he";
+import { he, tv } from "@/i18n/he";
 
 import {
   canContinue, choiceOf, closeRequestIds, continueRequestIds, nothingLeaves, type RideCancelChoice, type RideCancelLine,
@@ -19,34 +19,50 @@ export interface RideCancelDialogProps {
   lines: readonly RideCancelLine[];
   /** A multi-day ride: the choice covers every day. */
   series?: boolean;
+  /** R20H1: one day of a multi-day ride ("ד׳ 16.9") — the dialog asks "only this day / all days" (this day first). */
+  seriesDay?: string | null;
   loading?: boolean;
-  onConfirm: (reason: string, closeRequestIds: string[], continueRequestIds: string[]) => void;
+  onConfirm: (reason: string, closeRequestIds: string[], continueRequestIds: string[], onlyDay: boolean) => void;
 }
 
-export function RideCancelDialog({ open, onOpenChange, lines, series, loading, onConfirm }: RideCancelDialogProps) {
+export function RideCancelDialog({ open, onOpenChange, lines, series, seriesDay, loading, onConfirm }: RideCancelDialogProps) {
   const [choices, setChoices] = useState<Record<string, RideCancelChoice>>({});
   const [reason, setReason] = useState("");
+  const [scope, setScope] = useState<"day" | "all">("day");
+  const onlyDay = !!seriesDay && scope === "day";
   const closing = closeRequestIds(lines, choices);
   const continuing = continueRequestIds(lines, choices);
   const blocked = nothingLeaves(lines, choices);
   function change(next: boolean) {
-    if (!next) { setChoices({}); setReason(""); }
+    if (!next) { setChoices({}); setReason(""); setScope("day"); }
     onOpenChange(next);
   }
   return (
     <ConfirmDialog
       open={open}
       onOpenChange={change}
-      title={he.closeRequest.cancelTitle}
+      title={seriesDay ? he.request.seriesCancelTitle : he.closeRequest.cancelTitle}
       description={lines.length ? he.closeRequest.cancelDescription : he.closeRequest.cancelNoRequests}
       confirmLabel={continuing.length ? he.closeRequest.cancelPartConfirm : he.closeRequest.cancelConfirm}
       destructive
       loading={loading}
       confirmDisabled={blocked}
-      onConfirm={() => onConfirm(reason.trim(), closing, continuing)}
+      onConfirm={() => onConfirm(reason.trim(), closing, continuing, onlyDay)}
     >
       <div className="space-y-3" data-testid="ride-cancel-dialog">
-        {series && lines.length ? <p className="text-sm text-muted-foreground">{he.closeRequest.seriesNote}</p> : null}
+        {seriesDay ? (
+          <RadioGroup value={scope} onValueChange={(value) => setScope(value as "day" | "all")} className="gap-1.5" data-testid="ride-cancel-scope">
+            <label className="flex min-h-11 items-center gap-2 rounded-md border p-1.5 text-sm font-medium">
+              <RadioGroupItem value="day" data-testid="ride-cancel-only-day" />
+              {tv("request.cancelOnlyDay", { day: seriesDay })}
+            </label>
+            <label className="flex min-h-11 items-center gap-2 rounded-md border p-1.5 text-sm font-medium">
+              <RadioGroupItem value="all" data-testid="ride-cancel-all-days" />
+              {he.request.cancelAllDays}
+            </label>
+          </RadioGroup>
+        ) : null}
+        {series && !onlyDay && lines.length ? <p className="text-sm text-muted-foreground">{he.closeRequest.seriesNote}</p> : null}
         {lines.map((line) => (
           <fieldset key={line.requestId} className="space-y-1.5 rounded-md border p-2" data-testid="ride-cancel-line" data-request-id={line.requestId}>
             <legend className="px-1 text-sm font-semibold">{line.name || he.deviations.noName}</legend>

@@ -60,7 +60,7 @@ import { longDetourText, type MergeWaitChoice } from "@/features/rides/mergeQues
 import { requestRouteLine } from "../requestRoute";
 import { parseTimeToMinutes } from "@/features/solverBridge/buildSolverInput";
 import { representativeRideTypeCode, servedOf, servedToEditRideLegs, withChildNames } from "../../solverRun";
-import { useFreedOffersForWeek, useHeldNoticesQuery, useMergePreview, useMergePreviews, type MergePreviewSpec } from "../../hooks";
+import { useCancelSeriesDayBoardMutation, useFreedOffersForWeek, useHeldNoticesQuery, useMergePreview, useMergePreviews, type MergePreviewSpec } from "../../hooks";
 import { heldUpdateCount } from "../heldUpdates";
 import { useBoardSurface, useUnsentLeaveGuard } from "../useBoardSurface";
 import { useBoardData } from "../hooks/useBoardData";
@@ -152,6 +152,7 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
   // Owner 2026-11-04: the board follows the siddur's edit mode (REQ §13.165) — off, a ride drags only after a long press.
   const [editMode, setEditMode] = useEditMode();
   const wideScreen = useIsDesktop();
+  const cancelSeriesDayMutation = useCancelSeriesDayBoardMutation(departmentId, weekStart);
   const dragHint = useDragHint();
   const boardStartMinutes = board.departmentSettingsQuery.data?.board_start_time
     ? parseTimeToMinutes(board.departmentSettingsQuery.data.board_start_time) : 6 * 60;
@@ -1016,9 +1017,18 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
             weekStart,
           });
         }}
-        onCancel={(reason, closeRequestIds, continueRequestIds = []) => {
+        onCancel={(reason, closeRequestIds, continueRequestIds = [], onlyDay = false) => {
           if (selectedPlanningChange) { dnd.cancelRideChangeMutation.mutate(selectedPlanningChange.id, { onSuccess: () => dnd.setSelectedRideId(null) }); return; }
           if (!selectedRide?.id || selectedRide.version == null) return;
+          // R20H1: one day of a multi-day ride — cut out of the series and cancelled; the other days keep the car.
+          if (onlyDay) {
+            const ride = { id: selectedRide.id, version: selectedRide.version };
+            void dnd.recordUndo(he.sadranBoard.undoLabel.cancelRide, () => cancelSeriesDayMutation
+              .mutateAsync({ rideId: ride.id, expectedVersion: ride.version, reason, close: closeRequestIds.length > 0, asSadran: true }))
+              .then(() => dnd.setSelectedRideId(null))
+              .catch(() => undefined);
+            return;
+          }
           // REQ §13.162 (a): one call - the ride goes (or, O29-2 (3), stays for the requests that continue), each other
           // request waits or is closed, one notice per member.
           const ride = { id: selectedRide.id, version: selectedRide.version };

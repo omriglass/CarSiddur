@@ -1,5 +1,6 @@
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 
+import { cancelSeriesDay } from "@/features/requests/api";
 import { fetchCars } from "@/features/fleet/api";
 import { toast } from "sonner";
 import { AppError, toAppError, showErrorToast } from "@/lib/rpc";
@@ -283,6 +284,16 @@ export function useCancelRideMutation() {
       weekStart: string;
     }) => api.sadranCancelRide(rideId, reason, expectedVersion, closeRequestIds, continueRequestIds),
     onSuccess: (_data, { departmentId, weekStart, rideId }) => invalidateBoard(queryClient, departmentId, weekStart, [rideId]),
+    onError: showErrorToast,
+  });
+}
+
+/** R20H1: the board's "לבטל רק את ד׳ 16.9" on one day of a multi-day ride (`cancel_series_day`, as the Sadran). */
+export function useCancelSeriesDayBoardMutation(departmentId: string, weekStart: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { rideId: string; expectedVersion: number; reason: string; close: boolean; asSadran: true }) => cancelSeriesDay(input),
+    onSuccess: (_data, { rideId }) => invalidateBoard(queryClient, departmentId, weekStart, [rideId]),
     onError: showErrorToast,
   });
 }

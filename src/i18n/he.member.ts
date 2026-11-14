@@ -284,6 +284,11 @@ export const heMember = {
     multiDayBadge: "{{count}} ימים",
     seriesSpan: "{{from}} – {{to}} · אותו רכב כל הימים",
     seriesCancelBody: "הביטול חל על כל ימי הבקשה הרב-יומית.",
+    // R20H1 (owner 2026-11-14): one day of a multi-day ride, or every day.
+    seriesCancelTitle: "ביטול נסיעה רב-יומית",
+    cancelOnlyDay: "לבטל רק את {{day}}",
+    cancelAllDays: "לבטל את כל הימים",
+    cancelOnlyDayDone: "{{day}} בוטל. שאר הימים נשארו על הרכב.",
     stopEqualsOrigin: "העצירה זהה למקום היציאה",
     stopEqualsDestination: "העצירה זהה ליעד",
     originEqualsDestination: "מקום היציאה והיעד זהים",

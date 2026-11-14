@@ -49,6 +49,7 @@ import {
   useWithdrawFreedSlotClaimMutation,
   useWithdrawRequestMutation,
 } from "@/features/requests/hooks";
+import { isSeriesDay, useCancelSeriesDay } from "@/features/requests/useCancelSeriesDay";
 import type { ClosedRequestRow, MyRequestRow } from "@/features/requests/api";
 import { canEditRequest, isPublishedDayWindow } from "@/features/requests/window";
 import {
@@ -214,6 +215,7 @@ export function HomePage() {
   const [selectedSuggestion, setSelectedSuggestion] = useState<TemplateSuggestion | null>(null);
   const openProposal = useOpenProposal();
   const cancelRideMutation = useCancelRideMutation();
+  const cancelSeriesDay = useCancelSeriesDay();
   const removeMeMutation = useRemoveRidePassengerMutation();
   const editMutation = useEditRideMutation();
   // REQ §13.203: the car is taken at the new hours — ask the drivers in the way to make room, only after talking.
@@ -795,7 +797,9 @@ export function HomePage() {
         // RPC itself is the real gate (`week_archived`/`not_authorized` surface as toasts).
         showAddPassengers={!!selectedMyRide && selectedMyRide.status !== "cancelled" && isRideOfMine(selectedMyRide, viewerId, myRequestIds)}
         onRemoveOwnRide={selectedMyRide?.id && selectedMyRide.driver_id === profileQuery.data?.id && !volunteerDriverOf(selectedMyRide) && selectedMyRide.version != null ? (keepOut: boolean) => void withFreedCarChoice(keepOut, () => cancelRideMutation.mutateAsync({ rideId: selectedMyRide.id!, expectedVersion: selectedMyRide.version!, reason: "CANCELLED_BY_MEMBER" })).then(() => setSelectedMyRide(null), () => undefined) : undefined}
-        removingOwnRide={cancelRideMutation.isPending}
+        removingOwnRide={cancelRideMutation.isPending || cancelSeriesDay.busy}
+        onCancelSeriesDay={selectedMyRide && selectedMyRide.driver_id === profileQuery.data?.id && !volunteerDriverOf(selectedMyRide) && isSeriesDay(selectedMyRide)
+          ? () => cancelSeriesDay.start(selectedMyRide, () => setSelectedMyRide(null)) : undefined}
         onRemoveMe={(() => {
           const myKey = selectedMyRide ? myRidePersonKey(selectedMyRide, profileQuery.data?.id) : null;
           if (!selectedMyRide?.id || !myKey || selectedMyRide.version == null || !selectedMyRide.department_id || !selectedMyRide.week_start) return undefined;
@@ -876,6 +880,7 @@ export function HomePage() {
       {splitTarget ? <SplitSeriesDialog target={splitTarget} onOpenChange={(open) => { if (!open) setSplitTarget(null); }} /> : null}
       {makeRoom.element}
       <FreedCarConfirmDialog dialog={freedGate.dialog} loading={editMutation.isPending} />
+      {cancelSeriesDay.dialog}
       <ConfirmDialog
         open={!!confirmAction}
         onOpenChange={(open) => !open && setConfirmAction(null)}

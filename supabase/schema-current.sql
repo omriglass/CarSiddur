@@ -9304,6 +9304,49 @@ $$;
 ALTER FUNCTION "public"."cancel_ride_without_passengers"("p_ride_id" "uuid", "p_reason" "text", "p_expected_version" integer) OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."cancel_series_day"("p_ride_id" "uuid", "p_expected_version" integer, "p_reason" "text" DEFAULT NULL::"text", "p_close" boolean DEFAULT false, "p_as_sadran" boolean DEFAULT false) RETURNS "void"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  r public.rides%rowtype; v_req uuid; v_i int; v_n int; v_cuts int[] := '{}';
+  v_prev_supp text := coalesce(current_setting('app.suppress_notifications', true), '');
+begin
+  if (select auth.uid()) is null then raise exception 'not_authorized' using errcode = 'P0001'; end if;
+  select * into r from public.rides where id = p_ride_id for update;
+  if r.id is null or r.status = 'cancelled' then raise exception 'ride_not_found' using errcode = 'P0001'; end if;
+  if p_expected_version is null or r.version <> p_expected_version then perform public.raise_stale_version(); end if;
+  if r.series_id is null then raise exception 'series_split_invalid' using errcode = 'P0001'; end if;
+  select q.id into v_req from public.ride_requests rr join public.requests q on q.id = rr.request_id
+   where rr.ride_id = r.id and q.series_id = r.series_id order by q.series_index, q.id limit 1;
+  if v_req is null then raise exception 'series_split_invalid' using errcode = 'P0001'; end if;
+
+  -- the day's place among the series' active days (as split_series counts them)
+  select d.i, d.n into v_i, v_n from (
+    select y.id, row_number() over (order by y.depart_at, y.id)::int as i, count(*) over ()::int as n
+      from public.requests y where y.series_id = r.series_id and y.status not in ('withdrawn', 'cancelled')) d
+   where d.id = v_req;
+  if v_i is null or v_n < 2 then raise exception 'series_split_invalid' using errcode = 'P0001'; end if;
+  if v_i > 1 then v_cuts := v_cuts || (v_i - 1); end if;
+  if v_i < v_n then v_cuts := v_cuts || v_i; end if;
+
+  perform set_config('app.suppress_notifications', 'on', true);
+  perform public.split_series(v_req, v_cuts, null);
+  perform set_config('app.suppress_notifications', v_prev_supp, true);
+
+  select * into r from public.rides where id = p_ride_id;
+  if p_as_sadran then
+    perform public.sadran_cancel_ride(r.id, p_reason, r.version,
+      case when p_close then array[v_req] else '{}'::uuid[] end, '{}'::uuid[]);
+  else
+    perform public.cancel_ride(r.id, coalesce(nullif(btrim(coalesce(p_reason, '')), ''), 'CANCELLED_BY_MEMBER'), r.version);
+  end if;
+end $$;
+
+
+ALTER FUNCTION "public"."cancel_series_day"("p_ride_id" "uuid", "p_expected_version" integer, "p_reason" "text", "p_close" boolean, "p_as_sadran" boolean) OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."cancel_waitlist_group"("p_group_id" "uuid", "p_expected_version" integer) RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -12615,7 +12658,7 @@ begin
   if (select auth.uid()) is null or not public.is_approved() then raise exception 'not_authorized' using errcode = '42501'; end if;
   if p_action not in ('cancel_ride', 'ride_editor_cancel_ride', 'withdraw_request', 'ride_editor_withdraw_request',
                       'edit_ride', 'submit_request', 'submit_series_request', 'sadran_cancel_ride', 'remove_ride_person',
-                      'leave_merged_ride_fit') then
+                      'leave_merged_ride_fit', 'cancel_series_day') then
     raise exception 'freed_preview_unknown_action' using errcode = 'P0001';
   end if;
   begin
@@ -12643,6 +12686,9 @@ begin
         perform public.remove_ride_person((p_args ->> 'p_ride_id')::uuid, (p_args ->> 'p_expected_version')::int, p_args ->> 'p_key');
       when 'leave_merged_ride_fit' then
         perform public.leave_merged_ride_fit((p_args ->> 'p_ride_id')::uuid, (p_args ->> 'p_expected_version')::int);
+      when 'cancel_series_day' then
+        perform public.cancel_series_day((p_args ->> 'p_ride_id')::uuid, (p_args ->> 'p_expected_version')::int, p_args ->> 'p_reason',
+          coalesce((p_args ->> 'p_close')::boolean, false), coalesce((p_args ->> 'p_as_sadran')::boolean, false));
     end case;
     -- the commit-time checks (the freed-time offer among them) run now, inside this block
     set constraints all immediate;
@@ -24703,12 +24749,20 @@ begin
   -- R20B1 (owner 2026-11-14): the parts keep the car across the cut with no turnaround, as the series did (Mon ends
   -- 23:59, Tue starts 00:00). The earlier ride carries the real gap as its turnaround override, which every check
   -- (the ride trigger, publication, the solver, the board) already honours; refresh_car_turnarounds keeps it.
-  update public.rides a set turnaround_override_minutes = (extract(epoch from (b.starts_at - a.ends_at)) / 60)::smallint
-    from public.rides b
-   where a.id = any(v_rides) and b.id = any(v_rides) and b.car_id = a.car_id and b.id <> a.id
-     and not (a.series_id is not null and a.series_id = b.series_id)
-     and b.starts_at >= a.ends_at
-     and b.starts_at < a.ends_at + make_interval(mins => public.required_turnaround_minutes(a.department_id, a.week_start));
+  -- R20H1: one ride at a time, earliest first — the ride check compares each ride with its neighbours' stored buffer,
+  -- so a day cut out on both sides (two cuts) must see the day before it already shortened.
+  for x in
+    select a.id, (extract(epoch from (b.starts_at - a.ends_at)) / 60)::smallint as gap
+      from public.rides a join public.rides b
+        on b.id = any(v_rides) and b.car_id = a.car_id and b.id <> a.id
+       and not coalesce(a.series_id = b.series_id, false)   -- a one-day part has no series: NULL must not drop the pair
+       and b.starts_at >= a.ends_at
+       and b.starts_at < a.ends_at + make_interval(mins => public.required_turnaround_minutes(a.department_id, a.week_start))
+     where a.id = any(v_rides)
+     order by a.starts_at, a.id
+  loop
+    update public.rides set turnaround_override_minutes = x.gap where id = x.id;
+  end loop;
   -- cancelled rides of days that left the series follow their own day's part (or none)
   update public.rides r set series_id = null where r.series_id = v_old and r.status = 'cancelled'
     and not exists (select 1 from public.requests y where y.series_id = v_old
@@ -36559,6 +36613,12 @@ GRANT ALL ON FUNCTION "public"."cancel_ride_change_before_planning"("p_change_id
 
 REVOKE ALL ON FUNCTION "public"."cancel_ride_without_passengers"("p_ride_id" "uuid", "p_reason" "text", "p_expected_version" integer) FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."cancel_ride_without_passengers"("p_ride_id" "uuid", "p_reason" "text", "p_expected_version" integer) TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."cancel_series_day"("p_ride_id" "uuid", "p_expected_version" integer, "p_reason" "text", "p_close" boolean, "p_as_sadran" boolean) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."cancel_series_day"("p_ride_id" "uuid", "p_expected_version" integer, "p_reason" "text", "p_close" boolean, "p_as_sadran" boolean) TO "service_role";
+GRANT ALL ON FUNCTION "public"."cancel_series_day"("p_ride_id" "uuid", "p_expected_version" integer, "p_reason" "text", "p_close" boolean, "p_as_sadran" boolean) TO "authenticated";
 
 
 

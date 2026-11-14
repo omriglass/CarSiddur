@@ -328,7 +328,7 @@ export async function memberMergeRide(input: { rideId: string; sourceRideId: str
 export type FreedCarAction =
   | "cancel_ride" | "ride_editor_cancel_ride" | "withdraw_request" | "ride_editor_withdraw_request"
   | "edit_ride" | "submit_request" | "submit_series_request" | "sadran_cancel_ride" | "remove_ride_person"
-  | "leave_merged_ride_fit";
+  | "leave_merged_ride_fit" | "cancel_series_day";
 
 export interface FreedCarPreviewRequest {
   action: FreedCarAction;

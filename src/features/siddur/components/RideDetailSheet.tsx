@@ -10,6 +10,7 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { PortalSheetContent } from "@/components/PortalSheetContent";
 import { CarNameWithReport } from "@/features/carCare/components/CarNameWithReport";
 import { MyCarTasksCard } from "@/features/carTasks/components/MyCarTasksCard";
+import { formatDayDate } from "@/lib/dayLabels";
 import { rideBlockLabel } from "@/lib/rideLabel";
 import { siddurCarName } from "@/lib/siddurCarName";
 import { ridePassengerParts } from "@/lib/ridePassengerSummary";
@@ -84,6 +85,8 @@ interface RideDetailSheetProps {
   /** `keepOut`: "לבטל בלי להעביר את הרכב" (REQ item 237). */
   onRemoveOwnRide?: (keepOut: boolean) => void;
   removingOwnRide?: boolean;
+  /** R20H1: one day of a multi-day ride — the cancel dialog also offers "לבטל רק את ד׳ 16.9" (`useCancelSeriesDay`). */
+  onCancelSeriesDay?: () => void;
   /** REQ §13.128: a non-driver passenger removes only themselves (`remove_ride_person`), never the whole ride. */
   onRemoveMe?: (keepOut: boolean) => void;
   removingMe?: boolean;
@@ -124,10 +127,11 @@ interface RideDetailSheetProps {
  * §13.85; the `/requests/new?ride=` prefill path itself is untouched, still reachable from the
  * joinable-rides dialog after a waiting-list outcome).
  */
-export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = null, onOpenChange, editor, coordinatorNotes, canEditPublicNotes, onRemoveOwnRide, removingOwnRide = false, onRemoveMe, removingMe = false, freedPreview, editRequestLinks = [], showAddPassengers = false, weekRides, moveToCarOptions = [], onMoveToCar, movingToCar = false, handOverOptions = [], onHandOver, onLeaveNoDriver, leaveNoDriverDialog, handingOver = false }: RideDetailSheetProps) {
+export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = null, onOpenChange, editor, coordinatorNotes, canEditPublicNotes, onRemoveOwnRide, removingOwnRide = false, onCancelSeriesDay, onRemoveMe, removingMe = false, freedPreview, editRequestLinks = [], showAddPassengers = false, weekRides, moveToCarOptions = [], onMoveToCar, movingToCar = false, handOverOptions = [], onHandOver, onLeaveNoDriver, leaveNoDriverDialog, handingOver = false }: RideDetailSheetProps) {
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [notDriving, setNotDriving] = useState(false);
   const canLeaveDriving = (handOverOptions.length > 0 && !!onHandOver) || !!onLeaveNoDriver;
+  const seriesDay = !!onCancelSeriesDay && !!ride?.series_id && (ride.series_count ?? 0) > 1;
   /** The driver's ways out of the ride: hand it to someone on it who drives, or leave it waiting for a driver. */
   const leaveChoices = (close: () => void) => (
     <div className="space-y-2">
@@ -328,12 +332,19 @@ export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = 
                   <ConfirmDialog
                     open={confirmCancel}
                     onOpenChange={setConfirmCancel}
-                    title={he.request.cancelConfirmTitle}
-                    confirmLabel={canLeaveDriving ? he.rideDetail.cancelForAll : t("action.cancelRide")}
+                    title={seriesDay ? he.request.seriesCancelTitle : he.request.cancelConfirmTitle}
+                    confirmLabel={seriesDay ? he.request.cancelAllDays : canLeaveDriving ? he.rideDetail.cancelForAll : t("action.cancelRide")}
                     destructive
                     loading={removingOwnRide || handingOver}
                     onConfirm={() => { setConfirmCancel(false); onRemoveOwnRide(false); }}
                   >
+                    {/* R20H1 (owner 2026-11-14): one day of a multi-day ride, or every day. */}
+                    {seriesDay && ride.starts_at ? (
+                      <Button className="mb-2 w-full" variant="outline" disabled={removingOwnRide || handingOver} data-testid="cancel-only-day"
+                        onClick={() => { setConfirmCancel(false); onCancelSeriesDay?.(); }}>
+                        {tv("request.cancelOnlyDay", { day: formatDayDate(ride.starts_at) })}
+                      </Button>
+                    ) : null}
                     {cancelFreedLine ? <p className="mb-2 text-sm" data-testid="freed-car-line">{cancelFreedLine}</p> : null}
                     {cancelFreedLine ? (
                       <div className="mb-2">

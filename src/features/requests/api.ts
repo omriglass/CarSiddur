@@ -1223,6 +1223,22 @@ export async function cancelRide(
   else await rpc("cancel_ride", { p_ride_id: rideId, p_reason: reason, p_expected_version: expectedVersion });
 }
 
+/**
+ * R20H1 (owner 2026-11-14): cancel one day of a multi-day ride — the day is cut out of the series and cancelled; the
+ * other days keep the car. `asSadran` cancels it as the board does (`close` = "הנסיעה כבר לא רלוונטית").
+ */
+export async function cancelSeriesDay(input: { rideId: string; expectedVersion: number; reason?: string | null; close?: boolean; asSadran?: boolean }): Promise<void> {
+  await rpc("cancel_series_day", {
+    p_ride_id: input.rideId, p_expected_version: input.expectedVersion, p_reason: input.reason ?? undefined,
+    p_close: input.close ?? false, p_as_sadran: input.asSadran ?? false,
+  });
+}
+
+/** R20H1: the call "לבטל רק את היום הזה" sends, for the freed-car check before it. */
+export function cancelSeriesDayArgs(rideId: string, expectedVersion: number): Record<string, unknown> {
+  return { p_ride_id: rideId, p_expected_version: expectedVersion, p_reason: null, p_close: false, p_as_sadran: false };
+}
+
 /** Read-only: the offers a cancelled ride produced (status + the winner's name when the server auto-assigned one). Members may read their department's offers; the winner's request/profile are readable once placed on a public ride. */
 export async function fetchFreedOfferOutcome(rideId: string): Promise<RawFreedOfferOutcome[]> {
   const { data, error } = await supabase

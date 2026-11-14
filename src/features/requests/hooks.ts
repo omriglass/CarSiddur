@@ -18,6 +18,7 @@ import type { CarFreeWindow } from "@/features/siddur/freeWindows";
 import {
   canEditRequest,
   cancelRide,
+  cancelSeriesDay,
   placeOnOwnCar,
   restoreDuplicateRequest,
   fetchJoinableRides,
@@ -242,6 +243,23 @@ export function useCancelRideMutation() {
       expectedVersion?: number;
       asEditor?: boolean;
     }) => cancelRide(rideId, reason, expectedVersion, asEditor),
+    onSuccess: (_data, { rideId }) => {
+      pollFreedSlotThanks(rideId);
+      queryClient.invalidateQueries({ queryKey: requestsKeys.mine(profileId) });
+      queryClient.invalidateQueries({ queryKey: siddurKeys.all });
+      queryClient.invalidateQueries({ queryKey: sadranKeys.all });
+    },
+    onError: showErrorToast,
+  });
+}
+
+/** R20H1: one day of a multi-day ride (see `cancelSeriesDay`). */
+export function useCancelSeriesDayMutation() {
+  const { session } = useSession();
+  const profileId = session?.user.id;
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: cancelSeriesDay,
     onSuccess: (_data, { rideId }) => {
       pollFreedSlotThanks(rideId);
       queryClient.invalidateQueries({ queryKey: requestsKeys.mine(profileId) });

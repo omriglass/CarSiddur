@@ -6737,6 +6737,16 @@ export type Database = {
         }
         Returns: undefined
       }
+      cancel_series_day: {
+        Args: {
+          p_as_sadran?: boolean
+          p_close?: boolean
+          p_expected_version: number
+          p_reason?: string
+          p_ride_id: string
+        }
+        Returns: undefined
+      }
       cancel_waitlist_group: {
         Args: { p_expected_version: number; p_group_id: string }
         Returns: Json

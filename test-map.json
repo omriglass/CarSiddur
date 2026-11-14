@@ -66,6 +66,8 @@
         "supabase/tests/request_templates.sql",
         "supabase/tests/multi_day_series.sql",
         "supabase/tests/split_series.sql",
+        "supabase/tests/series_day_cancel.sql",
+        "supabase/migrations/**/*cancel_series_day*",
         "supabase/migrations/**/*split_series*",
         "src/features/requests/split.ts",
         "supabase/tests/series_edit.sql",

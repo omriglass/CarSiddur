@@ -123,7 +123,25 @@ test.describe("multi-day requests", { tag: ["@request-form"] }, () => {
       await expect(page.getByTestId("ride-sheet-split")).toBeVisible();
     }
 
+    // R20H1: the Sadran cancels the middle day only; the other two days keep the car.
+    await page.goto(`/sadran/${NEVO_DEPARTMENT_ID}/${openWeekStart}/board`);
+    await page.getByRole("radio").nth(Number(new Date(`${day1}T12:00:00Z`).getUTCDay())).click();
+    await page.getByText("יום 2/3", { exact: true }).click();
+    await page.getByRole("button", { name: "פרטי הנסיעה" }).click();
+    await page.getByRole("tab", { name: "פעולות" }).click();
+    await page.getByTestId("ride-sheet-cancel").click();
+    await expect(page.getByTestId("ride-cancel-only-day")).toHaveAttribute("data-state", "checked");
+    await page.getByRole("dialog", { name: he.request.seriesCancelTitle }).getByRole("button", { name: he.closeRequest.cancelConfirm, exact: true }).click();
+    await expect.poll(async () => {
+      const { data } = await service.from("requests").select("status, series_id").eq("department_id", NEVO_DEPARTMENT_ID).eq("destination_text", DESTINATION).order("depart_at");
+      return (data ?? []).map((row) => `${row.status === "assigned" ? "placed" : "not placed"}:${row.series_id ? "series" : "single"}`).join(",");
+    }).toBe("placed:single,not placed:single,placed:single");
+    const { data: kept } = await service.from("rides").select("id").eq("car_id", sharedCar!.id).neq("status", "cancelled")
+      .gte("starts_at", `${day0}T00:00:00Z`).lt("starts_at", `${day2}T23:59:59Z`);
+    expect(kept?.length).toBe(2);
+
     await service.from("requests").delete().eq("series_id", seriesId);
+    await service.from("requests").delete().eq("department_id", NEVO_DEPARTMENT_ID).eq("destination_text", DESTINATION);
     await service.from("rides").delete().eq("department_id", NEVO_DEPARTMENT_ID).eq("week_start", openWeekStart).eq("car_id", sharedCar!.id).gte("starts_at", `${day0}T00:00:00Z`).lt("starts_at", `${day2}T23:59:59Z`);
   });
 });

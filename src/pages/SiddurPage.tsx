@@ -49,6 +49,7 @@ import { useIsSadran } from "@/features/auth/useIsSadran";
 import { ownRequestIds } from "@/features/requests/filedForOther";
 import { useRideEditorsQuery } from "@/features/member/hooks";
 import { useMyRequests, useCancelRideMutation } from "@/features/requests/hooks";
+import { isSeriesDay, useCancelSeriesDay } from "@/features/requests/useCancelSeriesDay";
 import { canEditRequest } from "@/features/requests/window";
 import { useCars, useDestinations, useRideTypes, useMaintenanceBlocks } from "@/features/fleet/hooks";
 import { AddRideFab } from "@/features/requests/components/AddRideFab";
@@ -160,6 +161,7 @@ export function SiddurPage() {
   const active = useActiveDepartment();
   const profileQuery = useProfile();
   const cancelRideMutation = useCancelRideMutation();
+  const cancelSeriesDay = useCancelSeriesDay();
   const removeMeMutation = useRemoveRidePassengerMutation();
 
   const defaultDepartmentId =
@@ -864,6 +866,7 @@ export function SiddurPage() {
         />
       ) : null}
       {maintenanceEditing.dialog}
+      {cancelSeriesDay.dialog}
       <RideDetailSheet
         {...sheetCarActions.sheetProps(selectedRide, () => setSelectedRideId(null))}
         {...(selectedRide?.id && ownsEditableRide(selectedRide.id) ? { moveToCarOptions: [] } : {})}
@@ -880,7 +883,9 @@ export function SiddurPage() {
           ? (keepOut: boolean) => void withFreedCarChoice(keepOut, () => cancelRideMutation.mutateAsync({ rideId: selectedRide.id!, expectedVersion: selectedRide.version!, reason: "CANCELLED_BY_MEMBER", asEditor: selectedRide.driver_id !== profileId }))
             .then(() => setSelectedRideId(null), () => undefined)
           : undefined}
-        removingOwnRide={cancelRideMutation.isPending}
+        removingOwnRide={cancelRideMutation.isPending || cancelSeriesDay.busy}
+        onCancelSeriesDay={selectedRide && selectedRide.driver_id === profileId && !volunteerDriverOf(selectedRide) && isSeriesDay(selectedRide)
+          ? () => cancelSeriesDay.start(selectedRide, () => setSelectedRideId(null)) : undefined}
         onRemoveMe={(() => {
           const myKey = selectedRide ? myRidePersonKey(selectedRide, profileId) : null;
           if (!selectedRide?.id || !myKey || selectedRide.version == null || !selectedRide.department_id || !selectedRide.week_start) return undefined;
