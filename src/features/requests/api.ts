@@ -2,7 +2,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { ageFromBirthYear, isAdultPassenger } from "@/lib/childAge";
 import { isActiveStop, parseRouteStops, type RouteStop } from "@/lib/routeStops";
 import { AppError, rpc, toAppError } from "@/lib/rpc";
-import { withPersonBusyRetry } from "@/lib/personBusy";
+import { personBusyYesCount, withPersonBusyRetry } from "@/lib/personBusy";
 import { askShortTurnaround, parseShortTurnaround } from "@/lib/shortTurnaround";
 import { withSmallTrunkRetry } from "@/lib/smallTrunk";
 import { siddurCarName } from "@/lib/siddurCarName";
@@ -1051,15 +1051,13 @@ export async function submitRequest(payload: SubmitRequestPayload): Promise<Json
   // REQ §13.190: `short_turnaround_ask` - when only the car's next ride is too close, the server names it instead of waitlisting.
   // R21B7: a yes to that question is reported back (`overlap_confirmed`), so the form's later calls of the same save
   // (after a guest / release / car-away question) carry it and the member is not asked twice.
-  let overlapConfirmed = false;
+  // The question is asked by `rpc()` itself in the app (`askPersonBusyRefusal`) or by the retry below - both count the yes.
+  const yesBefore = personBusyYesCount();
   const tagged = (result: Record<string, unknown>): Json =>
-    (overlapConfirmed ? { ...result, overlap_confirmed: true } : result) as unknown as Json;
-  const send = (extra: Record<string, boolean>) => withPersonBusyRetry((allowBusy) => {
-    if (allowBusy) overlapConfirmed = true;
-    return withSmallTrunkRetry((allowSmallTrunk) => rpc("submit_request", {
-      payload: { ...payload, short_turnaround_ask: true, ...extra, ...(allowSmallTrunk ? { allow_small_trunk: true } : {}), ...(allowBusy ? { overlap_confirmed: true } : {}) } as unknown as Json,
-    }));
-  });
+    (personBusyYesCount() > yesBefore ? { ...result, overlap_confirmed: true } : result) as unknown as Json;
+  const send = (extra: Record<string, boolean>) => withPersonBusyRetry((allowBusy) => withSmallTrunkRetry((allowSmallTrunk) => rpc("submit_request", {
+    payload: { ...payload, short_turnaround_ask: true, ...extra, ...(allowSmallTrunk ? { allow_small_trunk: true } : {}), ...(allowBusy ? { overlap_confirmed: true } : {}) } as unknown as Json,
+  })));
   try {
     const result = await settleShortTurnaround(await send({}), () => send({ allow_short_turnaround: true }));
     return result && typeof result === "object" && !Array.isArray(result) ? tagged(result as Record<string, unknown>) : result;
