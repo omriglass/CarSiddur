@@ -48,6 +48,17 @@ describe('runFreedSlot', () => {
     expect(result.options[0]).toMatchObject({ request_ids: [first.id], recommended: true });
   });
 
+  it('WT1: a waiting request that starts right when the shortened ride ends still gets the car (the turnaround is a warning)', () => {
+    const input = clone();
+    const before = input.otherRides[0]!;
+    // the waiting request leaves the minute the ride before it is back, no flexibility to move away
+    const length = first.returnMs! - first.departureMs!;
+    input.candidates = [candidate(first.id, first.name, { departureMs: before.endsMs, returnMs: before.endsMs + length, flexDeparture: { earlierMin: 0, laterMin: 0 }, flexReturn: { earlierMin: 0, laterMin: 0 } })];
+    input.offer.startsMs = Math.min(input.offer.startsMs, before.endsMs);
+    const result = runFreedSlot(input);
+    expect(result.outcome).toEqual({ kind: 'auto', requestId: first.id, name: first.name });
+  });
+
   it('several candidates: the Sadran decides, every name listed', () => {
     const input = clone();
     input.candidates.push(candidate('second', 'Member Two', { departureMs: first.departureMs! + HOUR, returnMs: first.returnMs! + HOUR }));

@@ -4972,7 +4972,7 @@ function freedSlotInputFrom(raw) {
     ...raw.car.baseLocationId ? { baseLocationId: raw.car.baseLocationId } : {}
   };
   const bufferSlots = minutesToSlots(config.bufferMinutes);
-  const timeline = buildTimelines([car], bufferSlots, weekSlots, raw.homeLocationId).get(car.id);
+  const timeline = buildTimelines([car], 0, weekSlots, raw.homeLocationId).get(car.id);
   for (const ride of raw.otherRides) {
     timeline.forceAdd({
       rideId: ride.id,
