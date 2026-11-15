@@ -17,8 +17,8 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
-    id: "2026-11-16-multi-day-and-freed-cars",
-    date: "2026-11-16",
+    id: "2026-11-15-multi-day-and-freed-cars",
+    date: "2026-11-15",
     title: "נסיעות של כמה ימים, רכב שמתפנה ורכבים",
     users: [
       "נסיעה של כמה ימים: אפשר להאריך נסיעה של יום אחד לכמה ימים בעריכה (על אותו רכב), לבטל רק יום אחד מתוכה, או לפצל אותה לחלקים.",
