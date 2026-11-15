@@ -11,7 +11,8 @@ export type SeriesCarTakenAnswer =
 
 export interface SeriesCarTakenQuestion {
   blocker: SeriesBlocker;
-  latestReturn: string;
+  /** The latest return that fits before the blocker; null when it would be on the departure day (R21B3). */
+  latestReturn: string | null;
   /** The return the member asked for (to compare with the own ride's end). */
   requestedReturn: string;
   /** The editor is the requester ("יש לך") rather than someone editing for them ("לדנה"). */

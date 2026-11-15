@@ -7,6 +7,9 @@
 --   TEST 4  maintenance on day 2: blocker kind maintenance
 --   TEST 5  the preview of a replace shows the freed tail's offer, and keeps nothing
 --   TEST 6  before publishing (no booking) it is filed like a new series
+--   TEST 7  (R21B3) the car is taken later on the departure day: another member's ride refuses as no_car, with or
+--           without return_earlier (never a one-day ride that returns later); the member's own ride still asks, with
+--           no latest return to offer
 -- Each test rolls its own changes back (raise 'md1_rb'); the whole suite is transactional.
 begin;
 create temporary table md1(k text primary key, id uuid, at timestamptz);
@@ -190,6 +193,43 @@ begin
     raise exception 'md1_rb';
   exception when raise_exception then if sqlerrm <> 'md1_rb' then raise; end if;
   end;
+end $$;
+
+-- TEST 7 (R21B3): the blocker is on the departure day itself (Monday 18:00-20:00; the ride is 10:00-16:00)
+do $$
+declare
+  res jsonb; d0 timestamptz := (select at from md1 where k = 'd0'); car40 uuid := '00000000-0000-0000-0000-000000000040';
+  dept uuid := '00000000-0000-0000-0000-000000000001'; w date := public.current_week_start() + 1407;
+  m101 uuid := '00000000-0000-0000-0000-000000000101'; m103 uuid := '00000000-0000-0000-0000-000000000103';
+  qa uuid := (select id from md1 where k = 'qa'); q uuid; r uuid; ver int;
+begin
+  begin
+    insert into public.requests(department_id, week_start, requester_id, filed_by, destination_id, ride_type_id, depart_at, return_at,
+        trip_shape, trip_type, status)
+      values (dept, w, m103, m103, '00000000-0000-0000-0000-000000000011', '00000000-0000-0000-0000-000000000021',
+              d0 + interval '18 hours', d0 + interval '20 hours', 'round_trip', 'round_trip', 'assigned') returning id into q;
+    insert into public.rides(department_id, week_start, car_id, starts_at, ends_at, origin_id, destination_id, driver_id, status, created_by)
+      select dept, w, car40, d0 + interval '18 hours', d0 + interval '20 hours', x.origin_id, x.destination_id, m103, 'confirmed', m103
+      from public.rides x where x.id = (select id from md1 where k = 'rid') returning id into r;
+    insert into public.ride_requests(ride_id, request_id, role, leg, car_mode) values (r, q, 'driver', 'both', 'keep');
+    perform pg_temp.md1_as(m101);
+    select version into ver from public.requests where id = qa;
+    res := public.submit_series_request(pg_temp.md1_payload(36));
+    assert res ->> 'edit_refused' = 'no_car', format('TEST 7 FAILED: taken later the same day is "no car", got %s', res);
+    res := public.submit_series_request(pg_temp.md1_payload(36, '{"return_earlier": true}'));
+    assert res ->> 'edit_refused' = 'no_car', format('TEST 7 FAILED: return_earlier never makes a one-day ride, got %s', res);
+    assert (select status = 'assigned' and version = ver and return_at = d0 + interval '16 hours' from public.requests where id = qa),
+      'TEST 7 FAILED: nothing changed';
+    -- the member's own ride in the way can still be replaced: asked, with no "return earlier"
+    update public.requests set requester_id = m101, filed_by = m101 where id = q;
+    update public.rides set driver_id = m101 where id = r;
+    res := public.submit_series_request(pg_temp.md1_payload(36));
+    assert res ->> 'edit_refused' = 'car_taken' and res -> 'blocker' ->> 'kind' = 'own_ride' and res -> 'latest_return' = 'null'::jsonb,
+      format('TEST 7 FAILED: own ride asks without a latest return, got %s', res);
+    raise exception 'md1_rb';
+  exception when raise_exception then if sqlerrm <> 'md1_rb' then raise; end if;
+  end;
+  raise notice 'TEST 7 passed: a blocker on the departure day';
 end $$;
 
 rollback;

@@ -54,3 +54,24 @@ describe("submitRequest: a waiting-list entry the car's next ride is too close t
     expect(rpcMock.mock.calls[1]).toEqual(["answer_short_turnaround", { p_request_id: "q", p_accept: false }]);
   });
 });
+
+describe("submitRequest: a yes to the overlap question is reported back, so the form never asks it twice (R21B7)", () => {
+  beforeEach(() => { rpcMock.mockReset(); registerPersonBusyAsker(null); });
+  const edit = { department_id: "d", week_start: "2026-11-08", request_id: "q" } as unknown as SubmitRequestPayload;
+
+  it("tags the result, also when the confirmed call ends in the guest question", async () => {
+    registerPersonBusyAsker(() => Promise.resolve(true));
+    rpcMock.mockRejectedValueOnce(refusal()).mockResolvedValueOnce({ request_id: "q", status: "assigned" });
+    expect(await submitRequest(edit)).toEqual({ request_id: "q", status: "assigned", overlap_confirmed: true });
+
+    const guests = [{ request_id: "g", name: "Noa", kind: "cannot", warnings: [], reason: "day" }];
+    rpcMock.mockRejectedValueOnce(refusal())
+      .mockRejectedValueOnce(new AppError("host_edit_guests", "", undefined, JSON.stringify({ guests })));
+    expect(await submitRequest(edit)).toMatchObject({ needs_confirmation: "host_guests", host_guests: guests, overlap_confirmed: true });
+  });
+
+  it("leaves a result alone when nothing was asked", async () => {
+    rpcMock.mockResolvedValueOnce({ request_id: "q", status: "assigned" });
+    expect(await submitRequest(edit)).toEqual({ request_id: "q", status: "assigned" });
+  });
+});

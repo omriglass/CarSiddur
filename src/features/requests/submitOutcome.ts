@@ -146,9 +146,11 @@ export function editRefusal(
 /** MD1 (REQ item 232): the multi-day edit's car is taken over the span — what blocks it and the latest return that fits. */
 export function seriesCarTaken(
   result: SubmitRequestResult | null | undefined,
-): { blocker: SeriesBlocker; latestReturn: string } | null {
-  if (result?.edit_refused !== "car_taken" || !result.blocker || !result.latest_return) return null;
-  return { blocker: result.blocker, latestReturn: result.latest_return };
+): { blocker: SeriesBlocker; latestReturn: string | null } | null {
+  if (result?.edit_refused !== "car_taken" || !result.blocker) return null;
+  // R21B3: with no latest return only the member's own ride is asked about (it can be replaced)
+  if (!result.latest_return && result.blocker.kind !== "own_ride") return null;
+  return { blocker: result.blocker, latestReturn: result.latest_return ?? null };
 }
 
 /** R14U4: the other people on a ride the member drives (empty when they drive nobody), from a probe or a release answer. */

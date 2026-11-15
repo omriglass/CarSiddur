@@ -44,9 +44,11 @@ export function SeriesCarTakenDialog({ question, onAnswer, onCancel }: {
               {tv("request.carTakenReplace", { weekday: `${weekdayLabel(blocker.starts_at, "short")}${he.days.geresh}` })}
             </Button>
           ) : null}
-          <Button variant={ownRideId ? "outline" : "default"} onClick={() => onAnswer({ kind: "returnEarlier" })} data-testid="series-return-earlier">
-            {tv("request.carTakenReturnEarlier", { time: formatTime(new Date(question.latestReturn)) })}
-          </Button>
+          {question.latestReturn ? (
+            <Button variant={ownRideId ? "outline" : "default"} onClick={() => onAnswer({ kind: "returnEarlier" })} data-testid="series-return-earlier">
+              {tv("request.carTakenReturnEarlier", { time: formatTime(new Date(question.latestReturn)) })}
+            </Button>
+          ) : null}
         </div>
       ) : null}
     </ConfirmDialog>

@@ -2403,16 +2403,24 @@ begin
       v_blocker := public._series_span_blocker(v_ride.car_id, v_depart, v_return, v_ta, v_exclude, v_req.requester_id);
       if v_blocker is not null then
         v_latest := to_timestamp(floor(extract(epoch from ((v_blocker ->> 'starts_at')::timestamptz - v_ta)) / 900) * 900);
-        if v_latest > v_depart then v_return := least(v_return, v_latest); end if;
+        -- R21B3: only to a later day - a return still on the departure day is no multi-day ride (refused below)
+        if (v_latest at time zone 'Asia/Jerusalem')::date > (v_depart at time zone 'Asia/Jerusalem')::date then
+          v_return := least(v_return, v_latest);
+        end if;
       end if;
     end if;
 
     v_blocker := public._series_span_blocker(v_ride.car_id, v_depart, v_return, v_ta, v_exclude, v_req.requester_id);
     if v_blocker is not null then
       v_latest := to_timestamp(floor(extract(epoch from ((v_blocker ->> 'starts_at')::timestamptz - v_ta)) / 900) * 900);
-      -- a blocker at the very start leaves nothing to return earlier to: the ordinary "no car" refusal
-      if v_latest <= v_depart then
-        return jsonb_build_object('ok', false, 'edit_refused', 'no_car', 'unchanged', false);
+      -- R21B3: a blocker on the departure day leaves no later day to return on, so there is nothing to return
+      -- earlier to (`latest_return` null). Someone else's ride or the garage: the ordinary "no car" refusal; the
+      -- member's own ride can still be replaced, so that question is still asked.
+      if (v_latest at time zone 'Asia/Jerusalem')::date <= (v_depart at time zone 'Asia/Jerusalem')::date then
+        if v_blocker ->> 'kind' is distinct from 'own_ride' or v_replace is not null then
+          return jsonb_build_object('ok', false, 'edit_refused', 'no_car', 'unchanged', false);
+        end if;
+        v_latest := null;
       end if;
       return jsonb_build_object('ok', false, 'edit_refused', 'car_taken', 'unchanged', false,
         'blocker', v_blocker, 'latest_return', v_latest);
@@ -2450,17 +2458,11 @@ begin
     update public.requests set status = 'withdrawn', status_reason = 'SERIES_EDITED' where id = any(array[v_req.id] || v_replaced_reqs);
     perform set_config('app.system_status_transition', v_prev, true);
 
-    if (v_return at time zone 'Asia/Jerusalem')::date > (v_depart at time zone 'Asia/Jerusalem')::date then
-      perform set_config('app.series_prefer_car', coalesce(v_ride.car_id::text, ''), true);
-      v_new := public.submit_series_request(v_clean);
-      perform set_config('app.series_prefer_car', '', true);
-      select array_agg(value::uuid) into v_new_ids from jsonb_array_elements_text(v_new -> 'request_ids');
-    else
-      -- "return earlier" brought it back to one day: an ordinary request
-      v_new := public.submit_request(v_clean);
-      v_new := v_new || jsonb_build_object('series_id', null, 'request_ids', jsonb_build_array(v_new ->> 'request_id'));
-      v_new_ids := array[(v_new ->> 'request_id')::uuid];
-    end if;
+    -- always a multi-day span here ("return earlier" never brings it back to the departure day, R21B3)
+    perform set_config('app.series_prefer_car', coalesce(v_ride.car_id::text, ''), true);
+    v_new := public.submit_series_request(v_clean);
+    perform set_config('app.series_prefer_car', '', true);
+    select array_agg(value::uuid) into v_new_ids from jsonb_array_elements_text(v_new -> 'request_ids');
 
     -- REQ §13.158 + MD1: a booking is never lost, and a booked day keeps its car for the whole span.
     v_lost := v_booked and (
@@ -3065,10 +3067,13 @@ begin
   for g in select * from jsonb_to_recordset(p_guests) as x(ride_id uuid, car_id uuid, request_id uuid, role public.ride_role,
              leg public.ride_leg, car_mode public.leg_car_mode, status public.request_status, status_reason text,
              decision text) loop
-    -- withdrawn meanwhile, or already on another ride: nothing to do
-    continue when not exists (select 1 from public.requests r where r.id = g.request_id and r.status = 'submitted')
+    -- withdrawn meanwhile, or this leg is already on another ride: nothing to do. A guest whose other leg rides
+    -- elsewhere (R21B1) keeps its status and is handled like any guest.
+    continue when not exists (select 1 from public.requests r where r.id = g.request_id
+                              and r.status not in ('withdrawn', 'cancelled', 'draft'))
       or exists (select 1 from public.ride_requests rr join public.rides rd on rd.id = rr.ride_id
-                 where rr.request_id = g.request_id and rd.status <> 'cancelled');
+                 where rr.request_id = g.request_id and rd.status <> 'cancelled'
+                   and ((g.leg in ('out', 'both') and rr.covers_out) or (g.leg in ('return', 'both') and rr.covers_return)));
     select * into gq from public.requests where id = g.request_id;
     v_ok := false; v_warns := '{}'; v_reason := null; v_chk := null;
     if g.decision = 'release' then
@@ -4039,6 +4044,52 @@ end $$;
 ALTER FUNCTION "public"."_notify_short_turnaround"("p_car" "uuid", "p_end" timestamp with time zone, "p_exclude" "uuid", "p_actor" "uuid") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."_offer_freed_after_edit"("p_request" "uuid") RETURNS "void"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  v_ids jsonb := coalesce(nullif(current_setting('app.edit_freed_rides', true), ''), '[]')::jsonb;
+  g public.rides%rowtype; n public.rides%rowtype; v_kind text;
+  v_hm text := 'HH24:MI';
+begin
+  if jsonb_array_length(v_ids) = 0 then return; end if;
+  perform set_config('app.edit_freed_rides', '', true);
+  for g in select r.* from public.rides r
+           where r.id in (select x::uuid from jsonb_array_elements_text(v_ids) x) order by r.starts_at, r.id loop
+    -- the request's ride on the same car now, where it overlaps the old hours
+    n := null;
+    select r.* into n from public.ride_requests rr join public.rides r on r.id = rr.ride_id
+    where rr.request_id = p_request and r.status <> 'cancelled' and r.car_id = g.car_id
+      and r.starts_at < g.ends_at and r.ends_at > g.starts_at
+    order by r.starts_at, r.id limit 1;
+    if n.id is null then
+      perform public._offer_freed_time(g.id, g.car_id, g.starts_at, g.ends_at, g.origin_id, 'edit', false, g.id);
+      continue;
+    end if;
+    v_kind := case when n.starts_at >= g.starts_at and n.ends_at <= g.ends_at then 'shorten' else 'edit' end;
+    -- both ends freed: two offers, but one "handled outside the app" message that names both ranges (REQ item 237)
+    if n.starts_at > g.starts_at and n.ends_at < g.ends_at and n.origin_id is not distinct from n.destination_id then
+      perform set_config('app.freed_ranges',
+        to_char(g.starts_at at time zone 'Asia/Jerusalem', v_hm) || '–' || to_char(n.starts_at at time zone 'Asia/Jerusalem', v_hm) || ', ' ||
+        to_char(n.ends_at at time zone 'Asia/Jerusalem', v_hm) || '–' || to_char(g.ends_at at time zone 'Asia/Jerusalem', v_hm), true);
+    end if;
+    if n.starts_at > g.starts_at then
+      perform public._offer_freed_time(g.id, g.car_id, g.starts_at, n.starts_at, g.origin_id, v_kind, false, g.id);
+    end if;
+    -- the hours after the new ride are free at this place only when the new ride brings the car back
+    if n.ends_at < g.ends_at and n.origin_id is not distinct from n.destination_id then
+      perform public._offer_freed_time(g.id, g.car_id, n.ends_at, g.ends_at, g.origin_id, v_kind, false, g.id);
+    end if;
+    perform set_config('app.freed_ranges', '', true);
+  end loop;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."_offer_freed_after_edit"("p_request" "uuid") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."_offer_freed_slot"("p_ride_id" "uuid") RETURNS "uuid"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -4047,6 +4098,12 @@ declare v_ride public.rides%rowtype;
 begin
   select * into v_ride from public.rides where id = p_ride_id;
   if v_ride.id is null or v_ride.origin_id is distinct from v_ride.destination_id then return null; end if;
+  -- R21B6: inside a request edit the ride is remembered and offered after the new hours are placed
+  if coalesce(current_setting('app.edit_defer_offers', true), '') = 'on' then
+    perform set_config('app.edit_freed_rides',
+      (coalesce(nullif(current_setting('app.edit_freed_rides', true), ''), '[]')::jsonb || to_jsonb(p_ride_id::text))::text, true);
+    return null;
+  end if;
   return public._offer_freed_time(p_ride_id, v_ride.car_id, v_ride.starts_at, v_ride.ends_at, v_ride.origin_id,
     case when coalesce(current_setting('app.edit_prefer_car', true), '') <> '' then 'edit' else 'cancel' end,
     false, p_ride_id);
@@ -4601,6 +4658,22 @@ end $$;
 ALTER FUNCTION "public"."_request_fallback_from_payload"("p_payload" "jsonb", "p_current" "public"."request_fallback") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."_request_is_ride_guest"("p_request" "uuid", "p_ride" "uuid") RETURNS boolean
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  select exists (
+    select 1 from public.ride_requests h
+    join public.requests hq on hq.id = h.request_id
+    join public.rides r on r.id = h.ride_id
+    where h.ride_id = p_ride and h.request_id <> p_request
+      and (h.role = 'driver' or hq.requester_id = r.driver_id))
+$$;
+
+
+ALTER FUNCTION "public"."_request_is_ride_guest"("p_request" "uuid", "p_ride" "uuid") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."_request_save_unchanged"("p_request_id" "uuid", "payload" "jsonb", "p_trip_type" "public"."trip_type", "p_trip_shape" "public"."trip_shape", "p_needs_car" boolean, "p_one_way_mode" "public"."leg_car_mode", "p_origin_id" "uuid", "p_origin_text" "text", "p_depart_at" timestamp with time zone, "p_return_at" timestamp with time zone, "p_placement_only" boolean DEFAULT false) RETURNS boolean
     LANGUAGE "plpgsql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -5000,12 +5073,16 @@ begin
     'recipients', coalesce((select jsonb_agg(distinct x) from (
         select q.requester_id as x
         union select rc.profile_id from public.request_companions rc where rc.request_id = q.id
+        -- R21B5: the driver and the added people of the request's own ride only. In someone else's ride the request
+        -- is a guest: that ride did not change, and its driver hears "X left" from the release itself.
         union select r.driver_id from public.ride_requests rr join public.rides r on r.id = rr.ride_id
           where v_public and rr.request_id = q.id and r.status <> 'cancelled' and r.driver_id is not null
+            and not public._request_is_ride_guest(q.id, r.id)
         -- REQ §13.205: people added to the ride ("add passengers") ride on it too
         union select rp.person_id from public.ride_requests rr join public.rides r on r.id = rr.ride_id
           join public.ride_passengers rp on rp.ride_id = r.id
-          where v_public and rr.request_id = q.id and r.status <> 'cancelled' and rp.person_id is not null) s
+          where v_public and rr.request_id = q.id and r.status <> 'cancelled' and rp.person_id is not null
+            and not public._request_is_ride_guest(q.id, r.id)) s
         where x is not null), '[]'::jsonb));
 end $$;
 
@@ -25302,7 +25379,9 @@ begin
                 or (select b.request_id from public.ride_requests b where b.ride_id = rd.id
                     order by (b.role = 'driver') desc, b.created_at, b.request_id limit 1) = v_request_id)) then
       begin
-        perform public.submit_request((payload - 'probe_only') || jsonb_build_object('host_guests', (
+        -- R21B4: the trial answers "yes" to the overlap question too (asked by the real save) - left unanswered it
+        -- stopped the trial, and the form warned "you will lose the car" about an edit that keeps one.
+        perform public.submit_request((payload - 'probe_only') || jsonb_build_object('overlap_confirmed', true, 'host_guests', (
           select jsonb_object_agg(g.request_id::text, 'release')
           from public.ride_requests h join public.ride_requests g on g.ride_id = h.ride_id and g.request_id <> v_request_id
           where h.request_id = v_request_id)));
@@ -25571,7 +25650,10 @@ begin
     perform set_config('app.edit_kept_rides', coalesce((select jsonb_agg(jsonb_build_object('car', r.car_id, 'from', r.starts_at, 'until', r.blocked_until))
       from public.ride_requests rr join public.rides r on r.id = rr.ride_id
       where rr.request_id = v_request_id and r.status <> 'cancelled' and r.car_id is not null), '[]'::jsonb)::text, true);
+    -- R21B6: the hours the old ride gives up are offered once the new hours are placed (only what they leave free)
+    perform set_config('app.edit_defer_offers', 'on', true);
     perform public.release_request_booking(v_request_id);
+    perform set_config('app.edit_defer_offers', 'off', true);
     perform set_config('app.system_status_transition', 'on', true);
     update public.requests set status = 'submitted', status_reason = null where id = v_request_id;
     perform set_config('app.system_status_transition', 'off', true);
@@ -25863,6 +25945,9 @@ begin
   end if;
   if v_guest_stays then
     -- R20B8: nothing to place; the ride is unchanged (the Sadran got request_changed with the update above)
+    -- R21B2: and nobody rides differently, so the request form's "ride edited" notice of this save is dropped
+    perform set_config('app.ride_edit_before',
+      (coalesce(nullif(current_setting('app.ride_edit_before', true), ''), '{}')::jsonb - v_request_id::text)::text, true);
     v_auto_result := jsonb_build_object('status', v_existing.status, 'reason', 'GUEST_STAYS',
       'ride_id', (select rr.ride_id from public.ride_requests rr join public.rides r on r.id = rr.ride_id
                   where rr.request_id = v_request_id and r.status <> 'cancelled' order by r.starts_at limit 1));
@@ -26117,6 +26202,8 @@ begin
   end if;
   perform set_config('app.late_request_notice', 'off', true);
 
+  -- R21B6: the released ride's hours that the new placement left free are offered now (as an edit, or a shortening)
+  if v_published_edit and v_request_id is not null then perform public._offer_freed_after_edit(v_request_id); end if;
   -- R2B20: a post-publish edit that was placed straight away is confirmed to the member.
   perform set_config('app.edit_prefer_car', '', true);
   perform set_config('app.car_stays_away', '', true);
@@ -35842,6 +35929,11 @@ GRANT ALL ON FUNCTION "public"."_notify_short_turnaround"("p_car" "uuid", "p_end
 
 
 
+REVOKE ALL ON FUNCTION "public"."_offer_freed_after_edit"("p_request" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_offer_freed_after_edit"("p_request" "uuid") TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."_offer_freed_slot"("p_ride_id" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."_offer_freed_slot"("p_ride_id" "uuid") TO "service_role";
 
@@ -35930,6 +36022,11 @@ GRANT ALL ON FUNCTION "public"."_request_booked_times"("p_request" "uuid") TO "s
 
 REVOKE ALL ON FUNCTION "public"."_request_fallback_from_payload"("p_payload" "jsonb", "p_current" "public"."request_fallback") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."_request_fallback_from_payload"("p_payload" "jsonb", "p_current" "public"."request_fallback") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."_request_is_ride_guest"("p_request" "uuid", "p_ride" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_request_is_ride_guest"("p_request" "uuid", "p_ride" "uuid") TO "service_role";
 
 
 

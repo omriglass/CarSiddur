@@ -6059,6 +6059,10 @@ export type Database = {
         }
         Returns: undefined
       }
+      _offer_freed_after_edit: {
+        Args: { p_request: string }
+        Returns: undefined
+      }
       _offer_freed_slot: { Args: { p_ride_id: string }; Returns: string }
       _offer_freed_time: {
         Args: {
@@ -6144,6 +6148,10 @@ export type Database = {
           p_payload: Json
         }
         Returns: Database["public"]["Enums"]["request_fallback"]
+      }
+      _request_is_ride_guest: {
+        Args: { p_request: string; p_ride: string }
+        Returns: boolean
       }
       _request_save_unchanged: {
         Args: {

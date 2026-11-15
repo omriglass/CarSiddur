@@ -415,6 +415,10 @@ export function RequestForm({
   const formRef = useRef<HTMLFormElement>(null);
   /** Owner 2026-10-11: the member answered "keep both" to the overlap warning — the server then places it like any request. */
   const overlapConfirmedRef = useRef(false);
+  /** R21B7: the answers given so far in this save - every later call of the save carries them all. */
+  const saveOptionsRef = useRef<SubmitOptions>({});
+  /** R21B7: the values of the last save, to tell "back, then save the same thing again" from a new save. */
+  const saveSignatureRef = useRef<string | null>(null);
   const onScrollToInvalid = useScrollToFirstError(form, formRef);
   // REQ §13.110 / UX_FLOWS §3.4a: one form state, two field arrangements (`profiles.classic_request_form`).
   const layout = useRequestFormLayout();
@@ -917,7 +921,16 @@ export function RequestForm({
   }
 
   async function submitChecked(formValues: RequestFormValues) {
-    overlapConfirmedRef.current = false;
+    // R21B7: "back" on a late question and saving the same values again keeps the plain yes answers already given
+    // (overlap, lose the car, release, a child's other ride); questions with a choice are asked again.
+    const signature = JSON.stringify([initial?.id ?? null, formValues]);
+    const sameValues = saveSignatureRef.current === signature;
+    saveSignatureRef.current = signature;
+    const previous = saveOptionsRef.current;
+    saveOptionsRef.current = sameValues
+      ? { confirmLose: previous.confirmLose, confirmRelease: previous.confirmRelease, ignoreChildOverlap: previous.ignoreChildOverlap }
+      : {};
+    if (!sameValues) overlapConfirmedRef.current = false;
     freedAskedRef.current = false;
     freedKeepRef.current = false;
     if (joinGroup && joinWindow) {
@@ -931,7 +944,7 @@ export function RequestForm({
       finishUnchanged();
       return;
     }
-    if (duplicate && !waitlist) {
+    if (duplicate && !waitlist && !overlapConfirmedRef.current) {
       // The server may know better than the client check (`unchanged: true` on its probe): then there is nothing to ask.
       if (mode === "edit" && !isSeriesSubmit(formValues) && !seriesEdit) {
         try {
@@ -1052,7 +1065,10 @@ export function RequestForm({
   }
 
   // REQ §13.169 (c): every call of one save is marked as the request form's, so the riders get one notice of it.
-  function performSubmit(formValues: RequestFormValues, options: SubmitOptions = {}) {
+  function performSubmit(formValues: RequestFormValues, answer: SubmitOptions = {}) {
+    // R21B7: an answer joins the ones already given in this save (a later question never drops an earlier answer).
+    const options = { ...saveOptionsRef.current, ...answer };
+    saveOptionsRef.current = options;
     // REQ item 237: once "לשמור בלי להעביר את הרכב" is chosen, the rest of the save's calls carry the keep header.
     return asRequestFormSave(() => withFreedCarChoice(() => freedKeepRef.current, () => performSubmitCalls(formValues, options)));
   }
@@ -1130,7 +1146,7 @@ export function RequestForm({
         // on each day's ride, not just the first.
         // MD1 + FC1: a booked one-day ride made multi-day may free hours for someone waiting — ask first.
         if (mode === "edit" && !seriesEdit && initial?.id && !freedAskedRef.current && (initial.status === "assigned" || initial.status === "merged")) {
-          const go = await freedGate.ask({ action: "submit_series_request", args: { payload: { ...payload, short_turnaround_ask: true } } });
+          const go = await freedGate.ask({ action: "submit_series_request", args: { payload: { ...payload, short_turnaround_ask: true, overlap_confirmed: true } } });
           if (!go) return;
           freedAskedRef.current = true;
           freedKeepRef.current = go === "keep";
@@ -1143,7 +1159,7 @@ export function RequestForm({
           setPendingCarTaken({
             values: formValues,
             options,
-            question: { ...carTaken, requestedReturn: payload.return_at ?? carTaken.latestReturn, editorIsRequester: !editingOthersRequest },
+            question: { ...carTaken, requestedReturn: payload.return_at ?? carTaken.latestReturn ?? carTaken.blocker.ends_at, editorIsRequester: !editingOthersRequest },
           });
           return;
         }
@@ -1178,9 +1194,10 @@ export function RequestForm({
       }
 
       // FC1 (REQ item 231): a published edit that frees the car for someone waiting asks first ("הרכב יתפנה לאחרים");
-      // asked once per save, not again on the release / overlap questions that may follow.
+      // asked once per save, not again on the release / overlap questions that may follow. R21B7: the preview answers
+      // the overlap question with yes (the save asks it right after), else it would show nothing and never ask.
       if (mode === "edit" && initial?.id && !freedAskedRef.current && (initial.status === "assigned" || initial.status === "merged")) {
-        const go = await freedGate.ask({ action: "submit_request", args: { payload: { ...payload, short_turnaround_ask: true } } });
+        const go = await freedGate.ask({ action: "submit_request", args: { payload: { ...payload, short_turnaround_ask: true, overlap_confirmed: true } } });
         if (!go) return;
         freedAskedRef.current = true;
         freedKeepRef.current = go === "keep";
@@ -1188,6 +1205,8 @@ export function RequestForm({
       const raw = await submitMutation.mutateAsync(payload);
       const result = raw as unknown as SubmitRequestResult | null;
       const requestId = result?.request_id ?? initial?.id;
+      // R21B7: the overlap question was answered yes inside that call - not asked again later in this save
+      if (result?.overlap_confirmed) overlapConfirmedRef.current = true;
 
       // R11B1: the server found nothing to change — no release/overlap questions, no outcome toast.
       if (result?.unchanged && !peopleDiffer(formValues)) {

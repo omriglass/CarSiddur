@@ -974,7 +974,8 @@ export interface SubmitRequestResult {
    */
   blocker?: SeriesBlocker;
   /** With `car_taken`: the latest return that fits (the blocker's start minus the turnaround). */
-  latest_return?: string;
+  /** Null when the car is taken on the departure day itself: nothing to return earlier to (R21B3). */
+  latest_return?: string | null;
   /**
    * REQ §13.101 f: a car takes the new hours, but the member drives others who would be left without a driver —
    * nothing was changed; resubmit with `confirm_release: true` to go ahead.
@@ -992,6 +993,8 @@ export interface SubmitRequestResult {
   overlaps?: { request_id: string | null; ride_id: string | null }[];
   /** With `probe_only`: the edit would release the member's current car (R2B20). */
   would_lose_booking?: boolean;
+  /** R21B7 (set by `submitRequest`, not the server): the overlap question was answered yes during this call. */
+  overlap_confirmed?: boolean;
 }
 
 /** `submit_request` with `probe_only: true` — changes nothing, reports `would_lose_booking`. */
@@ -1046,11 +1049,20 @@ export async function submitRequest(payload: SubmitRequestPayload): Promise<Json
   // REQ §13.111 (a): `needs_large_trunk` (quick / car-now, ask-to-join) asks the shared dialog and retries with the flag;
   // REQ §13.176: so does `person_busy` (an overlap with the member's own ride or request), retried as `overlap_confirmed`.
   // REQ §13.190: `short_turnaround_ask` - when only the car's next ride is too close, the server names it instead of waitlisting.
-  const send = (extra: Record<string, boolean>) => withPersonBusyRetry((allowBusy) => withSmallTrunkRetry((allowSmallTrunk) => rpc("submit_request", {
-    payload: { ...payload, short_turnaround_ask: true, ...extra, ...(allowSmallTrunk ? { allow_small_trunk: true } : {}), ...(allowBusy ? { overlap_confirmed: true } : {}) } as unknown as Json,
-  })));
+  // R21B7: a yes to that question is reported back (`overlap_confirmed`), so the form's later calls of the same save
+  // (after a guest / release / car-away question) carry it and the member is not asked twice.
+  let overlapConfirmed = false;
+  const tagged = (result: Record<string, unknown>): Json =>
+    (overlapConfirmed ? { ...result, overlap_confirmed: true } : result) as unknown as Json;
+  const send = (extra: Record<string, boolean>) => withPersonBusyRetry((allowBusy) => {
+    if (allowBusy) overlapConfirmed = true;
+    return withSmallTrunkRetry((allowSmallTrunk) => rpc("submit_request", {
+      payload: { ...payload, short_turnaround_ask: true, ...extra, ...(allowSmallTrunk ? { allow_small_trunk: true } : {}), ...(allowBusy ? { overlap_confirmed: true } : {}) } as unknown as Json,
+    }));
+  });
   try {
-    return await settleShortTurnaround(await send({}), () => send({ allow_short_turnaround: true }));
+    const result = await settleShortTurnaround(await send({}), () => send({ allow_short_turnaround: true }));
+    return result && typeof result === "object" && !Array.isArray(result) ? tagged(result as Record<string, unknown>) : result;
   } catch (error) {
     // REQ §13.211: a new one-way request that would leave a car at the destination - nothing was filed; the form asks
     // with the same dialog as the edit (item 210) and sends again with `allow_car_away`, or without `car_away_ask`.
@@ -1059,12 +1071,12 @@ export async function submitRequest(payload: SubmitRequestPayload): Promise<Json
       let guests: HostGuestQuestion[] = [];
       try { guests = (JSON.parse(error.detail ?? "{}") as { guests?: HostGuestQuestion[] }).guests ?? []; } catch { /* asked with no list */ }
       if (guests.length === 0) throw error;
-      return { ok: false, needs_confirmation: "host_guests", unchanged: false, host_guests: guests } as unknown as Json;
+      return tagged({ ok: false, needs_confirmation: "host_guests", unchanged: false, host_guests: guests });
     }
     if (!(error instanceof AppError) || error.code !== "car_stays_away") throw error;
     let detail: { car_name?: string; next_ride?: boolean } = {};
     try { detail = JSON.parse(error.detail ?? "{}") as typeof detail; } catch { /* generic words */ }
-    return { ok: false, needs_confirmation: "car_stays_away", unchanged: false, car_name: detail.car_name ?? "", next_ride: !!detail.next_ride } as unknown as Json;
+    return tagged({ ok: false, needs_confirmation: "car_stays_away", unchanged: false, car_name: detail.car_name ?? "", next_ride: !!detail.next_ride });
   }
 }
 
