@@ -5170,8 +5170,9 @@ function noCarReason(input, nr, timelines) {
   return { code: "UNMET_NO_CAR", text: reason("UNMET_NO_CAR") };
 }
 function personBusyMember(input, nr, timelines, people) {
-  if (!nr.legs[0] || nr.isPassengerOnly || busyWindowsFor(people, nr).length === 0) return void 0;
+  if (!nr.legs[0] || nr.isPassengerOnly) return void 0;
   const busy = busyWindowsFor(people, nr);
+  if (busy.length === 0) return void 0;
   const blocked = input.cars.some((car) => {
     if (car.type !== "shared" || !fits(car, nr.passengers) || !needsFit(car, nr.luggage ? 1 : 0, nr.tow ? 1 : 0)) return false;
     const tl = timelines.get(car.id);

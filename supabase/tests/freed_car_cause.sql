@@ -206,5 +206,54 @@ begin
   raise notice 'TEST 6 passed: a cancellation names the cancel';
 end $$;
 set constraints all immediate;
+set constraints all deferred;
+
+-- TEST 7 (review 2026-11-15): a ride shortened at both ends offers both ends — two open offers, neither superseded
+do $$
+declare
+  dept uuid := '00000000-0000-0000-0000-000000000001';
+  m101 uuid := '00000000-0000-0000-0000-000000000101';
+  sadran uuid := '00000000-0000-0000-0000-000000000102';
+  car42 uuid := '00000000-0000-0000-0000-000000000042';
+  home uuid := (select home_destination_id from public.departments where id = '00000000-0000-0000-0000-000000000001');
+  w date := (select week_start from public.rides where id = (select id from fcc where k = 'rid'));
+  d2 timestamptz; r2 uuid;
+begin
+  d2 := ((w + 3) + time '00:00') at time zone 'Asia/Jerusalem';
+  insert into public.rides(department_id, week_start, car_id, starts_at, ends_at, origin_id, destination_id, driver_id, status, created_by)
+  values (dept, w, car42, d2 + interval '10 hours', d2 + interval '16 hours', home, home, m101, 'confirmed', sadran) returning id into r2;
+  insert into fcc values ('r2', r2);
+  perform set_config('request.jwt.claims', jsonb_build_object('sub', m101, 'role', 'authenticated')::text, true);
+  update public.rides set starts_at = d2 + interval '12 hours', ends_at = d2 + interval '13 hours' where id = r2;
+end $$;
+set constraints all immediate;
+set constraints all deferred;
+do $$
+declare
+  r2 uuid := (select id from fcc where k = 'r2'); r public.rides%rowtype; n int;
+begin
+  select * into r from public.rides where id = r2;
+  select count(*) into n from public.freed_slot_offers where cancelled_ride_id = r2 and status = 'open' and kept_ride and cause_kind = 'shorten';
+  assert n = 2, format('TEST 7 FAILED: both ends are offered, got %s open offers', n);
+  assert exists (select 1 from public.freed_slot_offers where cancelled_ride_id = r2 and status = 'open' and ends_at = r.starts_at),
+    'TEST 7 FAILED: the morning is offered up to the ride''s new start';
+  assert exists (select 1 from public.freed_slot_offers where cancelled_ride_id = r2 and status = 'open' and starts_at = r.ends_at),
+    'TEST 7 FAILED: the afternoon is offered from the ride''s new end';
+  -- shortened again at the end: only the afternoon offer is replaced
+  update public.rides set ends_at = ends_at - interval '30 minutes' where id = r2;
+end $$;
+set constraints all immediate;
+set constraints all deferred;
+do $$
+declare r2 uuid := (select id from fcc where k = 'r2'); r public.rides%rowtype;
+begin
+  select * into r from public.rides where id = r2;
+  assert (select count(*) from public.freed_slot_offers where cancelled_ride_id = r2 and status = 'open') = 2
+     and exists (select 1 from public.freed_slot_offers where cancelled_ride_id = r2 and status = 'open' and starts_at = r.ends_at)
+     and exists (select 1 from public.freed_slot_offers where cancelled_ride_id = r2 and status = 'open' and ends_at = r.starts_at)
+     and (select count(*) from public.freed_slot_offers where cancelled_ride_id = r2 and close_reason = 'superseded') = 1,
+    'TEST 7 FAILED: a second shortening replaces only the offer it overlaps';
+  raise notice 'TEST 7 passed: a ride shortened at both ends offers both';
+end $$;
 
 rollback;

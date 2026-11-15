@@ -3,6 +3,7 @@
 // it would open; the browser ranks it with the same solver module as the on-ride-cancelled edge function
 // (`runFreedSlot`, src/solver/freedSlotRun.ts), so the line matches what then happens. The line is left out when the
 // answer takes longer than FREED_CAR_PREVIEW_BUDGET_MS (owner: 300–500 ms at most).
+import { reportClientError } from "@/features/diagnostics/reportClientError";
 import { runFreedSlot, type FreedSlotOutcome, type FreedSlotRaw } from "@/solver";
 import { he, tv } from "@/i18n/he";
 
@@ -44,11 +45,42 @@ export function freedCarLine(inputs: readonly unknown[]): string | null {
   return lines.length ? [...new Set(lines)].join(" ") : null;
 }
 
+/** What a preview that missed the budget turned out to be, once its answer arrived. */
+export interface MissedFreedCarPreview {
+  action: string;
+  /** How long the answer really took. */
+  ms: number;
+  /** Whether a prompt was lost: someone waiting would have got the car, and the person was not asked. */
+  hadLine: boolean;
+}
+
+/**
+ * Review 2026-11-15: a preview slower than the budget is skipped silently, and with it the prompt and the
+ * "אסתדר מחוץ לאפליקציה" choice. Recorded in `client_errors` (context `perf:freed-preview`) so the budget can be
+ * judged on real numbers; the reporter dedupes and caps it.
+ */
+function reportMissedPreview(missed: MissedFreedCarPreview): void {
+  reportClientError({
+    message: `freed-car preview over budget: ${missed.action}${missed.hadLine ? " (prompt lost)" : ""}`,
+    stack: `ms=${missed.ms} budget=${FREED_CAR_PREVIEW_BUDGET_MS}`,
+    context: "perf:freed-preview",
+  });
+}
+
 /** Ask the server, rank in the browser; null when nobody waiting would get the car, on any error, or past the budget. */
-export async function fetchFreedCarLine(request: FreedCarPreviewRequest, budgetMs: number = FREED_CAR_PREVIEW_BUDGET_MS): Promise<string | null> {
+export async function fetchFreedCarLine(
+  request: FreedCarPreviewRequest,
+  budgetMs: number = FREED_CAR_PREVIEW_BUDGET_MS,
+  onMissed: (missed: MissedFreedCarPreview) => void = reportMissedPreview,
+): Promise<string | null> {
+  const started = performance.now();
   let timer: ReturnType<typeof setTimeout> | undefined;
-  const late = new Promise<null>((resolve) => { timer = setTimeout(() => resolve(null), budgetMs); });
+  let timedOut = false;
+  const late = new Promise<null>((resolve) => { timer = setTimeout(() => { timedOut = true; resolve(null); }, budgetMs); });
   const answer = previewFreedCar(request).then((inputs) => freedCarLine(inputs)).catch(() => null);
+  void answer.then((line) => {
+    if (timedOut) onMissed({ action: request.action, ms: Math.round(performance.now() - started), hadLine: !!line });
+  });
   try {
     return await Promise.race([answer, late]);
   } finally {

@@ -29,10 +29,10 @@ export function liveEventText(event: BoardLiveEvent): string {
       return tv("liveEvents.proposalExpired", { name });
     case "joined": {
       const list = [...new Set((event.names ?? []).filter(Boolean))];
+      // owner 2026-11-15: the slash form for several people too ("יוסי ו־רון הצטרף/ה")
       const names = joinFreedNames(list, "and");
-      const many = list.length > 1;
-      if (!event.owner_name) return tv(many ? "liveEvents.joinedManyNoOwner" : "liveEvents.joinedNoOwner", { names });
-      return tv(many ? "liveEvents.joinedMany" : "liveEvents.joined", { names, owner: event.owner_name });
+      if (!event.owner_name) return tv("liveEvents.joinedNoOwner", { names });
+      return tv("liveEvents.joined", { names, owner: event.owner_name });
     }
   }
 }

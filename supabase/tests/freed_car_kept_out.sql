@@ -110,5 +110,42 @@ begin
     'TEST 3 FAILED: without the header the hours are offered';
   raise notice 'TEST 3 passed: the ordinary way is unchanged';
 end $$;
+set constraints all immediate;
+set constraints all deferred;
+
+-- TEST 4 (review 2026-11-15): both ends freed and kept out — still one inbox message per Sadran, naming both ranges
+do $$
+declare
+  dept uuid := '00000000-0000-0000-0000-000000000001';
+  m101 uuid := '00000000-0000-0000-0000-000000000101';
+  sadran uuid := '00000000-0000-0000-0000-000000000102';
+  car42 uuid := '00000000-0000-0000-0000-000000000042';
+  home uuid := (select home_destination_id from public.departments where id = '00000000-0000-0000-0000-000000000001');
+  w date := (select week_start from public.rides where id = (select id from fko where k = 'ra'));
+  d2 timestamptz; r2 uuid;
+begin
+  d2 := ((w + 3) + time '00:00') at time zone 'Asia/Jerusalem';
+  insert into public.rides(department_id, week_start, car_id, starts_at, ends_at, origin_id, destination_id, driver_id, status, created_by)
+  values (dept, w, car42, d2 + interval '10 hours', d2 + interval '16 hours', home, home, m101, 'confirmed', sadran) returning id into r2;
+  insert into fko values ('r2', r2);
+  perform set_config('request.headers', '{"x-freed-car":"keep"}', true);
+  perform set_config('request.jwt.claims', jsonb_build_object('sub', m101, 'role', 'authenticated')::text, true);
+  update public.rides set starts_at = d2 + interval '12 hours', ends_at = d2 + interval '13 hours' where id = r2;
+end $$;
+set constraints all immediate;
+set constraints all deferred;
+do $$
+declare r2 uuid := (select id from fko where k = 'r2'); n int; v_body text;
+begin
+  perform set_config('request.headers', '', true);
+  assert (select count(*) from public.freed_slot_offers where cancelled_ride_id = r2 and close_reason = 'kept_out') = 2
+     and not exists (select 1 from public.freed_slot_offers where cancelled_ride_id = r2 and status <> 'closed'),
+    'TEST 4 FAILED: both ends recorded as kept out, nothing offered';
+  select count(*), min(body_he) into n, v_body from public.notifications
+   where data ->> 'variant' = 'freed_kept_out' and data ->> 'ride_id' = r2::text and recipient_id = '00000000-0000-0000-0000-000000000102';
+  assert n = 1, format('TEST 4 FAILED: one message, got %s', n);
+  assert v_body like '%10:00–12:00, 13:00–16:00%', format('TEST 4 FAILED: both ranges named: %s', v_body);
+  raise notice 'TEST 4 passed: both ends kept out, one message';
+end $$;
 
 rollback;

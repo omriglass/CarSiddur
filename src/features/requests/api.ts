@@ -902,13 +902,10 @@ export interface SubmitRequestPayload {
 /** R20 Q2 redo: keep a guest on the shared ride despite the far hours, or send the guest back to the waiting list. */
 export type HostGuestDecision = "keep" | "release";
 
-/**
- * R20 Q2 redo (owner 2026-11-14): a guest of the shared ride an edit no longer fits. `far` = the new hours are far
- * from the guest's own (keep or release); `cannot` = the guest cannot stay (`reason`), so only release.
- */
 /** Owner 2026-11-14: far from the guest's hours, a too-long detour, no big trunk for the guest's luggage. */
 export type HostGuestWarning = "far" | "detour" | "luggage";
 
+/** R20 Q2 redo (owner 2026-11-14): a guest of the shared ride an edit no longer fits. */
 export interface HostGuestQuestion {
   request_id: string;
   name: string;

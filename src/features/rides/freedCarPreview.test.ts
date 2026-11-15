@@ -1,6 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
-import { freedCarOutcomeLine, joinFreedNames } from "./freedCarPreview";
+import { previewFreedCar } from "./api";
+import { fetchFreedCarLine, freedCarOutcomeLine, joinFreedNames, type MissedFreedCarPreview } from "./freedCarPreview";
+
+vi.mock("./api", () => ({ previewFreedCar: vi.fn() }));
+vi.mock("@/features/diagnostics/reportClientError", () => ({ reportClientError: vi.fn() }));
 
 describe("joinFreedNames", () => {
   it("joins with ו־ or או", () => {
@@ -27,5 +31,25 @@ describe("freedCarOutcomeLine (owner wording 2026-11-14)", () => {
   it("nobody waiting: no line", () => {
     expect(freedCarOutcomeLine({ kind: "none" })).toBeNull();
     expect(freedCarOutcomeLine({ kind: "held" })).toBeNull();
+  });
+});
+
+describe("fetchFreedCarLine budget (review 2026-11-15)", () => {
+  const request = { action: "cancel_ride" as const, args: {} };
+  it("an answer in time is not reported", async () => {
+    vi.mocked(previewFreedCar).mockResolvedValue([]);
+    const missed: MissedFreedCarPreview[] = [];
+    expect(await fetchFreedCarLine(request, 50, (m) => missed.push(m))).toBeNull();
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    expect(missed).toEqual([]);
+  });
+  it("an answer past the budget shows nothing and is recorded with its real time", async () => {
+    vi.mocked(previewFreedCar).mockImplementation(() => new Promise((resolve) => setTimeout(() => resolve([]), 60)));
+    const missed: MissedFreedCarPreview[] = [];
+    expect(await fetchFreedCarLine(request, 10, (m) => missed.push(m))).toBeNull();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(missed).toHaveLength(1);
+    expect(missed[0]).toMatchObject({ action: "cancel_ride", hadLine: false });
+    expect(missed[0]?.ms).toBeGreaterThanOrEqual(50);
   });
 });

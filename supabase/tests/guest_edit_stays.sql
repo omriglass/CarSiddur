@@ -70,6 +70,17 @@ begin
     'depart_at', d0 + interval '30 minutes', 'return_at', d0 + interval '10 hours'));
   assert res ->> 'reason' = 'GUEST_STAYS', format('(E) an unchanged hour is not checked, got %s', res);
 
+  -- (F) review 2026-11-15: an hour inside the ride but far from when it really passes her place does not stay
+  -- (07:30 does, 12:00 does not: the car leaves at 06:30 whatever she writes)
+  assert public._guest_edit_stays(qB, edit || jsonb_build_object('depart_at', d0 + interval '1 hour', 'return_at', d0 + interval '10 hours'),
+    'round_trip', 'round_trip', (select needs_car_at_destination from public.requests where id = qB),
+    (select one_way_car_mode from public.requests where id = qB), bin, null, d0 + interval '1 hour', d0 + interval '10 hours'),
+    '(F) 07:30 is near the ride''s departure: stays';
+  assert not public._guest_edit_stays(qB, edit || jsonb_build_object('depart_at', d0 + interval '5 hours 30 minutes', 'return_at', d0 + interval '10 hours'),
+    'round_trip', 'round_trip', (select needs_car_at_destination from public.requests where id = qB),
+    (select one_way_car_mode from public.requests where id = qB), bin, null, d0 + interval '5 hours 30 minutes', d0 + interval '10 hours'),
+    '(F) 12:00 is far from the 06:30 departure: the ordinary way';
+
   -- (D) another change with the hours (a different destination): the ordinary way, never GUEST_STAYS
   res := public.submit_request(edit || jsonb_build_object('expected_version', (select version from public.requests where id = qB),
     'destination_id', home, 'depart_at', d0 + interval '1 hour', 'return_at', d0 + interval '8 hours 30 minutes'));

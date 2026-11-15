@@ -164,8 +164,9 @@ function noCarReason(
  * take it within its flexibility, but only at hours that rider is already in another ride. Undefined otherwise.
  */
 function personBusyMember(input: SolverInput, nr: NormalizedRequest, timelines: Map<string, CarTimeline>, people: PersonBook): string | undefined {
-  if (!nr.legs[0] || nr.isPassengerOnly || busyWindowsFor(people, nr).length === 0) return undefined;
+  if (!nr.legs[0] || nr.isPassengerOnly) return undefined;
   const busy = busyWindowsFor(people, nr);
+  if (busy.length === 0) return undefined;
   const blocked = input.cars.some((car) => {
     if (car.type !== 'shared' || !fits(car, nr.passengers) || !needsFit(car, nr.luggage ? 1 : 0, nr.tow ? 1 : 0)) return false;
     const tl = timelines.get(car.id);

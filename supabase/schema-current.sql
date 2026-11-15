@@ -2799,7 +2799,19 @@ begin
            or (rr.covers_out and p_depart_at is distinct from e.depart_at
                and not (p_depart_at >= r.starts_at and p_depart_at < r.ends_at))
            or (rr.covers_return and p_return_at is distinct from e.return_at
-               and not (p_return_at is not null and p_return_at > r.starts_at and p_return_at <= r.ends_at))));
+               and not (p_return_at is not null and p_return_at > r.starts_at and p_return_at <= r.ends_at))
+           -- far from when the ride really passes the member's place (the merge rule: their flexibility, at least
+           -- 2 hours): the ride would not move, so the new hour would only be a wish nobody acts on
+           or (rr.covers_out and p_depart_at is distinct from e.depart_at and exists (
+                 select 1 from (select min(t.eta) as eta from public._ride_route(r.id) t
+                                where t.leg = 'out' and t.place_id = e.origin_id) x
+                 where x.eta is not null and abs(extract(epoch from (p_depart_at - x.eta)))
+                       > extract(epoch from greatest(interval '2 hours', e.flex_depart_early, e.flex_depart_late))))
+           or (rr.covers_return and p_return_at is distinct from e.return_at and exists (
+                 select 1 from (select min(t.eta) as eta from public._ride_route(r.id) t
+                                where t.leg = 'return' and t.place_id = e.destination_id) x
+                 where x.eta is not null and abs(extract(epoch from (p_return_at - x.eta)))
+                       > extract(epoch from greatest(interval '2 hours', e.flex_return_early, e.flex_return_late))))));
 end $$;
 
 
@@ -4099,22 +4111,31 @@ begin
     select full_name into v_by from public.profiles where id = (select auth.uid());
     perform public._notify_inbox_only(s.profile_id, 'claim_contested', v_ride.department_id,
       jsonb_build_object('byName', coalesce(v_by, ''), 'car', coalesce(v_car, ''), 'day', public.day_date_label(p_from),
-        'timeRange', to_char(p_from at time zone 'Asia/Jerusalem', 'HH24:MI') || '–' || to_char(p_to at time zone 'Asia/Jerusalem', 'HH24:MI')),
+        -- both ends freed in one change: the trigger passes both ranges, and the second call's notice is the same one
+        'timeRange', coalesce(nullif(current_setting('app.freed_ranges', true), ''),
+          to_char(p_from at time zone 'Asia/Jerusalem', 'HH24:MI') || '–' || to_char(p_to at time zone 'Asia/Jerusalem', 'HH24:MI'))),
       jsonb_build_object('offer_id', v_offer_id, 'ride_id', p_ride_id, 'week_start', v_ride.week_start, 'variant', 'freed_kept_out'),
-      format('freed_kept_out:%s', v_offer_id))
+      format('freed_kept_out:%s:%s', p_ride_id, txid_current()))
     from public.sadranim_of(v_ride.department_id, v_ride.week_start) as s(profile_id)
     where s.profile_id is distinct from (select auth.uid());
     return null;
   end if;
 
-  -- a ride shortened again while its earlier freed hours are still open: the newer offer replaces the open one
+  -- a ride shortened again while its earlier freed hours are still open: the newer offer replaces the open one it
+  -- overlaps. Hours freed at the ride's other end are another offer and stay open (a ride shortened at both ends).
   update public.freed_slot_offers set status = 'closed', resolved_at = now(), close_reason = 'superseded'
-  where cancelled_ride_id = p_ride_id and status = 'open' and kept_ride;
+  where cancelled_ride_id = p_ride_id and status = 'open' and kept_ride
+    and tstzrange(starts_at, ends_at, '[)') && tstzrange(v_gap_start, v_gap_end, '[)');
+  -- hours the Sadran is deciding on right now are not offered a second time
+  if exists (select 1 from public.freed_slot_offers f where f.cancelled_ride_id = p_ride_id and f.status = 'pending_approval'
+             and tstzrange(f.starts_at, f.ends_at, '[)') && tstzrange(v_gap_start, v_gap_end, '[)')) then
+    return null;
+  end if;
   insert into public.freed_slot_offers (department_id, week_start, car_id, cancelled_ride_id, starts_at, ends_at, expires_at,
     cause_kind, cause_actor, cause_owner_id, kept_ride)
   values (v_ride.department_id, v_ride.week_start, p_car_id, p_ride_id, v_gap_start, v_gap_end, greatest(p_from, now()),
     p_kind, (select auth.uid()), public._ride_owner_id(p_ride_id), p_kept)
-  on conflict (cancelled_ride_id) where status in ('open', 'pending_approval') do nothing
+  on conflict (cancelled_ride_id, starts_at) where status in ('open', 'pending_approval') do nothing
   returning id into v_offer_id;
   if v_offer_id is null then return null; end if;
 
@@ -22086,12 +22107,19 @@ begin
     return null;
   end if;
   v_kind := case when r.starts_at >= v_from and r.ends_at <= v_to then 'shorten' else 'edit' end;
+  -- both ends freed: two offers, but one "handled outside the app" message that names both ranges (REQ item 237)
+  if r.starts_at > v_from and r.ends_at < v_to and r.starts_at < v_to and r.ends_at > v_from then
+    perform set_config('app.freed_ranges',
+      to_char(v_from at time zone 'Asia/Jerusalem', 'HH24:MI') || '–' || to_char(r.starts_at at time zone 'Asia/Jerusalem', 'HH24:MI') || ', ' ||
+      to_char(r.ends_at at time zone 'Asia/Jerusalem', 'HH24:MI') || '–' || to_char(v_to at time zone 'Asia/Jerusalem', 'HH24:MI'), true);
+  end if;
   if r.starts_at > v_from then
     perform public._offer_freed_time(r.id, v_car, v_from, least(v_to, r.starts_at), (b ->> 'place')::uuid, v_kind, true);
   end if;
   if r.ends_at < v_to then
     perform public._offer_freed_time(r.id, v_car, greatest(v_from, r.ends_at), v_to, (b ->> 'place')::uuid, v_kind, true);
   end if;
+  perform set_config('app.freed_ranges', '', true);
   return null;
 end $$;
 
@@ -31535,7 +31563,7 @@ CREATE INDEX "freed_slot_offers_group_idx" ON "public"."freed_slot_offers" USING
 
 
 
-CREATE UNIQUE INDEX "freed_slot_offers_one_live_per_ride_idx" ON "public"."freed_slot_offers" USING "btree" ("cancelled_ride_id") WHERE ("status" = ANY (ARRAY['open'::"public"."freed_offer_status", 'pending_approval'::"public"."freed_offer_status"]));
+CREATE UNIQUE INDEX "freed_slot_offers_one_live_per_ride_start_idx" ON "public"."freed_slot_offers" USING "btree" ("cancelled_ride_id", "starts_at") WHERE ("status" = ANY (ARRAY['open'::"public"."freed_offer_status", 'pending_approval'::"public"."freed_offer_status"]));
 
 
 

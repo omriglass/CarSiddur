@@ -22,7 +22,7 @@ describe("liveEventText (owner wording 2026-11-14)", () => {
 
   it("a join names everyone added in one action and whose ride it is", () => {
     expect(liveEventText({ ...base, kind: "joined", names: ["יוסי"], owner_name: "דנה" })).toBe("יוסי הצטרף/ה לנסיעה של דנה");
-    expect(liveEventText({ ...base, kind: "joined", names: ["יוסי", "רון"], owner_name: "דנה" })).toBe("יוסי ו־רון הצטרפו לנסיעה של דנה");
+    expect(liveEventText({ ...base, kind: "joined", names: ["יוסי", "רון"], owner_name: "דנה" })).toBe("יוסי ו־רון הצטרף/ה לנסיעה של דנה");
     expect(liveEventText({ ...base, kind: "joined", names: ["יוסי"], owner_name: null })).toBe("יוסי הצטרף/ה לנסיעה");
   });
 });

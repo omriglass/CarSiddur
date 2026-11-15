@@ -818,9 +818,7 @@ export const heSadran = {
     cancelled: "{{name}} ביטל/ה את הנסיעה",
     freedPlaced: "{{name}} קיבל/ה את הרכב שהתפנה",
     joined: "{{names}} הצטרף/ה לנסיעה של {{owner}}",
-    joinedMany: "{{names}} הצטרפו לנסיעה של {{owner}}",
     joinedNoOwner: "{{names}} הצטרף/ה לנסיעה",
-    joinedManyNoOwner: "{{names}} הצטרפו לנסיעה",
     proposalExpired: "ההצעה ל{{name}} פגה בלי תשובה",
     /** R20H4 (owner 2026-11-14): an offer that went to nobody; the day and the car are on the line under it. */
     freedNone: "הרכב שהתפנה ({{range}}) לא הוצע לאף אחד: אין בקשה מתאימה",
