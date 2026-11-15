@@ -129,6 +129,30 @@ export function carStaysAwayConfirmation(result: SubmitRequestResult | null | un
   return { carName: result.car_name ?? "", nextRide: !!result.next_ride };
 }
 
+/** PR3 (owner 2026-11-15): the edit's booked car is taken at the new hours (nothing changed) — what the form asks with. */
+export interface CarTakenChoice {
+  blocker: NonNullable<SubmitRequestResult["car_blocker"]>;
+  otherCar: { id: string; name: string } | null;
+  myRide: { id: string; version: number; car_id: string } | null;
+}
+export function carTakenChoice(result: SubmitRequestResult | null | undefined): CarTakenChoice | null {
+  if (result?.needs_confirmation !== "car_taken_choice" || !result.car_blocker) return null;
+  return { blocker: result.car_blocker, otherCar: result.other_car ?? null, myRide: result.my_ride ?? null };
+}
+
+/**
+ * PR3: "attach" — the new hours cut to sit right next to the ride in the way: leave when it ends (it began before my
+ * departure), or be back when it starts (it begins after my departure). Null when nothing of the trip would be left.
+ */
+export function attachToBlocker(departAt: string, returnAt: string | null, blocker: { starts_at: string; ends_at: string }): { departAt?: string; returnAt?: string } | null {
+  const depart = Date.parse(departAt);
+  const back = returnAt ? Date.parse(returnAt) : null;
+  const from = Date.parse(blocker.starts_at);
+  const until = Date.parse(blocker.ends_at);
+  if (from <= depart) return back === null || until < back ? { departAt: blocker.ends_at } : null;
+  return back !== null && from > depart ? { returnAt: blocker.starts_at } : null;
+}
+
 /** R20 Q2 redo: the shared ride's guests the edit no longer fits (the server changed nothing), or `null`. */
 export function hostGuestsConfirmation(result: SubmitRequestResult | null | undefined): HostGuestQuestion[] | null {
   if (result?.needs_confirmation !== "host_guests") return null;

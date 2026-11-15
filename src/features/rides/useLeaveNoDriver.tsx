@@ -1,5 +1,5 @@
 // R20B15 (owner 2026-11-14): the driver taken off a merged ride with nobody driving ("בלי נהג/ת" on the board, or the
-// driver's own "להסיר אותי — צריך נהג/ת"). When the riders left need fewer hours, ask first: "לקצר את הנסיעה?" —
+// driver's own "הסר רק אותי מהנסיעה — צריך נהג/ת"). When the riders left need fewer hours, ask first: "לקצר את הנסיעה?" —
 // shrink to their hours (the usual "הרכב יתפנה לאחרים" check runs before it), keep the ride as it is, or go back.
 import { useState } from "react";
 

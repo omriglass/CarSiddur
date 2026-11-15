@@ -951,11 +951,23 @@ CREATE OR REPLACE FUNCTION "public"."_auto_approve_free_car"("p_request_id" "uui
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
+  select public._auto_approve_free_car(p_request_id, p_end, p_after, p_turnaround, p_pref, p_is_one_way, false, null);
+$$;
+
+
+ALTER FUNCTION "public"."_auto_approve_free_car"("p_request_id" "uuid", "p_end" timestamp with time zone, "p_after" interval, "p_turnaround" interval, "p_pref" "uuid", "p_is_one_way" boolean) OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."_auto_approve_free_car"("p_request_id" "uuid", "p_end" timestamp with time zone, "p_after" interval, "p_turnaround" interval, "p_pref" "uuid", "p_is_one_way" boolean, "p_before_waived" boolean, "p_only" "uuid") RETURNS "uuid"
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
   select c.id
   from public.requests q
   join public.cars c on c.department_id = q.department_id
   join public.car_seat_configs csc on csc.car_id = c.id
   where q.id = p_request_id and c.status = 'active' and c.type = 'shared'
+    and (p_only is null or c.id = p_only)
     and csc.adults >= q.adults and csc.child_seats >= q.child_seats and csc.boosters >= q.boosters
     and (not (q.has_luggage and q.luggage_waived_at is null) or 'large_trunk' = any(c.features))
     and (not (q.needs_tow_hitch and q.luggage_waived_at is null) or 'tow_hitch' = any(c.features))   -- REQ §13.200
@@ -963,7 +975,9 @@ CREATE OR REPLACE FUNCTION "public"."_auto_approve_free_car"("p_request_id" "uui
     and not exists (
       select 1 from public.rides r
       where r.car_id = c.id and r.status <> 'cancelled' and not r.draft_hold
-        and tstzrange(r.starts_at, r.blocked_until, '[)') && tstzrange(q.depart_at, p_end + p_after, '[)')
+        and tstzrange(r.starts_at,
+              case when p_before_waived and r.ends_at <= q.depart_at then r.ends_at else r.blocked_until end, '[)')
+            && tstzrange(q.depart_at, p_end + p_after, '[)')
     )
     and not public._draft_hold_conflict(c.id, q.depart_at, p_end + p_turnaround, array[q.id])
     -- REQ §13.114: never inside a scheduled maintenance period (incl. the turnaround buffer before it).
@@ -984,7 +998,7 @@ CREATE OR REPLACE FUNCTION "public"."_auto_approve_free_car"("p_request_id" "uui
 $$;
 
 
-ALTER FUNCTION "public"."_auto_approve_free_car"("p_request_id" "uuid", "p_end" timestamp with time zone, "p_after" interval, "p_turnaround" interval, "p_pref" "uuid", "p_is_one_way" boolean) OWNER TO "postgres";
+ALTER FUNCTION "public"."_auto_approve_free_car"("p_request_id" "uuid", "p_end" timestamp with time zone, "p_after" interval, "p_turnaround" interval, "p_pref" "uuid", "p_is_one_way" boolean, "p_before_waived" boolean, "p_only" "uuid") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."_board_hold_applies"("_recipient" "uuid", "_event" "public"."notification_event", "_department_id" "uuid", "_week_start" "date") RETURNS boolean
@@ -2217,6 +2231,31 @@ $$;
 
 
 ALTER FUNCTION "public"."_duration_lock_shape_ok"("p_trip_type" "public"."trip_type", "p_series_id" "uuid", "p_depart" timestamp with time zone, "p_return" timestamp with time zone, "p_dep_early" interval, "p_dep_late" interval, "p_ret_early" interval, "p_ret_late" interval) OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."_edit_car_blocker"("p_car" "uuid", "p_from" timestamp with time zone, "p_to" timestamp with time zone, "p_me" "uuid") RETURNS "jsonb"
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  select jsonb_build_object('ride_id', r.id, 'car_id', r.car_id, 'car_name', c.name,
+    'name', coalesce(dp.full_name, fp.full_name),
+    'starts_at', r.starts_at, 'ends_at', r.ends_at,
+    'mine', coalesce(r.driver_id, fp.id) is not distinct from p_me)
+  from public.rides r
+  join public.cars c on c.id = r.car_id
+  left join public.profiles dp on dp.id = r.driver_id
+  left join lateral (
+    select pr.id, pr.full_name from public.ride_requests rr
+    join public.requests q on q.id = rr.request_id join public.profiles pr on pr.id = q.requester_id
+    where rr.ride_id = r.id order by q.created_at, q.id limit 1) fp on true
+  where r.car_id = p_car and r.status <> 'cancelled' and not r.draft_hold
+    and tstzrange(r.starts_at, r.ends_at, '[)') && tstzrange(p_from, p_to, '[)')
+  order by r.starts_at, r.id
+  limit 1;
+$$;
+
+
+ALTER FUNCTION "public"."_edit_car_blocker"("p_car" "uuid", "p_from" timestamp with time zone, "p_to" timestamp with time zone, "p_me" "uuid") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."_edit_series_request"("payload" "jsonb") RETURNS "jsonb"
@@ -4042,6 +4081,28 @@ end $$;
 
 
 ALTER FUNCTION "public"."_notify_short_turnaround"("p_car" "uuid", "p_end" timestamp with time zone, "p_exclude" "uuid", "p_actor" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."_notify_short_turnaround_before"("p_car" "uuid", "p_start" timestamp with time zone, "p_exclude" "uuid", "p_actor" "uuid") RETURNS "void"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare v jsonb; r public.rides%rowtype;
+begin
+  v := public._short_turnaround_before_info(p_car, p_start, p_exclude);
+  if v is null or (v ->> 'recipient_id') is null or (v ->> 'recipient_id')::uuid is not distinct from p_actor then return; end if;
+  select * into r from public.rides where id = (v ->> 'ride_id')::uuid;
+  perform public.enqueue_notification((v ->> 'recipient_id')::uuid, 'ride_edited', r.department_id, r.week_start,
+    jsonb_build_object('byName', coalesce((select full_name from public.profiles where id = p_actor), ''),
+      'car', coalesce((select name from public.cars where id = p_car), ''),
+      'at', to_char(p_start at time zone 'Asia/Jerusalem', 'HH24:MI'),
+      'day', public.day_date_label(r.starts_at)),
+    jsonb_build_object('variant', 'short_turnaround_before', 'ride_id', r.id),
+    format('short_turnaround_before:%s:%s', r.id, to_char(p_start, 'YYYYMMDDHH24MI')));
+end $$;
+
+
+ALTER FUNCTION "public"."_notify_short_turnaround_before"("p_car" "uuid", "p_start" timestamp with time zone, "p_exclude" "uuid", "p_actor" "uuid") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."_offer_freed_after_edit"("p_request" "uuid") RETURNS "void"
@@ -6157,6 +6218,36 @@ end $$;
 
 
 ALTER FUNCTION "public"."_shift_place_on_car"("p_proposal_id" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."_short_turnaround_before_info"("p_car" "uuid", "p_start" timestamp with time zone, "p_exclude" "uuid") RETURNS "jsonb"
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  select jsonb_build_object(
+    'ride_id', r.id,
+    'side', 'before',
+    'at', to_char(r.ends_at at time zone 'Asia/Jerusalem', 'HH24:MI'),
+    'gap', (extract(epoch from (p_start - r.ends_at)) / 60)::int,
+    'name', coalesce(dp.full_name, fp.full_name,
+      (select rp.display_name from public.ride_passengers rp where rp.ride_id = r.id order by rp.created_at, rp.id limit 1)),
+    'recipient_id', coalesce(r.driver_id, fp.id))
+  from public.rides r
+  join public.cars c on c.id = r.car_id
+  left join public.profiles dp on dp.id = r.driver_id
+  left join lateral (
+    select pr.id, pr.full_name from public.ride_requests rr
+    join public.requests q on q.id = rr.request_id join public.profiles pr on pr.id = q.requester_id
+    where rr.ride_id = r.id order by q.created_at, q.id limit 1) fp on true
+  where r.car_id = p_car and r.id is distinct from p_exclude and r.status <> 'cancelled' and not r.draft_hold
+    and r.ends_at <= p_start
+    and r.ends_at + make_interval(mins => coalesce(public.required_turnaround_minutes(c.department_id, r.week_start), 30)) > p_start
+  order by r.ends_at desc, r.id
+  limit 1;
+$$;
+
+
+ALTER FUNCTION "public"."_short_turnaround_before_info"("p_car" "uuid", "p_start" timestamp with time zone, "p_exclude" "uuid") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."_short_turnaround_info"("p_car" "uuid", "p_end" timestamp with time zone, "p_exclude" "uuid") RETURNS "jsonb"
@@ -11993,12 +12084,10 @@ begin
   if v_manage then
     v_override:=public.prepare_manual_ride_window((p_ride->>'car_id')::uuid,v_week,(p_ride->>'starts_at')::timestamptz,(p_ride->>'ends_at')::timestamptz,v_id);
   elsif v_id is not null and coalesce(current_setting('app.short_turnaround',true),'')='allow' then
-    -- REQ §13.190: a member may end less than the turnaround before the car's next ride (after "תיאמתם עם X…?"),
-    -- never start inside the turnaround of the ride before; the next ride's driver (else first rider) is told.
-    if exists(select 1 from public.rides r where r.car_id=(p_ride->>'car_id')::uuid and r.id<>v_id and r.status<>'cancelled' and not r.draft_hold
-        and r.ends_at<=(p_ride->>'starts_at')::timestamptz and r.blocked_until>(p_ride->>'starts_at')::timestamptz) then
-      raise exception 'ride_time_overlap' using errcode='23P01';
-    end if;
+    -- REQ §13.190, two-sided since 2026-11-15 (owner, PR3): after "תיאמתם עם X…?" / "סיכמת עם X שנוסע/ת לפניך?" a
+    -- member may end less than the turnaround before the car's next ride and start less than it after the ride
+    -- before; each neighbour's driver (else first rider), when it is someone else, is told.
+    perform public._notify_short_turnaround_before((p_ride->>'car_id')::uuid,(p_ride->>'starts_at')::timestamptz,v_id,(select auth.uid()));
     v_override:=public.prepare_manual_ride_window((p_ride->>'car_id')::uuid,v_week,(p_ride->>'starts_at')::timestamptz,(p_ride->>'ends_at')::timestamptz,v_id);
     perform public._notify_short_turnaround((p_ride->>'car_id')::uuid,(p_ride->>'ends_at')::timestamptz,v_id,(select auth.uid()));
   end if;
@@ -25198,6 +25287,14 @@ begin
   elsif coalesce((payload ->> 'short_turnaround_ask')::boolean, false) then
     perform set_config('app.short_turnaround', 'offer', true);
   end if;
+  -- PR3 (owner 2026-11-15): `short_turnaround_before_ask` — the browser can also ask about the ride before
+  -- ("סיכמת עם X שנוסע/ת לפניך?"); `car_change_ask` — an edit whose booked car is taken at the new hours asks
+  -- (needs_confirmation 'car_taken_choice') instead of moving to another car, until `allow_other_car` says so.
+  perform set_config('app.short_turnaround_before',
+    case when coalesce((payload ->> 'short_turnaround_before_ask')::boolean, false) then 'offer' else '' end, true);
+  perform set_config('app.edit_other_car',
+    case when coalesce((payload ->> 'car_change_ask')::boolean, false)
+              and not coalesce((payload ->> 'allow_other_car')::boolean, false) then 'ask' else '' end, true);
   -- REQ §13.127: an edit without `requester_id` keeps the stored requester (the editor may be anyone related).
   if v_request_id is not null and nullif(payload ->> 'requester_id', '') is null then
     select requester_id into v_requester_id from public.requests where id = v_request_id;
@@ -25516,6 +25613,17 @@ begin
               'warnings', '[]'::jsonb, 'overlaps', '[]'::jsonb);
           end if;
         end if;
+        -- PR3 (owner 2026-11-15): the booked car is taken at the new hours by another ride — ask, change nothing.
+        if v_probe ? 'car_blocker' then
+          return jsonb_build_object('ok', false, 'needs_confirmation', 'car_taken_choice', 'unchanged', false,
+            'request_id', v_request_id, 'status', v_existing.status,
+            'car_blocker', v_probe -> 'car_blocker', 'other_car', v_probe -> 'other_car',
+            'my_ride', (select jsonb_build_object('id', r.id, 'version', r.version, 'car_id', r.car_id)
+                          from public.ride_requests rr join public.rides r on r.id = rr.ride_id
+                         where rr.request_id = v_request_id and r.status not in ('cancelled', 'draft')
+                         order by r.starts_at limit 1),
+            'warnings', '[]'::jsonb, 'overlaps', '[]'::jsonb);
+        end if;
         -- REQ §13.158: an edit never costs the member the car. No car takes the new hours, so nothing changes;
         -- `discussion` when an open waiting-list discussion holds the car in those hours (try_auto_approve's offer).
         v_hold_group := coalesce(nullif(v_probe ->> 'group_offer', '')::uuid, (
@@ -25530,7 +25638,8 @@ begin
         -- hours need the Sadran (or the riders' own edits), not "no car".
         return jsonb_build_object('ok', false, 'edit_refused', case when v_hold_group is not null then 'discussion'
             when coalesce((v_booking ->> 'drives_others')::boolean, false) then 'riders' else 'no_car' end,
-          'group_offer', v_hold_group, 'short_turnaround', v_probe -> 'short_turnaround', 'request_id', v_request_id, 'unchanged', false, 'status', v_existing.status,
+          'group_offer', v_hold_group, 'short_turnaround', v_probe -> 'short_turnaround', 'short_turnaround_before', v_probe -> 'short_turnaround_before',
+          'request_id', v_request_id, 'unchanged', false, 'status', v_existing.status,
           'warnings', '[]'::jsonb, 'overlaps', '[]'::jsonb);
       end if;
     end if;
@@ -26853,6 +26962,16 @@ declare
   v_car_id uuid;
   v_gap smallint;
   v_short jsonb;
+  v_prev jsonb;
+  v_before_ok boolean;
+  v_public boolean;
+  v_edit_car uuid;
+  v_strict uuid;
+  v_waived uuid;
+  v_waive boolean := false;
+  v_blocker jsonb;
+  v_ask_after boolean;
+  v_ask_before boolean;
 begin
   select * into v_req from public.requests where id = p_request_id for update;
   if v_req.id is null or v_req.status not in ('submitted', 'waitlisted') then
@@ -26905,29 +27024,63 @@ begin
   -- turnaround buffer, and -- for a one-way leg -- no later ride on that car starting
   -- anywhere but the destination, and none -> the destination must be the car's base, REQ §13.136 c), scoped to that single car.
   v_pref := coalesce(v_req.preferred_car_id, nullif(current_setting('app.edit_prefer_car', true), '')::uuid);
-  -- REQ §13.190: `app.short_turnaround` = 'allow' (the member agreed with the car's next ride) waives the turnaround
-  -- after this ride; 'offer' asks first — when only that turnaround stands in the way, the request waits without
-  -- telling the Sadran yet and the result names the next ride (`short_turnaround`); answer_short_turnaround settles it.
+  -- REQ §13.190, two-sided since 2026-11-15 (owner, PR3): the turnaround is a warning on both sides of the ride.
+  -- `app.short_turnaround` = 'allow' (the member agreed, or there is nobody to ask) waives the turnaround after this
+  -- ride and after the ride before it; 'offer' asks first — when only a turnaround stands in the way the request
+  -- waits without telling the Sadran yet and the result names the neighbour (`short_turnaround` = the car's next
+  -- ride, `short_turnaround_before` = the ride before, asked only when `app.short_turnaround_before` = 'offer');
+  -- answer_short_turnaround settles it. A neighbour that is the member's own ride is never asked about.
   v_mode := coalesce(nullif(current_setting('app.short_turnaround', true), ''), 'off');
-  v_car_id := public._auto_approve_free_car(p_request_id, v_end,
-    case when v_mode = 'allow' then interval '0' else v_turnaround end, v_turnaround, v_pref, v_is_one_way);
-  select c.* into v_car from public.cars c where c.id = v_car_id;
+  v_before_ok := v_mode = 'allow'
+    or (v_mode = 'offer' and coalesce(current_setting('app.short_turnaround_before', true), '') = 'offer');
+  v_public := public.is_day_public(v_req.department_id, v_req.week_start, (v_req.depart_at at time zone 'Asia/Jerusalem')::date);
+  -- an edited request's own car (submit_request sets it while the booking is released and placed again)
+  v_edit_car := nullif(current_setting('app.edit_prefer_car', true), '')::uuid;
+  v_strict := public._auto_approve_free_car(p_request_id, v_end, v_turnaround, v_turnaround, v_pref, v_is_one_way, false, null);
+  -- An edit stays on its own car when only a turnaround is in the way, before any other car is looked at.
+  if v_edit_car is not null and v_strict is distinct from v_edit_car and (v_mode = 'allow' or (v_mode = 'offer' and v_public)) then
+    v_waived := public._auto_approve_free_car(p_request_id, v_end, interval '0', v_turnaround, v_pref, v_is_one_way, v_before_ok, v_edit_car);
+  end if;
+  if v_waived is null and v_strict is not null then
+    -- PR3 (owner 2026-11-15): an edit never changes car silently. With `app.edit_other_car` = 'ask' and a ride in the
+    -- way on the booked car, nothing is placed and the result names that ride and the free car (submit_request asks).
+    if v_edit_car is not null and v_strict <> v_edit_car and coalesce(current_setting('app.edit_other_car', true), '') = 'ask' then
+      v_blocker := public._edit_car_blocker(v_edit_car, v_req.depart_at, v_end, v_req.requester_id);
+    end if;
+    if v_blocker is null then v_car_id := v_strict; end if;
+  elsif v_waived is null and (v_mode = 'allow' or (v_mode = 'offer' and v_public)) then
+    v_waived := public._auto_approve_free_car(p_request_id, v_end, interval '0', v_turnaround, v_pref, v_is_one_way, v_before_ok, null);
+  end if;
 
-  if v_car.id is null and v_mode = 'offer'
-     and public.is_day_public(v_req.department_id, v_req.week_start, (v_req.depart_at at time zone 'Asia/Jerusalem')::date) then
-    v_car_id := public._auto_approve_free_car(p_request_id, v_end, interval '0', v_turnaround, v_pref, v_is_one_way);
-    v_short := case when v_car_id is not null then public._short_turnaround_info(v_car_id, v_end, null) end;
-    if v_short is not null and (v_short ->> 'recipient_id')::uuid is not distinct from v_req.requester_id then
-      -- the car's next ride is the member's own: nobody to ask
-      v_mode := 'allow';
-      select c.* into v_car from public.cars c where c.id = v_car_id;
-    elsif v_short is not null then
+  if v_waived is not null then
+    v_short := public._short_turnaround_info(v_waived, v_end, null);
+    v_prev := case when v_before_ok then public._short_turnaround_before_info(v_waived, v_req.depart_at, null) end;
+    v_ask_after := v_short is not null and (v_short ->> 'recipient_id')::uuid is distinct from v_req.requester_id;
+    v_ask_before := v_prev is not null and (v_prev ->> 'recipient_id')::uuid is distinct from v_req.requester_id;
+    if v_mode = 'offer' and (v_ask_after or v_ask_before) then
       perform set_config('app.audit_reason', 'try_auto_approve:short_turnaround', true);
       update public.requests set status = 'waitlisted', status_reason = 'WAITLISTED_NO_CAR' where id = p_request_id;
       perform set_config('app.system_status_transition', 'off', true);
-      return jsonb_build_object('status', 'waitlisted', 'reason', 'WAITLISTED_NO_CAR', 'short_turnaround', v_short - 'recipient_id');
+      return jsonb_strip_nulls(jsonb_build_object('status', 'waitlisted', 'reason', 'WAITLISTED_NO_CAR',
+        'short_turnaround', case when v_ask_after then v_short - 'recipient_id' end,
+        'short_turnaround_before', case when v_ask_before then v_prev - 'recipient_id' end));
     end if;
+    v_car_id := v_waived;
+    v_waive := true;
   end if;
+
+  if v_car_id is null and v_blocker is null and v_edit_car is not null
+     and coalesce(current_setting('app.edit_other_car', true), '') = 'ask' then
+    v_blocker := public._edit_car_blocker(v_edit_car, v_req.depart_at, v_end, v_req.requester_id);   -- no other car either
+  end if;
+  if v_blocker is not null then
+    perform set_config('app.audit_reason', 'try_auto_approve:edit_car_taken', true);
+    update public.requests set status = 'waitlisted', status_reason = 'WAITLISTED_NO_CAR' where id = p_request_id;
+    perform set_config('app.system_status_transition', 'off', true);
+    return jsonb_strip_nulls(jsonb_build_object('status', 'waitlisted', 'reason', 'WAITLISTED_NO_CAR', 'car_blocker', v_blocker,
+      'other_car', (select jsonb_build_object('id', c.id, 'name', c.name) from public.cars c where c.id = v_strict)));
+  end if;
+  select c.* into v_car from public.cars c where c.id = v_car_id;
 
   if v_car.id is null then
     perform set_config('app.audit_reason', 'try_auto_approve:no_car', true);
@@ -26956,8 +27109,13 @@ begin
   end if;
 
   perform set_config('app.audit_reason', 'try_auto_approve:assigned', true);
-  if v_mode = 'allow' then
-    v_gap := (public._short_turnaround_info(v_car.id, v_end, null) ->> 'gap')::smallint;
+  if v_waive then
+    v_gap := (v_short ->> 'gap')::smallint;
+    -- the ride before gives up the rest of its turnaround (as a manual placement does)
+    update public.rides p
+       set turnaround_override_minutes = greatest((extract(epoch from (v_req.depart_at - p.ends_at)) / 60)::int, 0)::smallint
+     where p.car_id = v_car.id and p.status <> 'cancelled' and not p.draft_hold
+       and p.ends_at <= v_req.depart_at and p.blocked_until > v_req.depart_at;
   end if;
   -- R13B14: a ride on a day that is not published yet is a draft, like every other ride there.
   v_status := case when public.is_day_public(v_req.department_id, v_req.week_start,
@@ -26991,6 +27149,9 @@ begin
   perform set_config('app.system_status_transition', 'off', true);
   if v_gap is not null then
     perform public._notify_short_turnaround(v_car.id, v_end, v_ride_id, coalesce((select auth.uid()), v_req.requester_id));
+  end if;
+  if v_waive and v_prev is not null then
+    perform public._notify_short_turnaround_before(v_car.id, v_req.depart_at, v_ride_id, coalesce((select auth.uid()), v_req.requester_id));
   end if;
 
   perform public.enqueue_notification(v_req.requester_id, 'auto_approved', v_req.department_id, v_req.week_start,
@@ -35544,6 +35705,11 @@ GRANT ALL ON FUNCTION "public"."_auto_approve_free_car"("p_request_id" "uuid", "
 
 
 
+REVOKE ALL ON FUNCTION "public"."_auto_approve_free_car"("p_request_id" "uuid", "p_end" timestamp with time zone, "p_after" interval, "p_turnaround" interval, "p_pref" "uuid", "p_is_one_way" boolean, "p_before_waived" boolean, "p_only" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_auto_approve_free_car"("p_request_id" "uuid", "p_end" timestamp with time zone, "p_after" interval, "p_turnaround" interval, "p_pref" "uuid", "p_is_one_way" boolean, "p_before_waived" boolean, "p_only" "uuid") TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."_board_hold_applies"("_recipient" "uuid", "_event" "public"."notification_event", "_department_id" "uuid", "_week_start" "date") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."_board_hold_applies"("_recipient" "uuid", "_event" "public"."notification_event", "_department_id" "uuid", "_week_start" "date") TO "service_role";
 
@@ -35721,6 +35887,11 @@ GRANT ALL ON FUNCTION "public"."_dt_label"("p_at" timestamp with time zone) TO "
 
 REVOKE ALL ON FUNCTION "public"."_duration_lock_shape_ok"("p_trip_type" "public"."trip_type", "p_series_id" "uuid", "p_depart" timestamp with time zone, "p_return" timestamp with time zone, "p_dep_early" interval, "p_dep_late" interval, "p_ret_early" interval, "p_ret_late" interval) FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."_duration_lock_shape_ok"("p_trip_type" "public"."trip_type", "p_series_id" "uuid", "p_depart" timestamp with time zone, "p_return" timestamp with time zone, "p_dep_early" interval, "p_dep_late" interval, "p_ret_early" interval, "p_ret_late" interval) TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."_edit_car_blocker"("p_car" "uuid", "p_from" timestamp with time zone, "p_to" timestamp with time zone, "p_me" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_edit_car_blocker"("p_car" "uuid", "p_from" timestamp with time zone, "p_to" timestamp with time zone, "p_me" "uuid") TO "service_role";
 
 
 
@@ -35926,6 +36097,11 @@ GRANT ALL ON FUNCTION "public"."_notify_rider_left"("p_recipient" "uuid", "p_rid
 
 REVOKE ALL ON FUNCTION "public"."_notify_short_turnaround"("p_car" "uuid", "p_end" timestamp with time zone, "p_exclude" "uuid", "p_actor" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."_notify_short_turnaround"("p_car" "uuid", "p_end" timestamp with time zone, "p_exclude" "uuid", "p_actor" "uuid") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."_notify_short_turnaround_before"("p_car" "uuid", "p_start" timestamp with time zone, "p_exclude" "uuid", "p_actor" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_notify_short_turnaround_before"("p_car" "uuid", "p_start" timestamp with time zone, "p_exclude" "uuid", "p_actor" "uuid") TO "service_role";
 
 
 
@@ -36482,6 +36658,11 @@ GRANT ALL ON FUNCTION "public"."_shares_child"("p_department" "uuid", "p_a" "uui
 
 REVOKE ALL ON FUNCTION "public"."_shift_place_on_car"("p_proposal_id" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."_shift_place_on_car"("p_proposal_id" "uuid") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."_short_turnaround_before_info"("p_car" "uuid", "p_start" timestamp with time zone, "p_exclude" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_short_turnaround_before_info"("p_car" "uuid", "p_start" timestamp with time zone, "p_exclude" "uuid") TO "service_role";
 
 
 

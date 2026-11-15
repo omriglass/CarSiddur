@@ -177,8 +177,11 @@ test("the driver leaves a merged ride; the guest drives it, same car and hours (
     await page.goto(`/siddur/${NEVO_DEPARTMENT_ID}/${WEEK}`);
     await page.locator(`[data-ride-id="${ride.id}"]:visible`).click();
     await page.getByTestId("ride-peek-open").click();
-    await page.getByRole("button", { name: he.action.cancelRide, exact: true }).click();
-    const dialog = page.getByRole("dialog").filter({ hasText: he.request.cancelConfirmTitle });
+    // Owner 2026-11-15: with others on the ride the entry is "אני לא נוסע/ת", then cancel for all or remove only me.
+    await expect(page.getByRole("button", { name: he.action.cancelRide, exact: true })).toHaveCount(0);
+    await page.getByTestId("not-driving-this").click();
+    const dialog = page.getByRole("dialog").filter({ hasText: he.rideDetail.notDrivingThis });
+    await expect(dialog.getByRole("button", { name: he.rideDetail.cancelForAll })).toBeVisible();
     await expect(dialog.getByTestId("leave-no-driver")).toBeVisible();
     await dialog.getByRole("button", { name: tv("rideDetail.handOverOption", { name: SEEDED_USERS.member2.fullName }) }).click();
 
@@ -212,9 +215,9 @@ test("the driver leaves with nobody driving; the ride shrinks to the guest's hou
     await page.goto(`/siddur/${NEVO_DEPARTMENT_ID}/${WEEK}`);
     await page.locator(`[data-ride-id="${ride.id}"]:visible`).click();
     await page.getByTestId("ride-peek-open").click();
-    // R20U4: the driver's own entry, beside "בטל נסיעה", opens the same choices.
+    // The driver's one entry ("אני לא נוסע/ת") holds the leave choices.
     await page.getByTestId("not-driving-this").click();
-    await page.getByRole("dialog").filter({ hasText: he.rideDetail.notDrivingThis }).getByTestId("leave-no-driver").click();
+    await page.getByRole("dialog").filter({ hasText: he.rideDetail.removeDriverHelp }).getByTestId("leave-no-driver").click();
 
     const question = page.getByRole("dialog").filter({ hasText: he.rideDetail.leaveFitTitle });
     await expect(question).toBeVisible();

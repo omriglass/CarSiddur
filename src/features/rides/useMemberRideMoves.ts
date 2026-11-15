@@ -15,7 +15,7 @@ import type { EditRideInput } from "@/features/sadran/api";
 import type { Week } from "@/features/siddur/api";
 import { useBoardRides } from "@/features/siddur/hooks";
 import { siddurKeys } from "@/features/siddur/queryKeys";
-import { conflictingRides, moveOnRideDay, shortTurnaroundNextRide } from "@/features/siddur/rideEditing";
+import { conflictingRides, moveOnRideDay, shortTurnaroundNeighbours } from "@/features/siddur/rideEditing";
 import { he, tv } from "@/i18n/he";
 import { withFreedCarChoice } from "@/lib/appSurface";
 import { askShortTurnaround } from "@/lib/shortTurnaround";
@@ -126,11 +126,15 @@ export function useMemberRideMoves({ departmentId, weekStart, week, profileId, m
         void memberMerge.start(ride, target);
         return;
       }
-      // REQ §13.190: only the car's next ride is too close — go ahead after "תיאמתם עם X…?" (no question when it is mine)
-      const next = shortTurnaroundNextRide(move, rides, turnaroundMinutes);
-      if (next) {
-        const name = next.driver_name ?? servedOf(next).find((entry) => entry.requester)?.requester ?? null;
-        if (next.driver_id !== profileId && !(await askShortTurnaround({ at: formatTime(new Date(next.starts_at as string)), name }))) return;
+      // REQ §13.190 (two-sided, PR3): only a turnaround is in the way — go ahead after "סיכמת עם X שנוסע/ת לפניך?" /
+      // "תיאמתם עם X…?" (no question about a ride that is mine)
+      const sides = shortTurnaroundNeighbours(move, rides, turnaroundMinutes);
+      if (sides) {
+        const nameOf = (r: (typeof rides)[number]) => r.driver_name ?? servedOf(r).find((entry) => entry.requester)?.requester ?? null;
+        if (sides.before && sides.before.driver_id !== profileId
+          && !(await askShortTurnaround({ side: "before", at: formatTime(new Date(sides.before.ends_at as string)), name: nameOf(sides.before) }))) return;
+        if (sides.next && sides.next.driver_id !== profileId
+          && !(await askShortTurnaround({ at: formatTime(new Date(sides.next.starts_at as string)), name: nameOf(sides.next) }))) return;
         allowShortTurnaround = true;
       } else if (conflicts.length) {
         void makeRoom.startMove({ departmentId, weekStart }, move, freeCarFor(move));
@@ -179,7 +183,7 @@ export function useMemberRideMoves({ departmentId, weekStart, week, profileId, m
     const conflicts = conflictingRides(move, rides, buffer);
     // REQ §13.175 (d): onto someone's pickup / drop-off = take them along (my ride itself does not move there)
     if (conflicts.length && ownsEditableRide(rideId) && memberMergeTarget(conflicts, profileId)) return true;
-    if (conflicts.length && !(ownsEditableRide(rideId) && shortTurnaroundNextRide(move, rides, buffer))) return false;
+    if (conflicts.length && !(ownsEditableRide(rideId) && shortTurnaroundNeighbours(move, rides, buffer))) return false;
     if ((maintenanceQuery.data ?? []).some((block) => block.car_id === carId && Date.parse(move.startsAt) < Date.parse(block.ends_at)
       && Date.parse(move.endsAt) + buffer * 60_000 > Date.parse(block.starts_at))) return false;
     const served = servedOf(ride);

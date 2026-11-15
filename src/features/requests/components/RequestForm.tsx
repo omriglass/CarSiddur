@@ -91,7 +91,7 @@ import { overlapNames } from "../overlapNames";
 import { childOverlapMessage } from "../childOverlap";
 import { HostGuestsDialog } from "./HostGuestsDialog";
 import { SeriesCarTakenDialog, type SeriesCarTakenQuestion } from "./SeriesCarTakenDialog";
-import { affectedNames, editRefusal, seriesCarTaken, carStaysAwayConfirmation, hostGuestsConfirmation, releaseConfirmation, shouldOfferJoinableRides, toastSeriesSubmitOutcome, toastSubmitOutcome } from "../submitOutcome";
+import { affectedNames, attachToBlocker, carTakenChoice, editRefusal, seriesCarTaken, carStaysAwayConfirmation, hostGuestsConfirmation, releaseConfirmation, shouldOfferJoinableRides, toastSeriesSubmitOutcome, toastSubmitOutcome , type CarTakenChoice } from "../submitOutcome";
 import { shouldSuggestChildcare } from "../childcareType";
 import { suggestionToFormValues } from "../templatePrefill";
 import { canSwapPlaces, swapRequestPlaces } from "../dropOffMode";
@@ -123,6 +123,9 @@ interface SubmitOptions {
   ignoreChildOverlap?: boolean;
   allowCarAway?: boolean;
   carAwayDeclined?: boolean;
+  /** PR3: the answers to "the car is taken at the new hours" — another car, or hours cut to sit next to the ride in the way. */
+  allowOtherCar?: boolean;
+  attach?: { departAt?: string; returnAt?: string };
   /** R20 Q2 redo: the answer per guest of the shared ride this request hosts. */
   hostGuests?: Record<string, HostGuestDecision>;
   /** MD1: the answers to "the car is taken on a later day" (SeriesCarTakenDialog). */
@@ -874,6 +877,7 @@ export function RequestForm({
   const [pendingRelease, setPendingRelease] = useState<{ values: RequestFormValues; names: string[] } | null>(null);
   // OW1 (REQ §13.210): a change to one way would leave the booked car at the destination — ask, then resubmit.
   const [pendingCarAway, setPendingCarAway] = useState<{ values: RequestFormValues; carName: string; nextRide: boolean } | null>(null);
+  const [pendingCarChoice, setPendingCarChoice] = useState<(CarTakenChoice & { values: RequestFormValues; departAt: string; returnAt: string | null }) | null>(null);
   // R20 Q2 redo: the shared ride's guests the edit no longer fits, asked one at a time, then sent once with every answer.
   const [pendingHostGuests, setPendingHostGuests] = useState<{ values: RequestFormValues; options: SubmitOptions; guests: HostGuestQuestion[] } | null>(null);
   // REQ §13.158: the edit was refused (no car at the new hours) — nothing changed, the member stays on the form.
@@ -1010,6 +1014,9 @@ export function RequestForm({
       ...(waitlist ? { waitlist: true } : {}),
       ...(options.confirmRelease ? { confirm_release: true } : {}),
       ...(options.allowCarAway ? { allow_car_away: true } : {}),
+      ...(options.allowOtherCar ? { allow_other_car: true } : {}),
+      // PR3 "attach": the hours cut to the ride in the way, with the short gap the member just chose
+      ...(options.attach ? { ...(options.attach.departAt ? { depart_at: options.attach.departAt } : {}), ...(options.attach.returnAt ? { return_at: options.attach.returnAt } : {}), allow_short_turnaround: true } : {}),
       ...(options.hostGuests ? { host_guests: options.hostGuests } : {}),
       ...(options.returnEarlier ? { return_earlier: true } : {}),
       ...(options.replaceRideId ? { replace_ride_id: options.replaceRideId, ...(options.keepLaterEnd ? { keep_later_end: true } : {}) } : {}),
@@ -1228,6 +1235,12 @@ export function RequestForm({
       }
       // REQ §13.101 f: a car takes the new hours but the member's passengers lose their driver — ask, then resubmit
       // with `confirm_release`.
+      // PR3 (owner 2026-11-15): the booked car is taken at the new hours - three ways on, never a silent car change.
+      const carTaken = carTakenChoice(result);
+      if (carTaken && payload.depart_at) {
+        setPendingCarChoice({ values: formValues, departAt: payload.depart_at, returnAt: payload.return_at ?? null, ...carTaken });
+        return;
+      }
       const carAway = carStaysAwayConfirmation(result);
       if (carAway) {
         setPendingCarAway({ values: formValues, ...carAway });
@@ -1838,6 +1851,51 @@ export function RequestForm({
         ))}
       </ul>
     </ConfirmDialog>
+    {(() => {
+      const pending = pendingCarChoice;
+      const blocker = pending?.blocker;
+      const attach = pending && blocker ? attachToBlocker(pending.departAt, pending.returnAt, blocker) : null;
+      const name = blocker?.name ?? "";
+      const answer = (options: SubmitOptions) => { setPendingCarChoice(null); if (pending) void performSubmit(pending.values, options); };
+      return (
+        <ConfirmDialog
+          open={!!pending}
+          onOpenChange={(open) => { if (!open) setPendingCarChoice(null); }}
+          title={t("request.carTakenTitle")}
+          description={blocker ? tv(blocker.mine ? "request.carTakenBodyMine" : "request.carTakenBody", { car: blocker.car_name, name,
+            range: `${formatTime(new Date(blocker.starts_at))}–${formatTime(new Date(blocker.ends_at))}` }) : undefined}
+          cancelLabel={t("request.editRefusedBack")}
+          hideConfirm
+          loading={submitMutation.isPending}
+          onConfirm={() => undefined}
+        >
+          <div className="flex flex-col gap-2" data-testid="car-taken-choice">
+            {pending && blocker && !blocker.mine && pending.myRide && pending.returnAt ? (
+              <Button type="button" variant="outline" className="min-h-11 whitespace-normal" data-testid="car-taken-make-room"
+                onClick={() => {
+                  const move = { rideId: pending.myRide!.id, carId: blocker.car_id, startsAt: pending.departAt, endsAt: pending.returnAt as string, expectedVersion: pending.myRide!.version };
+                  setPendingCarChoice(null);
+                  void makeRoom.startMove({ departmentId, weekStart }, move, null);
+                }}>
+                {tv("request.carTakenMakeRoom", { name })}
+              </Button>
+            ) : null}
+            {pending?.otherCar ? (
+              <Button type="button" variant="outline" className="min-h-11 whitespace-normal" data-testid="car-taken-other-car" onClick={() => answer({ allowOtherCar: true })}>
+                {tv("request.carTakenOtherCar", { car: pending.otherCar.name })}
+              </Button>
+            ) : null}
+            {attach && blocker ? (
+              <Button type="button" variant="outline" className="min-h-11 whitespace-normal" data-testid="car-taken-attach" onClick={() => answer({ attach })}>
+                {attach.departAt
+                  ? tv(blocker.mine ? "request.carTakenAttachAfterMine" : "request.carTakenAttachAfter", { time: formatTime(new Date(attach.departAt)), name })
+                  : tv(blocker.mine ? "request.carTakenAttachBeforeMine" : "request.carTakenAttachBefore", { time: formatTime(new Date(attach.returnAt as string)), name })}
+              </Button>
+            ) : null}
+          </div>
+        </ConfirmDialog>
+      );
+    })()}
     <ConfirmDialog
       open={!!pendingCarAway}
       onOpenChange={(open) => { if (!open) setPendingCarAway(null); }}

@@ -5628,17 +5628,31 @@ export type Database = {
         Returns: undefined
       }
       _audit_txid: { Args: never; Returns: number }
-      _auto_approve_free_car: {
-        Args: {
-          p_after: string
-          p_end: string
-          p_is_one_way: boolean
-          p_pref: string
-          p_request_id: string
-          p_turnaround: string
-        }
-        Returns: string
-      }
+      _auto_approve_free_car:
+        | {
+            Args: {
+              p_after: string
+              p_end: string
+              p_is_one_way: boolean
+              p_pref: string
+              p_request_id: string
+              p_turnaround: string
+            }
+            Returns: string
+          }
+        | {
+            Args: {
+              p_after: string
+              p_before_waived: boolean
+              p_end: string
+              p_is_one_way: boolean
+              p_only: string
+              p_pref: string
+              p_request_id: string
+              p_turnaround: string
+            }
+            Returns: string
+          }
       _board_hold_applies: {
         Args: {
           _department_id: string
@@ -5886,6 +5900,10 @@ export type Database = {
         }
         Returns: boolean
       }
+      _edit_car_blocker: {
+        Args: { p_car: string; p_from: string; p_me: string; p_to: string }
+        Returns: Json
+      }
       _edit_series_request: { Args: { payload: Json }; Returns: Json }
       _extend_request_to_series: { Args: { payload: Json }; Returns: Json }
       _fit_ride_to_its_legs: { Args: { p_ride_id: string }; Returns: boolean }
@@ -6056,6 +6074,15 @@ export type Database = {
           p_car: string
           p_end: string
           p_exclude: string
+        }
+        Returns: undefined
+      }
+      _notify_short_turnaround_before: {
+        Args: {
+          p_actor: string
+          p_car: string
+          p_exclude: string
+          p_start: string
         }
         Returns: undefined
       }
@@ -6418,6 +6445,10 @@ export type Database = {
         Returns: boolean
       }
       _shift_place_on_car: { Args: { p_proposal_id: string }; Returns: string }
+      _short_turnaround_before_info: {
+        Args: { p_car: string; p_exclude: string; p_start: string }
+        Returns: Json
+      }
       _short_turnaround_info: {
         Args: { p_car: string; p_end: string; p_exclude: string }
         Returns: Json

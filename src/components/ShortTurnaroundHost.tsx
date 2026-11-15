@@ -2,11 +2,11 @@ import { useCallback, useEffect, useState } from "react";
 
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { he } from "@/i18n/he";
-import { registerShortTurnaroundAsker, shortTurnaroundBody } from "@/lib/shortTurnaround";
-import type { ShortTurnaroundInfo } from "@/lib/shortTurnaround";
+import { registerShortTurnaroundAsker, shortTurnaroundBody, shortTurnaroundTitle } from "@/lib/shortTurnaround";
+import type { ShortTurnaroundQuestion } from "@/lib/shortTurnaround";
 
 interface Pending {
-  info: Pick<ShortTurnaroundInfo, "at" | "name">;
+  info: ShortTurnaroundQuestion;
   resolve: (accepted: boolean) => void;
 }
 
@@ -32,7 +32,7 @@ export function ShortTurnaroundHost() {
     <ConfirmDialog
       open
       onOpenChange={(open) => { if (!open) settle(false); }}
-      title={he.shortTurnaround.confirmTitle}
+      title={shortTurnaroundTitle(pending.info)}
       description={shortTurnaroundBody(pending.info)}
       confirmLabel={he.shortTurnaround.confirmAction}
       onConfirm={() => settle(true)}

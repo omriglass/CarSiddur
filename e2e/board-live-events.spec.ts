@@ -8,7 +8,8 @@ import { publishedFixtureWeek } from "./published-week";
 import { dayOfWeek, deleteRequests, FIXTURE_WEEKS, insertRequest, PLACES, PROFILE_IDS, removeWeek, sharedCarIdByName, winterAt } from "./request-form";
 
 // R20M1 (owner 2026-11-14, REQ item 233): the board strip "מאז שהסתכלת לאחרונה". Two members act on a published day
-// (one adds a passenger, one cancels); the Sadran's board shows a badge of 2, opening it lists both lines and clears it.
+// (one adds a passenger, one cancels); the Sadran opens the strip (read only then — owner 2026-11-15), both lines are
+// new; on the next visit they are listed but no longer new.
 test.describe("board strip: since you last looked", { tag: ["@board"] }, () => {
   test("members' published-day actions show quietly on the board", async ({ page }) => {
     const service = serviceRoleClient();
@@ -55,24 +56,23 @@ test.describe("board strip: since you last looked", { tag: ["@board"] }, () => {
       await page.goto(paths.sadran.board(NEVO_DEPARTMENT_ID, week));
       const strip = page.getByTestId("board-live-events");
       await expect(strip).toBeVisible();
-      await expect(strip.getByTestId("board-live-events-badge")).toHaveText("2");
-      await strip.getByRole("button", { name: tv("liveEvents.titleCount", { count: "2" }) }).click();
+      // closed: nothing is read, no line is shown
+      await expect(strip.getByTestId("board-live-event")).toHaveCount(0);
+      await strip.getByRole("button", { name: he.liveEvents.title }).click();
       const lines = strip.getByTestId("board-live-event");
       await expect(lines).toHaveCount(2);
       await expect(lines.nth(0)).toContainText(tv("liveEvents.cancelled", { name: SEEDED_USERS.member2.fullName }));
       await expect(lines.nth(1)).toContainText(tv("liveEvents.joined", { names: "Guest Rider", owner: SEEDED_USERS.member1.fullName }));
       await expect(lines.nth(1)).toHaveAttribute("data-new", "true");
-      // opening counted as looked: the badge is gone, the lines stay for this visit
-      await expect(strip.getByTestId("board-live-events-badge")).toHaveCount(0);
-      await expect(lines).toHaveCount(2);
+      await expect(lines.nth(0)).toHaveAttribute("data-new", "true");
       await lines.nth(1).click();
       await expect(page.getByRole("dialog")).toBeVisible();
 
       // the next visit: still listed, nothing new
       await page.reload();
       await expect(strip).toBeVisible();
-      await expect(strip.getByTestId("board-live-events-badge")).toHaveCount(0);
       await strip.getByRole("button", { name: he.liveEvents.title }).click();
+      await expect(lines).toHaveCount(2);
       await expect(lines.first()).not.toHaveAttribute("data-new", "true");
     } finally {
       await deleteRequests(service, requestIds);
