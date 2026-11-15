@@ -215,6 +215,10 @@ export const he = {
     confirmBody: "תיאמתם עם {{name}} שצריך לקחת את הרכב ב-{{at}}?",
     confirmAction: "כן, תיאמנו",
     unknownName: "מי שנוסע/ת אחריך",
+    /** PR3 (owner 2026-11-15): the ride before mine ends less than the turnaround before I leave. */
+    confirmTitleBefore: "הסידור צפוף",
+    confirmBodyBefore: "סיכמת עם {{name}} שנוסע/ת לפניך? הרכב חוזר ב-{{at}}.",
+    unknownNameBefore: "מי שנוסע/ת לפניך",
   },
   smallTrunk: {
     confirmTitle: "צריך תא מטען גדול",

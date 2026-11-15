@@ -153,8 +153,8 @@ begin
   res:=public.submit_request(base || jsonb_build_object('request_id',q1,'expected_version',(select version from public.requests where id=q1),
     'depart_at',d0+interval '10 hours 30 minutes','return_at',d0+interval '12 hours 30 minutes','short_turnaround_ask',true,'short_turnaround_before_ask',true,'car_change_ask',true));
   set constraints all immediate; set constraints all deferred;
-  assert res->>'needs_confirmation'='car_taken_choice' and (res->'blocker'->>'ride_id')::uuid=r2
-    and res->'blocker'->>'name'=(select full_name from public.profiles where id=m2) and (res->'blocker'->>'mine')::boolean=false
+  assert res->>'needs_confirmation'='car_taken_choice' and (res->'car_blocker'->>'ride_id')::uuid=r2
+    and res->'car_blocker'->>'name'=(select full_name from public.profiles where id=m2) and (res->'car_blocker'->>'mine')::boolean=false
     and res->'other_car'->>'id' is not null and (res->'other_car'->>'id')::uuid<>car40 and (res->'my_ride'->>'id')::uuid=r1,
     format('(4) the edit asks: m2''s ride is in the way, another car is free, got %s', res);
   assert (select depart_at=d0+interval '12 hours' from public.requests where id=q1) and (select status='confirmed' and starts_at=d0+interval '12 hours' from public.rides where id=r1),

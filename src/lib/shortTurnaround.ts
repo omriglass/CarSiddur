@@ -10,6 +10,8 @@ export const shortTurnaroundSchema = z.object({
   at: z.string(),
   gap: z.number(),
   name: z.string().nullable(),
+  /** PR3 (owner 2026-11-15): absent = the car's next ride; "before" = the ride before mine ("סיכמת עם X שנוסע/ת לפניך?"). */
+  side: z.literal("before").optional(),
 });
 export type ShortTurnaroundInfo = z.infer<typeof shortTurnaroundSchema>;
 
@@ -19,11 +21,18 @@ export function parseShortTurnaround(value: unknown): ShortTurnaroundInfo | null
   return parsed.success ? parsed.data : null;
 }
 
-export function shortTurnaroundBody(info: Pick<ShortTurnaroundInfo, "at" | "name">): string {
+export type ShortTurnaroundQuestion = Pick<ShortTurnaroundInfo, "at" | "name" | "side">;
+
+export function shortTurnaroundBody(info: ShortTurnaroundQuestion): string {
+  if (info.side === "before") return tv("shortTurnaround.confirmBodyBefore", { name: info.name || he.shortTurnaround.unknownNameBefore, at: info.at });
   return tv("shortTurnaround.confirmBody", { name: info.name || he.shortTurnaround.unknownName, at: info.at });
 }
 
-export type ShortTurnaroundAsker = (info: Pick<ShortTurnaroundInfo, "at" | "name">) => Promise<boolean>;
+export function shortTurnaroundTitle(info: ShortTurnaroundQuestion): string {
+  return info.side === "before" ? he.shortTurnaround.confirmTitleBefore : he.shortTurnaround.confirmTitle;
+}
+
+export type ShortTurnaroundAsker = (info: ShortTurnaroundQuestion) => Promise<boolean>;
 let hostAsker: ShortTurnaroundAsker | null = null;
 
 /** `ShortTurnaroundHost` registers the dialog here (and clears it on unmount). */
@@ -32,6 +41,6 @@ export function registerShortTurnaroundAsker(asker: ShortTurnaroundAsker | null)
 }
 
 /** Shows the shared confirmation; `false` when no host is mounted (never shorten the turnaround without an explicit yes). */
-export function askShortTurnaround(info: Pick<ShortTurnaroundInfo, "at" | "name">): Promise<boolean> {
+export function askShortTurnaround(info: ShortTurnaroundQuestion): Promise<boolean> {
   return hostAsker ? hostAsker(info) : Promise.resolve(false);
 }

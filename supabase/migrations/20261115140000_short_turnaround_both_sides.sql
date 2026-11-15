@@ -1005,7 +1005,7 @@ begin
         if v_probe ? 'car_blocker' then
           return jsonb_build_object('ok', false, 'needs_confirmation', 'car_taken_choice', 'unchanged', false,
             'request_id', v_request_id, 'status', v_existing.status,
-            'blocker', v_probe -> 'car_blocker', 'other_car', v_probe -> 'other_car',
+            'car_blocker', v_probe -> 'car_blocker', 'other_car', v_probe -> 'other_car',
             'my_ride', (select jsonb_build_object('id', r.id, 'version', r.version, 'car_id', r.car_id)
                           from public.ride_requests rr join public.rides r on r.id = rr.ride_id
                          where rr.request_id = v_request_id and r.status not in ('cancelled', 'draft')

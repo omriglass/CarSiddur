@@ -20,12 +20,21 @@ export function conflictingRides(move: RideMove, rides: readonly BoardRide[], bu
 }
 
 /**
- * REQ §13.190: when the only rides in the way are the car's next ones, starting less than the turnaround after the
- * move ends (not overlapping it), the member may go ahead after "תיאמתם עם X…?" — returns the first of them; else null.
+ * REQ §13.190, two-sided since 2026-11-15 (owner, PR3): when every ride in the way only stands inside a turnaround —
+ * the car's next rides start less than the turnaround after the move ends, the rides before end less than it before the
+ * move starts, none overlaps it — the member may go ahead after "תיאמתם עם X…?" / "סיכמת עם X שנוסע/ת לפניך?".
+ * Returns the nearest ride on each side (null when that side is clear); null when nothing is in the way or a ride overlaps.
  */
-export function shortTurnaroundNextRide(move: RideMove, rides: readonly BoardRide[], bufferMinutes: number): BoardRide | null {
+export function shortTurnaroundNeighbours(move: RideMove, rides: readonly BoardRide[], bufferMinutes: number): { before: BoardRide | null; next: BoardRide | null } | null {
   const conflicts = conflictingRides(move, rides, bufferMinutes);
+  const start = Date.parse(move.startsAt);
   const end = Date.parse(move.endsAt);
-  if (!conflicts.length || !conflicts.every((r) => Date.parse(r.starts_at as string) >= end)) return null;
-  return [...conflicts].sort((a, b) => Date.parse(a.starts_at as string) - Date.parse(b.starts_at as string))[0] ?? null;
+  if (!conflicts.length) return null;
+  const after = conflicts.filter((r) => Date.parse(r.starts_at as string) >= end);
+  const prior = conflicts.filter((r) => Date.parse(r.ends_at as string) <= start);
+  if (after.length + prior.length !== conflicts.length) return null;
+  return {
+    next: [...after].sort((a, b) => Date.parse(a.starts_at as string) - Date.parse(b.starts_at as string))[0] ?? null,
+    before: [...prior].sort((a, b) => Date.parse(b.ends_at as string) - Date.parse(a.ends_at as string))[0] ?? null,
+  };
 }

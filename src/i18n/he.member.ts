@@ -112,6 +112,16 @@ export const heMember = {
     overlapOther: "הבקשה החופפת: {{name}}",
     overlapSeriesBody: "הבקשה החופפת היא חלק מבקשה רב-יומית ({{count}} ימים), ואי אפשר לבטל אותה מכאן. אפשר להשאיר את שתיהן או לחזור לעריכה.",
     noChanges: "לא בוצעו שינויים",
+    /** PR3 (owner 2026-11-15): the booked car is taken at the new hours — three ways on, nothing saved yet. */
+    carTakenTitle: "הרכב תפוס בשעות החדשות",
+    carTakenBody: "ב{{car}} יש נסיעה של {{name}} בשעות {{range}}. השינוי עוד לא נשמר.",
+    carTakenBodyMine: "ב{{car}} יש נסיעה אחרת שלך בשעות {{range}}. השינוי עוד לא נשמר.",
+    carTakenMakeRoom: "סיכמתי עם {{name}} והנסיעה שלו/ה נגמרת מוקדם יותר",
+    carTakenOtherCar: "להעביר ל{{car}}",
+    carTakenAttachAfter: "לצאת ב־{{time}}, מיד אחרי הנסיעה של {{name}}",
+    carTakenAttachAfterMine: "לצאת ב־{{time}}, מיד אחרי הנסיעה האחרת שלי",
+    carTakenAttachBefore: "לחזור עד {{time}}, לפני הנסיעה של {{name}}",
+    carTakenAttachBeforeMine: "לחזור עד {{time}}, לפני הנסיעה האחרת שלי",
     /** REQ §13.158: an edit never costs the car — no car takes the new hours, so nothing was saved. */
     editRefusedTitle: "אין רכב פנוי בשעות החדשות",
     editRefusedBody: "השינוי לא נשמר והנסיעה שלך נשארת כמו שהייתה. אפשר לבחור שעות אחרות, או לפנות לסדרן/ית.",

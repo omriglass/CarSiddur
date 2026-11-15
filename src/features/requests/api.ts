@@ -980,7 +980,15 @@ export interface SubmitRequestResult {
    * REQ §13.101 f: a car takes the new hours, but the member drives others who would be left without a driver —
    * nothing was changed; resubmit with `confirm_release: true` to go ahead.
    */
-  needs_confirmation?: "release_to_waitlist" | "car_stays_away" | "host_guests";
+  needs_confirmation?: "release_to_waitlist" | "car_stays_away" | "host_guests" | "car_taken_choice";
+  /**
+   * PR3 (owner 2026-11-15), with `car_taken_choice`: the edit's booked car is taken at the new hours by this ride —
+   * nothing was changed. `other_car` = a shared car free at those hours (resubmit with `allow_other_car`), `my_ride` =
+   * the member's own ride (to ask the driver in the way to make room).
+   */
+  car_blocker?: { ride_id: string; car_id: string; car_name: string; name: string | null; starts_at: string; ends_at: string; mine: boolean };
+  other_car?: { id: string; name: string } | null;
+  my_ride?: { id: string; version: number; car_id: string } | null;
   /** R20 Q2 redo, with `host_guests`: the guests the new hours no longer fit — nothing was changed until each is answered. */
   host_guests?: HostGuestQuestion[];
   /** OW1 (REQ §13.210), with `car_stays_away`: the booked car, and whether a later ride of it is the reason (else the week's end). */
@@ -1042,7 +1050,7 @@ export async function submitRequest(payload: SubmitRequestPayload): Promise<Json
   // REQ §13.190 too: when only the car's next ride is too close, the member is asked instead of quietly waiting.
   if (payload.waitlist) {
     const enter = (extra: Record<string, boolean>) => withPersonBusyRetry((allowBusy) => withSmallTrunkRetry((allowSmallTrunk) => rpc("enter_waiting_list", {
-      p_payload: { ...payload, short_turnaround_ask: true, ...extra, ...(allowSmallTrunk ? { allow_small_trunk: true } : {}), ...(allowBusy ? { overlap_confirmed: true } : {}) } as unknown as Json,
+      p_payload: { ...payload, short_turnaround_ask: true, short_turnaround_before_ask: true, ...extra, ...(allowSmallTrunk ? { allow_small_trunk: true } : {}), ...(allowBusy ? { overlap_confirmed: true } : {}) } as unknown as Json,
     })));
     return settleShortTurnaround(await enter({}), () => enter({ allow_short_turnaround: true }));
   }
@@ -1056,7 +1064,8 @@ export async function submitRequest(payload: SubmitRequestPayload): Promise<Json
   const tagged = (result: Record<string, unknown>): Json =>
     (personBusyYesCount() > yesBefore ? { ...result, overlap_confirmed: true } : result) as unknown as Json;
   const send = (extra: Record<string, boolean>) => withPersonBusyRetry((allowBusy) => withSmallTrunkRetry((allowSmallTrunk) => rpc("submit_request", {
-    payload: { ...payload, short_turnaround_ask: true, ...extra, ...(allowSmallTrunk ? { allow_small_trunk: true } : {}), ...(allowBusy ? { overlap_confirmed: true } : {}) } as unknown as Json,
+    // PR3 (owner 2026-11-15): the ride before is asked about too; an edit whose car is taken asks instead of changing car.
+    payload: { ...payload, short_turnaround_ask: true, short_turnaround_before_ask: true, car_change_ask: true, ...extra, ...(allowSmallTrunk ? { allow_small_trunk: true } : {}), ...(allowBusy ? { overlap_confirmed: true } : {}) } as unknown as Json,
   })));
   try {
     const result = await settleShortTurnaround(await send({}), () => send({ allow_short_turnaround: true }));
@@ -1085,10 +1094,15 @@ export async function submitRequest(payload: SubmitRequestPayload): Promise<Json
  */
 async function settleShortTurnaround(result: Json, retryAllowed: () => Promise<Json>): Promise<Json> {
   if (!result || typeof result !== "object" || Array.isArray(result)) return result;
-  const { short_turnaround: raw, ...rest } = result;
+  const { short_turnaround: raw, short_turnaround_before: rawBefore, ...rest } = result;
   const info = parseShortTurnaround(raw);
-  if (!info) return result;
-  const accepted = await askShortTurnaround(info);
+  const before = parseShortTurnaround(rawBefore);
+  if (!info && !before) return result;
+  // PR3: the ride before ("סיכמת עם X שנוסע/ת לפניך?") and the car's next ride are each asked; one no is a no.
+  let accepted = true;
+  for (const question of [before, info]) {
+    if (question && accepted) accepted = await askShortTurnaround(question);
+  }
   if (rest.edit_refused) return accepted ? retryAllowed() : rest;
   // A multi-day request (TG2) is answered through its first day; the server settles the whole series.
   const requestId = typeof rest.request_id === "string" ? rest.request_id

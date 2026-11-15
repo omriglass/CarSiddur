@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { BoardRide } from "./api";
-import { conflictingRides, moveOnRideDay, shortTurnaroundNextRide } from "./rideEditing";
+import { conflictingRides, moveOnRideDay, shortTurnaroundNeighbours } from "./rideEditing";
 
 const ride = { id: "mine", version: 2, car_id: "car", starts_at: "2026-09-10T07:00:00Z", ends_at: "2026-09-10T09:00:00Z" } as BoardRide;
 describe("member ride changes", () => {
@@ -20,19 +20,23 @@ describe("member ride changes", () => {
     expect(conflictingRides(move, [ride, next], 30).map((r) => r.id)).toEqual(["other"]);
     expect(conflictingRides(move, [ride, next], 15)).toEqual([]);
   });
-  it("REQ §13.190: only the car's next ride, starting less than the turnaround after the move, may be cut short", () => {
+  it("REQ §13.190 (two-sided, PR3): rides that only stand inside a turnaround, on either side, may be agreed away", () => {
     // 12:00-14:45 Jerusalem (09:00-11:45Z); the next ride at 15:00 (12:00Z)
     const move = moveOnRideDay(ride, "car", 720, 885)!;
     const next = { ...ride, id: "next", starts_at: "2026-09-10T12:00:00Z", ends_at: "2026-09-10T13:00:00Z" };
-    expect(shortTurnaroundNextRide(move, [ride, next], 30)?.id).toBe("next");
+    expect(shortTurnaroundNeighbours(move, [ride, next], 30)).toMatchObject({ next: { id: "next" }, before: null });
     // ending right when it starts is fine too
-    expect(shortTurnaroundNextRide(moveOnRideDay(ride, "car", 720, 900)!, [next], 30)?.id).toBe("next");
+    expect(shortTurnaroundNeighbours(moveOnRideDay(ride, "car", 720, 900)!, [next], 30)?.next?.id).toBe("next");
     // a real overlap is not
-    expect(shortTurnaroundNextRide(moveOnRideDay(ride, "car", 720, 915)!, [next], 30)).toBeNull();
-    // nor starting inside the turnaround after the ride before
+    expect(shortTurnaroundNeighbours(moveOnRideDay(ride, "car", 720, 915)!, [next], 30)).toBeNull();
+    // the ride before, ending 15 minutes before the move starts, is asked about as well
     const before = { ...ride, id: "before", starts_at: "2026-09-10T07:00:00Z", ends_at: "2026-09-10T08:45:00Z" };
-    expect(shortTurnaroundNextRide(move, [before, next], 30)).toBeNull();
+    expect(shortTurnaroundNeighbours(move, [before, next], 30)).toMatchObject({ before: { id: "before" }, next: { id: "next" } });
+    expect(shortTurnaroundNeighbours(move, [before], 30)).toMatchObject({ before: { id: "before" }, next: null });
+    // a ride before that overlaps the move is not a turnaround matter
+    const overlapping = { ...before, ends_at: "2026-09-10T09:15:00Z" };
+    expect(shortTurnaroundNeighbours(move, [overlapping], 30)).toBeNull();
     // nothing in the way: nothing to ask
-    expect(shortTurnaroundNextRide(move, [], 30)).toBeNull();
+    expect(shortTurnaroundNeighbours(move, [], 30)).toBeNull();
   });
 });
