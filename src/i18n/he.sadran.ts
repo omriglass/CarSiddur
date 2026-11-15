@@ -812,7 +812,8 @@ export const heSadran = {
   /** R20M1 (REQ item 233, owner wording 2026-11-14): the board strip of others' published-day events. */
   liveEvents: {
     title: "מאז שהסתכלת לאחרונה",
-    titleCount: "מאז שהסתכלת לאחרונה ({{count}})",
+    /** Owner 2026-11-15: the strip is read only when opened; this is what an opened strip with nothing in it says. */
+    empty: "אין שינויים",
     driverLeft: "{{name}} כבר לא נוהג/ת בנסיעה",
     driverHanded: "{{name}} העביר/ה את הנהיגה ל{{other}}",
     cancelled: "{{name}} ביטל/ה את הנסיעה",

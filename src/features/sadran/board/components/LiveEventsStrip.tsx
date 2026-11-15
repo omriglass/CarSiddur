@@ -1,10 +1,10 @@
 // R20M1 (owner 2026-11-14, REQ item 233): "מאז שהסתכלת לאחרונה" — a quiet, collapsed strip on the board of what others
-// did on published days. The badge counts what is new; opening the strip counts as looked. No push, no inbox notice.
+// did on published days. Read only when the strip is opened (owner 2026-11-15: the read is heavy and was part of every
+// board load), so the closed strip shows no count; opening it counts as looked. No push, no inbox notice.
 import { ChevronDown } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
-import { Badge } from "@/components/ui/badge";
-import { he, tv } from "@/i18n/he";
+import { he } from "@/i18n/he";
 import { cn } from "@/lib/utils";
 
 import type { BoardLiveEvent } from "../../api";
@@ -20,9 +20,10 @@ interface LiveEventsStripProps {
 }
 
 export function LiveEventsStrip({ departmentId, weekStart, enabled, onOpenEvent }: LiveEventsStripProps) {
-  const query = useBoardLiveEventsQuery(departmentId, weekStart, enabled);
-  const mark = useMarkBoardSeenMutation();
   const [open, setOpen] = useState(false);
+  const query = useBoardLiveEventsQuery(departmentId, weekStart, enabled && open);
+  const mark = useMarkBoardSeenMutation();
+  const markMutate = mark.mutate;
   // The marker this visit began with: lines after it stay highlighted after the strip is opened.
   const [baseline, setBaseline] = useState<number | null>(null);
   const data = query.data;
@@ -30,26 +31,33 @@ export function LiveEventsStrip({ departmentId, weekStart, enabled, onOpenEvent 
   if (data && baseline === null) setBaseline(data.seenAuditId);
 
   const events = data?.events ?? [];
-  if (!enabled || events.length === 0) return null;
-  const count = newEventCount(events, data?.seenAuditId ?? 0);
+  const count = data ? newEventCount(events, data.seenAuditId) : 0;
   const highlightAfter = baseline ?? data?.seenAuditId ?? 0;
+  // Opening counts as looked: once per opening, when the answer holds something new.
+  const markedRef = useRef(false);
+  useEffect(() => {
+    if (!open) { markedRef.current = false; return; }
+    if (count > 0 && !markedRef.current) {
+      markedRef.current = true;
+      markMutate({ departmentId, weekStart });
+    }
+  }, [open, count, departmentId, weekStart, markMutate]);
 
-  function toggle() {
-    const next = !open;
-    setOpen(next);
-    if (next && count > 0) mark.mutate({ departmentId, weekStart });
-  }
+  if (!enabled) return null;
 
   return (
     <section className="rounded-md border bg-card text-sm" data-testid="board-live-events">
-      <button type="button" onClick={toggle} aria-expanded={open}
-        aria-label={count > 0 ? tv("liveEvents.titleCount", { count: String(count) }) : he.liveEvents.title}
+      <button type="button" onClick={() => setOpen((value) => !value)} aria-expanded={open}
         className="flex w-full items-center gap-2 px-3 py-2 text-start font-medium">
         <span>{he.liveEvents.title}</span>
-        {count > 0 ? <Badge className="px-1.5" data-testid="board-live-events-badge"><span dir="ltr">{count}</span></Badge> : null}
         <ChevronDown className={cn("ms-auto size-4 transition-transform", open && "rotate-180")} aria-hidden="true" />
       </button>
-      {open ? (
+      {open && events.length === 0 ? (
+        <p className="border-t px-3 py-1.5 text-muted-foreground" data-testid="board-live-events-empty">
+          {query.isPending ? he.common.loading : he.liveEvents.empty}
+        </p>
+      ) : null}
+      {open && events.length > 0 ? (
         <ul className="divide-y border-t">
           {events.map((event) => {
             const isNew = event.id > highlightAfter;

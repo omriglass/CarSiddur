@@ -520,12 +520,12 @@ export const heMember = {
     moveToMyCar: "העבר לרכב שלי",
     moveToCar: "העבר ל{{car}}",
     /** REQ §13.129 (b): the driver leaves the ride, a companion/added passenger who drives takes over. */
-    handOverOption: "להסיר אותי — {{name}} ינהג/תנהג",
-    cancelForAll: "ביטול הנסיעה לכולם",
+    handOverOption: "הסר רק אותי מהנסיעה — {{name}} ינהג/תנהג",
+    cancelForAll: "בטל נסיעה לכולם",
     // REQ item 229
-    leaveNoDriver: "להסיר אותי — צריך נהג/ת",
-    /** R20U4 (owner 2026-11-14): the driver's own way out of a ride others are on, beside "בטל נסיעה". */
-    notDrivingThis: "אני לא נוהג/ת בנסיעה הזו",
+    leaveNoDriver: "הסר רק אותי מהנסיעה — צריך נהג/ת",
+    /** Owner 2026-11-15: the driver's one way out of a ride others are on, instead of "בטל נסיעה" — then "בטל נסיעה לכולם" or "הסר רק אותי מהנסיעה". */
+    notDrivingThis: "אני לא נוסע/ת",
     removeDriverTitle: "להוריד את {{name}} מהנהיגה",
     removeDriverOption: "{{name}} ינהג/תנהג",
     removeDriverNone: "בלי נהג/ת — הנסיעה תחכה לנהג/ת",

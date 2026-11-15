@@ -129,7 +129,6 @@ interface RideDetailSheetProps {
  */
 export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = null, onOpenChange, editor, coordinatorNotes, canEditPublicNotes, onRemoveOwnRide, removingOwnRide = false, onCancelSeriesDay, onRemoveMe, removingMe = false, freedPreview, editRequestLinks = [], showAddPassengers = false, weekRides, moveToCarOptions = [], onMoveToCar, movingToCar = false, handOverOptions = [], onHandOver, onLeaveNoDriver, leaveNoDriverDialog, handingOver = false }: RideDetailSheetProps) {
   const [confirmCancel, setConfirmCancel] = useState(false);
-  const [notDriving, setNotDriving] = useState(false);
   const canLeaveDriving = (handOverOptions.length > 0 && !!onHandOver) || !!onLeaveNoDriver;
   const seriesDay = !!onCancelSeriesDay && !!ride?.series_id && (ride.series_count ?? 0) > 1;
   /** The driver's ways out of the ride: hand it to someone on it who drives, or leave it waiting for a driver. */
@@ -320,19 +319,18 @@ export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = 
                 </>
               ) : onRemoveOwnRide ? (
                 <>
-                  {canLeaveDriving ? (
-                    <Button className="w-full" size="lg" variant="outline" disabled={handingOver} onClick={() => setNotDriving(true)} data-testid="not-driving-this">
-                      {he.rideDetail.notDrivingThis}
-                    </Button>
-                  ) : null}
-                  <Button className="w-full" size="lg" variant="destructive" disabled={removingOwnRide} onClick={() => setConfirmCancel(true)}>
-                    {t("action.cancelRide")}
+                  {/* Owner 2026-11-15: with others on the ride the one entry is "אני לא נוסע/ת" — then cancel for everyone, or
+                      remove only me; a bare "בטל נסיעה" read as either. */}
+                  <Button className="w-full" size="lg" variant="destructive" disabled={removingOwnRide || handingOver} onClick={() => setConfirmCancel(true)}
+                    data-testid={canLeaveDriving ? "not-driving-this" : undefined}>
+                    {canLeaveDriving ? he.rideDetail.notDrivingThis : t("action.cancelRide")}
                   </Button>
                   {/* R12M1: cancelling a ride is never one tap. */}
                   <ConfirmDialog
                     open={confirmCancel}
                     onOpenChange={setConfirmCancel}
-                    title={seriesDay ? he.request.seriesCancelTitle : he.request.cancelConfirmTitle}
+                    title={seriesDay ? he.request.seriesCancelTitle : canLeaveDriving ? he.rideDetail.notDrivingThis : he.request.cancelConfirmTitle}
+                    description={canLeaveDriving ? he.rideDetail.removeDriverHelp : undefined}
                     confirmLabel={seriesDay ? he.request.cancelAllDays : canLeaveDriving ? he.rideDetail.cancelForAll : t("action.cancelRide")}
                     destructive
                     loading={removingOwnRide || handingOver}
@@ -354,19 +352,6 @@ export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = 
                     ) : null}
                     {/* REQ §13.129 (b): the driver may instead hand the ride to someone on it who drives. */}
                     {canLeaveDriving ? leaveChoices(() => setConfirmCancel(false)) : null}
-                  </ConfirmDialog>
-                  {/* R20U4 (owner 2026-11-14): the same choices under their own name, not only inside "בטל נסיעה". */}
-                  <ConfirmDialog
-                    open={notDriving}
-                    onOpenChange={setNotDriving}
-                    title={he.rideDetail.notDrivingThis}
-                    description={he.rideDetail.removeDriverHelp}
-                    cancelLabel={he.freedCar.confirmBack}
-                    hideConfirm
-                    loading={handingOver}
-                    onConfirm={() => undefined}
-                  >
-                    {leaveChoices(() => setNotDriving(false))}
                   </ConfirmDialog>
                 </>
               ) : null}
