@@ -246,7 +246,7 @@ test.describe("freed slot (live week, single candidate)", { tag: ["@waitlist", "
       await member1.page.locator("[data-request-id]").getByRole("button", { name: "ביטול", exact: true }).first().click();
       const dialog = member1.page.getByRole("dialog");
       await expect(member1.page.getByTestId("freed-car-line")).toBeVisible({ timeout: 5_000 });
-      await expect(dialog.getByTestId("freed-car-keep-out")).toHaveText("לבטל בלי להעביר את הרכב — אסתדר מחוץ לאפליקציה");
+      await expect(dialog.getByTestId("freed-car-keep-out")).toHaveText("לבטל בלי להעביר את הרכב — זה בדיון עם אנשים מחוץ לאפליקציה");
       await dialog.getByTestId("freed-car-keep-out").click();
       await waitForCondition(
         async () => {

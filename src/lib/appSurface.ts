@@ -37,7 +37,7 @@ export async function asRequestFormSave<T>(run: () => Promise<T>): Promise<T> {
 }
 
 /**
- * REQ item 237: "… בלי להעביר את הרכב — אסתדר מחוץ לאפליקציה". The calls of a save the user chose that for carry
+ * REQ item 237: "… בלי להעביר את הרכב — זה בדיון עם אנשים מחוץ לאפליקציה". The calls of a save the user chose that for carry
  * `x-freed-car: keep`, and the server then offers the freed hours to nobody waiting (`_offer_freed_time`).
  */
 export const FREED_CAR_HEADER = "x-freed-car";

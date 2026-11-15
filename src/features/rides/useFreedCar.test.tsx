@@ -1,4 +1,4 @@
-// REQ item 237: every freed-car prompt has a third answer, "… בלי להעביר את הרכב — אסתדר מחוץ לאפליקציה".
+// REQ item 237: every freed-car prompt has a third answer, "… בלי להעביר את הרכב — זה בדיון עם אנשים מחוץ לאפליקציה".
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -49,7 +49,7 @@ describe("useFreedCarGate + FreedCarConfirmDialog", () => {
     const save = vi.fn();
     await start(save);
     const keep = screen.getByTestId("freed-car-keep-out");
-    expect(keep.textContent).toBe("לשמור בלי להעביר את הרכב — אסתדר מחוץ לאפליקציה");
+    expect(keep.textContent).toBe("לשמור בלי להעביר את הרכב — זה בדיון עם אנשים מחוץ לאפליקציה");
     await act(async () => { fireEvent.click(keep); });
     expect(save).toHaveBeenCalledWith(true);
   });

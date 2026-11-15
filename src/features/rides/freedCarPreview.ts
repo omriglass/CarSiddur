@@ -56,7 +56,7 @@ export interface MissedFreedCarPreview {
 
 /**
  * Review 2026-11-15: a preview slower than the budget is skipped silently, and with it the prompt and the
- * "אסתדר מחוץ לאפליקציה" choice. Recorded in `client_errors` (context `perf:freed-preview`) so the budget can be
+ * "זה בדיון עם אנשים מחוץ לאפליקציה" choice. Recorded in `client_errors` (context `perf:freed-preview`) so the budget can be
  * judged on real numbers; the reporter dedupes and caps it.
  */
 function reportMissedPreview(missed: MissedFreedCarPreview): void {

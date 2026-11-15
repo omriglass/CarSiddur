@@ -1,4 +1,4 @@
--- REQ item 237 (owner 2026-11-14): "… בלי להעביר את הרכב — אסתדר מחוץ לאפליקציה". A change that frees a shared car,
+-- REQ item 237 (owner 2026-11-14): "… בלי להעביר את הרכב — זה בדיון עם אנשים מחוץ לאפליקציה". A change that frees a shared car,
 -- made with the header `x-freed-car: keep`, offers the hours to nobody waiting; the Sadranim get one inbox message.
 --   TEST 1  a member cancels with the header: no open offer, one closed `kept_out` row, the waiting request is not
 --           placed; each Sadran gets one inbox notice (no push); the member gets none
