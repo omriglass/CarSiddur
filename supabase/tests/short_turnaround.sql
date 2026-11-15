@@ -2,7 +2,7 @@
 -- ride, after "תיאמתם עם X…?".
 --   * edit_ride (a member's move/resize): refused without `allow_short_turnaround`; with it the ride keeps the short
 --     gap (turnaround_override_minutes) and X gets one `ride_edited` notice, variant short_turnaround; a real overlap
---     and the turnaround after the ride before stay refused
+--     stays refused (the turnaround after the ride before: short_turnaround_before.sql, PR3 2026-11-15)
 --   * submit_request `short_turnaround_ask`: when only the next ride's turnaround stands in the way the request waits,
 --     the result names X and the hour, and the Sadran hears nothing yet; answer_short_turnaround(yes) places it with
 --     the gap and tells X, (no) waitlists it the usual way
@@ -76,7 +76,7 @@ begin
   assert (select count(*) from public.notifications where recipient_id=m2 and event='ride_edited' and data->>'variant'='short_turnaround')=1,
     '(1) the next ride''s driver gets one short_turnaround notice';
   assert not exists(select 1 from public.notifications where recipient_id=m1 and data->>'variant'='short_turnaround'), '(1) the mover is not told';
-  -- a gap of 0 is fine too; starting inside the turnaround after the ride before is not
+  -- a gap of 0 is fine too; starting inside the turnaround after the ride before needs the yes as well
   select version into ver from public.rides where id=r1;
   perform pg_temp.as_user(m1);
   perform public.edit_ride(jsonb_build_object('id',r1,'department_id',dept,'week_start',w,'car_id',car40,
@@ -85,8 +85,9 @@ begin
   assert (select turnaround_override_minutes=0 from public.rides where id=r1), '(1) ending right at 18:00 is allowed';
   select version into ver from public.rides where id=r1;
   perform pg_temp.as_user(m1);
+  -- PR3 (owner 2026-11-15): after the yes it is allowed too (suite short_turnaround_before.sql); without it, refused
   perform pg_temp.expect_err(format($q$select public.edit_ride(%L::jsonb,%s)$q$, jsonb_build_object('id',r1,'department_id',dept,'week_start',w,'car_id',car40,
-    'starts_at',at18+interval '2 hours 15 minutes','ends_at',at18+interval '3 hours','origin_id',home,'destination_id',home,'driver_id',m1,'allow_short_turnaround',true), ver),'23P01');
+    'starts_at',at18+interval '2 hours 15 minutes','ends_at',at18+interval '3 hours','origin_id',home,'destination_id',home,'driver_id',m1), ver),'23P01');
 
   -- ======== (2) a new request: only car40 could take it, and only with a short gap before m2's 18:00 ride ========
   day:=w+2; at18:=(day+time '18:00') at time zone 'Asia/Jerusalem';
