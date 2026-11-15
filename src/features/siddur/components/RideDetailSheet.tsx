@@ -18,6 +18,8 @@ import { ridePublicDetails } from "@/lib/ridePublicDetails";
 import { he, t, tv } from "@/i18n/he";
 import { formatTime } from "@/lib/time";
 import type { Car } from "@/features/fleet/api";
+import { RequestHistoryDialog } from "@/features/requests/components/RequestHistoryDialog";
+import { useMyRequests } from "@/features/requests/hooks";
 import { relayPartnerOf, servedOf, type ServedEntry } from "@/features/rides/servedOf";
 
 import type { BoardRide } from "../api";
@@ -129,6 +131,10 @@ interface RideDetailSheetProps {
  */
 export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = null, onOpenChange, editor, coordinatorNotes, canEditPublicNotes, onRemoveOwnRide, removingOwnRide = false, onCancelSeriesDay, onRemoveMe, removingMe = false, freedPreview, editRequestLinks = [], showAddPassengers = false, weekRides, moveToCarOptions = [], onMoveToCar, movingToCar = false, handOverOptions = [], onHandOver, onLeaveNoDriver, leaveNoDriverDialog, handingOver = false }: RideDetailSheetProps) {
   const [confirmCancel, setConfirmCancel] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  // The viewer's own request on this ride (theirs, filed by them, or one they may edit) — its history is theirs to read.
+  const myRequestIds = new Set((useMyRequests().data ?? []).map((request) => request.id));
+  const historyRequestId = ride ? servedOf(ride).map((entry) => entry.request_id).find((id) => !!id && myRequestIds.has(id)) ?? null : null;
   const canLeaveDriving = (handOverOptions.length > 0 && !!onHandOver) || !!onLeaveNoDriver;
   const seriesDay = !!onCancelSeriesDay && !!ride?.series_id && (ride.series_count ?? 0) > 1;
   /** The driver's ways out of the ride: hand it to someone on it who drives, or leave it waiting for a driver. */
@@ -202,6 +208,13 @@ export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = 
               </div>
 
               <RideCarHandover ride={ride} />
+              {/* Owner 2026-11-15: a small way from the ride to my request's story ("מה קרה?", REQ §13.204). */}
+              {historyRequestId ? (
+                <button type="button" className="text-xs text-muted-foreground underline underline-offset-2" data-testid="ride-request-history"
+                  onClick={() => setHistoryOpen(true)}>
+                  {he.requestHistory.open}
+                </button>
+              ) : null}
 
               {/* REQ item 150 b: this ride's car tasks for me, inside its window only (member surfaces; the board has its own sheet). */}
               {ride.id ? <MyCarTasksCard rideId={ride.id} /> : null}
@@ -359,6 +372,7 @@ export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = 
           </>
         ) : null}
         {leaveNoDriverDialog}
+        {historyRequestId ? <RequestHistoryDialog requestId={historyRequestId} open={historyOpen} onOpenChange={setHistoryOpen} /> : null}
       </PortalSheetContent>
     </Sheet>
   );
