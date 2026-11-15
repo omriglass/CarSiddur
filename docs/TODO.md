@@ -1814,3 +1814,27 @@ Not tested: car-now (needs today's week), plan B end to end (no unmet request in
 - Accepted as is (owner 2026-11-15): a one-day request turned multi-day is filed anew (new filing time, may become late).
 - Not done, low: the preview sends the waiting candidates' ranking details to the browser of whoever makes the change; `withFreedCarChoice` marks every call made during the save; `RequestForm.tsx` is 1,971 lines.
 
+
+## QA run 21 findings (2026-11-15; focused pass after the Fable review, two Sonnet agents on the disposable stack; branch `r20h5-md1-dialog` @ f93f0a2; seeds 5151 — freed cars, all days published — and 5252 — request edits, Sun–Tue published) — **awaiting owner triage**
+
+Passed: member cancel with the "who gets the car" line and the cause in the notice; a ride shortened at both ends (two offers, both waiters placed, one notice each); another car; "אסתדר מחוץ לאפליקציה" (one Sadran inbox message, no push); several candidates (Sadran decides, no burst); nobody waiting (no prompt); one day of a multi-day ride; a guest's far or late hour is refused with nothing changed; the host's guest questions (back / keep / waiting list, one per guest, nobody notified).
+
+Bugs (none fixed yet):
+- R21B1 — **A host's edit drops a one-leg guest silently** (REQ item 230 n). A guest whose other leg is on another ride is skipped by `_keep_guests_after_host_edit` ("already on another ride") and neither kept nor asked about. Seed 5252, host request 9836f042, 25.11, departure 07:30 → 07:45; guest שירה דהן (out leg only) fell to unmet. Cause read in the code, not yet reproduced by a suite.
+- R21B2 — **A guest's own small edit tells the driver** (REQ item 235 says only the Sadran hears). The request-form "ride edited" notice still goes out when the guest stays. Seed 5252, m22, request b7ba3023, 23.11 11:00 → 11:30; the driver got `ride_edited`. The SQL suite misses it: it does not send the form header.
+- R21B3 — **Multi-day edit with the blocker on the first day**: "להקדים את שעת החזרה ל־12:15" turns the edit into a one-day ride that returns later than before (10:30 → 12:15), toast "הרכב שמור לך לכל הימים". Seed 5252, m18, request e60bdfed, 22.11. Proposed: when the latest return is still on the departure day, refuse as "no car" instead of asking.
+- R21B4 — **"השינוי יוריד אותך מהרכב" shown, then the host kept a car** (Sadran moved a host with a guest to another day; placed on another car after the answers). Seed 5252, request dfa4547b.
+- R21B5 — **A guest who leaves a ride for a car of their own: the old ride's driver gets a wrong "ride edited" notice** (says the driver changed; that ride did not change). Seed 5252, m14, request 99844e03, 24.11.
+- R21B6 — **A shorten through the request form on a published day is one "changed" offer** (the ride is cancelled and placed again): two people waiting at opposite ends do not both get the car, and with "אסתדר מחוץ לאפליקציה" the Sadran's message names the whole old ride (08:00–16:00), not the freed hours. Seed 5151, m04, request c3fa9e21, 27.11. The ride-sheet and board paths are right (review fix RV1).
+- R21B7 — The overlap question is asked twice in one save (before and after the guest question); "חזרה" on a late question loses the earlier answers.
+
+UI:
+- R21U1 — The "far" guest question can quote the departure pair when the return is what moved, and says "ביקש/ה לצאת" for a return leg.
+- R21U2 — After an edit that kept the same car the toast says "<car> שובץ במקום — היה תפוס באותה שעה".
+- R21U3 — Moving a guest's departure also moves the return (locked length), which can push it past the ride and refuse the save with "אין רכב פנוי בשעות החדשות"; the member cannot see why.
+- R21U4 — The back button of the cancel dialogs reads "ביטול" beside "בטל נסיעה" (REQ says "חזרה").
+- R21U5 — "Only this day" for a multi-day ride is on the siddur ride sheet only; `/my` cancels all days.
+- R21U6 — The Sadran-decides freed-car notices carry no cause and show the car's whole free gap ("00:00–18:30"); the "outside the app" message reuses the event `claim_contested` and links to `/requests?focus=<offer>`.
+- R21U7 — Worst chain seen: 4 questions and 6 taps for one Sadran edit of a host (release, overlap, guest, overlap again).
+
+Not covered: the freed-car prompt inside the long chain; member-side resize of both ends on the siddur; one-day → multi-day with the car free and with the member's own ride in the way; double tap in the browser (the agent's script failed; unit + three e2e specs cover it); the member path of a host edit on an unpublished day (the form refused it in a published week, so the Sadran did it).
