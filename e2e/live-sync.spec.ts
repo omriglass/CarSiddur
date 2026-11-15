@@ -8,7 +8,7 @@ import { NEVO_DEPARTMENT_ID, newSignedInPage, SEEDED_USERS, serviceRoleClient, S
  *
  * Realtime path (D2): every screen first shows `html[data-live-sync="live"]` (all its private channels
  * SUBSCRIBED). Then a change made elsewhere must arrive within ~3 s AND through the broadcast: the
- * `changed` websocket frame is received before the screen's first week re-read (`/rpc/week_board_rides`),
+ * `changed` websocket frame is received before the screen's first week re-read (`/rpc/week_parts` with the `rides` part),
  * and no version check (`/rpc/week_change_seqs`) runs in between — so it was not the fallback.
  * Negative: a change on an unpublished day reaches no member screen (no frame, no re-read, no check).
  * Fallback path (D1): with the websocket blocked the screen stays `polling`, and the 15 s version check
@@ -32,8 +32,22 @@ interface Probe {
   frames: number[];
   /** ms timestamps of `/rpc/week_change_seqs` requests. */
   checks: number[];
-  /** ms timestamps of `/rpc/week_board_rides` requests. */
+  /** ms timestamps of week reads (`isWeekRidesRead`). */
   reads: number[];
+}
+
+/**
+ * A read of a week's rides. Since PF1 DC2b (2026-11-12) the screens read a week through `week_parts` (the `rides`
+ * part); `week_board_rides` is kept for anything that still calls it directly.
+ */
+function isWeekRidesRead(url: string, body: string | null): boolean {
+  return url.includes("/rpc/week_board_rides") || (url.includes("/rpc/week_parts") && (body ?? "").includes('"rides"'));
+}
+
+/** The ride rows of a week read's answer (either call). */
+function ridesOf(url: string, json: unknown): { id: string }[] {
+  if (url.includes("/rpc/week_parts")) return ((json as { rides?: { data?: { id: string }[] } } | null)?.rides?.data) ?? [];
+  return Array.isArray(json) ? (json as { id: string }[]) : [];
 }
 
 function probe(page: Page): Probe {
@@ -48,7 +62,7 @@ function probe(page: Page): Probe {
   page.on("request", (request) => {
     const url = request.url();
     if (url.includes("/rpc/week_change_seqs")) result.checks.push(Date.now());
-    if (url.includes("/rpc/week_board_rides")) result.reads.push(Date.now());
+    if (isWeekRidesRead(url, request.postData())) result.reads.push(Date.now());
   });
   return result;
 }
@@ -144,8 +158,8 @@ async function waitLive(page: Page): Promise<void> {
 /** The screen re-read the week and the ride is in its data (the DOM check follows). */
 function rideReadBack(page: Page, rideId: string, timeout: number) {
   return page.waitForResponse(async (response) => {
-    if (!response.url().includes("/rpc/week_board_rides") || !response.ok()) return false;
-    const rows = (await response.json().catch(() => [])) as { id: string }[];
+    if (!isWeekRidesRead(response.url(), response.request().postData()) || !response.ok()) return false;
+    const rows = ridesOf(response.url(), await response.json().catch(() => null));
     return rows.some((row) => row.id === rideId);
   }, { timeout });
 }
@@ -222,7 +236,7 @@ test.describe("live updates through Realtime", { tag: ["@live-sync"] }, () => {
       const from = Date.now();
       // An unpublished day: the Sadran topic carries every change of the week.
       const payload = await reservation(service, UNPUBLISHED_DAY, 9);
-      const readBack = second.page.waitForResponse((response) => response.url().includes("/rpc/week_board_rides") && response.ok(), { timeout: 3_000 });
+      const readBack = second.page.waitForResponse((response) => isWeekRidesRead(response.url(), response.request().postData()) && response.ok(), { timeout: 3_000 });
       const rideId = await createRideFromPage(first.page, payload);
       await readBack;
       expect(Date.now() - from, "Sadran screens have no jitter: within ~3 s").toBeLessThan(3_000);

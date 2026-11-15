@@ -64,7 +64,7 @@ export function ConfirmDialog({
   onConfirm,
   className,
 }: ConfirmDialogProps) {
-  const tapLock = useTapLock();
+  const tapLock = useTapLock(open);
   return (
     <Dialog open={open} onOpenChange={(next) => { if (!loading) onOpenChange(next); }}>
       <DialogContent className={cn(DIALOG_FIT, className)}>

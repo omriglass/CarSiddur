@@ -57,7 +57,7 @@ export function FormDialog({
   className,
   footer,
 }: FormDialogProps) {
-  const tapLock = useTapLock();
+  const tapLock = useTapLock(open);
   return (
     <Dialog open={open} onOpenChange={(next) => { if (!loading) onOpenChange(next); }}>
       {/* Taller than the screen (e.g. the member editor with one origin select per

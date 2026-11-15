@@ -54,7 +54,7 @@ export interface CarReportDialogProps {
 export function CarReportDialog({ carId, carName, open, onOpenChange, initialView }: CarReportDialogProps) {
   const [view, setView] = useState<View>(initialView ?? "home");
   // R20B9: a double tap on "סיימתי" logs once.
-  const tapLock = useTapLock();
+  const tapLock = useTapLock(`${open}:${view}`);
   const [tires, setTires] = useState(DEFAULT_TIRE_STATES);
   const [tireNote, setTireNote] = useState("");
   const [ureaNote, setUreaNote] = useState("");

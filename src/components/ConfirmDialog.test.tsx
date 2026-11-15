@@ -79,4 +79,15 @@ describe("ConfirmDialog", () => {
       vi.useRealTimers();
     }
   });
+
+  it("a dialog closed and opened again takes a tap at once (review 2026-11-15)", () => {
+    const onConfirm = vi.fn();
+    const view = (open: boolean) => <ConfirmDialog open={open} title="t" onOpenChange={() => {}} onConfirm={onConfirm} />;
+    const { rerender } = render(view(true));
+    fireEvent.click(screen.getByText(he.common.confirm));
+    rerender(view(false));
+    rerender(view(true));
+    fireEvent.click(screen.getByText(he.common.confirm));
+    expect(onConfirm).toHaveBeenCalledTimes(2);
+  });
 });

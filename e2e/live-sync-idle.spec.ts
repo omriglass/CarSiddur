@@ -101,7 +101,13 @@ function trackRequests(page: Page): Requests {
   // so a week read counts only when it asks for the fixture week.
   page.on("request", (request) => {
     const url = request.url();
-    if (!url.includes("/rpc/week_board_rides") || (request.postData() ?? "").includes(`"${WEEK}"`)) urls.push(url);
+    const body = request.postData() ?? "";
+    // Since PF1 DC2b (2026-11-12) a week is read through `week_parts`; its `rides` part is the week read counted here.
+    if (url.includes("/rpc/week_parts")) {
+      if (body.includes('"rides"') && body.includes(`"${WEEK}"`)) urls.push("/rpc/week_board_rides");
+      return;
+    }
+    if (!url.includes("/rpc/week_board_rides") || body.includes(`"${WEEK}"`)) urls.push(url);
   });
   return { count: (name) => urls.filter((url) => url.includes(`/rpc/${name}`)).length };
 }
