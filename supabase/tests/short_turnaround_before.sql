@@ -176,6 +176,25 @@ begin
   set constraints all immediate; set constraints all deferred;
   assert res->>'status'='assigned', format('(4) an old browser still gets a car at once, got %s', res);
 
+  -- ======== (5) owner 2026-11-15: asked only when the gap is less than the turnaround ========
+  -- only car40 is free; m2 rides 08-10 and 15-16 on it; m1 asks for 10:30-14:30 — exactly the turnaround on both sides
+  day:=w+5; d0:=(day+time '00:00') at time zone 'Asia/Jerusalem';
+  insert into public.rides(department_id,week_start,car_id,starts_at,ends_at,origin_id,destination_id,driver_id,status,is_pinned,pin_reason,created_by)
+    values(dept,w,car40,d0+interval '8 hours',d0+interval '10 hours',home,home,m2,'confirmed',true,'SADRAN_MANUAL',sadran),
+          (dept,w,car40,d0+interval '15 hours',d0+interval '16 hours',home,home,m2,'confirmed',true,'SADRAN_MANUAL',sadran);
+  insert into public.car_maintenance_blocks(car_id,department_id,starts_at,ends_at,reason,created_by)
+    select c, dept, d0+interval '6 hours', d0+interval '23 hours', 'SCHEDULED', sadran from unnest(array[car41,car42]) c;
+  set constraints all immediate; set constraints all deferred;
+  select count(*) into n from public.notifications where recipient_id=m2 and data->>'variant' like 'short_turnaround%';
+  perform pg_temp.as_user(m1);
+  res:=public.submit_request(base || jsonb_build_object('depart_at',d0+interval '10 hours 30 minutes','return_at',d0+interval '14 hours 30 minutes',
+    'short_turnaround_ask',true,'short_turnaround_before_ask',true));
+  set constraints all immediate; set constraints all deferred;
+  assert res->>'status'='assigned' and not (res ? 'short_turnaround') and not (res ? 'short_turnaround_before'),
+    format('(5) a full turnaround on both sides: placed with no question, got %s', res);
+  assert (select count(*) from public.notifications where recipient_id=m2 and data->>'variant' like 'short_turnaround%')=n,
+    '(5) nobody is told about a normal gap';
+
   raise notice 'short_turnaround_before.sql: all assertions passed';
 end $$;
 rollback;
