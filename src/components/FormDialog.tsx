@@ -12,6 +12,7 @@ import { DIALOG_FIT, DialogBody } from "@/components/DialogBody";
 import { PortalDialogContent } from "@/components/PortalDialogContent";
 import { he } from "@/i18n/he";
 import { cn } from "@/lib/utils";
+import { useTapLock } from "@/components/useTapLock";
 
 interface FormDialogProps {
   open: boolean;
@@ -56,6 +57,7 @@ export function FormDialog({
   className,
   footer,
 }: FormDialogProps) {
+  const tapLock = useTapLock(open);
   return (
     <Dialog open={open} onOpenChange={(next) => { if (!loading) onOpenChange(next); }}>
       {/* Taller than the screen (e.g. the member editor with one origin select per
@@ -84,7 +86,7 @@ export function FormDialog({
                 type="button"
                 className="w-full sm:w-auto"
                 disabled={loading || submitDisabled}
-                onClick={onSubmit}
+                onClick={tapLock(onSubmit)}
               >
                 {submitLabel}
               </Button>

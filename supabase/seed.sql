@@ -692,6 +692,11 @@ from (values
    '{{route}} · {{day}} {{timeRange}}. הנסיעה נשמרת וממתינה לנהג/ת.'),
   ('outcome_changed', 'driver_cancelled_sadran', '{{driverName}} ביטל/ה — הנסיעה נשארה בלי נהג/ת',
    '{{car}} · {{day}} {{timeRange}}'),
+  -- R20B2 (20261114100000): the Sadran took a member off the wheel of a merged ride
+  ('outcome_changed', 'removed_as_driver', '{{byName}} הוריד/ה אותך מהנהיגה — {{day}}',
+   'הבקשה שלך לנסיעה הזו בוטלה; הנסיעה עצמה ממשיכה. לשאלות — הסדרן/ית.'),
+  ('outcome_changed', 'removed_as_driver_handed', '{{byName}} הוריד/ה אותך מהנהיגה — {{day}}',
+   '{{driverName}} ממשיך/ה את הנסיעה במקומך.'),
   -- R13B12 (20261028090800): a guest who drives takes over the ride
   ('outcome_changed', 'driver_cancelled_you_drive', '{{driverName}} ביטל/ה — עכשיו את/ה נוהג/ת',
    '{{route}} · {{day}} {{timeRange}}. הרכב נשאר שמור לנסיעה שלך, בשעות שביקשת.'),

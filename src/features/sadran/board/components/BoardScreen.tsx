@@ -10,6 +10,7 @@ import { toast } from "sonner";
 
 import { formatWeekRangeLabel } from "@/components/dateFieldDates";
 import { CarSwapDialog } from "@/components/CarSwapDialog";
+import { useIsDesktop } from "@/components/useIsDesktop";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
@@ -59,7 +60,7 @@ import { longDetourText, type MergeWaitChoice } from "@/features/rides/mergeQues
 import { requestRouteLine } from "../requestRoute";
 import { parseTimeToMinutes } from "@/features/solverBridge/buildSolverInput";
 import { representativeRideTypeCode, servedOf, servedToEditRideLegs, withChildNames } from "../../solverRun";
-import { useFreedOffersForWeek, useHeldNoticesQuery, useMergePreview, useMergePreviews, type MergePreviewSpec } from "../../hooks";
+import { useCancelSeriesDayBoardMutation, useFreedOffersForWeek, useHeldNoticesQuery, useMergePreview, useMergePreviews, type MergePreviewSpec } from "../../hooks";
 import { heldUpdateCount } from "../heldUpdates";
 import { useBoardSurface, useUnsentLeaveGuard } from "../useBoardSurface";
 import { useBoardData } from "../hooks/useBoardData";
@@ -69,6 +70,7 @@ import { EditModeButton } from "@/features/rides/components/EditModeButton";
 import { useDragHint, useEditMode } from "@/features/rides/editMode";
 import { BoardActionsMenu } from "./BoardActionsMenu";
 import { BoardDisplayMenu } from "./BoardDisplayMenu";
+import { DayCarsStrip } from "@/components/DayCarsStrip";
 import { BoardListMode } from "./BoardListMode";
 import { BoardTitleSwitcher } from "./BoardTitleSwitcher";
 import { BoardWeekSwitcher } from "./BoardWeekSwitcher";
@@ -78,11 +80,13 @@ import type { PendingDraft } from "./SendAllDialog";
 import type { FewerDaysSupport } from "./FewerDaysAction";
 import type { ComposerPrefill } from "../draftInput";
 import { MergeWaitDialog } from "@/features/rides/components/MergeWaitDialog";
+import { ownCarMoveBody } from "@/features/rides/ownCarMove";
 import { MergePrefillDialog } from "./MergePrefillDialog";
 import { DropAskDialog } from "./DropAskDialog";
 import { ProposalActionSheet } from "./ProposalActionSheet";
 import { PolicyChip } from "./PolicyChip";
 import { ReservationDialog } from "./ReservationDialog";
+import { LiveEventsStrip } from "./LiveEventsStrip";
 import { RideSheet } from "./RideSheet";
 import { UnmetList } from "./UnmetList";
 import { carsFreeForRequest, placementMinutes } from "../placeOnCar";
@@ -147,6 +151,8 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
   const { tableView, setTableView, tableZoom, setTableZoom, showEarlyHours, setShowEarlyHours, showLegend, setShowLegend, showUnmetPanel, setShowUnmetPanel } = useBoardDisplayPrefs();
   // Owner 2026-11-04: the board follows the siddur's edit mode (REQ §13.165) — off, a ride drags only after a long press.
   const [editMode, setEditMode] = useEditMode();
+  const wideScreen = useIsDesktop();
+  const cancelSeriesDayMutation = useCancelSeriesDayBoardMutation(departmentId, weekStart);
   const dragHint = useDragHint();
   const boardStartMinutes = board.departmentSettingsQuery.data?.board_start_time
     ? parseTimeToMinutes(board.departmentSettingsQuery.data.board_start_time) : 6 * 60;
@@ -466,8 +472,13 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
       ) : null}
 
       {duplicateRuns.length > 0 ? (
-        <div role="status" aria-label={he.duplicateChild.listLabel} data-testid="duplicate-child-warning"
-          className="space-y-1 rounded-md border border-maintenance/50 bg-maintenance/10 p-2 text-sm">
+        // R20U8: one line until opened on a phone (several of them took a screen); open from lg up.
+        <details role="status" aria-label={he.duplicateChild.listLabel} data-testid="duplicate-child-warning" open={wideScreen}
+          className="rounded-md border border-maintenance/50 bg-maintenance/10 p-2 text-sm">
+          <summary className="min-h-9 cursor-pointer content-center font-semibold" data-testid="duplicate-child-summary">
+            {`${he.duplicateChild.listLabel} · ${groupDuplicateRuns(duplicateRuns).length}`}
+          </summary>
+          <div className="mt-1 space-y-1">
           {groupDuplicateRuns(duplicateRuns).map((run) => (
             <p key={run.key}>
               <span className="font-semibold">{tv("duplicateChild.banner", { child: run.childNames.join(", ") })}</span>
@@ -479,9 +490,16 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
             </p>
           ))}
           <p className="text-xs text-muted-foreground">{he.duplicateChild.hint}</p>
-        </div>
+          </div>
+        </details>
       ) : null}
 
+      {/* R20M1: what others did on published days since the Sadran last looked. */}
+      <LiveEventsStrip key={`${departmentId}|${weekStart}`} departmentId={departmentId} weekStart={weekStart} enabled={(thisWeekRow?.published_days?.length ?? 0) > 0}
+        onOpenEvent={(event) => {
+          if (event.starts_at) board.setSelectedDay(dateKey(event.starts_at));
+          if (event.ride_id && board.rides.some((ride) => ride.id === event.ride_id)) dnd.setSelectedRideId(event.ride_id);
+        }} />
       <WeekStrip weekStart={weekStart} counts={board.dayCounts} selected={board.selectedDay} onSelect={board.setSelectedDay} />
       {maintenanceEditing.dialog}
 
@@ -551,12 +569,25 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
             canSwapCars={board.boardCanSwapCars}
             enableCarReport
             onOpenCarPage={(carId) => navigate(paths.car(carId))}
-                renderCarGlance={(carId) => <CarGlance carId={carId} />}
+            renderCarGlance={(carId) => <CarGlance carId={carId} />}
             onCarSwap={(carA, carB) => { dnd.setCarSwapPair({ carA, carB }); }}
           />
         </div>
 
         <div className={tableView ? "hidden" : "lg:hidden"}>
+          {/* R20U2: the car-name menu in the card view too (the table has it on the car header). */}
+          {board.activeDayRides.length > 0 ? (
+            <div className="mb-2">
+              <DayCarsStrip
+                cars={hideIdleTemporaryCars(board.weekGridCars, board.weekGridRides).filter((car) => car.group !== "phantom")}
+                renderCarGlance={(carId) => <CarGlance carId={carId} />}
+                canSwap={board.boardCanSwapCars}
+                onCarSwap={(carA, carB) => { dnd.setCarSwapPair({ carA, carB }); }}
+                enableCarReport
+                onOpenCarPage={(carId) => navigate(paths.car(carId))}
+              />
+            </div>
+          ) : null}
           {board.dayWaitlistGroups.length ? (
             <div className="mb-2 space-y-2">
               {board.dayWaitlistGroups.map((group) => (
@@ -838,7 +869,7 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
         open={!!dnd.ownCarAsk}
         onOpenChange={(open) => { if (!open) dnd.answerOwnCarAsk(false); }}
         title={tv("rideEditing.ownCarMoveTitle", { name: dnd.ownCarAsk?.name ?? "" })}
-        description={tv("rideEditing.ownCarMoveBody", { name: dnd.ownCarAsk?.name ?? "", car: dnd.ownCarAsk?.carName ?? "" })}
+        description={ownCarMoveBody(dnd.ownCarAsk?.driverless ? null : "driver", dnd.ownCarAsk?.name ?? "", dnd.ownCarAsk?.carName ?? "")}
         confirmLabel={he.rideEditing.ownCarMoveConfirm}
         onConfirm={() => dnd.answerOwnCarAsk(true)}
       />
@@ -846,10 +877,26 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
         open={!!dnd.chainBreakAsk}
         onOpenChange={(open) => { if (!open) dnd.answerChainBreakAsk(false); }}
         title={he.sadranBoard.chainBreakTitle}
-        description={tv("sadranBoard.chainBreakBody", { car: dnd.chainBreakAsk?.car ?? "", place: dnd.chainBreakAsk?.place ?? "", time: dnd.chainBreakAsk?.nextStart ?? "", nextPlace: dnd.chainBreakAsk?.nextPlace ?? "" })}
+        description={dnd.chainBreakAsk?.carAt
+          ? tv("sadranBoard.chainBreakNotThereBody", { car: dnd.chainBreakAsk.car, place: dnd.chainBreakAsk.place, carAt: dnd.chainBreakAsk.carAt })
+          : tv("sadranBoard.chainBreakBody", { car: dnd.chainBreakAsk?.car ?? "", place: dnd.chainBreakAsk?.place ?? "", time: dnd.chainBreakAsk?.nextStart ?? "", nextPlace: dnd.chainBreakAsk?.nextPlace ?? "" })}
         confirmLabel={he.sadranBoard.chainBreakConfirm}
-        onConfirm={() => dnd.answerChainBreakAsk(true)}
-      />
+        onConfirm={() => dnd.answerChainBreakAsk("one")}
+      >
+        {/* R20H3 (owner 2026-11-14): the opposite unplaced leg fits the same car - both at once. */}
+        {dnd.chainBreakAsk?.partner ? (
+          <div className="space-y-2" data-testid="chain-break-pair">
+            <p className="text-sm">{tv("sadranBoard.chainBreakPairBody", {
+              place: dnd.chainBreakAsk.place, name: dnd.chainBreakAsk.partner.requester_name ?? "",
+              from: dnd.chainBreakAsk.partner.origin_name ?? "", to: dnd.chainBreakAsk.partner.destination_name ?? "",
+              time: formatTime(new Date(dnd.chainBreakAsk.partner.depart_at)),
+            })}</p>
+            <Button className="w-full" data-testid="chain-break-pair-both" onClick={() => dnd.answerChainBreakAsk("both")}>
+              {he.sadranBoard.chainBreakPairConfirm}
+            </Button>
+          </div>
+        ) : null}
+      </ConfirmDialog>
       <ConfirmDialog
         open={!!dnd.invalidDropConfirm}
         onOpenChange={(open) => { if (!open) dnd.setInvalidDropConfirm(null); }}
@@ -986,9 +1033,18 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
             weekStart,
           });
         }}
-        onCancel={(reason, closeRequestIds, continueRequestIds = []) => {
+        onCancel={(reason, closeRequestIds, continueRequestIds = [], onlyDay = false) => {
           if (selectedPlanningChange) { dnd.cancelRideChangeMutation.mutate(selectedPlanningChange.id, { onSuccess: () => dnd.setSelectedRideId(null) }); return; }
           if (!selectedRide?.id || selectedRide.version == null) return;
+          // R20H1: one day of a multi-day ride — cut out of the series and cancelled; the other days keep the car.
+          if (onlyDay) {
+            const ride = { id: selectedRide.id, version: selectedRide.version };
+            void dnd.recordUndo(he.sadranBoard.undoLabel.cancelRide, () => cancelSeriesDayMutation
+              .mutateAsync({ rideId: ride.id, expectedVersion: ride.version, reason, close: closeRequestIds.length > 0, asSadran: true }))
+              .then(() => dnd.setSelectedRideId(null))
+              .catch(() => undefined);
+            return;
+          }
           // REQ §13.162 (a): one call - the ride goes (or, O29-2 (3), stays for the requests that continue), each other
           // request waits or is closed, one notice per member.
           const ride = { id: selectedRide.id, version: selectedRide.version };

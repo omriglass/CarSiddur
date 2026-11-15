@@ -121,8 +121,33 @@ export const heMember = {
     editRefusedRidersTitle: "יש עוד נוסעים בנסיעה שלך",
     editRefusedRidersBody: "את/ה נוהג/ת גם עבור אחרים, והרכב נשאר איתם בשעות שלהם — לכן השינוי לא נשמר והנסיעה נשארת כמו שהייתה. אפשר לתאם עם הנוסעים או לפנות לסדרן/ית.",
     editRefusedBack: "חזרה לטופס",
+    /** MD1 (owner-approved 2026-11-14): a one-day ride made multi-day, and its car is taken on a later day. */
+    carTakenRide: "{{name}} צריך/ה את הרכב ביום {{day}} בשעה {{time}}. להקדים את שעת החזרה או לבטל את השינוי?",
+    carTakenMaintenance: "הרכב בטיפול ביום {{day}} מ־{{time}}. להקדים את שעת החזרה או לבטל את השינוי?",
+    carTakenOwnMine: "יש לך כבר נסיעה ברכב הזה ביום {{day}} בשעה {{time}}. להחליף אותה בנסיעה הרב־יומית?",
+    carTakenOwnOther: "ל{{name}} כבר יש נסיעה ברכב הזה ביום {{day}} בשעה {{time}}. להחליף אותה בנסיעה הרב־יומית?",
+    carTakenReplace: "להחליף את הנסיעה של יום {{weekday}}",
+    carTakenReplaceReturn: "להחליף ולחזור ב־{{time}}",
+    carTakenReturnEarlier: "להקדים את שעת החזרה ל־{{time}}",
+    carTakenCancel: "לבטל את השינוי",
     releaseAffected: "מושפעים גם: {{names}}",
     /** OW1 (REQ §13.210): a change to one way leaves the booked car at the destination — ask instead of refusing. */
+    // R20 Q2 redo (owner-approved 2026-11-14): a host's edit no longer fits a guest on the shared ride.
+    hostGuestTitle: "לשנות את הנסיעה המשותפת?",
+    hostGuestFarBody: "השעות החדשות רחוקות מהבקשה של {{name}} ({{name}} ביקש/ה לצאת ב־{{wanted}}, הנסיעה תצא ב־{{ride}}).",
+    hostGuestKeep: "להשאיר את {{name}} בנסיעה",
+    hostGuestRelease: "להחזיר את {{name}} לרשימת ההמתנה",
+    hostGuestLuggageBody: "ל{{name}} יש ציוד רב, וברכב הזה אין תא מטען גדול.",
+    hostGuestDetourBody: "איסוף של {{name}} יאריך את הנסיעה ב־{{minutes}} דקות.",
+    hostGuestCannotBody: "{{name}} לא יכול/ה להישאר בנסיעה ({{reason}}), ולכן יחזור/תחזור לרשימת ההמתנה.",
+    hostGuestSeatsBody: "עם הנוסעים שהוספת אין מקום ל{{name}} ברכב, ולכן יחזור/תחזור לרשימת ההמתנה.",
+    hostGuestSaveAnyway: "לשמור בכל זאת",
+    hostGuestBack: "חזרה",
+    hostGuestReason: {
+      day: "הנסיעה עברה ליום אחר",
+      busy: "הרכב לא פנוי בשעות האלה",
+      other: "הנסיעה החדשה לא מתאימה לבקשה",
+    },
     carStaysAwayTitle: "הרכב יישאר ביעד",
     carStaysAwayNextRide: "בנסיעה לכיוון אחד {{car}} לא חוזר, והנסיעה הבאה שלו יוצאת ממקום אחר.",
     carStaysAwayWeekEnd: "בנסיעה לכיוון אחד {{car}} לא חוזר, ואין אחריה נסיעה שמחזירה אותו.",
@@ -259,6 +284,11 @@ export const heMember = {
     multiDayBadge: "{{count}} ימים",
     seriesSpan: "{{from}} – {{to}} · אותו רכב כל הימים",
     seriesCancelBody: "הביטול חל על כל ימי הבקשה הרב-יומית.",
+    // R20H1 (owner 2026-11-14): one day of a multi-day ride, or every day.
+    seriesCancelTitle: "ביטול נסיעה רב-יומית",
+    cancelOnlyDay: "לבטל רק את {{day}}",
+    cancelAllDays: "לבטל את כל הימים",
+    cancelOnlyDayDone: "{{day}} בוטל. שאר הימים נשארו על הרכב.",
     stopEqualsOrigin: "העצירה זהה למקום היציאה",
     stopEqualsDestination: "העצירה זהה ליעד",
     originEqualsDestination: "מקום היציאה והיעד זהים",
@@ -269,7 +299,8 @@ export const heMember = {
     splitSeriesHelp: "כל חלק נשאר על אותו רכב ובאותן שעות, ואחר כך אפשר להזיז, לערוך או לבטל כל חלק בנפרד.",
     splitModeTwo: "לשניים",
     splitModeDaily: "יום-יום",
-    splitAtLabel: "איפה לחתוך?",
+    splitAtLabel: "מאיזה יום מתחיל החלק השני?",
+    splitAtDay: "מ־{{day}}",
     splitPartsPreview: "החלקים:",
     splitSubmit: "פיצול",
     splitDone: "הנסיעה פוצלה",
@@ -493,10 +524,17 @@ export const heMember = {
     cancelForAll: "ביטול הנסיעה לכולם",
     // REQ item 229
     leaveNoDriver: "להסיר אותי — צריך נהג/ת",
+    /** R20U4 (owner 2026-11-14): the driver's own way out of a ride others are on, beside "בטל נסיעה". */
+    notDrivingThis: "אני לא נוהג/ת בנסיעה הזו",
     removeDriverTitle: "להוריד את {{name}} מהנהיגה",
     removeDriverOption: "{{name}} ינהג/תנהג",
     removeDriverNone: "בלי נהג/ת — הנסיעה תחכה לנהג/ת",
-    removeDriverHelp: "הנסיעה נשארת על אותו רכב ובאותן שעות; הבקשה של הנהג/ת מבוטלת.",
+    removeDriverHelp: "הנסיעה נשארת על אותו רכב; הבקשה של הנהג/ת מבוטלת.",
+    // R20B15 (owner 2026-11-14): the ride left with no driver can shrink to the hours of those still on it.
+    leaveFitTitle: "לקצר את הנסיעה?",
+    leaveFitBody: "בלי {{name}} הנסיעה צריכה רק {{range}}. לקצר אותה ולשחרר את הרכב בשאר השעות?",
+    leaveFitShrink: "לקצר ל־{{range}}",
+    leaveFitKeep: "להשאיר {{range}}",
     removeDriverConfirm: "הבקשה של {{name}} תבוטל, וכל מי שבנסיעה יקבל/תקבל הודעה.",
     removeDriverConfirmButton: "אישור",
     title: "פרטי הנסיעה",
@@ -778,6 +816,26 @@ export const heMember = {
     stepOut: "לוותר הפעם",
     withdrawClaimTitle: "לוותר על הרכב הזה?",
     withdrawClaimBody: "תצא/י מהשיקולים על הרכב הזה. הבקשה שלך (או תוכנית ב׳) נשארת כמו שהיא, ועדיין יוצעו לך רכבים שיתפנו.",
+  },
+  /**
+   * FC1 (owner wording 2026-11-14, REQ item 231): what a change that frees a shared car will cause, shown before the
+   * person confirms it (only when someone waiting would get the car).
+   */
+  freedCar: {
+    lineOne: "בעקבות השינוי {{name}} יקבל/תקבל את הרכב בשעות האלה. תודה!",
+    lineGroup: "{{names}} ייכנסו לדיון על הרכב. תודה!",
+    lineSadran: "בעקבות השינוי, {{names}} יקבלו את הרכב, בהתייעצות עם הסדרן/ית. תודה!",
+    /** A lone candidate the Sadran still decides on (it would leave a plan B that works). */
+    lineSadranOne: "בעקבות השינוי, {{name}} יקבל/תקבל את הרכב, בהתייעצות עם הסדרן/ית. תודה!",
+    and: "ו־",
+    or: "או",
+    confirmTitle: "הרכב יתפנה לאחרים",
+    confirmSave: "לשמור",
+    confirmBack: "חזרה",
+    /** REQ item 237: the third answer of every freed-car prompt — nobody waiting is offered the hours. */
+    keepOutSave: "לשמור בלי להעביר את הרכב — אסתדר מחוץ לאפליקציה",
+    keepOutCancel: "לבטל בלי להעביר את הרכב — אסתדר מחוץ לאפליקציה",
+    keepOutLeave: "לצאת בלי להעביר את הרכב — אסתדר מחוץ לאפליקציה",
   },
   /**
    * `/my/history` (REQ §13 item 91, owner 2026-09-16, E3): a small, lazily loaded, read-only
@@ -1253,6 +1311,8 @@ export const heMember = {
     fieldResponsible: "אחראי/ת רכב",
     fieldResponsibleNone: "ללא אחראי/ת (הודעות יגיעו למנהלי המערכת)",
     fieldResponsibleReadonlyHelp: "רק מנהל/ת מערכת יכול/ה לשנות את האחראי/ת על הרכב",
+    /** R20U10 (owner 2026-11-14): an empty code on the read-only details list; a code the viewer may not read is left out. */
+    codeUnset: "לא הוגדר",
     privateStateOn: "רכב פרטי — בשימוש {{name}}",
     privateStateOnNoName: "רכב פרטי (מושאל)",
     privateSwitchLabel: "רכב פרטי (מושאל)",
@@ -1289,6 +1349,7 @@ export const heMember = {
     kmCurrent: "{{km}} ק״מ",
     kmCurrentNone: "אין קריאה עדיין",
     kmCurrentAt: "נכון ל־{{date}}",
+    kmLog: "רישום קריאה",
     kmCorrect: "תיקון הקילומטראז׳",
     kmCorrectTitle: "תיקון הקילומטראז׳ של {{car}}",
     kmCorrectHelp: "אפשר להזין כל ערך, גם נמוך מהקריאה האחרונה. התיקון נרשם בהיסטוריה.",

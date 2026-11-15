@@ -685,6 +685,11 @@ export async function setRideDriver(rideId: string, driverId: string | null, exp
   }));
 }
 
+/** R20U7: the department's members busy during the ride by the same check `set_ride_driver` asks about (any week or department). */
+export async function fetchRideBusyPeople(rideId: string): Promise<string[]> {
+  return (await rpc("ride_busy_people", { p_ride_id: rideId })) ?? [];
+}
+
 /** REQ §13.101 (e): the Sadran withdraws a request as a duplicate; the member is notified and may answer "not a duplicate". */
 export async function withdrawDuplicateRequest(requestId: string, expectedVersion: number): Promise<void> {
   await rpc("withdraw_duplicate_request", { p_request_id: requestId, p_expected_version: expectedVersion });
@@ -1172,6 +1177,13 @@ export async function closeWeekRequests(departmentId: string, weekStart: string)
   await rpc("close_week_requests", { p_department_id: departmentId, p_week_start: weekStart });
 }
 
+/** R20B7 (owner 2026-11-14): mark every pending proposal of these days agreed with the member, so the days can be published. */
+export async function agreeProposalsOffline(departmentId: string, weekStart: string, days: string[]): Promise<{ applied: number; waiting: number; withdrawnStale: number }> {
+  const data = (await rpc("agree_proposals_offline", { p_department_id: departmentId, p_week_start: weekStart, p_days: days })) as
+    { applied?: number; waiting?: number; withdrawn_stale?: number } | null;
+  return { applied: data?.applied ?? 0, waiting: data?.waiting ?? 0, withdrawnStale: data?.withdrawn_stale ?? 0 };
+}
+
 export async function publishSiddur(departmentId: string, weekStart: string, scores: Json, fingerprint: string, policyScores: Json, options: PublicationOptions = {}): Promise<string> {
   return rpc("publish_siddur", { p_department_id: departmentId, p_week_start: weekStart,
     p_profile_scores: scores, p_expected_fingerprint: fingerprint, p_policy_scores: policyScores,
@@ -1217,4 +1229,57 @@ export async function fetchAuditLog(departmentId: string, weekStart: string): Pr
     .limit(300);
   if (error) throw toAppError(error);
   return data ?? [];
+}
+
+/** R20M1 (REQ item 233): what others did on the week's published days — the board strip "since you last looked". */
+export type BoardLiveEventKind = "driver_left" | "driver_handed" | "cancelled" | "freed_placed" | "freed_none" | "joined" | "proposal_expired";
+export interface BoardLiveEvent {
+  /** The audit row; later events have larger ids. */
+  id: number;
+  kind: BoardLiveEventKind;
+  at: string;
+  /** The ride to open on the board; null when it is gone (a cancel). */
+  ride_id: string | null;
+  starts_at: string | null;
+  /** freed_none (R20H4): the end of the freed hours; null for the other kinds. */
+  ends_at?: string | null;
+  car_name: string | null;
+  person_name: string | null;
+  /** driver_handed: the new driver. */
+  other_name: string | null;
+  /** joined: whose ride it was. */
+  owner_name: string | null;
+  /** joined: everyone added in that one action. */
+  names: string[] | null;
+}
+export interface BoardLiveEvents {
+  /** The caller's marker: events with a larger id are new to them. */
+  seenAuditId: number;
+  /** Newest first, at most 50, the last 7 days. */
+  events: BoardLiveEvent[];
+}
+
+export async function fetchBoardLiveEvents(departmentId: string, weekStart: string): Promise<BoardLiveEvents> {
+  const raw = await fetchWeekPart<{ seen_audit_id?: number | string; events?: BoardLiveEvent[] } | null>(departmentId, weekStart, "liveEvents");
+  return {
+    seenAuditId: Number(raw?.seen_audit_id ?? 0),
+    events: (raw?.events ?? []).map((event) => ({ ...event, id: Number(event.id) })),
+  };
+}
+
+/** R20H3: an unplaced one-way leg back from the dropped leg's destination that fits the same car with it. */
+export interface OneWayPartner { request_id: string; requester_name: string | null; depart_at: string; origin_name: string | null; destination_name: string | null }
+export async function fetchOneWayPartner(requestId: string, carId: string, outDepartAt: string): Promise<OneWayPartner | null> {
+  const data = await rpc("one_way_partner", { p_request_id: requestId, p_car_id: carId, p_out_dep: outDepartAt });
+  return (data as OneWayPartner | null) ?? null;
+}
+
+/** R20H3: "לשבץ את שתיהן" — both legs on the car in one call. */
+export async function placeOneWayPair(outId: string, returnId: string, carId: string, outDepartAt: string): Promise<{ out_ride_id: string; return_ride_id: string }> {
+  return (await rpc("place_one_way_pair", { p_out: outId, p_return: returnId, p_car: carId, p_out_dep: outDepartAt })) as { out_ride_id: string; return_ride_id: string };
+}
+
+/** R20M1: opening the strip — everything up to now counts as seen; resolves the new marker. */
+export async function markBoardSeen(departmentId: string, weekStart: string): Promise<number> {
+  return Number(await rpc("mark_board_seen", { p_department_id: departmentId, p_week_start: weekStart }));
 }

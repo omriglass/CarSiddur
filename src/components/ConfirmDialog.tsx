@@ -13,6 +13,7 @@ import { he } from "@/i18n/he";
 import { cn } from "@/lib/utils";
 
 import { DIALOG_FIT, DialogBody } from "./DialogBody";
+import { useTapLock } from "@/components/useTapLock";
 
 interface ConfirmDialogProps {
   open: boolean;
@@ -63,6 +64,7 @@ export function ConfirmDialog({
   onConfirm,
   className,
 }: ConfirmDialogProps) {
+  const tapLock = useTapLock(open);
   return (
     <Dialog open={open} onOpenChange={(next) => { if (!loading) onOpenChange(next); }}>
       <DialogContent className={cn(DIALOG_FIT, className)}>
@@ -92,7 +94,7 @@ export function ConfirmDialog({
               variant={destructive ? "destructive" : "default"}
               className="w-full sm:w-auto"
               disabled={loading || confirmDisabled}
-              onClick={onConfirm}
+              onClick={tapLock(onConfirm)}
             >
               {confirmLabel}
             </Button>

@@ -285,6 +285,12 @@ export interface FixedRide {
   driverRequestId?: string;
   /** Driverless pinned reservations still block the car's timeline. */
   driverMemberId?: string;
+  /**
+   * R20B5 (docs/SOLVER.md §3.7b): who rides it — the driver and every passenger with a member id, and the leg each
+   * rides (`both` = the whole ride). The solver never moves one of them into another ride over these hours. Absent =
+   * only `driverMemberId`, for the whole ride. `requestId` = the rider's own request on this ride, if any.
+   */
+  riders?: { memberId: string; leg: LegSide; requestId?: string }[];
   legs: AssignmentLeg[];
   servedRequestIds: string[];
   passengers: Passengers;

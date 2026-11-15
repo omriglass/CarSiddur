@@ -79,14 +79,15 @@ import {
   useRestoreRemovedReservationMutation,
   useUnmergeRequestMutation,
   useCancelRideMutation,
+  usePlaceOneWayPairMutation,
 } from "../../hooks";
 import { useClaimRideDriverMutation, useCancelRideChangeMutation } from "@/features/rides/hooks";
-import { fetchMergePreview, fetchRideVersion } from "../../api";
+import { fetchMergePreview, fetchOneWayPartner, fetchRideVersion } from "../../api";
 import { useUndoStack } from "../useUndoStack";
 import { useBoardUndoRecorder } from "../boardUndo";
 import { servedOf, servedToEditRideLegs } from "../../solverRun";
 
-import type { BoardRide, EditRideInput, ProposalRow, RidePassengerInput, WeekRequestRow } from "../../api";
+import type { BoardRide, EditRideInput, OneWayPartner, ProposalRow, RidePassengerInput, WeekRequestRow } from "../../api";
 import type { Suggestion } from "@/solver";
 import type { useBoardData } from "./useBoardData";
 
@@ -146,9 +147,9 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
   // R3B5: a drop whose live preview was red (invalid target) is applied only after an explicit confirmation.
   const [invalidDropConfirm, setInvalidDropConfirm] = useState<{ run: () => Promise<void> } | null>(null);
   // REQ §13.129 (a): the owner of a private car (here: the Sadran) is asked before someone else's request/ride lands on it.
-  const [ownCarAsk, setOwnCarAsk] = useState<{ name: string; carName: string; resolve: (ok: boolean) => void } | null>(null);
+  const [ownCarAsk, setOwnCarAsk] = useState<{ name: string; carName: string; driverless: boolean; resolve: (ok: boolean) => void } | null>(null);
   // CH1 (REQ §13.93): "לשבץ בכל זאת?" before a one-way leg leaves the car where its next ride does not start.
-  const [chainBreakAsk, setChainBreakAsk] = useState<{ car: string; place: string; nextStart: string; nextPlace: string; resolve: (ok: boolean) => void } | null>(null);
+  const [chainBreakAsk, setChainBreakAsk] = useState<{ car: string; place: string; nextStart: string; nextPlace: string; partner: OneWayPartner | null; carAt?: string; resolve: (answer: false | "one" | "both") => void } | null>(null);
   const [guestHover, setGuestHover] = useState<{ guest: { requestId: string; name: string }; target: GuestDropTarget | null } | null>(null);
   // Item 136 (e): the open displacement checklist - a snapshot of the card and its suggestion (the card itself may
   // vanish from the unmet list while the Sadran works through the steps).
@@ -169,6 +170,7 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
   const cancelRideChangeMutation = useCancelRideChangeMutation();
   const cancelRideMutation = useCancelRideMutation();
   const unassignRideMutation = useUnassignRideMutation();
+  const placeOneWayPairMutation = usePlaceOneWayPairMutation();
   const restoreReservationMutation = useRestoreRemovedReservationMutation();
   const joinLegsMutation = useJoinDropOffLegsMutation();
   const unmergeRequestMutation = useUnmergeRequestMutation();
@@ -205,17 +207,17 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
     return { ok: accepted, waived: accepted };
   }
   /** Resolves `true` when no confirmation applies (not my private car, or it is my own request/ride) or the owner confirmed. */
-  function confirmOwnCarMove(carId: string, personId: string | null | undefined, name: string | null | undefined): Promise<boolean> {
+  function confirmOwnCarMove(carId: string, personId: string | null | undefined, name: string | null | undefined, driverless = false): Promise<boolean> {
     const car = carsData.find((c) => c.id === carId);
     if (!car || car.type !== "temporary" || !isCarOwner(car, profileId) || personId === profileId) return Promise.resolve(true);
-    return new Promise<boolean>((resolve) => setOwnCarAsk({ name: name ?? "", carName: car.name, resolve }));
+    return new Promise<boolean>((resolve) => setOwnCarAsk({ name: name ?? "", carName: car.name, driverless, resolve }));
   }
   function answerOwnCarAsk(ok: boolean) {
     ownCarAsk?.resolve(ok);
     setOwnCarAsk(null);
   }
-  function answerChainBreakAsk(ok: boolean) {
-    chainBreakAsk?.resolve(ok);
+  function answerChainBreakAsk(answer: false | "one" | "both") {
+    chainBreakAsk?.resolve(answer);
     setChainBreakAsk(null);
   }
   const undoVersions = useRef(new Map<string, number>());
@@ -644,8 +646,16 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
     // QB23: the car must be at the request's origin when the window starts - refuse instead of
     // offering a shift/placement onto a car parked elsewhere (a connected pair's own other leg is exempt).
     const dropOrigin = legStartPlaceId(req, dropCtx.homeDestinationId);
+    let allowChainBreak = false;
     if (!connects && dropOrigin && originMismatch(dropCtx, carId, dropOrigin, window.startsAt)) {
-      toast.error(he.sadranBoard.carNotAtOriginToast); return;
+      if (tripTypeOf(req) !== "one_way") { toast.error(he.sadranBoard.carNotAtOriginToast); return; }
+      // R20H3 (owner 2026-11-15): a one-way leg from where the car is not standing is the Sadran's call too - asked, not refused.
+      const carAtId = carLocationAt(dropCtx, carId, window.startsAt);
+      const carAt = (board.destinationsQuery.data ?? []).find((d) => d.id === carAtId)?.name ?? he.sadranBoard.chainBreakElsewhere;
+      const answer = await new Promise<false | "one" | "both">((resolve) => setChainBreakAsk({
+        car: carsData.find((c) => c.id === carId)?.name ?? "", place: req.origin_resolved_name ?? "", nextStart: "", nextPlace: "", partner: null, carAt, resolve }));
+      if (!answer) return;
+      allowChainBreak = true;
     }
     if (!connects && chauffeurCarElsewhere(dropCtx, req, carId, window.startsAt)) {
       toast.error(he.sadranBoard.carNotAtOriginToast); return;
@@ -654,13 +664,33 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
     const placement = unmetPlacement(dropCtx, req, carId, window.startsAt);
     if (!placement) { toast.error(he.sadranBoard.invalidWindow); return; }
     // CH1 (REQ §13.93): leaving the car where its next ride does not start is the Sadran's call — asked, not refused.
-    let allowChainBreak = false;
     const stranded = !connects && tripTypeOf(req) === "one_way" && req.destination_id
       ? strandedNextRide(dropCtx, carId, req.destination_id, window.endsAt) : null;
     if (stranded?.starts_at) {
+      const withinFlex = requestWithinFlex(req, window.startsAt, window.endsAt);
+      // R20H3 (owner 2026-11-14): an unplaced return leg from there that fits the car too is offered with it.
+      const partner = withinFlex ? await fetchOneWayPartner(req.id, carId, window.startsAt).catch(() => null) : null;
       const ask = { car: carsData.find((c) => c.id === carId)?.name ?? "", place: req.destination_resolved_name ?? "",
-        nextStart: formatTime(new Date(stranded.starts_at)), nextPlace: stranded.origin_name ?? "" };
-      if (!(await new Promise<boolean>((resolve) => setChainBreakAsk({ ...ask, resolve })))) return;
+        nextStart: formatTime(new Date(stranded.starts_at)), nextPlace: stranded.origin_name ?? "", partner };
+      const answer = await new Promise<false | "one" | "both">((resolve) => setChainBreakAsk({ ...ask, resolve }));
+      if (!answer) return;
+      if (answer === "both" && partner) {
+        const outDepartAt = window.startsAt;
+        try {
+          let placed = await placeOneWayPairMutation.mutateAsync({ outId: req.id, returnId: partner.request_id, carId, outDepartAt, departmentId, weekStart });
+          undoStack.push({
+            label: req.requester_full_name ?? placed.out_ride_id,
+            run: async () => {
+              for (const rideId of [placed.return_ride_id, placed.out_ride_id]) {
+                await unassignRideMutation.mutateAsync({ rideId, expectedVersion: await fetchRideVersion(rideId), departmentId, weekStart });
+              }
+            },
+            redo: async () => { placed = await placeOneWayPairMutation.mutateAsync({ outId: req.id, returnId: partner.request_id, carId, outDepartAt, departmentId, weekStart }); },
+          });
+          toast.success(tv("sadranBoard.dragPlacedToast", { car: ask.car, start: formatMinutes(minutes) }));
+        } catch { /* The mutation shows the error. */ }
+        return;
+      }
       allowChainBreak = true;
     }
     if (!(await askSmallTrunk())) return;
@@ -854,7 +884,7 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
       && privateCarBlocks(dropCtx, carId, servedOf(ride).map((e) => requestsData.find((r) => r.id === e.request_id)).find((r) => r)?.requester_id))) {
       toast.error(he.sadranBoard.privateCarNotTarget); return;
     }
-    if (carId !== ride.car_id && !(await confirmOwnCarMove(carId, ride.driver_id, ride.driver_name ?? servedOf(ride).find((entry) => entry.requester)?.requester))) return;
+    if (carId !== ride.car_id && !(await confirmOwnCarMove(carId, ride.driver_id, ride.driver_name ?? servedOf(ride).find((entry) => entry.requester)?.requester, !ride.driver_id))) return;
     // R3B2: a needs-driver ride dropped on another ride is always a merge attempt (the host may itself
     // need a driver: refused below), never a plain move.
     if (ride.needs_driver && droppedOnRideId && droppedOnRideId !== rideId && rides.some((other) => other.id === droppedOnRideId && other.car_id === carId)) {

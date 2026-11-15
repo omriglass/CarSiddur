@@ -6,16 +6,18 @@ import { he } from "@/i18n/he";
 import type { PublicationConflict, PublicationDay } from "../../api";
 import { PublishScreen } from "./PublishScreen";
 
-const mocks = vi.hoisted(() => ({ readiness: [] as PublicationDay[], conflicts: [] as PublicationConflict[], publish: vi.fn() }));
+const mocks = vi.hoisted(() => ({ readiness: [] as PublicationDay[], conflicts: [] as PublicationConflict[], publish: vi.fn(), agree: vi.fn(),
+  proposals: [] as unknown[], requests: [] as unknown[] }));
 vi.mock("../../hooks", () => ({
   usePublicationConflicts: () => ({ data: mocks.conflicts, isLoading: false, isError: false }),
   usePublicationReadiness: () => ({ data: mocks.readiness, isLoading: false, isError: false, refetch: vi.fn() }),
-  useWeekRequestsWithNames: () => ({ data: [], isLoading: false, isError: false }),
+  useWeekRequestsWithNames: () => ({ data: mocks.requests, isLoading: false, isError: false }),
   useAllWeekRides: () => ({ data: [], isLoading: false, isError: false }),
   useCarsForDepartment: () => ({ data: [], isLoading: false, isError: false }),
-  useProposalsForWeek: () => ({ data: [], isLoading: false, isError: false }),
+  useProposalsForWeek: () => ({ data: mocks.proposals, isLoading: false, isError: false }),
   useSiddurVersions: () => ({ data: [], isLoading: false, isError: false }),
   usePublishSiddurMutation: () => ({ mutateAsync: mocks.publish, isPending: false }),
+  useAgreeProposalsOfflineMutation: () => ({ mutate: mocks.agree, isPending: false }),
 }));
 vi.mock("@/features/siddur/components/RideChangeAnswers", () => ({ RideChangeAnswers: () => null }));
 vi.mock("@/features/liveSync/useWeekChangeWatch", () => ({ useWeekChangeWatch: () => undefined }));
@@ -37,6 +39,9 @@ function show() {
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ["Date"], now: new Date("2026-09-12T08:00:00Z") });
   mocks.conflicts = [];
+  mocks.proposals = [];
+  mocks.requests = [];
+  mocks.agree.mockReset();
   mocks.publish.mockReset().mockResolvedValue("published-version");
   mocks.readiness = days.map((day) => ({
     day, ready: true, published: false, requestCount: 1, unresolvedRequests: 0, incompleteAssignments: 0,
@@ -92,7 +97,7 @@ describe("publication choices", () => {
 
   it("selects only ready days, then publishes exactly that selection", async () => {
     mocks.readiness[1] = { ...mocks.readiness[1]!, ready: false, unresolvedRequests: 1 };
-    mocks.readiness[3] = { ...mocks.readiness[3]!, ready: false, pendingProposals: 1 };
+    mocks.readiness[3] = { ...mocks.readiness[3]!, ready: false, draftProposals: 1 };
     const readyDays = days.filter((_, index) => index !== 1 && index !== 3);
     show();
     fireEvent.click(screen.getByRole("button", { name: he.publicationFlow.onlyReady }));
@@ -104,7 +109,7 @@ describe("publication choices", () => {
     await screen.findByTestId("returned-to-board");
   });
 
-  it.each(["incompleteAssignments", "pendingProposals"] as const)("requires explicit confirmation before publishing days with %s", async (field) => {
+  it.each(["incompleteAssignments"] as const)("requires explicit confirmation before publishing days with %s", async (field) => {
     mocks.readiness[2] = { ...mocks.readiness[2]!, ready: false, [field]: 1 };
     show();
     fireEvent.click(screen.getByRole("button", { name: he.publicationFlow.allYes }));
@@ -117,6 +122,19 @@ describe("publication choices", () => {
     fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: he.publicationFlow.confirmUnresolved }));
     await waitFor(() => expect(mocks.publish).toHaveBeenCalledExactlyOnceWith({ departmentId, weekStart, days, allowUnanswered: true, allowDriverless: false }));
     await screen.findByTestId("returned-to-board");
+  });
+
+  it("a pending proposal blocks its day; 'mark all as agreed' agrees every pending proposal of those days (R20B7)", () => {
+    mocks.readiness[2] = { ...mocks.readiness[2]!, ready: false, pendingProposals: 1 };
+    mocks.requests = [{ id: "q1", requester_full_name: "נועה", trip_shape: "round_trip", depart_at: "2026-09-15T06:00:00Z", return_at: "2026-09-15T10:00:00Z" }];
+    mocks.proposals = [{ id: "p1", request_id: "q1", status: "sent", type: "shift" }];
+    show();
+    expect(screen.getByRole("button", { name: he.publicationFlow.allYes })).toBeDisabled();
+    expect(screen.getByTestId("publish-pending-row")).toHaveTextContent("נועה");
+    fireEvent.click(screen.getByTestId("publish-agree-all"));
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: he.publicationFlow.agreeAllConfirm }));
+    expect(mocks.agree).toHaveBeenCalledWith({ departmentId, weekStart, days: ["2026-09-15"] }, expect.anything());
+    expect(mocks.publish).not.toHaveBeenCalled();
   });
 
   it("driverless rides alone ask their own question and send allowDriverless, not allowUnanswered (R12M3)", async () => {
@@ -159,5 +177,16 @@ describe("publication choices", () => {
     fireEvent.click(screen.getByRole("button", { name: he.publicationFlow.allYes }));
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     await waitFor(() => expect(mocks.publish).toHaveBeenCalledExactlyOnceWith({ departmentId, weekStart, days, allowUnanswered: false, allowDriverless: false }));
+  });
+});
+
+describe("R20U8: the notify list is closed until asked for", () => {
+  it("shows its title with the count; the list sits inside a closed section", () => {
+    show();
+    const section = screen.getByTestId("publish-notify");
+    expect(section.tagName).toBe("DETAILS");
+    expect(section.hasAttribute("open")).toBe(false);
+    expect(within(section).getByTestId("publish-notify-title").tagName).toBe("SUMMARY");
+    expect(within(section).getByTestId("publish-notify-list")).toBeInTheDocument();
   });
 });

@@ -2,7 +2,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { ageFromBirthYear, isAdultPassenger } from "@/lib/childAge";
 import { isActiveStop, parseRouteStops, type RouteStop } from "@/lib/routeStops";
 import { AppError, rpc, toAppError } from "@/lib/rpc";
-import { withPersonBusyRetry } from "@/lib/personBusy";
+import { personBusyYesCount, withPersonBusyRetry } from "@/lib/personBusy";
 import { askShortTurnaround, parseShortTurnaround } from "@/lib/shortTurnaround";
 import { withSmallTrunkRetry } from "@/lib/smallTrunk";
 import { siddurCarName } from "@/lib/siddurCarName";
@@ -62,6 +62,8 @@ export interface MyRequestRide {
   originName: string;
   destinationName: string;
   carName: string | null;
+  /** MD1: the ride's car — a multi-day edit's overlap question skips rides on its own car (the replace question asks those). */
+  carId?: string | null;
   carType: CarType | null;
   driverName: string | null;
   isChauffeur: boolean;
@@ -197,7 +199,7 @@ const SELECT = `
       id, starts_at, ends_at, status, needs_driver, version,
       origin:destinations!rides_origin_id_fkey(name),
       destination:destinations!rides_destination_id_fkey(name),
-      car:cars(name, type, codes:car_access_codes(access_code, is_replaced, replacement_code)),
+      car:cars(id, name, type, codes:car_access_codes(access_code, is_replaced, replacement_code)),
       driver:profiles!rides_driver_id_fkey(full_name)
     )
   ),
@@ -305,6 +307,7 @@ interface RawRequestRow {
       origin: { name: string } | null;
       destination: { name: string } | null;
       car: {
+        id: string;
         name: string;
         type: CarType;
         codes: { access_code: string | null; is_replaced: boolean; replacement_code: string | null } | { access_code: string | null; is_replaced: boolean; replacement_code: string | null }[] | null;
@@ -468,6 +471,7 @@ function mapRow(row: RawRequestRow, profileId?: string, owners: ReadonlyMap<stri
                   ...(Array.isArray(ride.car.codes) ? ride.car.codes[0] : ride.car.codes),
                 })
               : null,
+            carId: ride.car?.id ?? null,
             carType: ride.car?.type ?? null,
             driverName: ride.driver?.full_name ?? null,
             isChauffeur: legWithRide.role === "passenger" && ride.driver?.full_name !== undefined,
@@ -881,6 +885,8 @@ export interface SubmitRequestPayload {
   template_id?: string;
   /** REQ §13.101 f (QM5): re-submit of an edit the server asked to confirm (`needs_confirmation`). */
   confirm_release?: boolean;
+  /** R20 Q2 redo: the editor's answer per guest of the shared ride this request hosts (answer to `host_guests`). */
+  host_guests?: Record<string, HostGuestDecision>;
   /** OW1 (REQ §13.210): the member said yes to leaving the booked car at the destination (answer to `car_stays_away`). */
   allow_car_away?: boolean;
   /** REQ §13.211: a new one-way request asks (`car_stays_away`) instead of quietly waiting when a car is free but would be left at the destination. */
@@ -893,12 +899,41 @@ export interface SubmitRequestPayload {
   allow_small_trunk?: boolean;
 }
 
+/** R20 Q2 redo: keep a guest on the shared ride despite the far hours, or send the guest back to the waiting list. */
+export type HostGuestDecision = "keep" | "release";
+
+/** Owner 2026-11-14: far from the guest's hours, a too-long detour, no big trunk for the guest's luggage. */
+export type HostGuestWarning = "far" | "detour" | "luggage";
+
+/** R20 Q2 redo (owner 2026-11-14): a guest of the shared ride an edit no longer fits. */
+export interface HostGuestQuestion {
+  request_id: string;
+  name: string;
+  /** warn = may stay (the editor decides, one question per warning); cannot = only "save anyway" (back to waiting). */
+  kind: "warn" | "cannot";
+  warnings?: HostGuestWarning[];
+  reason: "seats" | "day" | "busy" | "other" | null;
+  /** The detour's extra driving (both legs), for the "detour" warning. */
+  added_minutes?: number;
+  wanted_at: string | null;
+  ride_at: string | null;
+}
+
 /**
  * `submit_request`'s response, extended backward-compatibly (DATA_MODEL.md §6.1 item 24):
  * `status`/`ride_id`/`car_id`/`reason` are only present for a live-week submission (where
  * `try_auto_approve()` ran) — every other caller only ever read `request_id`/`is_late`/
  * `warnings`, which are unchanged.
  */
+export interface SeriesBlocker {
+  kind: "ride" | "own_ride" | "maintenance";
+  ride_id?: string;
+  starts_at: string;
+  ends_at: string;
+  person_id?: string | null;
+  name?: string | null;
+}
+
 export interface SubmitRequestResult {
   request_id: string;
   is_late: boolean;
@@ -931,12 +966,23 @@ export interface SubmitRequestResult {
    * changes nothing — `discussion` when an open waiting-list discussion holds the car then (`group_offer` = that
    * group), else `no_car`.
    */
-  edit_refused?: "discussion" | "no_car" | "riders";
+  edit_refused?: "discussion" | "no_car" | "riders" | "car_taken";
+  /**
+   * MD1 (REQ item 232), with `car_taken`: turning a booked one-day ride into a multi-day one needs the same car for the
+   * whole span, and this is the first thing on it — another member's ride (`name` = its owner), the requester's own
+   * ride with nobody else on it (replaceable), or maintenance. Nothing was changed.
+   */
+  blocker?: SeriesBlocker;
+  /** With `car_taken`: the latest return that fits (the blocker's start minus the turnaround). */
+  /** Null when the car is taken on the departure day itself: nothing to return earlier to (R21B3). */
+  latest_return?: string | null;
   /**
    * REQ §13.101 f: a car takes the new hours, but the member drives others who would be left without a driver —
    * nothing was changed; resubmit with `confirm_release: true` to go ahead.
    */
-  needs_confirmation?: "release_to_waitlist" | "car_stays_away";
+  needs_confirmation?: "release_to_waitlist" | "car_stays_away" | "host_guests";
+  /** R20 Q2 redo, with `host_guests`: the guests the new hours no longer fit — nothing was changed until each is answered. */
+  host_guests?: HostGuestQuestion[];
   /** OW1 (REQ §13.210), with `car_stays_away`: the booked car, and whether a later ride of it is the reason (else the week's end). */
   car_name?: string;
   next_ride?: boolean;
@@ -947,6 +993,8 @@ export interface SubmitRequestResult {
   overlaps?: { request_id: string | null; ride_id: string | null }[];
   /** With `probe_only`: the edit would release the member's current car (R2B20). */
   would_lose_booking?: boolean;
+  /** R21B7 (set by `submitRequest`, not the server): the overlap question was answered yes during this call. */
+  overlap_confirmed?: boolean;
 }
 
 /** `submit_request` with `probe_only: true` — changes nothing, reports `would_lose_booking`. */
@@ -1001,18 +1049,32 @@ export async function submitRequest(payload: SubmitRequestPayload): Promise<Json
   // REQ §13.111 (a): `needs_large_trunk` (quick / car-now, ask-to-join) asks the shared dialog and retries with the flag;
   // REQ §13.176: so does `person_busy` (an overlap with the member's own ride or request), retried as `overlap_confirmed`.
   // REQ §13.190: `short_turnaround_ask` - when only the car's next ride is too close, the server names it instead of waitlisting.
+  // R21B7: a yes to that question is reported back (`overlap_confirmed`), so the form's later calls of the same save
+  // (after a guest / release / car-away question) carry it and the member is not asked twice.
+  // The question is asked by `rpc()` itself in the app (`askPersonBusyRefusal`) or by the retry below - both count the yes.
+  const yesBefore = personBusyYesCount();
+  const tagged = (result: Record<string, unknown>): Json =>
+    (personBusyYesCount() > yesBefore ? { ...result, overlap_confirmed: true } : result) as unknown as Json;
   const send = (extra: Record<string, boolean>) => withPersonBusyRetry((allowBusy) => withSmallTrunkRetry((allowSmallTrunk) => rpc("submit_request", {
     payload: { ...payload, short_turnaround_ask: true, ...extra, ...(allowSmallTrunk ? { allow_small_trunk: true } : {}), ...(allowBusy ? { overlap_confirmed: true } : {}) } as unknown as Json,
   })));
   try {
-    return await settleShortTurnaround(await send({}), () => send({ allow_short_turnaround: true }));
+    const result = await settleShortTurnaround(await send({}), () => send({ allow_short_turnaround: true }));
+    return result && typeof result === "object" && !Array.isArray(result) ? tagged(result as Record<string, unknown>) : result;
   } catch (error) {
     // REQ §13.211: a new one-way request that would leave a car at the destination - nothing was filed; the form asks
     // with the same dialog as the edit (item 210) and sends again with `allow_car_away`, or without `car_away_ask`.
+    // R20 Q2 redo: the edit no longer fits a guest of the shared ride - nothing changed; the form asks per guest.
+    if (error instanceof AppError && error.code === "host_edit_guests") {
+      let guests: HostGuestQuestion[] = [];
+      try { guests = (JSON.parse(error.detail ?? "{}") as { guests?: HostGuestQuestion[] }).guests ?? []; } catch { /* asked with no list */ }
+      if (guests.length === 0) throw error;
+      return tagged({ ok: false, needs_confirmation: "host_guests", unchanged: false, host_guests: guests });
+    }
     if (!(error instanceof AppError) || error.code !== "car_stays_away") throw error;
     let detail: { car_name?: string; next_ride?: boolean } = {};
     try { detail = JSON.parse(error.detail ?? "{}") as typeof detail; } catch { /* generic words */ }
-    return { ok: false, needs_confirmation: "car_stays_away", unchanged: false, car_name: detail.car_name ?? "", next_ride: !!detail.next_ride } as unknown as Json;
+    return tagged({ ok: false, needs_confirmation: "car_stays_away", unchanged: false, car_name: detail.car_name ?? "", next_ride: !!detail.next_ride });
   }
 }
 
@@ -1057,9 +1119,9 @@ export interface SubmitSeriesRequestResult {
 /**
  * `submit_series_request(payload jsonb)` — the only write path for a multi-day request
  * (REQ §13.77): same payload shape as `submit_request`, except `return_at` is on a LATER
- * Jerusalem date than `depart_at` (`mapper.ts`'s `returnDay`-aware `return_at`). Never send
- * `request_id`/`expected_version` — editing a series is not supported in v1 (`series_edit_
- * not_supported`, MDR02); cancel and resubmit instead.
+ * Jerusalem date than `depart_at` (`mapper.ts`'s `returnDay`-aware `return_at`). An edit sends `series_id` (a series,
+ * REQ §13.142) or `request_id` (a one-day request turned multi-day, MD1 — refused `car_taken` when its car is not free
+ * for the whole span; answered with `return_earlier`, `replace_ride_id`, `keep_later_end`).
  */
 export async function submitSeriesRequest(payload: SubmitRequestPayload): Promise<Json> {
   // REQ §13.190 (TG2): the last day may end less than the turnaround before the car's next ride, after the question.
@@ -1166,6 +1228,22 @@ export async function cancelRide(
   // REQ §13.202: the ride of someone who named me an editor — cancelled as theirs, and they are told.
   if (asEditor) await rpc("ride_editor_cancel_ride", { p_ride_id: rideId, p_reason: reason, p_expected_version: expectedVersion });
   else await rpc("cancel_ride", { p_ride_id: rideId, p_reason: reason, p_expected_version: expectedVersion });
+}
+
+/**
+ * R20H1 (owner 2026-11-14): cancel one day of a multi-day ride — the day is cut out of the series and cancelled; the
+ * other days keep the car. `asSadran` cancels it as the board does (`close` = "הנסיעה כבר לא רלוונטית").
+ */
+export async function cancelSeriesDay(input: { rideId: string; expectedVersion: number; reason?: string | null; close?: boolean; asSadran?: boolean }): Promise<void> {
+  await rpc("cancel_series_day", {
+    p_ride_id: input.rideId, p_expected_version: input.expectedVersion, p_reason: input.reason ?? undefined,
+    p_close: input.close ?? false, p_as_sadran: input.asSadran ?? false,
+  });
+}
+
+/** R20H1: the call "לבטל רק את היום הזה" sends, for the freed-car check before it. */
+export function cancelSeriesDayArgs(rideId: string, expectedVersion: number): Record<string, unknown> {
+  return { p_ride_id: rideId, p_expected_version: expectedVersion, p_reason: null, p_close: false, p_as_sadran: false };
 }
 
 /** Read-only: the offers a cancelled ride produced (status + the winner's name when the server auto-assigned one). Members may read their department's offers; the winner's request/profile are readable once placed on a public ride. */

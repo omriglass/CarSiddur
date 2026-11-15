@@ -19,6 +19,7 @@ import { useSetFreedSlotOptOutMutation } from "@/features/requests/hooks";
 import { buildWaUrl } from "@/features/sadran/proposals/waLink";
 import { he, t, tv } from "@/i18n/he";
 import { formatTime } from "@/lib/time";
+import { useTapLock } from "@/components/useTapLock";
 
 const ERROR_COPY: Record<string, string> = {
   invalid_token: he.proposalScreen.notFound,
@@ -225,6 +226,8 @@ function ProposalAnswerBody({
   onDecline,
   isSubmitting,
 }: ProposalAnswerBodyProps) {
+  // R20B9: a double tap answers once.
+  const tapLock = useTapLock();
   const isDenyVariant = summary.type === "deny" || summary.type === "external";
   // `origin` (REQ §13.93): no time shift to show before/after -- the request's own window
   // (shown by `ProposalSummaryView`'s `TripSummary`) never changes, only where the car starts.
@@ -305,20 +308,20 @@ function ProposalAnswerBody({
             {he.proposalScreen.optOutFreedSlots}
           </label>
           <div className="flex flex-col gap-2">
-            <Button variant="outline" onClick={onDecline} disabled={isSubmitting}>
+            <Button variant="outline" onClick={tapLock(onDecline)} disabled={isSubmitting}>
               {summary.type === "external" ? t("proposalScreen.externalStay") : t("action.understood")}
             </Button>
-            <Button onClick={onAccept} disabled={isSubmitting}>
+            <Button onClick={tapLock(onAccept)} disabled={isSubmitting}>
               {summary.type === "external" ? t("proposalScreen.externalAccept") : t("action.foundExternal")}
             </Button>
           </div>
         </div>
       ) : (
         <div className="flex flex-col gap-2">
-          <Button size="lg" onClick={onAccept} disabled={isSubmitting}>
+          <Button size="lg" onClick={tapLock(onAccept)} disabled={isSubmitting}>
             {t("action.acceptProposal")}
           </Button>
-          <Button variant="outline" onClick={onDecline} disabled={isSubmitting}>
+          <Button variant="outline" onClick={tapLock(onDecline)} disabled={isSubmitting}>
             {t("action.declineProposal")}
           </Button>
         </div>

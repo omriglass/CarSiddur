@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { canMoveOntoMyCar, ownCarMoveTargets } from "./ownCarMove";
+import { canMoveOntoMyCar, ownCarMoveBody, ownCarMoveTargets } from "./ownCarMove";
 
 const now = new Date("2026-10-12T08:00:00Z");
 const ride = (over: Record<string, unknown> = {}) => ({ id: "r", version: 1, car_id: "shared", starts_at: "2026-10-12T10:00:00Z", status: "confirmed", served: [{ request_id: "q", car_mode: "keep" }], ...over }) as never;
@@ -16,5 +16,14 @@ describe("ownCarMoveTargets", () => {
     expect(canMoveOntoMyCar({ ...base, ride: ride({ starts_at: "2026-10-11T10:00:00Z" }) })).toBe(false);
     expect(canMoveOntoMyCar({ ...base, ride: ride({ served: [{ request_id: "q", car_mode: "relay" }] }) })).toBe(false);
     expect(canMoveOntoMyCar({ ...base, ride: ride() })).toBe(true);
+  });
+});
+
+describe("ownCarMoveBody (R20B13)", () => {
+  it("names the driver who keeps driving", () => {
+    expect(ownCarMoveBody("d1", "דנה", "סקודה")).toBe("דנה ינהג/תנהג ברכב סקודה. כל מי שבנסיעה יקבל/תקבל הודעה.");
+  });
+  it("a ride with no driver still waits for one", () => {
+    expect(ownCarMoveBody(null, "דנה", "סקודה")).toBe("הנסיעה תעבור לרכב סקודה ועדיין תחכה לנהג/ת. כל מי שבנסיעה יקבל/תקבל הודעה.");
   });
 });

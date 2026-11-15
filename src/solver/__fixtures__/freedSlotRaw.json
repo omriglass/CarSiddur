@@ -1,0 +1,197 @@
+{
+  "car": {
+    "id": "00000000-0000-0000-0000-000000000040",
+    "name": "Car 40",
+    "type": "shared",
+    "features": [],
+    "maintenance": [],
+    "seatConfigs": [
+      {
+        "adults": 2,
+        "boosters": 0,
+        "childSeats": 2
+      },
+      {
+        "adults": 3,
+        "boosters": 0,
+        "childSeats": 1
+      },
+      {
+        "adults": 4,
+        "boosters": 1,
+        "childSeats": 0
+      },
+      {
+        "adults": 5,
+        "boosters": 0,
+        "childSeats": 0
+      }
+    ],
+    "ownerMemberId": null,
+    "baseLocationId": "00000000-0000-0000-0000-000000000010",
+    "startLocationId": "00000000-0000-0000-0000-000000000010"
+  },
+  "group": null,
+  "offer": {
+    "id": "ea3296ba-cbd9-4391-898c-22f48f8ed3b6",
+    "carId": "00000000-0000-0000-0000-000000000040",
+    "endsMs": 1915822740000,
+    "status": "open",
+    "groupId": null,
+    "startsMs": 1915783200000
+  },
+  "policy": {
+    "id": "00000000-0000-0000-0000-000000000030",
+    "rules": [
+      {
+        "type": "rideType",
+        "params": {
+          "weights": {
+            "work": 8,
+            "other": 5,
+            "errands": 3,
+            "childcare": 8,
+            "healthcare": 10
+          }
+        },
+        "weight": 1.0
+      },
+      {
+        "type": "distance",
+        "params": {
+          "maxKm": 60
+        },
+        "weight": 0.4
+      },
+      {
+        "type": "publicTransport",
+        "params": {},
+        "weight": 0.3
+      },
+      {
+        "type": "peopleServed",
+        "params": {
+          "cap": 4
+        },
+        "weight": 0.3
+      },
+      {
+        "type": "fairness",
+        "params": {
+          "lookbackWeeks": 3
+        },
+        "weight": 0.5
+      },
+      {
+        "type": "submissionTime",
+        "params": {
+          "latePenalty": 1
+        },
+        "weight": 0.2
+      },
+      {
+        "type": "flexibilityOffered",
+        "params": {
+          "fullCreditMinutes": 240
+        },
+        "weight": 0.2
+      },
+      {
+        "type": "manualBoost",
+        "params": {},
+        "weight": 2.0
+      }
+    ],
+    "version": 1
+  },
+  "travel": [
+    {
+      "toId": "00000000-0000-0000-0000-000000000011",
+      "fromId": "00000000-0000-0000-0000-000000000010",
+      "distanceKm": 12.0,
+      "travelMinutes": 20
+    }
+  ],
+  "settings": {
+    "detourMaxKm": 15.0,
+    "stopMinutes": 5,
+    "detourMaxMinutes": 20,
+    "turnaroundMinutes": 30,
+    "chauffeurDwellMinutes": 10
+  },
+  "candidates": [
+    {
+      "id": "7e76b566-fc11-437c-80e9-f6692ebe0af4",
+      "name": "Member 103",
+      "planB": false,
+      "stops": [],
+      "isLate": false,
+      "luggage": false,
+      "memberId": "00000000-0000-0000-0000-000000000103",
+      "originId": "00000000-0000-0000-0000-000000000010",
+      "returnMs": 1915794000000,
+      "rideType": "work",
+      "towHitch": false,
+      "tripType": "round_trip",
+      "tripShape": "round_trip",
+      "flexReturn": {
+        "laterMin": 0,
+        "earlierMin": 0
+      },
+      "passengers": {
+        "adults": 1,
+        "boosters": 0,
+        "childSeats": 0
+      },
+      "departureMs": 1915786800000,
+      "manualBoost": 0.0,
+      "departmentId": "00000000-0000-0000-0000-000000000001",
+      "destinationId": "00000000-0000-0000-0000-000000000011",
+      "flexDeparture": {
+        "laterMin": 0,
+        "earlierMin": 0
+      },
+      "submittedAtMs": 1794660287179,
+      "durationLocked": false,
+      "fairnessDeficit": 0.5,
+      "originIsFreeText": false,
+      "manualBoostReason": "",
+      "needsCarAtDestination": true
+    }
+  ],
+  "dayEndTime": "23:59:00",
+  "otherRides": [
+    {
+      "id": "e2f1e0b9-ea10-4cfb-bc3b-fb76ef5f86bb",
+      "endsMs": 1915783200000,
+      "originId": "00000000-0000-0000-0000-000000000010",
+      "seriesId": null,
+      "startsMs": 1915772400000,
+      "overnightAck": false,
+      "destinationId": "00000000-0000-0000-0000-000000000010",
+      "locationNeutral": false
+    }
+  ],
+  "weekStartMs": 1915650000000,
+  "destinations": [
+    {
+      "id": "00000000-0000-0000-0000-000000000010",
+      "name": "Place 10",
+      "zone": "home",
+      "distanceKm": 0.0,
+      "travelMinutes": 0,
+      "publicTransportScore": null
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000011",
+      "name": "Place 11",
+      "zone": "haifa",
+      "distanceKm": 12.0,
+      "travelMinutes": 20,
+      "publicTransportScore": 4
+    }
+  ],
+  "homeLocationId": "00000000-0000-0000-0000-000000000010",
+  "freedLocationId": "00000000-0000-0000-0000-000000000010",
+  "priorityRequestIds": []
+}

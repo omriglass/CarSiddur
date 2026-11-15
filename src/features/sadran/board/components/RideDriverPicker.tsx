@@ -12,7 +12,7 @@ import { he, tv } from "@/i18n/he";
 import { formatTime } from "@/lib/time";
 import { cn } from "@/lib/utils";
 
-import { useSetRideDriverMutation } from "../../hooks";
+import { useRideBusyPeopleQuery, useSetRideDriverMutation } from "../../hooks";
 import { filterDriverCandidates, sortFreeFirst, type PersonDayEntry } from "../driverBusy";
 import { useRecordBoardUndo } from "../boardUndo";
 
@@ -70,9 +70,12 @@ export function RideDriverPicker({ rideId, version, needsDriver, volunteerName, 
   }
   const mutation = useSetRideDriverMutation();
   const recordUndo = useRecordBoardUndo();
-  const drivers = sortFreeFirst(candidates.filter((candidate) => !candidate.doesNotDrive && candidate.id !== volunteerId), busyIds ?? new Set<string>());
+  // R20U7: the board's own view of the week, plus the server's check (other weeks and departments, the person's own leg) —
+  // the one `set_ride_driver` asks "person_busy" about — so the free people come first and the first pick is free.
+  const serverBusy = useRideBusyPeopleQuery(rideId, version, departmentId, weekStart, needsDriver || expanded);
+  const busy = new Set<string>([...(busyIds ?? []), ...(serverBusy.data ?? [])]);
+  const drivers = sortFreeFirst(candidates.filter((candidate) => !candidate.doesNotDrive && candidate.id !== volunteerId), busy);
 
-  const busy = busyIds ?? new Set<string>();
   // Matches show at once under the search box (no dropdown): free people first, at most MAX_ROWS; the chosen person always stays.
   const found = filterDriverCandidates(drivers, query, false, busy).slice(0, query.trim() ? MAX_ROWS : EMPTY_QUERY_ROWS);
   const chosenRow = drivers.find((d) => d.id === driverId);

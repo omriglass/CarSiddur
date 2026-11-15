@@ -17,6 +17,7 @@
 
 import { carPreferenceRank, carsByPreference } from './carPreference';
 import { bestPlacementWithinFlex } from './flexibility';
+import { busyWindowsFor, type PersonBook } from './personBusy';
 import { SERIES_EARLY_BONUS, addSeriesBlocks, trySeriesOnCar, type PlacedSeries, type PlacedSingle, type SeriesPlacement, type Unit } from './greedy';
 import { addsChainBreak, chainBreakIds } from './improve';
 import { carName, memberName } from './names';
@@ -97,6 +98,7 @@ function tryRepairOnCar(
   input: SolverInput,
   budget: Budget,
   commit: boolean,
+  people?: PersonBook,
 ): Trial | null {
   const tl = timelines.get(car.id);
   if (!tl) return null;
@@ -122,7 +124,12 @@ function tryRepairOnCar(
     const blk = tl.remove(rideIdOf(b.nr));
     if (blk) removed.push(blk);
   }
-  const placement = trySeriesOnCar(tl, su.legs, su.seriesCount);
+  const firstLeg = su.legs[0];
+  const lastLeg = su.legs.at(-1);
+  const placement = trySeriesOnCar(tl, su.legs, su.seriesCount, {
+    first: firstLeg ? busyWindowsFor(people, firstLeg) : [],
+    last: lastLeg ? busyWindowsFor(people, lastLeg) : [],
+  });
   if (!placement) {
     rollback();
     return null;
@@ -143,7 +150,7 @@ function tryRepairOnCar(
       if (!fits(target, b.nr.passengers) || !needsFit(target, b.nr.luggage ? 1 : 0, b.nr.tow ? 1 : 0)) continue;
       const targetTl = timelines.get(target.id);
       if (!targetTl) continue;
-      const place = bestPlacementWithinFlex(targetTl, b.nr);
+      const place = bestPlacementWithinFlex(targetTl, b.nr, { busy: busyWindowsFor(people, b.nr) });
       if (!place) continue;
       if (best && place.cost >= best.cost) continue;
       const baseline = baselineOf(target.id, targetTl);
@@ -188,6 +195,8 @@ export function runSeriesRepair(
   placedSingles: PlacedSingle[],
   timelines: Map<string, CarTimeline>,
   input: SolverInput,
+  /** R20B5 (SOLVER §3.7b) */
+  people?: PersonBook,
 ): SeriesRepairResult {
   const sharedCars = [...input.cars].filter((c) => c.type === 'shared').sort((a, b) => (a.id < b.id ? -1 : 1));
   const bufferSlots = Math.round(input.config.bufferMinutes / 15);
@@ -220,7 +229,7 @@ export function runSeriesRepair(
         )
         .sort((a, b) => (a.nr.id < b.nr.id ? -1 : 1));
       if (blockers.length === 0 || blockers.length > MAX_SERIES_BLOCKERS) continue;
-      const trial = tryRepairOnCar(su, car, blockers, sharedCars, timelines, input, perUnit, false);
+      const trial = tryRepairOnCar(su, car, blockers, sharedCars, timelines, input, perUnit, false, people);
       if (trial) trials.push(trial);
     }
     budget.left -= startBudget - perUnit.left;
@@ -240,7 +249,7 @@ export function runSeriesRepair(
     }
     const blockers = chosen.moves.map((m) => m.blocker);
     const fromCar = chosen.car.id;
-    const applied = tryRepairOnCar(su, chosen.car, blockers, sharedCars, timelines, input, { left: Number.POSITIVE_INFINITY }, true);
+    const applied = tryRepairOnCar(su, chosen.car, blockers, sharedCars, timelines, input, { left: Number.POSITIVE_INFINITY }, true, people);
     if (!applied) {
       // the dry run succeeded on identical state, so this is unreachable; keep the unit unmet rather than throw
       result.stillUnmetUnits.push(unit);

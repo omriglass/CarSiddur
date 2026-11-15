@@ -14,6 +14,7 @@
 
 import { carPreferenceRank } from './carPreference';
 import { bestPlacementWithinFlex } from './flexibility';
+import { busyWindowsFor, clearOf, type PersonBook } from './personBusy';
 import type { RelayPair } from './relay';
 import { reason } from './reasons';
 import { memberName, placeName } from './names';
@@ -337,7 +338,13 @@ function shortRelayGapMinutes(outWindow: Window, returnWindow: Window, bufferMin
  * ordinary buffer rule at its outer edges is equivalent to checking every
  * leg individually.
  */
-export function trySeriesOnCar(tl: CarTimeline, legs: SeriesLeg[], seriesCount: number): SeriesPlacement | null {
+export function trySeriesOnCar(
+  tl: CarTimeline,
+  legs: SeriesLeg[],
+  seriesCount: number,
+  /** R20B5: the first/last legs' riders' other rides (`busyWindowsFor`); a shifted end may not reach into them */
+  busy: { first: readonly Window[]; last: readonly Window[] } = { first: [], last: [] },
+): SeriesPlacement | null {
   const first = legs[0];
   const last = legs[legs.length - 1];
   if (!first || !last) return null;
@@ -351,6 +358,9 @@ export function trySeriesOnCar(tl: CarTimeline, legs: SeriesLeg[], seriesCount: 
     for (const R of retCandidates) {
       if (R <= D) continue;
       if (!tl.isFree({ start: D, end: R }, first.originId, undefined, last.destinationId)) continue;
+      const firstWindow = { start: D, end: first === last ? R : first.window.end };
+      const lastWindow = { start: first === last ? D : last.window.start, end: R };
+      if (!clearOf(firstWindow, busy.first) || !clearOf(lastWindow, busy.last)) continue;
       const shiftCost = Math.abs(D - first.window.start) * 15 + Math.abs(R - last.window.end) * 15;
       if (!best || shiftCost < best.shiftCost) {
         best = {
@@ -401,6 +411,8 @@ export function runGreedy(
   units: Unit[],
   timelines: Map<string, CarTimeline>,
   input: SolverInput,
+  /** R20B5 (SOLVER §3.7b): people's other rides; absent = no person check (unit tests of the pass alone) */
+  people?: PersonBook,
 ): GreedyResult {
   const sharedCars = [...input.cars].filter((c) => c.type === 'shared').sort((a, b) => (a.id < b.id ? -1 : 1));
   const placed: Placed[] = [];
@@ -475,13 +487,14 @@ export function runGreedy(
         }
       }
 
-      // Phase 2: flexibility search per car.
+      // Phase 2: flexibility search per car. R20B5: never shifted into another ride of the same person.
       if (!best) {
+        const busy = busyWindowsFor(people, nr);
         for (const car of sharedCars) {
           if (!fits(car, nr.passengers) || !needsFit(car, nr.luggage ? 1 : 0, nr.tow ? 1 : 0)) continue;
           const tl = timelines.get(car.id);
           if (!tl) continue;
-          const placement = bestPlacementWithinFlex(tl, nr);
+          const placement = bestPlacementWithinFlex(tl, nr, { busy });
           if (!placement) continue;
           // REQUIREMENTS §13.93: a leg that would leave the car somewhere other
           // than where it started (today, only a one_way/relay leg) must still
@@ -537,6 +550,11 @@ export function runGreedy(
     if (unit.kind === 'pair' && unit.pair) {
       const { pair, outNr, retNr } = unit.pair;
       let best: { car: Car; key: CarKey } | null = null;
+      // R20B5: the pair's legs (possibly shifted by pairing) may not overlap another ride of the same person.
+      if (!clearOf(pair.outWindow, busyWindowsFor(people, outNr)) || !clearOf(pair.returnWindow, busyWindowsFor(people, retNr))) {
+        stillUnmet.push(unit);
+        continue;
+      }
       for (const car of sharedCars) {
         if (!fits(car, outNr.passengers) || !fits(car, retNr.passengers)) continue;
         if (!needsFit(car, outNr.luggage ? 1 : 0, outNr.tow ? 1 : 0) || !needsFit(car, retNr.luggage ? 1 : 0, retNr.tow ? 1 : 0)) continue;
@@ -614,11 +632,12 @@ export function runGreedy(
       const su = unit.series;
       const legs = su.legs;
       let best: { car: Car; placement: ReturnType<typeof trySeriesOnCar>; key: CarKey } | null = null;
+      const seriesBusy = { first: legs[0] ? busyWindowsFor(people, legs[0]) : [], last: legs.at(-1) ? busyWindowsFor(people, legs.at(-1)!) : [] };
       for (const car of sharedCars) {
         if (!legs.every((leg) => fits(car, leg.passengers) && needsFit(car, leg.luggage ? 1 : 0, leg.tow ? 1 : 0))) continue;
         const tl = timelines.get(car.id);
         if (!tl) continue;
-        const placement = trySeriesOnCar(tl, legs, su.seriesCount);
+        const placement = trySeriesOnCar(tl, legs, su.seriesCount, seriesBusy);
         if (!placement) continue;
         const slackVal = legs.reduce((max, leg) => Math.max(max, slack(car, leg.passengers) ?? Number.POSITIVE_INFINITY), 0);
         const continuity = legs.reduce(

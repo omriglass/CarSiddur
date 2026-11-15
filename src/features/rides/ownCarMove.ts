@@ -1,5 +1,6 @@
 // REQ §13.129 (a): a private car's owner may move ANY member's ride onto their own private car. Pure client mirror of the
 // server's conditions (`edit_ride` decides for real) — used to show the ride-sheet button and to allow the drag.
+import { tv } from "@/i18n/he";
 import { dateKey } from "@/lib/time";
 
 import { isRideDayEditable } from "./rideDayEditable";
@@ -33,4 +34,12 @@ export function canMoveOntoMyCar(input: OwnCarMoveInput): boolean {
 export function rideDayPublished(week: { phase: string; published_days?: readonly string[] | null } | null | undefined, startsAt: string | null | undefined): boolean {
   if (!week || !startsAt || (week.phase !== "published" && week.phase !== "live")) return false;
   return week.published_days?.includes(dateKey(startsAt)) ?? true;
+}
+
+/**
+ * The owner's confirmation body before a ride lands on their private car. R20B13: a ride with no driver keeps having
+ * none (`edit_ride` changes only the car), so it never names a driver.
+ */
+export function ownCarMoveBody(driverId: string | null | undefined, name: string, car: string): string {
+  return driverId ? tv("rideEditing.ownCarMoveBody", { name, car }) : tv("rideEditing.ownCarMoveBodyNoDriver", { car });
 }

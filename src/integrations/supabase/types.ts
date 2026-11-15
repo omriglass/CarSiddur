@@ -160,6 +160,51 @@ export type Database = {
           },
         ]
       }
+      board_seen_marks: {
+        Row: {
+          created_at: string
+          department_id: string
+          id: string
+          profile_id: string
+          seen_audit_id: number
+          updated_at: string
+          week_start: string
+        }
+        Insert: {
+          created_at?: string
+          department_id: string
+          id?: string
+          profile_id: string
+          seen_audit_id?: number
+          updated_at?: string
+          week_start: string
+        }
+        Update: {
+          created_at?: string
+          department_id?: string
+          id?: string
+          profile_id?: string
+          seen_audit_id?: number
+          updated_at?: string
+          week_start?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "board_seen_marks_department_id_week_start_fkey"
+            columns: ["department_id", "week_start"]
+            isOneToOne: false
+            referencedRelation: "weeks"
+            referencedColumns: ["department_id", "week_start"]
+          },
+          {
+            foreignKeyName: "board_seen_marks_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       car_access_codes: {
         Row: {
           access_code: string | null
@@ -1681,6 +1726,9 @@ export type Database = {
         Row: {
           cancelled_ride_id: string
           car_id: string
+          cause_actor: string | null
+          cause_kind: string | null
+          cause_owner_id: string | null
           close_reason: string | null
           created_at: string
           department_id: string
@@ -1689,6 +1737,7 @@ export type Database = {
           expires_at: string
           group_id: string | null
           id: string
+          kept_ride: boolean
           options: Json
           resolved_at: string | null
           resolved_by: string | null
@@ -1700,6 +1749,9 @@ export type Database = {
         Insert: {
           cancelled_ride_id: string
           car_id: string
+          cause_actor?: string | null
+          cause_kind?: string | null
+          cause_owner_id?: string | null
           close_reason?: string | null
           created_at?: string
           department_id: string
@@ -1708,6 +1760,7 @@ export type Database = {
           expires_at: string
           group_id?: string | null
           id?: string
+          kept_ride?: boolean
           options?: Json
           resolved_at?: string | null
           resolved_by?: string | null
@@ -1719,6 +1772,9 @@ export type Database = {
         Update: {
           cancelled_ride_id?: string
           car_id?: string
+          cause_actor?: string | null
+          cause_kind?: string | null
+          cause_owner_id?: string | null
           close_reason?: string | null
           created_at?: string
           department_id?: string
@@ -1727,6 +1783,7 @@ export type Database = {
           expires_at?: string
           group_id?: string | null
           id?: string
+          kept_ride?: boolean
           options?: Json
           resolved_at?: string | null
           resolved_by?: string | null
@@ -5830,8 +5887,10 @@ export type Database = {
         Returns: boolean
       }
       _edit_series_request: { Args: { payload: Json }; Returns: Json }
+      _extend_request_to_series: { Args: { payload: Json }; Returns: Json }
       _fit_ride_to_its_legs: { Args: { p_ride_id: string }; Returns: boolean }
       _flex_floor: { Args: { i: string }; Returns: string }
+      _flex_minutes_json: { Args: { p: string }; Returns: Json }
       _flush_held_notices: {
         Args: {
           p_days: string[]
@@ -5842,6 +5901,23 @@ export type Database = {
         Returns: number
       }
       _frag: { Args: { _key: string; _vars?: Json }; Returns: string }
+      _freed_car_kept_out: { Args: never; Returns: boolean }
+      _freed_cause_note: { Args: { p_offer_id: string }; Returns: string }
+      _guest_edit_stays: {
+        Args: {
+          p_depart_at: string
+          p_needs_car: boolean
+          p_one_way_mode: Database["public"]["Enums"]["leg_car_mode"]
+          p_origin_id: string
+          p_origin_text: string
+          p_request_id: string
+          p_return_at: string
+          p_trip_shape: Database["public"]["Enums"]["trip_shape"]
+          p_trip_type: Database["public"]["Enums"]["trip_type"]
+          payload: Json
+        }
+        Returns: boolean
+      }
       _held_request_view: { Args: { p_request: string }; Returns: Json }
       _held_ride_view: { Args: { p_ride: string }; Returns: Json }
       _held_tagged: { Args: { p_data: Json }; Returns: Json }
@@ -5863,6 +5939,7 @@ export type Database = {
         }
         Returns: undefined
       }
+      _host_edit_guest_reason: { Args: { p_code: string }; Returns: string }
       _is_ride_editor: {
         Args: { p_actor: string; p_department: string; p_owner: string }
         Returns: boolean
@@ -5874,6 +5951,10 @@ export type Database = {
           _ride_id: string
         }
         Returns: Record<string, unknown>
+      }
+      _keep_guests_after_host_edit: {
+        Args: { p_guests: Json; p_host: string; p_host_reason: string }
+        Returns: Json
       }
       _long_detour_mode: { Args: { p_allow: boolean }; Returns: undefined }
       _maintenance_quarter_ceil: { Args: { p_t: string }; Returns: string }
@@ -5978,7 +6059,24 @@ export type Database = {
         }
         Returns: undefined
       }
+      _offer_freed_after_edit: {
+        Args: { p_request: string }
+        Returns: undefined
+      }
       _offer_freed_slot: { Args: { p_ride_id: string }; Returns: string }
+      _offer_freed_time: {
+        Args: {
+          p_car_id: string
+          p_exclude?: string
+          p_from: string
+          p_kept: boolean
+          p_kind: string
+          p_place: string
+          p_ride_id: string
+          p_to: string
+        }
+        Returns: string
+      }
       _person_busy_mode: { Args: { p_allow: boolean }; Returns: undefined }
       _person_busy_rides: {
         Args: {
@@ -5991,6 +6089,16 @@ export type Database = {
         Returns: {
           ride_id: string
           span: unknown
+        }[]
+      }
+      _place_travel_for_week: {
+        Args: { p_department_id: string; p_week_start: string }
+        Returns: {
+          destination_id: string
+          distance_km: number
+          origin_id: string
+          source: string
+          travel_minutes: number
         }[]
       }
       _proposal_apply_trial: {
@@ -6041,6 +6149,10 @@ export type Database = {
         }
         Returns: Database["public"]["Enums"]["request_fallback"]
       }
+      _request_is_ride_guest: {
+        Args: { p_request: string; p_ride: string }
+        Returns: boolean
+      }
       _request_save_unchanged: {
         Args: {
           p_depart_at: string
@@ -6086,6 +6198,7 @@ export type Database = {
         Args: { p_ride_id: string; p_viewer: string }
         Returns: string
       }
+      _ride_owner_id: { Args: { p_ride_id: string }; Returns: string }
       _ride_person_ids: {
         Args: { p_ride_id: string }
         Returns: {
@@ -6289,6 +6402,17 @@ export type Database = {
         Args: { h: Database["public"]["Tables"]["held_notices"]["Row"] }
         Returns: undefined
       }
+      _series_span_blocker: {
+        Args: {
+          p_car_id: string
+          p_exclude: string[]
+          p_from: string
+          p_requester: string
+          p_ta: string
+          p_to: string
+        }
+        Returns: Json
+      }
       _shares_child: {
         Args: { p_a: string; p_b: string; p_department: string }
         Returns: boolean
@@ -6386,6 +6510,14 @@ export type Database = {
       }
       advance_week_phases: { Args: { p_now?: string }; Returns: number }
       agree_proposal_offline: { Args: { p_proposal_id: string }; Returns: Json }
+      agree_proposals_offline: {
+        Args: {
+          p_days: string[]
+          p_department_id: string
+          p_week_start: string
+        }
+        Returns: Json
+      }
       alternative_served_weight: {
         Args: { p_department_id: string }
         Returns: number
@@ -6471,6 +6603,10 @@ export type Database = {
           p_department_id: string
           p_week_start: string
         }
+        Returns: Json
+      }
+      board_live_events: {
+        Args: { p_department_id: string; p_week_start: string }
         Returns: Json
       }
       board_rides_by_ids: {
@@ -6605,6 +6741,16 @@ export type Database = {
         Args: {
           p_expected_version?: number
           p_reason: string
+          p_ride_id: string
+        }
+        Returns: undefined
+      }
+      cancel_series_day: {
+        Args: {
+          p_as_sadran?: boolean
+          p_close?: boolean
+          p_expected_version: number
+          p_reason?: string
           p_ride_id: string
         }
         Returns: undefined
@@ -6913,6 +7059,10 @@ export type Database = {
         Args: { p_offer_id: string; p_request_id: string }
         Returns: boolean
       }
+      freed_car_preview: {
+        Args: { p_action: string; p_args: Json }
+        Returns: Json
+      }
       freed_offer_group: { Args: { _offer: string }; Returns: string }
       freed_slot_candidates: {
         Args: { _offer: string }
@@ -6927,6 +7077,7 @@ export type Database = {
         Args: { _offer: string }
         Returns: string[]
       }
+      freed_slot_rank_input: { Args: { p_offer_id: string }; Returns: Json }
       gen_random_bytes: { Args: { count: number }; Returns: string }
       gen_salt: { Args: { type: string }; Returns: string }
       generate_token: { Args: never; Returns: string }
@@ -7021,6 +7172,14 @@ export type Database = {
         }
         Returns: Json
       }
+      leave_merged_ride_fit: {
+        Args: { p_expected_version: number; p_ride_id: string }
+        Returns: Json
+      }
+      leave_ride_fit_preview: {
+        Args: { p_expected_version: number; p_ride_id: string }
+        Returns: Json
+      }
       log_car_care: {
         Args: {
           _car_id: string
@@ -7033,6 +7192,10 @@ export type Database = {
       log_car_kilometrage: {
         Args: { p_car_id: string; p_km: number }
         Returns: string
+      }
+      mark_board_seen: {
+        Args: { p_department_id: string; p_week_start: string }
+        Returns: number
       }
       mark_car_move: {
         Args: {
@@ -7250,6 +7413,10 @@ export type Database = {
         Args: { _group_id: string; _new_profile?: string; _variant?: string }
         Returns: undefined
       }
+      one_way_partner: {
+        Args: { p_car_id: string; p_out_dep?: string; p_request_id: string }
+        Returns: Json
+      }
       open_week: {
         Args: { p_department_id: string; p_week_start: string }
         Returns: string
@@ -7277,6 +7444,15 @@ export type Database = {
           p_allow_small_trunk?: boolean
           p_car_id: string
           p_request_id: string
+        }
+        Returns: Json
+      }
+      place_one_way_pair: {
+        Args: {
+          p_car: string
+          p_out: string
+          p_out_dep?: string
+          p_return: string
         }
         Returns: Json
       }
@@ -7754,6 +7930,7 @@ export type Database = {
         Args: { p_template_id: string }
         Returns: undefined
       }
+      ride_busy_people: { Args: { p_ride_id: string }; Returns: string[] }
       ride_editor_cancel_ride: {
         Args: {
           p_expected_version?: number

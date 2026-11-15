@@ -192,3 +192,42 @@ test("the driver leaves a merged ride; the guest drives it, same car and hours (
     await cleanup(WEEK);
   }
 });
+
+test("the driver leaves with nobody driving; the ride shrinks to the guest's hours on \"לקצר\" (R20B15)", { tag: ["@siddur"] }, async ({ browser }) => {
+  test.slow();
+  const WEEK = "2041-05-05";
+  const { service, at, base, home, ride } = await fixture(WEEK);
+  const member1 = await newSignedInPage(browser, SEEDED_USERS.member1);
+  try {
+    // member2 rides along for 10:00-12:00 only and does not drive
+    const { data: guest, error } = await service.from("requests").insert(
+      { ...base, requester_id: MEMBER2, filed_by: MEMBER2, origin_id: home, destination_id: BINYAMINA, trip_shape: "round_trip", depart_at: at("10:00"), return_at: at("12:00"), status: "merged" },
+    ).select("id, depart_at, return_at").single();
+    if (error) throw error;
+    const { error: linkError } = await service.from("ride_requests").insert({ ride_id: ride.id, request_id: guest!.id, role: "passenger", leg: "both", car_mode: "passenger" });
+    if (linkError) throw linkError;
+
+    const page = member1.page;
+    await page.setViewportSize({ width: 1440, height: 1400 });
+    await page.goto(`/siddur/${NEVO_DEPARTMENT_ID}/${WEEK}`);
+    await page.locator(`[data-ride-id="${ride.id}"]:visible`).click();
+    await page.getByTestId("ride-peek-open").click();
+    // R20U4: the driver's own entry, beside "בטל נסיעה", opens the same choices.
+    await page.getByTestId("not-driving-this").click();
+    await page.getByRole("dialog").filter({ hasText: he.rideDetail.notDrivingThis }).getByTestId("leave-no-driver").click();
+
+    const question = page.getByRole("dialog").filter({ hasText: he.rideDetail.leaveFitTitle });
+    await expect(question).toBeVisible();
+    await expect(question.getByTestId("leave-fit-keep")).toBeVisible();
+    await question.getByTestId("leave-fit-shrink").click();
+
+    await expect.poll(async () => {
+      const { data } = await service.from("rides").select("driver_id, needs_driver, starts_at, ends_at").eq("id", ride.id).single();
+      return data && data.driver_id === null && data.needs_driver && Date.parse(data.starts_at) === Date.parse(guest!.depart_at as string)
+        && Date.parse(data.ends_at) === Date.parse(guest!.return_at as string);
+    }).toBe(true);
+  } finally {
+    await member1.context.close().catch(() => undefined);
+    await cleanup(WEEK);
+  }
+});

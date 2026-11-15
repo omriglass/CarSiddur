@@ -428,6 +428,13 @@ describe("R3B3/R3B4 (QA run 3)", () => {
     expect(chauffeurCarElsewhere(away, request({ ...base, trip_type: "round_trip", trip_shape: "round_trip" }), "car1", departAt)).toBe(false);
   });
 
+  it("R20H3 (owner 2026-11-15): a one-way leg from where the car is not standing stays a target (the drop asks); a round trip does not", () => {
+    const oneWay = request({ ...base, trip_type: "one_way", trip_shape: "one_way_to" });
+    expect(isUnmetDropValid({ ...away, unmetItems: [] }, { request: oneWay, destinationName: "—" }, "car1", 660)).toBe(true);
+    const roundTrip = request({ ...base, trip_type: "round_trip", trip_shape: "round_trip", return_at: "2026-09-13T12:00:00.000Z" });
+    expect(isUnmetDropValid({ ...away, unmetItems: [] }, { request: roundTrip, destinationName: "—" }, "car1", 660)).toBe(false);
+  });
+
   it("R3B4: a nearby drop snaps to the requested time, unless that slot is taken and the dropped one is free", () => {
     const item: UnmetListItem = { request: request({ ...base, trip_type: "round_trip", trip_shape: "one_way_to" }), destinationName: "—" };
     const free = baseContext({ selectedDay: "2026-09-13" });

@@ -45,6 +45,7 @@ export const STATUS_REASON_CODES = [
   "FREED_SLOT_APPROVED",
   "FREED_SLOT_AUTO",
   "GUEST_NOW_DRIVES",
+  "HOST_EDITED",
   "NO_HOME_LOCATION",
   "PROPOSAL_APPLIED",
   "PROPOSAL_APPLIED_PENDING_ASSIGNMENT",
@@ -52,6 +53,7 @@ export const STATUS_REASON_CODES = [
   "SADRAN_ASSIGNED",
   "SADRAN_EDIT",
   "SADRAN_MANUAL",
+  "SADRAN_REMOVED_DRIVER",
   "SADRAN_UNASSIGNED",
   "SERIES_CAR_UNAVAILABLE",
   "SERIES_PLACED",
@@ -114,14 +116,17 @@ export const he = {
     missingDriverOne: "נסיעה אחת ללא נהג/ת",
     answeredElsewhere: "{{count}} בקשות נענו בדחייה או בפתרון חיצוני",
     answeredElsewhereOne: "בקשה אחת נענתה בדחייה או בפתרון חיצוני",
-    pendingTitle: "הצעות שעוד ממתינות לתשובה (הפרסום לא יבטל אותן):",
-    pendingRow: "{{name}} · {{type}} · {{day}} · עד {{expires}}",
-    pendingRowNoExpiry: "{{name}} · {{type}} · {{day}}",
+    // R20B7 (owner 2026-11-14): a sent proposal blocks its day; the Sadran can mark them agreed to publish.
+    pendingBlockTitle: "הצעות שעוד לא נענו — הימים שלהן לא יפורסמו",
+    pendingBlockHelp: "חכו לתשובה, בטלו את ההצעה בלוח, או — אם כבר סיכמתם עם החברים — סמנו שהן אושרו.",
+    agreeAll: "סימון כל ההצעות כמאושרות",
+    agreeAllTitle: "לסמן את כל ההצעות כמאושרות?",
+    agreeAllHelp: "{{count}} הצעות יסומנו כאילו החברים אישרו אותן, והשינויים ייכנסו לסידור. מתאים כשכבר סיכמתם איתם בעל פה.",
+    agreeAllConfirm: "כן, סמנו כמאושרות",
+    agreeAllDone: "כל ההצעות סומנו כמאושרות",
+    agreeAllPartial: "{{applied}} מתוך {{total}} הצעות אושרו; השאר כבר לא אפשריות — בדקו בלוח",
     missingDriver: "{{count}} נסיעות ללא נהג/ת",
     placedCount: "שובצו {{placed}} מתוך {{total}} בקשות",
-    expiringTitle: "הצעות שעוד לא נענו ויפוגו עם הפרסום:",
-    expiringWhoIsTold: "ההצעה תפוג והסדרן/ית ששלח/ה אותה יקבל/ת הודעה. החברים בהצעה יקבלו הודעה שההצעה פגה והבקשה נשארה ברשימת ההמתנה.",
-    expiringRow: "{{name}} · {{type}} · {{day}}",
     conflicts: "{{count}} התנגשויות — יש לפתור לפני פרסום",
     noSelection: "יש לבחור לפחות יום אחד",
     driverlessTitle: "יש עדיין נסיעות ללא נהג/ת. לפרסם בכל זאת?",
@@ -150,6 +155,7 @@ export const he = {
   },
   carSwap: {
     carMenuLabel: "תפריט הרכב {{car}}",
+    dayCarsLabel: "רכבי היום",
     carReportItem: "דיווח / טיפול ברכב",
     carPageItem: "דף הרכב",
     swapWithCar: "החלפה עם {{car}}",
@@ -365,6 +371,8 @@ export const he = {
     /** REQ §13.129 (a): a private car's owner moves someone's ride onto their own car — verification notice. */
     ownCarMoveTitle: "להעביר את הנסיעה של {{name}} לרכב שלך?",
     ownCarMoveBody: "{{name}} ינהג/תנהג ברכב {{car}}. כל מי שבנסיעה יקבל/תקבל הודעה.",
+    // R20B13 (owner 2026-11-14): a ride with no driver moves to the private car and still waits for one.
+    ownCarMoveBodyNoDriver: "הנסיעה תעבור לרכב {{car}} ועדיין תחכה לנהג/ת. כל מי שבנסיעה יקבל/תקבל הודעה.",
     ownCarMoveConfirm: "העברה לרכב שלי",
     collisionTitle: "כבר קיימת נסיעה בזמן הזה",
     /** REQ §13.175 (d): my ride dragged onto someone's pickup / drop-off - take them along. */
@@ -783,6 +791,8 @@ export const he = {
     SADRAN_ASSIGNED: "שובצה על ידי הסדרן/ית",
     SADRAN_EDIT: "עודכנה על ידי הסדרן/ית",
     SADRAN_MANUAL: "שובצה ידנית על ידי הסדרן/ית",
+    // R20B2: the Sadran took the member off the wheel of a merged ride; the ride went on without this request.
+    SADRAN_REMOVED_DRIVER: "הסדרן/ית הוריד/ה אותך מהנהיגה, והבקשה בוטלה. הנסיעה עצמה המשיכה",
     SADRAN_UNASSIGNED: "השיבוץ הוסר על ידי הסדרן/ית — מחכה לשיבוץ מחדש",
     SERIES_CAR_UNAVAILABLE: "לא נמצא רכב פנוי לכל ימי ההזמנה הרב-יומית",
     SERIES_PLACED: "שובצה כחלק מהזמנה רב-יומית",
@@ -790,6 +800,8 @@ export const he = {
     UNSAFE_ISSUE: "הרכב הוצא משימוש עקב תקלה",
     // R13B12: the driver cancelled and a guest who drives took the ride over.
     GUEST_NOW_DRIVES: "הנהג/ת ביטל/ה, והנסיעה נשארה — עם נהג/ת מבין הנוסעים",
+    // R20 Q2: the member whose ride this request had joined changed their hours, and they no longer fit this request.
+    HOST_EDITED: "הנסיעה שצורפת אליה השתנתה ולא מתאימה עוד לבקשה שלך. הבקשה ממתינה לשיבוץ מחדש",
     SERIES_SHORTENED: "ההזמנה קוצרה לפי הצעת הסדרן — היום הזה לא נכלל",
     WAITLISTED_CONTESTED: "כמה חברים/ות מבקשים/ות רכב בשעות חופפות. אפשר לסמן ביניכם/ן מי נוסע/ת.",
     WAITLISTED_NOT_CHOSEN: "הפעם נוסע/ת חבר/ה אחר/ת. הבקשה נשארת ברשימת ההמתנה.",
@@ -823,6 +835,8 @@ export const he = {
     publishStale: "השבוע השתנה בזמן הפרסום (אולי סדרן/ית אחר/ת פרסם/ה או ערך/ה אותו) — בדקו את הלוח ונסו לפרסם שוב",
     notAuthorized: "אין לך הרשאה לבצע פעולה זו",
     publicationDrafts: "לא ניתן לפרסם — בימים שנבחרו יש טיוטות הצעה שלא נשלחו. יש לשלוח או למחוק אותן בלוח.",
+    /** R20B7 (owner 2026-11-14): a pending proposal blocks the day; answer, withdraw, or mark them agreed. */
+    publicationProposalsPending: "לא ניתן לפרסם — בימים שנבחרו יש הצעות שעוד לא נענו. חכו לתשובה, בטלו אותן, או סמנו שסוכמו.",
     publicationHeldNotices: "לא ניתן לפרסם — בימים שנבחרו יש שינויים מהלוח שעוד לא נשלחו. שלחו אותם (\"שלח הצעות / עדכונים\" בתפריט ⋮ שבלוח).",
     /** REQ §13.112 (a): publishing waits for every plan-B proposal of the day (not bypassable). */
     publicationAlternativesPending: "לא ניתן לפרסם — בימים שנבחרו יש הצעות של תוכנית ב׳ שעוד לא נענו. יש להמתין לתשובה או לבטל אותן בלוח.",

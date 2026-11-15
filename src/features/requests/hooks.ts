@@ -18,6 +18,7 @@ import type { CarFreeWindow } from "@/features/siddur/freeWindows";
 import {
   canEditRequest,
   cancelRide,
+  cancelSeriesDay,
   placeOnOwnCar,
   restoreDuplicateRequest,
   fetchJoinableRides,
@@ -43,6 +44,7 @@ import {
   shortenSeries,
   splitSeries,
   withdrawAllRequests,
+  type HostGuestDecision,
   type JoinableRideRow,
   type RoutePreviewPoint,
   type SubmitRequestPayload,
@@ -95,10 +97,11 @@ export function useSubmitRequestMutation(options: { deferInvalidation?: boolean 
 export function useMoveRequestMutation() {
   const submit = useSubmitRequestMutation();
   return useMutation({
-    mutationFn: async ({ requestId, move }: { requestId: string; move: RequestMove }) => {
+    mutationFn: async ({ requestId, move, hostGuests }: { requestId: string; move: RequestMove; hostGuests?: Record<string, HostGuestDecision> }) => {
       const row = await fetchRequestRowById(requestId);
       if (!row) throw new Error("request_not_found");
-      const raw = await submit.mutateAsync(movedRequestPayload(row, row.weekStart, move));
+      // R20 Q2 redo: the answers about the shared ride's guests, when the first attempt asked
+      const raw = await submit.mutateAsync({ ...movedRequestPayload(row, row.weekStart, move), ...(hostGuests ? { host_guests: hostGuests } : {}) });
       return raw as unknown as SubmitRequestResult | null;
     },
     // No `onError` here: the inner submit already toasts its own failure (and invalidates on success).
@@ -240,6 +243,23 @@ export function useCancelRideMutation() {
       expectedVersion?: number;
       asEditor?: boolean;
     }) => cancelRide(rideId, reason, expectedVersion, asEditor),
+    onSuccess: (_data, { rideId }) => {
+      pollFreedSlotThanks(rideId);
+      queryClient.invalidateQueries({ queryKey: requestsKeys.mine(profileId) });
+      queryClient.invalidateQueries({ queryKey: siddurKeys.all });
+      queryClient.invalidateQueries({ queryKey: sadranKeys.all });
+    },
+    onError: showErrorToast,
+  });
+}
+
+/** R20H1: one day of a multi-day ride (see `cancelSeriesDay`). */
+export function useCancelSeriesDayMutation() {
+  const { session } = useSession();
+  const profileId = session?.user.id;
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: cancelSeriesDay,
     onSuccess: (_data, { rideId }) => {
       pollFreedSlotThanks(rideId);
       queryClient.invalidateQueries({ queryKey: requestsKeys.mine(profileId) });

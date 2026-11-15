@@ -225,6 +225,8 @@ begin
   perform pg_temp.expect_refused('rides.restore_removed_reservation', format('select public.restore_removed_reservation(%L)', ride_b_removed));
   -- TODO UN1: the board's undo of department B's week
   perform pg_temp.expect_refused('board.board_changes_since', format('select public.board_changes_since(%L, %L)', dept_b, week_b));
+  perform pg_temp.expect_refused('board.board_live_events', format('select public.board_live_events(%L, %L)', dept_b, week_b));
+  perform pg_temp.expect_refused('board.mark_board_seen', format('select public.mark_board_seen(%L, %L)', dept_b, week_b));
   perform pg_temp.expect_refused('board.undo_board_change', format('select public.undo_board_change(%L, %L, array[1]::bigint[])', dept_b, week_b));
   perform pg_temp.expect_refused('rides.cancel_ride', format('select public.cancel_ride(%L, %L, %L)', ride_b, 'attack', ride_b_version));
   -- REQ §13.101: placement / request features
@@ -243,6 +245,14 @@ begin
   -- REQ §13.103: car move + series shortening
   perform pg_temp.expect_refused('rides.mark_car_move', format('select public.mark_car_move(%L, %L, %L, %L::timestamptz, 30)', car_b, gen_random_uuid(), gen_random_uuid(), date_trunc('hour', now()) + interval '10 days'));
   perform pg_temp.expect_refused('rides.leave_merged_ride', format('select public.leave_merged_ride(%L, %s, null)', ride_b, ride_b_version));
+  -- R20B15: both delegate to leave_merged_ride. The fit refuses like it; the preview answers nothing (null) instead.
+  perform pg_temp.expect_refused('rides.leave_merged_ride_fit', format('select public.leave_merged_ride_fit(%L, %s)', ride_b, ride_b_version));
+  assert public.leave_ride_fit_preview(ride_b, ride_b_version) is null, 'leave_ride_fit_preview must show nothing for another department';
+  -- R20U7: who is busy during department B's ride
+  perform pg_temp.expect_refused('rides.ride_busy_people', format('select public.ride_busy_people(%L)', ride_b));
+  perform pg_temp.expect_refused('requests.one_way_partner', format('select public.one_way_partner(%L, %L)', req_b, car_b));
+  perform pg_temp.expect_refused('requests.place_one_way_pair', format('select public.place_one_way_pair(%L, %L, %L)', req_b, req_b3, car_b));
+  perform pg_temp.expect_refused('rides.cancel_series_day', format('select public.cancel_series_day(%L, %s, null, false, true)', ride_b, ride_b_version));
   perform pg_temp.expect_refused('requests.split_series', format('select public.split_series(%L, array[1], null)', req_b));
   perform pg_temp.expect_refused('requests.shorten_series', format('select public.shorten_series(%L, now() + interval ''10 days'', now() + interval ''12 days'')', req_b));
   perform pg_temp.expect_refused('rides.join_drop_off_legs', format('select public.join_drop_off_legs(%L, %L, %L)', req_b, ride_b, ride_b_version));
@@ -331,6 +341,7 @@ begin
   perform pg_temp.expect_refused('weeks.ensure_department_weeks', format('select public.ensure_department_weeks(%L)', dept_b));
   perform pg_temp.expect_refused('weeks.publication_conflicts', format('select public.publication_conflicts(%L, %L)', dept_b, week_b));
   perform pg_temp.expect_refused('weeks.publication_readiness', format('select public.publication_readiness(%L, %L)', dept_b, week_b));
+  perform pg_temp.expect_refused('proposals.agree_proposals_offline', format('select public.agree_proposals_offline(%L, %L, array[%L::date])', dept_b, week_b, week_b));
   perform pg_temp.expect_refused('weeks.publish_scores_fingerprint', format('select public.publish_scores_fingerprint(%L, %L)', dept_b, week_b));
   perform pg_temp.expect_refused('weeks.solver_state_fingerprint', format('select public.solver_state_fingerprint(%L, %L)', dept_b, week_b));
   perform pg_temp.expect_refused('weeks.record_solver_preview',
@@ -443,11 +454,11 @@ declare
   iso_covered text[] := array[
     'submit_request','withdraw_request','set_manual_boost','set_freed_slot_opt_out','set_request_children','answer_short_turnaround',
     'set_request_companions','withdraw_all_requests','submit_series_request','enter_waiting_list','apply_solver_result',
-    'edit_ride','cancel_ride','unassign_ride','restore_removed_reservation','board_changes_since','undo_board_change','unmerge_request','split_ride_companion','merge_preview','merge_previews','set_request_trip_type','switch_request_plan','ride_route','request_ride_change','request_ride_shorten','ride_shorten_options','ride_shorten_options_for_request','set_ride_editors','ride_editor_withdraw_request','ride_editor_cancel_ride','respond_ride_change','cancel_ride_change',
+    'edit_ride','cancel_ride','unassign_ride','restore_removed_reservation','board_changes_since','board_live_events','mark_board_seen','undo_board_change','unmerge_request','split_ride_companion','merge_preview','merge_previews','set_request_trip_type','switch_request_plan','ride_route','request_ride_change','request_ride_shorten','ride_shorten_options','ride_shorten_options_for_request','set_ride_editors','ride_editor_withdraw_request','ride_editor_cancel_ride','respond_ride_change','cancel_ride_change',
     'update_ride_public_notes','add_ride_passengers','set_ride_passengers','remove_ride_person',
     'log_car_care','report_car_issue','log_car_kilometrage','set_car_kilometrage','submit_car_checklist','upsert_car_checklist_item','move_car_checklist_item','delete_car_checklist_item','request_car_tasks','withdraw_car_task','complete_car_task','merge_destination','suggest_destination','car_mileage_totals',
     'admin_approve_member','admin_update_member','admin_set_sadran_assignments',
-    'create_proposal','send_proposal','send_draft_proposals','flush_held_notices','preview_send_all','send_all_board_changes','agree_proposal_offline','proposal_car_conflicts','discard_proposal','withdraw_proposal','apply_proposal','record_answer_on_behalf','proposal_party_texts',
+    'create_proposal','send_proposal','send_draft_proposals','flush_held_notices','preview_send_all','send_all_board_changes','agree_proposal_offline','agree_proposals_offline','proposal_car_conflicts','discard_proposal','withdraw_proposal','apply_proposal','record_answer_on_behalf','proposal_party_texts',
     'open_week','reopen_week','set_week_phase','set_week_close_at','close_week_requests','ensure_department_weeks',
     'publication_readiness','publication_conflicts','publish_siddur','record_solver_preview','form_waitlist_groups',
     'publish_scores_fingerprint','solver_state_fingerprint','sadran_contact_of','fairness_stats','department_stats','joinable_rides_for_request',
@@ -455,13 +466,15 @@ declare
     'create_policy_version','set_policy_active','policy_week_alignment','resolve_waitlist_group','cancel_waitlist_group','join_waitlist_discussion','waitlist_group_holds','siddur_waitlist','place_waiting_request',
     'place_travel_for_week','car_start_locations','set_my_default_origin','set_my_preferred_car','route_minutes_preview','request_notes','request_history',
     'my_co_guardians','set_ride_driver','withdraw_duplicate_request','restore_duplicate_request','close_request','restore_closed_request','sadran_cancel_ride','place_on_own_car','set_own_private_car','add_car_owner','remove_car_owner','child_request_overlaps',
-    'mark_car_move','shorten_series','split_series','leave_merged_ride','join_drop_off_legs','place_series_on_car',
+    'mark_car_move','shorten_series','split_series','leave_merged_ride','leave_merged_ride_fit','leave_ride_fit_preview','ride_busy_people','cancel_series_day','one_way_partner','place_one_way_pair','join_drop_off_legs','place_series_on_car',
     'create_car_maintenance','update_car_maintenance','delete_car_maintenance','report_car_issue_unsafe_maintenance'
   ];
   -- 'name:one-word-reason'. Duplicated names (day_date_label has two overloads) are fine —
   -- the completeness check below groups by proname.
   iso_exempt text[] := array[
     'my_car_tasks:caller_scoped', 'my_ride_editor_links:caller_scoped', 'my_ride_owners:caller_scoped',
+    -- FC1: runs one of the covered RPCs above as the caller (their own checks refuse another department) and rolls it back.
+    'freed_car_preview:delegates-rolled-back',
     -- PF1 / DC1: the policies' once-per-query sets — only the caller's own departments, weeks, requests and proposals.
     'my_department_ids:caller_scoped', 'my_sadran_department_ids:caller_scoped', 'my_sadran_weeks:caller_scoped',
     'my_department_access:caller_scoped', 'my_owned_car_ids:caller_scoped', 'my_guarded_request_ids:caller_scoped', 'my_companion_request_ids:caller_scoped', 'my_proposal_ids:caller_scoped',

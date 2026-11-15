@@ -1,5 +1,6 @@
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 
+import { cancelSeriesDay } from "@/features/requests/api";
 import { fetchCars } from "@/features/fleet/api";
 import { toast } from "sonner";
 import { AppError, toAppError, showErrorToast } from "@/lib/rpc";
@@ -287,6 +288,27 @@ export function useCancelRideMutation() {
   });
 }
 
+/** R20H3: the board's "לשבץ את שתיהן" (`place_one_way_pair`). */
+export function usePlaceOneWayPairMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { outId: string; returnId: string; carId: string; outDepartAt: string; departmentId: string; weekStart: string }) =>
+      api.placeOneWayPair(input.outId, input.returnId, input.carId, input.outDepartAt),
+    onSuccess: (_data, { departmentId, weekStart }) => invalidateBoard(queryClient, departmentId, weekStart, []),
+    onError: showErrorToast,
+  });
+}
+
+/** R20H1: the board's "לבטל רק את ד׳ 16.9" on one day of a multi-day ride (`cancel_series_day`, as the Sadran). */
+export function useCancelSeriesDayBoardMutation(departmentId: string, weekStart: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { rideId: string; expectedVersion: number; reason: string; close: boolean; asSadran: true }) => cancelSeriesDay(input),
+    onSuccess: (_data, { rideId }) => invalidateBoard(queryClient, departmentId, weekStart, [rideId]),
+    onError: showErrorToast,
+  });
+}
+
 export function useUnassignRideMutation() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -396,6 +418,16 @@ export function useSetRideDriverMutation() {
     }) => api.setRideDriver(rideId, driverId, expectedVersion),
     onSuccess: (_data, { departmentId, weekStart, rideId }) => invalidateWeekData(queryClient, departmentId, weekStart, [rideId]),
     onError: showErrorToast,
+  });
+}
+
+/** R20U7: busy people for the volunteer-driver picker, from the server (only while the list is shown). */
+export function useRideBusyPeopleQuery(rideId: string, version: number, departmentId: string, weekStart: string, enabled: boolean) {
+  return useQuery({
+    queryKey: sadranKeys.rideBusyPeople(departmentId, weekStart, rideId, version),
+    queryFn: () => api.fetchRideBusyPeople(rideId),
+    enabled,
+    staleTime: 15_000,
   });
 }
 
@@ -539,12 +571,43 @@ export function useAgreeProposalOfflineMutation() {
   });
 }
 
+/** R20B7: "mark all as agreed" on the publish screen. */
+export function useAgreeProposalsOfflineMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ departmentId, weekStart, days }: { departmentId: string; weekStart: string; days: string[] }) =>
+      api.agreeProposalsOffline(departmentId, weekStart, days),
+    onSettled: (_data, _error, { departmentId, weekStart }) => invalidateBoard(queryClient, departmentId, weekStart),
+    onError: showErrorToast,
+  });
+}
+
 /** REQ §13.138 (c): the week's held board notices. */
 export function useHeldNoticesQuery(departmentId: string | undefined, weekStart: string | undefined) {
   return useQuery({
     queryKey: sadranKeys.heldNotices(departmentId ?? "", weekStart ?? ""),
     queryFn: () => api.fetchHeldNotices(departmentId as string, weekStart as string),
     enabled: !!departmentId && !!weekStart,
+  });
+}
+
+/** R20M1 (REQ item 233): others' published-day events and the caller's marker; only for a week with published days. */
+export function useBoardLiveEventsQuery(departmentId: string | undefined, weekStart: string | undefined, enabled: boolean) {
+  return useQuery({
+    queryKey: sadranKeys.liveEvents(departmentId ?? "", weekStart ?? ""),
+    queryFn: () => api.fetchBoardLiveEvents(departmentId as string, weekStart as string),
+    enabled: enabled && !!departmentId && !!weekStart,
+  });
+}
+
+/** R20M1: the Sadran opened the strip. */
+export function useMarkBoardSeenMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ departmentId, weekStart }: { departmentId: string; weekStart: string }) => api.markBoardSeen(departmentId, weekStart),
+    onSuccess: (seen, { departmentId, weekStart }) => {
+      queryClient.setQueryData<api.BoardLiveEvents>(sadranKeys.liveEvents(departmentId, weekStart), (old) => old ? { ...old, seenAuditId: Math.max(old.seenAuditId, seen) } : old);
+    },
   });
 }
 

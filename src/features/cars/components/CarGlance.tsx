@@ -16,7 +16,9 @@ export function CarGlance({ carId }: { carId: string }) {
   const car = useCarQuery(carId).data;
   const care = useCarCareHistoryQuery(carId).data;
   const profiles = useAllProfiles().data;
-  if (!car) return <p className="px-2 py-1.5 text-xs text-muted-foreground">{he.carPage.glanceLoading}</p>;
+  // R20B11: until the names are in, a car with an owner or a responsible person would read "אין בעלים" / nobody.
+  const needsNames = !!car && (car.type === "temporary" ? carOwnerIds(car).length > 0 : !!car.responsible_id);
+  if (!car || (needsNames && !profiles)) return <p className="px-2 py-1.5 text-xs text-muted-foreground">{he.carPage.glanceLoading}</p>;
 
   const nameOf = (id: string | null) => (id ? profiles?.find((p) => p.id === id)?.full_name ?? "" : "");
   const lastAt = (kind: string) => care?.find((event) => event.kind === kind)?.created_at ?? null;

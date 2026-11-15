@@ -11,6 +11,7 @@ import { dateKey, formatTime } from "@/lib/time";
 import { siddurCarName } from "@/lib/siddurCarName";
 import type { BoardRide } from "../api";
 import type { RideMove } from "@/features/rides/api";
+import { ownCarMoveBody } from "@/features/rides/ownCarMove";
 import { moveOnRideDay } from "../rideEditing";
 
 export function MemberRideEditor({ ride, cars, saving, onSave, viewerId }: {
@@ -54,7 +55,7 @@ export function MemberRideEditor({ ride, cars, saving, onSave, viewerId }: {
         open={!!pendingOwnCar}
         onOpenChange={(open) => { if (!open) setPendingOwnCar(null); }}
         title={tv("rideEditing.ownCarMoveTitle", { name: ride.driver_name ?? "" })}
-        description={tv("rideEditing.ownCarMoveBody", { name: ride.driver_name ?? "", car: pendingCarName })}
+        description={ownCarMoveBody(ride.driver_id, ride.driver_name ?? "", pendingCarName)}
         confirmLabel={he.rideEditing.ownCarMoveConfirm}
         loading={saving}
         onConfirm={() => { const move = pendingOwnCar; setPendingOwnCar(null); if (move) onSave(move); }}

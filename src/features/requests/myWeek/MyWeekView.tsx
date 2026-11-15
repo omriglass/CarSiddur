@@ -34,9 +34,10 @@ import { he, t } from "@/i18n/he";
 import { formatDayDate } from "@/lib/dayLabels";
 import { dateKey } from "@/lib/time";
 
-import type { MyRequestRow, TemplateSuggestion } from "../api";
+import type { HostGuestDecision, HostGuestQuestion, MyRequestRow, TemplateSuggestion } from "../api";
+import { HostGuestsDialog } from "../components/HostGuestsDialog";
 import { useMoveRequestMutation, useTemplateSuggestionsQuery } from "../hooks";
-import { toastSubmitOutcome } from "../submitOutcome";
+import { hostGuestsConfirmation, toastSubmitOutcome } from "../submitOutcome";
 import { minutesOfDay, weekDayKeys } from "./dayColumns";
 import { useNowQuarter } from "./useNowQuarter";
 import {
@@ -126,6 +127,9 @@ export function MyWeekView({ departmentId, homeDestinationId, profileId, request
   const rideMoves = useMemberRideMoves({ departmentId, weekStart, week, profileId, myRequestIds: new Set(requests.map((request) => request.id)), isMember: canSubmit && !isPast, now: new Date() });
   // Owner 2026-10-12: my unplaced requests drag / resize too, onto any day of the shown week.
   const moveRequest = useMoveRequestMutation();
+  const [pendingHostGuests, setPendingHostGuests] = useState<{
+    row: MyRequestRow; move: Parameters<typeof moveRequest.mutate>[0]["move"]; guests: HostGuestQuestion[]; decisions?: Record<string, HostGuestDecision>;
+  } | null>(null);
 
   const dayKeys = useMemo(() => weekDayKeys(weekStart), [weekStart]);
   const boardStartMinutes = settingsQuery.data?.board_start_time ? parseTimeToMinutes(settingsQuery.data.board_start_time) : 6 * 60;
@@ -242,10 +246,16 @@ export function MyWeekView({ departmentId, homeDestinationId, profileId, request
     if (!dayKeys.includes(dayKey) || dayKey < today || start < 0 || end > 24 * 60) return false;
     return dayKey !== today || start >= minutesOfDay(new Date());
   }
-  function saveRequestMove(row: MyRequestRow, move: Parameters<typeof moveRequest.mutate>[0]["move"]) {
-    moveRequest.mutate({ requestId: row.id, move }, {
+  function saveRequestMove(row: MyRequestRow, move: Parameters<typeof moveRequest.mutate>[0]["move"], hostGuests?: Record<string, HostGuestDecision>) {
+    moveRequest.mutate({ requestId: row.id, move, hostGuests }, {
       onSuccess: (result) => {
         if (result?.unchanged) return;
+        // R20 Q2 redo: the new hours no longer fit a guest of the shared ride - nothing changed yet; ask first
+        const guests = hostGuestsConfirmation(result);
+        if (guests) {
+          setPendingHostGuests({ row, move, guests, decisions: hostGuests });
+          return;
+        }
         const carName = (id: string | null | undefined) => (carsQuery.data ?? []).find((car) => car.id === id)?.name ?? "";
         if (!toastSubmitOutcome(result, { carName, preferredCarId: row.preferredCarId, tripType: row.tripType })) toast.success(t("request.submitSaved"));
       },
@@ -347,6 +357,17 @@ export function MyWeekView({ departmentId, homeDestinationId, profileId, request
       {rideMoves.makeRoomElement}
       {rideMoves.memberMergeElement}
       {calendar.available ? <CalendarDialog open={calendarOpen} onOpenChange={setCalendarOpen} /> : null}
+      <HostGuestsDialog
+        guests={pendingHostGuests?.guests ?? null}
+        initialDecisions={pendingHostGuests?.decisions}
+        loading={moveRequest.isPending}
+        onBack={() => setPendingHostGuests(null)}
+        onAnswered={(decisions) => {
+          const pending = pendingHostGuests;
+          setPendingHostGuests(null);
+          if (pending) saveRequestMove(pending.row, pending.move, decisions);
+        }}
+      />
     </div>
   );
 }

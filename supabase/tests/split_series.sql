@@ -13,7 +13,7 @@ declare
   car uuid := '00000000-0000-0000-0000-000000000041';
   w date := public.current_week_start() + 427;
   base jsonb; res jsonb; series uuid; head uuid; head_version int; n int; v_hist jsonb; part2 uuid; mid uuid;
-  car_before uuid[]; times_before jsonb;
+  car_before uuid[]; times_before jsonb; pub uuid;
 begin
   insert into public.weeks(department_id, week_start, phase, open_at, close_at, publish_at)
     values (dept, w, 'open', now() - interval '1 day', now() + interval '1 day', now() + interval '2 days');
@@ -91,8 +91,14 @@ begin
     raise exception 'a single day was split';
   exception when raise_exception then if sqlerrm <> 'request_not_found' then raise; end if; end;
 
-  -- (d) the Sadran splits the first part: the member is told once
+  -- (d) the Sadran splits the first part on a published week: the member is told once (an unpublished day tells nobody,
+  -- REQ item 230 b — qa20_fixes.sql)
   perform set_config('request.jwt.claims', jsonb_build_object('sub', sadran, 'role', 'authenticated')::text, true);
+  perform set_config('app.in_publish', 'on', true);
+  insert into public.siddur_versions(department_id, week_start, snapshot, published_by) values (dept, w, '{}', sadran) returning id into pub;
+  update public.weeks set phase = 'published', published_days = array[w + 1, w + 2, w + 3, w + 4, w + 5], published_version_id = pub
+    where department_id = dept and week_start = w;
+  perform set_config('app.in_publish', 'off', true);
   perform public.split_series(head, array[1], (select version from public.requests where id = head));
   select count(*) into n from public.notifications where recipient_id = member and data ->> 'variant' = 'series_split';
   assert n = 1, format('the member gets one notice, got %s', n);

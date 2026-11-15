@@ -37,26 +37,8 @@ test.describe("freed slot (live week, single candidate)", { tag: ["@waitlist", "
   // member2 with a booking on a day other specs use (quick-request.spec.ts files on Friday), so everything it changes is
   // put back afterwards.
   let restore: (() => Promise<void>) | null = null;
-  test.afterEach(async () => {
-    await restore?.();
-    restore = null;
-  });
-
-  test("member1 cancels an assigned ride and member2's overlapping waitlisted request is auto-assigned", async ({
-    browser,
-  }) => {
-    // The two waitForCondition polls below (offer creation, then resolution via the async
-    // pg_net round trip to the edge function) can legitimately take longer than Playwright's
-    // default 30s per-test budget together with the sign-ins and UI steps around them.
-    test.setTimeout(90_000);
-
-    const { cronSecretWired } = await wireEdgeFunctionSettings();
-    test.skip(
-      !cronSecretWired,
-      "supabase/functions/.env has no CRON_SECRET on this machine — cancel_ride()'s pg_net call " +
-        "to on-ride-cancelled can't authenticate, so the freed-slot round trip can't be exercised locally.",
-    );
-
+  /** Moves the seeded fixture to today/tomorrow (skips when it cannot) and sets `restore` to put everything back. */
+  async function prepareFixture(): Promise<void> {
     const client = serviceRoleClient();
     const original = {
       requests: (await client.from("requests").select("id, depart_at, return_at, status, status_reason").in("id", [FIXTURE_REQUEST_ID, CANDIDATE_REQUEST_ID, DENIED_REQUEST_ID])).data ?? [],
@@ -136,7 +118,33 @@ test.describe("freed slot (live week, single candidate)", { tag: ["@waitlist", "
       test.skip(!carId, "no shared car is free on the target day for the freed-slot fixture");
       const { error } = await client.from("rides").update({ starts_at: shift(ride!.starts_at), ends_at: shift(ride!.ends_at), car_id: carId! }).eq("id", CANCELLED_RIDE_ID);
       if (error) throw error;
+      // Moving the ride frees its old day's hours, which offers them like any edit would: not part of the test.
+      await client.from("freed_slot_offers").delete().eq("cancelled_ride_id", CANCELLED_RIDE_ID);
     }
+  }
+
+  test.afterEach(async () => {
+    await restore?.();
+    restore = null;
+  });
+
+  test("member1 cancels an assigned ride and member2's overlapping waitlisted request is auto-assigned", async ({
+    browser,
+  }) => {
+    // The two waitForCondition polls below (offer creation, then resolution via the async
+    // pg_net round trip to the edge function) can legitimately take longer than Playwright's
+    // default 30s per-test budget together with the sign-ins and UI steps around them.
+    test.setTimeout(90_000);
+
+    const { cronSecretWired } = await wireEdgeFunctionSettings();
+    test.skip(
+      !cronSecretWired,
+      "supabase/functions/.env has no CRON_SECRET on this machine — cancel_ride()'s pg_net call " +
+        "to on-ride-cancelled can't authenticate, so the freed-slot round trip can't be exercised locally.",
+    );
+
+    const client = serviceRoleClient();
+    await prepareFixture();
 
     // Two separate browser contexts (Stage 3 hardening fix, e2e/helpers.ts `newSignedInPage`):
     // reusing one `page` across two identities is unreliable, since `/login` redirects an
@@ -151,6 +159,10 @@ test.describe("freed slot (live week, single candidate)", { tag: ["@waitlist", "
     // Owner 2026-10-13: one red "ביטול" on the /my item (it cancels the ride once placed).
     await member1.page.locator("[data-request-id]").getByRole("button", { name: "ביטול", exact: true }).first().click();
     await expect(member1.page.getByRole("heading", { name: "לבטל את הנסיעה?" })).toBeVisible();
+    // FC1 (REQ item 231): before confirming, the dialog says who waiting gets the freed car (the real cancel, tried and
+    // rolled back, ranked in the browser like the edge function ranks it)
+    await expect(member1.page.getByTestId("freed-car-line"))
+      .toHaveText(`בעקבות השינוי ${SEEDED_USERS.member2.fullName} יקבל/תקבל את הרכב בשעות האלה. תודה!`, { timeout: 5_000 });
     await member1.page.getByRole("dialog").getByRole("button", { name: "בטל נסיעה" }).click();
 
     // `runConfirmAction()` (`HomePage.tsx`, moved from the deleted `RequestsListPage.tsx`) closes
@@ -205,7 +217,8 @@ test.describe("freed slot (live week, single candidate)", { tag: ["@waitlist", "
     const member2 = await newSignedInPage(browser, SEEDED_USERS.member2);
     try {
       await member2.page.goto("/inbox");
-      await expect(member2.page.getByText("שובצת לרכב שהתפנה")).toBeVisible({ timeout: 10_000 });
+      // FC1: the title names the cause
+      await expect(member2.page.getByText(`שובצת לרכב שהתפנה (הנסיעה של ${SEEDED_USERS.member1.fullName} בוטלה)`)).toBeVisible({ timeout: 10_000 });
     } finally {
       await member2.context.close();
     }
@@ -220,5 +233,34 @@ test.describe("freed slot (live week, single candidate)", { tag: ["@waitlist", "
       .single();
     expect(requestRow?.status).toBe("assigned");
     expect(requestRow?.status_reason).toBe("FREED_SLOT_AUTO");
+  });
+
+  test("REQ item 237: \"לבטל בלי להעביר את הרכב\" cancels and offers the car to nobody waiting", async ({ browser }) => {
+    test.setTimeout(90_000);
+    const client = serviceRoleClient();
+    await prepareFixture();
+
+    const member1 = await newSignedInPage(browser, SEEDED_USERS.member1);
+    try {
+      await member1.page.goto("/my");
+      await member1.page.locator("[data-request-id]").getByRole("button", { name: "ביטול", exact: true }).first().click();
+      const dialog = member1.page.getByRole("dialog");
+      await expect(member1.page.getByTestId("freed-car-line")).toBeVisible({ timeout: 5_000 });
+      await expect(dialog.getByTestId("freed-car-keep-out")).toHaveText("לבטל בלי להעביר את הרכב — אסתדר מחוץ לאפליקציה");
+      await dialog.getByTestId("freed-car-keep-out").click();
+      await waitForCondition(
+        async () => {
+          const { data } = await client.from("rides").select("status").eq("id", CANCELLED_RIDE_ID).single();
+          return data?.status === "cancelled";
+        },
+        { message: "cancel_ride() never persisted" },
+      );
+    } finally {
+      await member1.context.close();
+    }
+    const { data: offers } = await client.from("freed_slot_offers").select("status, close_reason").eq("cancelled_ride_id", CANCELLED_RIDE_ID);
+    expect(offers).toEqual([{ status: "closed", close_reason: "kept_out" }]);
+    const { data: candidate } = await client.from("requests").select("status").eq("id", CANDIDATE_REQUEST_ID).single();
+    expect(candidate?.status).toBe("waitlisted");
   });
 });

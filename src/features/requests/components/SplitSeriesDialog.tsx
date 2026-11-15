@@ -3,7 +3,7 @@ import { toast } from "sonner";
 
 import { FormDialog } from "@/components/FormDialog";
 import { Button } from "@/components/ui/button";
-import { he } from "@/i18n/he";
+import { he, tv } from "@/i18n/he";
 import { formatDayDate } from "@/lib/dayLabels";
 
 import { useSplitSeriesMutation } from "../hooks";
@@ -71,7 +71,8 @@ export function SplitSeriesDialog({ target, onOpenChange }: { target: SplitTarge
               {days.slice(0, -1).map((day, i) => (
                 <Button key={day} type="button" role="radio" aria-checked={at === i + 1} variant={at === i + 1 ? "default" : "outline"}
                   className="min-h-11" onClick={() => setAt(i + 1)} data-testid="split-at">
-                  <span dir="ltr">{`${i + 1} + ${days.length - i - 1}`}</span>
+                  {/* R20U5 (QA run 20): "2 + 1" read backwards in RTL - each option names the day the second part starts. */}
+                  {tv("request.splitAtDay", { day: dayLabel(days[i + 1] ?? day) })}
                 </Button>
               ))}
             </div>

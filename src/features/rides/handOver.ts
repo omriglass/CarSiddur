@@ -61,6 +61,9 @@ export function mergedLeaveOptions(
   const merged = people.some((p) => p.source === "requester" && !!p.person_id && p.person_id !== leaverId && !!p.request_id && !mine.has(p.request_id));
   if (!merged) return null;
   const mineCarriesOthers = people.some((p) => (p.source === "companion" || p.source === "child") && !!p.request_id && mine.has(p.request_id));
+  // Q5 (owner 2026-11-14): never a rider at the wheel of a הקפצה — the rider is the one being driven (server: the same refusal).
+  const dropOff = servedOf(ride as BoardRide).some((s) => s.trip_type === "drop_off");
+  if (dropOff) return { candidates: [], noDriver: !mineCarriesOthers };
   const byId = new Map(members.map((member) => [member.id, member]));
   const seen = new Set<string>();
   const candidates: HandOverCandidate[] = [];

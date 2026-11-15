@@ -2,6 +2,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { ConfirmDialog } from "./ConfirmDialog";
+import { TAP_LOCK_MS } from "./useTapLock";
 import { he } from "@/i18n/he";
 
 describe("ConfirmDialog", () => {
@@ -61,5 +62,32 @@ describe("ConfirmDialog", () => {
       </ConfirmDialog>,
     );
     expect(screen.getByText("תוכן נוסף")).toBeInTheDocument();
+  });
+
+  it("R20B9: a double tap confirms once; a later tap confirms again", () => {
+    vi.useFakeTimers();
+    try {
+      const onConfirm = vi.fn();
+      render(<ConfirmDialog open title="t" onOpenChange={() => {}} onConfirm={onConfirm} />);
+      fireEvent.click(screen.getByText(he.common.confirm));
+      fireEvent.click(screen.getByText(he.common.confirm));
+      expect(onConfirm).toHaveBeenCalledTimes(1);
+      vi.advanceTimersByTime(TAP_LOCK_MS);
+      fireEvent.click(screen.getByText(he.common.confirm));
+      expect(onConfirm).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("a dialog closed and opened again takes a tap at once (review 2026-11-15)", () => {
+    const onConfirm = vi.fn();
+    const view = (open: boolean) => <ConfirmDialog open={open} title="t" onOpenChange={() => {}} onConfirm={onConfirm} />;
+    const { rerender } = render(view(true));
+    fireEvent.click(screen.getByText(he.common.confirm));
+    rerender(view(false));
+    rerender(view(true));
+    fireEvent.click(screen.getByText(he.common.confirm));
+    expect(onConfirm).toHaveBeenCalledTimes(2);
   });
 });

@@ -22,7 +22,7 @@ export type BoardRide = Database["public"]["Views"]["v_board_rides"]["Row"];
  */
 export type WeekPart =
   | "week" | "rides" | "requests" | "proposals" | "freedOffers" | "heldNotices"
-  | "carLocations" | "waitlistGroups" | "waitlistHolds" | "siddurWaitlist" | "rideChanges";
+  | "carLocations" | "waitlistGroups" | "waitlistHolds" | "siddurWaitlist" | "rideChanges" | "liveEvents";
 
 const weekParts = createWeekPartsBatcher({
   fetch: async (departmentId, weekStart, parts) => {
@@ -85,6 +85,17 @@ export async function handOverOwnRide(rideId: string, expectedVersion: number, n
 /** REQ item 229: the driver (or the Sadran for them) leaves a merged ride — `newDriver` drives, or null = no driver. */
 export async function leaveMergedRide(rideId: string, expectedVersion: number, newDriver: string | null): Promise<void> {
   await rpc("leave_merged_ride", { p_ride_id: rideId, p_expected_version: expectedVersion, ...(newDriver ? { p_new_driver: newDriver } : {}) });
+}
+
+/** R20B15: the hours a ride left with no driver would shrink to (those still on it), or null when nothing would change. */
+export async function leaveRideFitPreview(rideId: string, expectedVersion: number): Promise<{ startsAt: string; endsAt: string } | null> {
+  const data = (await rpc("leave_ride_fit_preview", { p_ride_id: rideId, p_expected_version: expectedVersion })) as { starts_at?: string; ends_at?: string } | null;
+  return data?.starts_at && data.ends_at ? { startsAt: data.starts_at, endsAt: data.ends_at } : null;
+}
+
+/** R20B15: "לקצר" — leave with no driver and shrink the ride to the hours of those still on it, in one step. */
+export async function leaveMergedRideFit(rideId: string, expectedVersion: number): Promise<void> {
+  await rpc("leave_merged_ride_fit", { p_ride_id: rideId, p_expected_version: expectedVersion });
 }
 
 /**
@@ -311,4 +322,22 @@ export async function memberMergeRide(input: { rideId: string; sourceRideId: str
     p_ride_id: input.rideId, p_source_ride_id: input.sourceRideId, p_request_id: input.requestId, p_expected_version: input.expectedVersion,
     p_wait: input.wait, p_allow_long_detour: input.allowLongDetour, p_agreed: input.agreed, p_allow_small_trunk: input.allowSmallTrunk,
   });
+}
+
+/** FC1 (REQ item 231): the actions `freed_car_preview` can try (and roll back) to see whom a freed car would go to. */
+export type FreedCarAction =
+  | "cancel_ride" | "ride_editor_cancel_ride" | "withdraw_request" | "ride_editor_withdraw_request"
+  | "edit_ride" | "submit_request" | "submit_series_request" | "sadran_cancel_ride" | "remove_ride_person"
+  | "leave_merged_ride_fit" | "cancel_series_day";
+
+export interface FreedCarPreviewRequest {
+  action: FreedCarAction;
+  /** Exactly the arguments the real RPC will be sent. */
+  args: Record<string, unknown>;
+}
+
+/** FC1: the ranking input of every freed-car offer the action would open (the action itself is rolled back). */
+export async function previewFreedCar(request: FreedCarPreviewRequest): Promise<unknown[]> {
+  const data = (await rpc("freed_car_preview", { p_action: request.action, p_args: request.args as unknown as Json })) as { inputs?: unknown[] } | null;
+  return data?.inputs ?? [];
 }

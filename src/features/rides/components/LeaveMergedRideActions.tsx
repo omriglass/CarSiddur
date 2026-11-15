@@ -9,14 +9,17 @@ import type { BoardRide } from "../api";
 import { mergedLeaveOptions } from "../handOver";
 import { peopleOf } from "../ridePeople";
 import { useLeaveMergedRideMutation } from "../hooks";
+import { useLeaveNoDriver } from "../useLeaveNoDriver";
 
 /**
  * REQ item 229, the Sadran's side (board ride sheet): take the driver off a merged ride — another person on it drives,
- * or nobody (the ride waits for a driver). The driver's own request is withdrawn; car and hours stay.
+ * or nobody (the ride waits for a driver). The driver's own request is withdrawn; the car stays. With nobody driving,
+ * R20B15: when the riders left need fewer hours, "לקצר את הנסיעה?" replaces the confirmation (`useLeaveNoDriver`).
  */
 export function LeaveMergedRideActions({ ride, onDone }: { ride: BoardRide; onDone: () => void }) {
   const membersQuery = useDepartmentMembers(ride.department_id ?? undefined, { includeSelf: true });
   const mutation = useLeaveMergedRideMutation();
+  const leaveNoDriver = useLeaveNoDriver();
   const [pick, setPick] = useState<{ id: string | null; label: string } | null>(null);
   const options = mergedLeaveOptions(ride, ride.driver_id, membersQuery.data ?? []);
   if (!options || !ride.id || ride.version == null || !ride.department_id || !ride.week_start) return null;
@@ -33,8 +36,9 @@ export function LeaveMergedRideActions({ ride, onDone }: { ride: BoardRide; onDo
         </Button>
       ))}
       {options.noDriver ? (
-        <Button variant="outline" className="w-full" disabled={mutation.isPending} data-testid="remove-driver-none"
-          onClick={() => setPick({ id: null, label: he.rideDetail.removeDriverNone })}>
+        <Button variant="outline" className="w-full" disabled={mutation.isPending || leaveNoDriver.busy} data-testid="remove-driver-none"
+          onClick={() => void leaveNoDriver.start(ride, driverName, onDone, tv("rideDetail.removeDriverConfirm", { name: driverName }),
+            () => setPick({ id: null, label: he.rideDetail.removeDriverNone }))}>
           {he.rideDetail.removeDriverNone}
         </Button>
       ) : null}
@@ -52,6 +56,7 @@ export function LeaveMergedRideActions({ ride, onDone }: { ride: BoardRide; onDo
             { onSuccess: () => { setPick(null); onDone(); } });
         }}
       />
+      {leaveNoDriver.dialog}
     </div>
   );
 }

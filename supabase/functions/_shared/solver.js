@@ -82,6 +82,8 @@ var TEMPLATES = {
   UNMET_NO_CAR_AT_ORIGIN: "\u05D0\u05D9\u05DF \u05E8\u05DB\u05D1 \u05E4\u05E0\u05D5\u05D9 \u05E9\u05E0\u05DE\u05E6\u05D0 \u05D1{origin} \u05DB\u05D3\u05D9 \u05DC\u05E6\u05D0\u05EA \u05DE\u05E9\u05DD \u05DC{dest}",
   UNMET_ONE_WAY_AWAY_AT_WEEK_END: "\u05E0\u05E1\u05D9\u05E2\u05D4 \u05D1\u05DB\u05D9\u05D5\u05D5\u05DF \u05D0\u05D7\u05D3 \u05DC{dest} \u05EA\u05E9\u05D0\u05D9\u05E8 \u05D0\u05EA \u05D4\u05E8\u05DB\u05D1 \u05E9\u05DD \u05D1\u05E1\u05D5\u05E3 \u05D4\u05E9\u05D1\u05D5\u05E2, \u05D5\u05D0\u05D9\u05DF \u05E0\u05E1\u05D9\u05E2\u05D4 \u05E9\u05DE\u05D7\u05D6\u05D9\u05E8\u05D4 \u05D0\u05D5\u05EA\u05D5; \u05D0\u05E4\u05E9\u05E8 \u05DC\u05D1\u05E7\u05E9 \u05D4\u05DC\u05D5\u05DA-\u05D7\u05D6\u05D5\u05E8 \u05D0\u05D5 \u05DC\u05E6\u05E8\u05E3 \u05E0\u05E1\u05D9\u05E2\u05D4 \u05D7\u05D5\u05D6\u05E8\u05EA \u05DE{dest}",
   UNMET_ONE_WAY_STRANDS_CAR: "\u05D9\u05E9 \u05E8\u05DB\u05D1 \u05E4\u05E0\u05D5\u05D9 \u05D1{origin}, \u05D0\u05D1\u05DC \u05E0\u05E1\u05D9\u05E2\u05D4 \u05D1\u05DB\u05D9\u05D5\u05D5\u05DF \u05D0\u05D7\u05D3 \u05DC{dest} \u05EA\u05E9\u05D0\u05D9\u05E8 \u05D0\u05D5\u05EA\u05D5 \u05E9\u05DD \u05D5\u05D4\u05D5\u05D0 \u05E0\u05D3\u05E8\u05E9 \u05DC\u05E0\u05E1\u05D9\u05E2\u05D4 \u05D4\u05D1\u05D0\u05D4 \u05E9\u05DC\u05D5; \u05D0\u05E4\u05E9\u05E8 \u05DC\u05E9\u05D1\u05E5 \u05D9\u05D7\u05D3 \u05E2\u05DD \u05E0\u05E1\u05D9\u05E2\u05D4 \u05D7\u05D5\u05D6\u05E8\u05EA \u05DE{dest}",
+  // R20B5 (SOLVER §3.7b, owner wording 2026-11-14): a car is free only at hours its rider is already in another ride.
+  UNMET_PERSON_BUSY: "{member} \u05DB\u05D1\u05E8 \u05D1\u05E0\u05E1\u05D9\u05E2\u05D4 \u05D0\u05D7\u05E8\u05EA \u05D1\u05E9\u05E2\u05D5\u05EA \u05D4\u05D0\u05DC\u05D4",
   UNMET_CAR_TO_DRIVER: "\u05D4\u05E8\u05DB\u05D1 \u05E0\u05D9\u05EA\u05DF \u05DC{member}, \u05E9\u05E0\u05D5\u05D4\u05D2/\u05EA \u05D1\u05E2\u05E6\u05DE/\u05D4, \u05D5\u05DC\u05DB\u05DF \u05D4\u05D4\u05E1\u05E2\u05D4 \u05DC{dest} (\u05D1\u05DC\u05D9 \u05E0\u05D4\u05D2/\u05EA \u05E7\u05D1\u05D5\u05E2/\u05D4) \u05D7\u05D6\u05E8\u05D4 \u05DC\u05E8\u05E9\u05D9\u05DE\u05EA \u05D4\u05DE\u05DE\u05EA\u05D9\u05E0\u05D9\u05DD",
   UNMET_FREE_TEXT_ORIGIN: "\u05E0\u05E7\u05D5\u05D3\u05EA \u05D4\u05D9\u05E6\u05D9\u05D0\u05D4 \u05D4\u05D9\u05D0 \u05D8\u05E7\u05E1\u05D8 \u05D7\u05D5\u05E4\u05E9\u05D9 \u05D5\u05DC\u05D0 \u05DE\u05E7\u05D5\u05DD \u05DE\u05D5\u05DB\u05E8; \u05DC\u05D0 \u05E0\u05D9\u05EA\u05DF \u05DC\u05E9\u05D1\u05E5 \u05E0\u05E1\u05D9\u05E2\u05D4 \u05DE\u05DE\u05E0\u05D4 \u05D0\u05D5\u05D8\u05D5\u05DE\u05D8\u05D9\u05EA",
   // Suggestions
@@ -629,6 +631,99 @@ function byId(a, b) {
   return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
 }
 
+// src/solver/personBusy.ts
+var SLOTS_PER_DAY = 96;
+var rootId = (nr) => nr.request.splitFrom ?? nr.request.id;
+function ridersOf(nr) {
+  return [.../* @__PURE__ */ new Set([nr.request.memberId, ...nr.request.coRiderMemberIds])];
+}
+function legWindow(window, leg, travelSlots) {
+  if (leg === "both") return window;
+  const len = Math.min(Math.max(1, travelSlots), window.end - window.start);
+  return leg === "out" ? { start: window.start, end: window.start + len } : { start: window.end - len, end: window.end };
+}
+var push = (map, key, value) => {
+  const list = map.get(key);
+  if (list) list.push(value);
+  else map.set(key, [value]);
+};
+function buildPersonBook(input, normalized, timelines) {
+  const fixedByMember = /* @__PURE__ */ new Map();
+  for (const fr of input.fixedRides) {
+    const riders = fr.riders ?? (fr.driverMemberId ? [{ memberId: fr.driverMemberId, leg: "both" }] : []);
+    if (riders.length === 0) continue;
+    const travel = fr.originId === fr.destinationId ? Math.max(1, Math.ceil(input.config.defaultTravelMinutes / 15)) : travelSlotsFor(input, fr.originId, fr.destinationId);
+    for (const r of riders) {
+      push(fixedByMember, r.memberId, {
+        rideId: fr.id,
+        memberId: r.memberId,
+        window: legWindow(fr.window, r.leg, travel),
+        ...r.requestId ? { requestId: r.requestId } : {},
+        ...fr.seriesId ? { seriesId: fr.seriesId } : {}
+      });
+    }
+  }
+  const ownByMember = /* @__PURE__ */ new Map();
+  for (const nr of normalized) for (const memberId of ridersOf(nr)) push(ownByMember, memberId, nr);
+  return { timelines, fixedByMember, ownByMember, guestByMember: /* @__PURE__ */ new Map() };
+}
+function seatGuest(book, hostRideId, nr, leg) {
+  if (!book) return;
+  for (const memberId of ridersOf(nr)) push(book.guestByMember, memberId, { hostRideId, nr, leg });
+}
+function blockWindow(book, rideId) {
+  for (const tl of book.timelines.values()) {
+    const block = tl.allBlocks().find((b) => b.rideId === rideId);
+    if (block) return block.window;
+  }
+  return void 0;
+}
+var overlaps = (a, b) => a.start < b.end && b.start < a.end;
+function busyWindowsFor(book, nr, exceptRideIds = [], onlyMemberId) {
+  if (!book) return [];
+  const root = rootId(nr);
+  const series = nr.request.seriesId;
+  const filed = nr.window;
+  const near = { start: filed.start - SLOTS_PER_DAY, end: filed.end + SLOTS_PER_DAY };
+  const busy = [];
+  const consider = (rideId, window, requestId, seriesId) => {
+    if (!window || exceptRideIds.includes(rideId)) return;
+    if (requestId === root || series && seriesId === series) return;
+    if (overlaps(window, filed)) return;
+    busy.push(window);
+  };
+  for (const memberId of onlyMemberId ? [onlyMemberId] : ridersOf(nr)) {
+    for (const c of book.fixedByMember.get(memberId) ?? []) {
+      if (overlaps(c.window, near)) consider(c.rideId, c.window, c.requestId, c.seriesId);
+    }
+    for (const own of book.ownByMember.get(memberId) ?? []) {
+      if (rootId(own) === root || !overlaps(own.dayWindow, near)) continue;
+      const rideId = `ride:${own.id}`;
+      consider(rideId, blockWindow(book, rideId), rootId(own), own.request.seriesId);
+    }
+    for (const g of book.guestByMember.get(memberId) ?? []) {
+      if (rootId(g.nr) === root || !overlaps(g.nr.dayWindow, near)) continue;
+      const window = blockWindow(book, g.hostRideId);
+      consider(g.hostRideId, window && legWindow(window, g.leg, g.nr.travelSlots), rootId(g.nr), void 0);
+    }
+  }
+  return busy.sort((a, b) => a.start - b.start || a.end - b.end);
+}
+function clearOf(window, busy) {
+  return busy.every((b) => !overlaps(window, b));
+}
+function freeStretches(gap, busy) {
+  const out = [];
+  let cursor = gap.start;
+  for (const b of busy) {
+    if (b.end <= cursor || b.start >= gap.end) continue;
+    if (b.start > cursor) out.push({ start: cursor, end: b.start });
+    cursor = Math.max(cursor, b.end);
+  }
+  if (cursor < gap.end) out.push({ start: cursor, end: gap.end });
+  return out;
+}
+
 // src/solver/flexibility.ts
 function clamp(v, lo, hi) {
   return Math.min(Math.max(v, lo), hi);
@@ -700,12 +795,15 @@ function bestPlacementWithinFlex(tl, nr, opts = {}) {
   if (!leg) return null;
   const widenSlots = minutesToSlots(opts.widenMinutes ?? 0);
   let best = null;
-  for (const gap of tl.gaps()) {
-    if (gap.locationId !== leg.originId) continue;
-    const candidate = placeInGap(nr, leg, gap, widenSlots);
-    if (!candidate) continue;
-    if (!best || candidate.cost < best.cost || candidate.cost === best.cost && candidate.window.start < best.window.start) {
-      best = candidate;
+  for (const carGap of tl.gaps()) {
+    if (carGap.locationId !== leg.originId) continue;
+    const stretches = opts.busy?.length ? freeStretches(carGap.window, opts.busy) : [carGap.window];
+    for (const window of stretches) {
+      const candidate = placeInGap(nr, leg, { window, locationId: carGap.locationId }, widenSlots);
+      if (!candidate) continue;
+      if (!best || candidate.cost < best.cost || candidate.cost === best.cost && candidate.window.start < best.window.start) {
+        best = candidate;
+      }
     }
   }
   return best;
@@ -883,7 +981,7 @@ function shortRelayGapMinutes(outWindow, returnWindow, bufferMinutes) {
   const gapMinutes = slotsToMinutes(returnWindow.start - outWindow.end);
   return gapMinutes < bufferMinutes ? Math.max(0, gapMinutes) : void 0;
 }
-function trySeriesOnCar(tl, legs, seriesCount) {
+function trySeriesOnCar(tl, legs, seriesCount, busy = { first: [], last: [] }) {
   const first = legs[0];
   const last = legs[legs.length - 1];
   if (!first || !last) return null;
@@ -896,6 +994,9 @@ function trySeriesOnCar(tl, legs, seriesCount) {
     for (const R of retCandidates) {
       if (R <= D) continue;
       if (!tl.isFree({ start: D, end: R }, first.originId, void 0, last.destinationId)) continue;
+      const firstWindow = { start: D, end: first === last ? R : first.window.end };
+      const lastWindow = { start: first === last ? D : last.window.start, end: R };
+      if (!clearOf(firstWindow, busy.first) || !clearOf(lastWindow, busy.last)) continue;
       const shiftCost = Math.abs(D - first.window.start) * 15 + Math.abs(R - last.window.end) * 15;
       if (!best || shiftCost < best.shiftCost) {
         best = {
@@ -933,7 +1034,7 @@ function unitRequests(u) {
   if (u.kind === "pair" && u.pair) return [u.pair.outNr, u.pair.retNr];
   return [];
 }
-function runGreedy(units, timelines, input) {
+function runGreedy(units, timelines, input, people) {
   const sharedCars = [...input.cars].filter((c) => c.type === "shared").sort((a, b) => a.id < b.id ? -1 : 1);
   const placed = [];
   const unmetUnits = [];
@@ -989,11 +1090,12 @@ function runGreedy(units, timelines, input) {
           }
         }
         if (!best) {
+          const busy = busyWindowsFor(people, nr);
           for (const car of sharedCars) {
             if (!fits(car, nr.passengers) || !needsFit(car, nr.luggage ? 1 : 0, nr.tow ? 1 : 0)) continue;
             const tl2 = timelines.get(car.id);
             if (!tl2) continue;
-            const placement = bestPlacementWithinFlex(tl2, nr);
+            const placement = bestPlacementWithinFlex(tl2, nr, { busy });
             if (!placement) continue;
             if (!tl2.isFree(placement.window, leg.originId, void 0, leg.destinationId, { baseAtWeekEnd: true })) continue;
             const key = {
@@ -1040,6 +1142,10 @@ function runGreedy(units, timelines, input) {
       if (unit.kind === "pair" && unit.pair) {
         const { pair, outNr, retNr } = unit.pair;
         let best = null;
+        if (!clearOf(pair.outWindow, busyWindowsFor(people, outNr)) || !clearOf(pair.returnWindow, busyWindowsFor(people, retNr))) {
+          stillUnmet.push(unit);
+          continue;
+        }
         for (const car of sharedCars) {
           if (!fits(car, outNr.passengers) || !fits(car, retNr.passengers)) continue;
           if (!needsFit(car, outNr.luggage ? 1 : 0, outNr.tow ? 1 : 0) || !needsFit(car, retNr.luggage ? 1 : 0, retNr.tow ? 1 : 0)) continue;
@@ -1102,11 +1208,12 @@ function runGreedy(units, timelines, input) {
         const su = unit.series;
         const legs = su.legs;
         let best = null;
+        const seriesBusy = { first: legs[0] ? busyWindowsFor(people, legs[0]) : [], last: legs.at(-1) ? busyWindowsFor(people, legs.at(-1)) : [] };
         for (const car2 of sharedCars) {
           if (!legs.every((leg) => fits(car2, leg.passengers) && needsFit(car2, leg.luggage ? 1 : 0, leg.tow ? 1 : 0))) continue;
           const tl2 = timelines.get(car2.id);
           if (!tl2) continue;
-          const placement2 = trySeriesOnCar(tl2, legs, su.seriesCount);
+          const placement2 = trySeriesOnCar(tl2, legs, su.seriesCount, seriesBusy);
           if (!placement2) continue;
           const slackVal = legs.reduce((max, leg) => Math.max(max, slack(car2, leg.passengers) ?? Number.POSITIVE_INFINITY), 0);
           const continuity = legs.reduce(
@@ -1327,7 +1434,7 @@ function toAssignments(placed, input, carsById) {
 function overlapsEnvelope(aStart, aEnd, bStart, bEnd, bufferSlots) {
   return aStart < bEnd + bufferSlots && bStart < aEnd + bufferSlots;
 }
-function runImprove(unmetUnits, placedSingles, timelines, input, scores) {
+function runImprove(unmetUnits, placedSingles, timelines, input, scores, people) {
   const config = input.config;
   const sharedCars = [...input.cars].filter((c) => c.type === "shared").sort((a, b) => a.id < b.id ? -1 : 1);
   const bufferSlots = Math.round(config.bufferMinutes / 15);
@@ -1372,7 +1479,7 @@ function runImprove(unmetUnits, placedSingles, timelines, input, scores) {
       if (blockers.length === 0) continue;
       for (const b of blockers) {
         if (solved || budgetState.exhausted || perReq <= 0) break;
-        const result = tryRelocateSetAndPlace(nr, car, [b], sharedCars, timelines, input, budgetState, () => {
+        const result = tryRelocateSetAndPlace(nr, car, [b], sharedCars, timelines, input, budgetState, people, () => {
           perReq--;
         });
         if (result) {
@@ -1384,7 +1491,7 @@ function runImprove(unmetUnits, placedSingles, timelines, input, scores) {
       if (!solved && blockers.length === 2 && !budgetState.exhausted && perReq > 0) {
         const [b1, b2] = blockers;
         if (b1 && b2) {
-          const result = tryRelocateSetAndPlace(nr, car, [b1, b2], sharedCars, timelines, input, budgetState, () => {
+          const result = tryRelocateSetAndPlace(nr, car, [b1, b2], sharedCars, timelines, input, budgetState, people, () => {
             perReq--;
           });
           if (result) {
@@ -1416,7 +1523,7 @@ function addsChainBreak(tl, baseline) {
   if (tl.weekEndAway() && !baseline.has(WEEK_END_AWAY)) return true;
   return tl.chainBreaks().some((c) => !baseline.has(c.rideId));
 }
-function tryRelocateSetAndPlace(nr, car, blockers, sharedCars, timelines, input, budgetState, spend) {
+function tryRelocateSetAndPlace(nr, car, blockers, sharedCars, timelines, input, budgetState, people, spend) {
   const tl = timelines.get(car.id);
   if (!tl) return null;
   const baselines = /* @__PURE__ */ new Map([[car.id, chainBreakIds(tl)]]);
@@ -1435,7 +1542,7 @@ function tryRelocateSetAndPlace(nr, car, blockers, sharedCars, timelines, input,
       spend();
       const bufferSlots = Math.round(input.config.bufferMinutes / 15);
       const compressed = closeGapSameCar(nr, b, bufferSlots);
-      if (compressed) {
+      if (compressed && clearOf(compressed.bWindow, busyWindowsFor(people, b.nr)) && clearOf(compressed.uWindow, busyWindowsFor(people, nr))) {
         const bOriginal = tl.remove(`ride:${b.nr.id}`);
         const bFits = tl.isFree(compressed.bWindow, b.nr.legs[0]?.originId ?? input.homeLocationId);
         if (bFits) {
@@ -1503,7 +1610,7 @@ function tryRelocateSetAndPlace(nr, car, blockers, sharedCars, timelines, input,
       if (!fits(target, b.nr.passengers) || !needsFit(target, b.nr.luggage ? 1 : 0, b.nr.tow ? 1 : 0)) continue;
       const targetTl = timelines.get(target.id);
       if (!targetTl) continue;
-      const placement2 = bestPlacementWithinFlex(targetTl, b.nr);
+      const placement2 = bestPlacementWithinFlex(targetTl, b.nr, { busy: busyWindowsFor(people, b.nr, [`ride:${b.nr.id}`]) });
       if (!placement2) continue;
       const targetBaseline = baselineOf(target.id, targetTl);
       const probe = {
@@ -1535,7 +1642,7 @@ function tryRelocateSetAndPlace(nr, car, blockers, sharedCars, timelines, input,
     }
     newTargets.push({ blocker: b, targetCarId: placedTarget.targetCarId, window: placedTarget.window });
   }
-  const placement = ok ? bestPlacementWithinFlex(tl, nr) : null;
+  const placement = ok ? bestPlacementWithinFlex(tl, nr, { busy: busyWindowsFor(people, nr) }) : null;
   if (ok && placement) {
     const leg = nr.legs[0];
     tl.add({
@@ -1632,7 +1739,7 @@ function blockOf(p, input, window = p.window) {
     overnightAck: false
   };
 }
-function tryRepairOnCar(su, car, blockers, sharedCars, timelines, input, budget, commit) {
+function tryRepairOnCar(su, car, blockers, sharedCars, timelines, input, budget, commit, people) {
   const tl = timelines.get(car.id);
   if (!tl) return null;
   const baselines = /* @__PURE__ */ new Map([[car.id, chainBreakIds(tl)]]);
@@ -1656,7 +1763,12 @@ function tryRepairOnCar(su, car, blockers, sharedCars, timelines, input, budget,
     const blk = tl.remove(rideIdOf(b.nr));
     if (blk) removed.push(blk);
   }
-  const placement = trySeriesOnCar(tl, su.legs, su.seriesCount);
+  const firstLeg = su.legs[0];
+  const lastLeg = su.legs.at(-1);
+  const placement = trySeriesOnCar(tl, su.legs, su.seriesCount, {
+    first: firstLeg ? busyWindowsFor(people, firstLeg) : [],
+    last: lastLeg ? busyWindowsFor(people, lastLeg) : []
+  });
   if (!placement) {
     rollback();
     return null;
@@ -1676,7 +1788,7 @@ function tryRepairOnCar(su, car, blockers, sharedCars, timelines, input, budget,
       if (!fits(target, b.nr.passengers) || !needsFit(target, b.nr.luggage ? 1 : 0, b.nr.tow ? 1 : 0)) continue;
       const targetTl = timelines.get(target.id);
       if (!targetTl) continue;
-      const place = bestPlacementWithinFlex(targetTl, b.nr);
+      const place = bestPlacementWithinFlex(targetTl, b.nr, { busy: busyWindowsFor(people, b.nr) });
       if (!place) continue;
       if (best && place.cost >= best.cost) continue;
       const baseline = baselineOf(target.id, targetTl);
@@ -1713,7 +1825,7 @@ function tryRepairOnCar(su, car, blockers, sharedCars, timelines, input, budget,
   }
   return trial;
 }
-function runSeriesRepair(unmetUnits, placedSingles, timelines, input) {
+function runSeriesRepair(unmetUnits, placedSingles, timelines, input, people) {
   const sharedCars = [...input.cars].filter((c) => c.type === "shared").sort((a, b) => a.id < b.id ? -1 : 1);
   const bufferSlots = Math.round(input.config.bufferMinutes / 15);
   const result = { newlyPlaced: [], relocations: [], stillUnmetUnits: [] };
@@ -1738,7 +1850,7 @@ function runSeriesRepair(unmetUnits, placedSingles, timelines, input) {
         (p) => p.carId === car.id && isRelocatable(p) && overlapsSpan(p.window.start, p.window.end, spanStart, spanEnd, bufferSlots)
       ).sort((a, b) => a.nr.id < b.nr.id ? -1 : 1);
       if (blockers2.length === 0 || blockers2.length > MAX_SERIES_BLOCKERS) continue;
-      const trial = tryRepairOnCar(su, car, blockers2, sharedCars, timelines, input, perUnit, false);
+      const trial = tryRepairOnCar(su, car, blockers2, sharedCars, timelines, input, perUnit, false, people);
       if (trial) trials.push(trial);
     }
     budget.left -= startBudget - perUnit.left;
@@ -1752,7 +1864,7 @@ function runSeriesRepair(unmetUnits, placedSingles, timelines, input) {
     }
     const blockers = chosen.moves.map((m) => m.blocker);
     const fromCar = chosen.car.id;
-    const applied = tryRepairOnCar(su, chosen.car, blockers, sharedCars, timelines, input, { left: Number.POSITIVE_INFINITY }, true);
+    const applied = tryRepairOnCar(su, chosen.car, blockers, sharedCars, timelines, input, { left: Number.POSITIVE_INFINITY }, true, people);
     if (!applied) {
       result.stillUnmetUnits.push(unit);
       continue;
@@ -2230,7 +2342,7 @@ function hostRideOf(p) {
     isTemporary: false
   };
 }
-function tryPool(guest, guestPlaced, placed, timelines, input, carsMap, leg = "both") {
+function tryPool(guest, guestPlaced, placed, timelines, input, carsMap, leg = "both", people) {
   const hostPlaced = placed.filter((h) => h.kind === "single").filter((h) => h !== guestPlaced && isHostCandidate(h, carsMap) && h.nr.dayIndex === guest.dayIndex);
   if (hostPlaced.length === 0) return false;
   const hostNrByRide = new Map(hostPlaced.map((h) => [rideIdOf2(h.nr), h.nr]));
@@ -2252,10 +2364,17 @@ function tryPool(guest, guestPlaced, placed, timelines, input, carsMap, leg = "b
     homeLocationId: input.homeLocationId,
     travel: input.travel
   });
+  const peopleClear = (h, rideId, window) => {
+    if (!people) return true;
+    if (!clearOf(legWindow(window, leg, guest.travelSlots), busyWindowsFor(people, guest, [rideId]))) return false;
+    if (window.start === h.window.start && window.end === h.window.end) return true;
+    if (!clearOf(window, busyWindowsFor(people, h.nr, [rideId]))) return false;
+    return (h.guests ?? []).every((g) => clearOf(legWindow(window, h.guestLegs?.[g.id] ?? "both", g.travelSlots), busyWindowsFor(people, g, [rideId])));
+  };
   const best = candidates.find((c) => {
     const h = hostByRide.get(c.hostRideId);
     return !!h && // a ride-along guest never moves a host that already carries guests (their boarding/alighting times hold)
-    (leg === "both" || (h.guests?.length ?? 0) === 0 || c.window.start === h.window.start && c.window.end === h.window.end) && c.window.start >= h.nr.flexDep[0] && c.window.end <= h.nr.flexRet[1] && c.window.start >= h.nr.dayWindow.start && c.window.end <= h.nr.dayWindow.end;
+    (leg === "both" || (h.guests?.length ?? 0) === 0 || c.window.start === h.window.start && c.window.end === h.window.end) && c.window.start >= h.nr.flexDep[0] && c.window.end <= h.nr.flexRet[1] && c.window.start >= h.nr.dayWindow.start && c.window.end <= h.nr.dayWindow.end && peopleClear(h, c.hostRideId, c.window);
   });
   const hostPl = best ? hostByRide.get(best.hostRideId) : void 0;
   if (!best || !hostPl) {
@@ -2280,6 +2399,7 @@ function tryPool(guest, guestPlaced, placed, timelines, input, carsMap, leg = "b
   hostPl.balancedMileage = false;
   hostPl.guests = [...hostPl.guests ?? [], guest];
   if (leg !== "both") hostPl.guestLegs = { ...hostPl.guestLegs ?? {}, [guest.id]: leg };
+  seatGuest(people, best.hostRideId, guest, leg);
   if (guestPlaced) placed.splice(placed.indexOf(guestPlaced), 1);
   return true;
 }
@@ -2290,12 +2410,12 @@ var unitPriority = (nr, scores) => ({
   submittedAtMs: nr.request.submittedAtMs,
   single: nr
 });
-function poolRound(placed, unmet, timelines, input, scores, carsMap, pooled) {
+function poolRound(placed, unmet, timelines, input, scores, carsMap, pooled, people) {
   const guestsOrder = placed.filter((p) => p.kind === "single").filter((p) => isGuestCandidate(p) && !pooled.has(p.nr.id)).sort((a, b) => compareUnitsByPriority(unitPriority(b.nr, scores), unitPriority(a.nr, scores)));
   let count = 0;
   for (const guestPlaced of guestsOrder) {
     if ((guestPlaced.guests?.length ?? 0) > 0 || !placed.includes(guestPlaced)) continue;
-    if (tryPool(guestPlaced.nr, guestPlaced, placed, timelines, input, carsMap)) {
+    if (tryPool(guestPlaced.nr, guestPlaced, placed, timelines, input, carsMap, "both", people)) {
       pooled.add(guestPlaced.nr.id);
       count++;
     }
@@ -2303,7 +2423,7 @@ function poolRound(placed, unmet, timelines, input, scores, carsMap, pooled) {
   const unmetOrder = unmet.filter((u) => u.kind === "single" && !!u.single && isRoundTripSingle(u.single) && !pooled.has(u.single.id)).sort(compareUnitsByPriority);
   for (const unit of unmetOrder) {
     if (!unit.single) continue;
-    if (tryPool(unit.single, void 0, placed, timelines, input, carsMap)) {
+    if (tryPool(unit.single, void 0, placed, timelines, input, carsMap, "both", people)) {
       pooled.add(unit.single.id);
       unmet.splice(unmet.indexOf(unit), 1);
       count++;
@@ -2311,33 +2431,33 @@ function poolRound(placed, unmet, timelines, input, scores, carsMap, pooled) {
   }
   return count;
 }
-function runPooling(placed, unmetUnits, timelines, input, scores, carsMap) {
+function runPooling(placed, unmetUnits, timelines, input, scores, carsMap, people) {
   const pooledRequestIds = /* @__PURE__ */ new Set();
   let current = [...placed];
   let unmet = [...unmetUnits];
   for (; ; ) {
-    const pooledNow = poolRound(current, unmet, timelines, input, scores, carsMap, pooledRequestIds);
+    const pooledNow = poolRound(current, unmet, timelines, input, scores, carsMap, pooledRequestIds, people);
     if (pooledNow === 0) break;
     if (unmet.length > 0) {
-      const retry = runGreedy(unmet, timelines, input);
+      const retry = runGreedy(unmet, timelines, input, people);
       current = [...current, ...retry.placed];
       unmet = retry.unmetUnits;
     }
   }
   return { placed: current, unmetUnits: unmet, pooledRequestIds };
 }
-function runRideAlong(candidates, placed, timelines, input, scores, carsMap) {
+function runRideAlong(candidates, placed, timelines, input, scores, carsMap, people) {
   const seated = /* @__PURE__ */ new Set();
   const order = [...candidates].filter((nr) => nr.legs[0]?.side === "out" || nr.legs[0]?.side === "return").sort((a, b) => compareUnitsByPriority(unitPriority(a, scores), unitPriority(b, scores)));
   for (const nr of order) {
     if (seated.has(nr.id)) continue;
     const side = nr.legs[0]?.side === "return" ? "return" : "out";
-    if (tryPool(nr, void 0, placed, timelines, input, carsMap, side)) seated.add(nr.id);
+    if (tryPool(nr, void 0, placed, timelines, input, carsMap, side, people)) seated.add(nr.id);
   }
   return seated;
 }
-function seatAsGuest(guest, leg, placed, timelines, input, carsMap) {
-  return tryPool(guest, void 0, placed, timelines, input, carsMap, leg);
+function seatAsGuest(guest, leg, placed, timelines, input, carsMap, people) {
+  return tryPool(guest, void 0, placed, timelines, input, carsMap, leg, people);
 }
 
 // src/solver/driverFirst.ts
@@ -2346,7 +2466,7 @@ var MAX_EVICTED_PER_REQUEST = 2;
 function isDriverlessSingle(p) {
   return p.kind === "single" && p.nr.request.canDrive === false && (p.guests?.length ?? 0) === 0;
 }
-function evictDriverlessForDrivers(unmetUnits, placed, chauffeurRides, timelines, input) {
+function evictDriverlessForDrivers(unmetUnits, placed, chauffeurRides, timelines, input, people) {
   const result = { newPlaced: [], placedUnitIds: /* @__PURE__ */ new Set(), removedRideIds: /* @__PURE__ */ new Set(), evicted: /* @__PURE__ */ new Map() };
   const evictables = [];
   for (const a of chauffeurRides) {
@@ -2380,7 +2500,7 @@ function evictDriverlessForDrivers(unmetUnits, placed, chauffeurRides, timelines
         const block = timelines.get(e.carId)?.remove(e.rideId);
         if (block) removed.push({ e, block });
       }
-      const retry = runGreedy([unit], timelines, input);
+      const retry = runGreedy([unit], timelines, input, people);
       if (retry.placed.length > 0) {
         result.newPlaced.push(...retry.placed);
         result.placedUnitIds.add(unit.id);
@@ -4293,8 +4413,8 @@ function isRelay(nr) {
 function volunteerCandidates(input, window) {
   const driversToday = /* @__PURE__ */ new Set();
   for (const a of input.fixedRides) {
-    const overlaps = a.window.start < window.end && window.start < a.window.end;
-    if (!overlaps && a.driverMemberId) driversToday.add(a.driverMemberId);
+    const overlaps2 = a.window.start < window.end && window.start < a.window.end;
+    if (!overlaps2 && a.driverMemberId) driversToday.add(a.driverMemberId);
   }
   return [...driversToday].sort();
 }
@@ -4801,6 +4921,175 @@ function freedSlotOptions(items, freedWindow, bufferSlots) {
   return found.map((option, index) => ({ ...option, recommended: index === 0 }));
 }
 
+// src/solver/freedSlotRun.ts
+var SLOT_MS2 = 15 * 60 * 1e3;
+var DAY_SLOTS = 96;
+var MAX_STORED_FREED_OPTIONS = 30;
+var toSlotFloor2 = (ms, weekStartMs) => Math.floor((ms - weekStartMs) / SLOT_MS2);
+var toSlotCeil2 = (ms, weekStartMs) => Math.ceil((ms - weekStartMs) / SLOT_MS2);
+function freedWeekDays(dayEndTime) {
+  const [hh, mm] = dayEndTime.split(":");
+  const dayEndOffset = minutesToSlots(Number(hh) * 60 + Number(mm ?? 0));
+  return Array.from({ length: 7 }, (_, i) => ({
+    dayIndex: i,
+    startSlot: i * DAY_SLOTS,
+    endSlot: i * DAY_SLOTS + DAY_SLOTS,
+    dayEndSlot: i * DAY_SLOTS + Math.min(dayEndOffset, DAY_SLOTS - 1)
+  }));
+}
+function freedSlotInputFrom(raw) {
+  if (!raw.car || !raw.policy) return null;
+  const weekStartMs = raw.weekStartMs;
+  const days = freedWeekDays(raw.dayEndTime);
+  const weekSlots = days[days.length - 1].endSlot;
+  const config = {
+    bufferMinutes: raw.settings.turnaroundMinutes,
+    detour: { maxMinutes: raw.settings.detourMaxMinutes, maxKm: raw.settings.detourMaxKm },
+    beyondFlexMaxMinutes: 120,
+    defaultTravelMinutes: 60,
+    chauffeurDwellMinutes: raw.settings.chauffeurDwellMinutes,
+    ...raw.settings.stopMinutes != null ? { stopMinutes: raw.settings.stopMinutes } : {},
+    improvementBudget: 5e3,
+    perRequestBudget: 200,
+    externalHints: { cabMaxMinutes: 90, rentalMinHours: 30, ptMinScore: 0.6 }
+  };
+  const features = raw.car.features ?? [];
+  const car = {
+    id: raw.car.id,
+    name: raw.car.name,
+    type: raw.car.type,
+    ...raw.car.ownerMemberId ? { ownerMemberId: raw.car.ownerMemberId } : {},
+    seatConfigs: raw.car.seatConfigs,
+    features,
+    // REQ §13.101 (a): a car with the `large_trunk` feature takes large luggage (yes/no).
+    luggageCapacity: features.includes("large_trunk") ? 1 : 0,
+    ...features.includes("tow_hitch") ? { towHitch: true } : {},
+    maintenance: raw.car.maintenance.map((b) => ({
+      start: Math.max(0, toSlotFloor2(b.startsMs, weekStartMs)),
+      end: Math.min(weekSlots, toSlotCeil2(b.endsMs, weekStartMs))
+    })),
+    startLocationId: raw.car.startLocationId ?? raw.homeLocationId,
+    ...raw.car.baseLocationId ? { baseLocationId: raw.car.baseLocationId } : {}
+  };
+  const bufferSlots = minutesToSlots(config.bufferMinutes);
+  const timeline = buildTimelines([car], bufferSlots, weekSlots, raw.homeLocationId).get(car.id);
+  for (const ride of raw.otherRides) {
+    timeline.forceAdd({
+      rideId: ride.id,
+      // REQ §13.100 (QB1/QB7): a series' consecutive-day pieces are contiguous by construction (no buffer).
+      ...ride.seriesId ? { seriesId: ride.seriesId } : {},
+      window: { start: toSlotFloor2(ride.startsMs, weekStartMs), end: toSlotCeil2(ride.endsMs, weekStartMs) },
+      startLocationId: ride.originId,
+      endLocationId: ride.destinationId,
+      overnightAck: ride.overnightAck,
+      ...ride.locationNeutral ? { locationNeutral: true } : {}
+    });
+  }
+  const destinations = {};
+  for (const d of raw.destinations) {
+    destinations[d.id] = {
+      id: d.id,
+      ...d.name != null ? { name: d.name } : {},
+      zone: d.zone,
+      ...d.distanceKm != null ? { distanceKm: Number(d.distanceKm) } : {},
+      ...d.travelMinutes != null ? { travelMinutes: d.travelMinutes } : {},
+      ...d.publicTransportScore != null ? { publicTransportScore: d.publicTransportScore / 5 } : {}
+    };
+  }
+  if (!destinations[raw.homeLocationId]) destinations[raw.homeLocationId] = { id: raw.homeLocationId, zone: "home" };
+  const candidates = raw.candidates.map((c) => ({
+    id: c.id,
+    memberId: c.memberId,
+    departmentId: c.departmentId,
+    destinationId: c.destinationId,
+    rideType: c.rideType,
+    tripShape: c.tripShape,
+    ...c.originId ? { originId: c.originId } : {},
+    originIsFreeText: c.originIsFreeText,
+    tripType: c.tripType,
+    ...c.departureMs != null ? { departureMs: c.departureMs } : {},
+    ...c.returnMs != null ? { returnMs: c.returnMs } : {},
+    flexDeparture: c.flexDeparture,
+    flexReturn: c.flexReturn,
+    ...c.durationLocked ? { durationLocked: true } : {},
+    passengers: c.passengers,
+    coRiderMemberIds: [],
+    luggage: c.luggage,
+    ...c.towHitch ? { towHitch: true } : {},
+    needsCarAtDestination: c.needsCarAtDestination,
+    submittedAtMs: c.submittedAtMs,
+    isLate: c.isLate,
+    ...c.manualBoost > 0 ? { manualBoost: { value: c.manualBoost, reason: c.manualBoostReason } } : {},
+    ...c.stops.length ? { stops: c.stops.map((s) => s.locationId ? { leg: s.leg, locationId: s.locationId } : { leg: s.leg }) } : {}
+  }));
+  for (const r of candidates) {
+    if (!destinations[r.destinationId]) destinations[r.destinationId] = { id: r.destinationId, zone: "unknown" };
+  }
+  const freedWindow = { start: toSlotFloor2(raw.offer.startsMs, weekStartMs), end: toSlotCeil2(raw.offer.endsMs, weekStartMs) };
+  const travel = raw.travel.map((t) => ({
+    fromId: t.fromId,
+    toId: t.toId,
+    ...t.distanceKm != null ? { distanceKm: Number(t.distanceKm) } : {},
+    ...t.travelMinutes != null ? { travelMinutes: t.travelMinutes } : {}
+  }));
+  const fairness2 = {};
+  for (const c of raw.candidates) fairness2[c.memberId] = { deficit: Number(c.fairnessDeficit) };
+  return {
+    input: {
+      car,
+      timeline,
+      freedWindow,
+      freedLocationId: raw.freedLocationId ?? raw.homeLocationId,
+      candidates,
+      destinations,
+      policy: raw.policy,
+      stats: { fairness: fairness2, usualCarId: {} },
+      config,
+      week: { startMs: weekStartMs, days },
+      homeLocationId: raw.homeLocationId,
+      travel
+    },
+    freedWindow,
+    bufferSlots
+  };
+}
+function runFreedSlot(raw) {
+  if (raw.offer.status === "open" && raw.offer.groupId) return { ranked: [], options: [], outcome: { kind: "held" } };
+  const built = raw.candidates.length ? freedSlotInputFrom(raw) : null;
+  if (!built) return { ranked: [], options: [], outcome: { kind: "none" } };
+  const { input, freedWindow, bufferSlots } = built;
+  const byId2 = new Map(raw.candidates.map((c) => [c.id, c]));
+  const matched = matchFreedSlot(input, { priorityRequestIds: raw.priorityRequestIds });
+  const ranked = matched.map((c) => ({ requestId: c.requestId, requesterId: byId2.get(c.requestId)?.memberId ?? "", score: c.score, reason: c.reason }));
+  const requestById = new Map(input.candidates.map((r) => [r.id, r]));
+  const items = matched.flatMap((c) => {
+    const r = requestById.get(c.requestId);
+    if (!r) return [];
+    const window = r.departureMs !== void 0 && r.returnMs !== void 0 ? { start: toSlotFloor2(r.departureMs, raw.weekStartMs), end: toSlotCeil2(r.returnMs, raw.weekStartMs) } : c.window;
+    return [{ requestId: c.requestId, window, score: c.score, planB: byId2.get(c.requestId)?.planB ?? false }];
+  });
+  const options = freedSlotOptions(items, freedWindow, bufferSlots).slice(0, MAX_STORED_FREED_OPTIONS).map((o) => ({
+    request_ids: o.requestIds,
+    score: Math.round(o.score * 1e4) / 1e4,
+    unused_minutes: o.unusedSlots * 15,
+    plan_b: o.planB,
+    recommended: o.recommended
+  }));
+  const nameOf = (id) => byId2.get(id)?.name ?? "";
+  let outcome;
+  const groupMembers = raw.group?.members ?? [];
+  if (ranked.length && groupMembers.some((m) => ranked.some((c) => c.requestId === m.requestId))) {
+    outcome = { kind: "group", requestIds: groupMembers.map((m) => m.requestId), names: groupMembers.map((m) => m.name) };
+  } else if (ranked.length === 0) {
+    outcome = { kind: "none" };
+  } else if (ranked.length === 1 && !byId2.get(ranked[0].requestId)?.planB) {
+    outcome = { kind: "auto", requestId: ranked[0].requestId, name: nameOf(ranked[0].requestId) };
+  } else {
+    outcome = { kind: "sadran", requestIds: ranked.map((c) => c.requestId), names: ranked.map((c) => nameOf(c.requestId)) };
+  }
+  return { ranked, options, outcome };
+}
+
 // src/solver/index.ts
 function peopleOf(nr) {
   return nr.passengers.adults + nr.passengers.childSeats + nr.passengers.boosters - 1;
@@ -4879,6 +5168,18 @@ function noCarReason(input, nr, timelines) {
     }
   }
   return { code: "UNMET_NO_CAR", text: reason("UNMET_NO_CAR") };
+}
+function personBusyMember(input, nr, timelines, people) {
+  if (!nr.legs[0] || nr.isPassengerOnly) return void 0;
+  const busy = busyWindowsFor(people, nr);
+  if (busy.length === 0) return void 0;
+  const blocked = input.cars.some((car) => {
+    if (car.type !== "shared" || !fits(car, nr.passengers) || !needsFit(car, nr.luggage ? 1 : 0, nr.tow ? 1 : 0)) return false;
+    const tl = timelines.get(car.id);
+    return !!tl && !!bestPlacementWithinFlex(tl, nr) && !bestPlacementWithinFlex(tl, nr, { busy });
+  });
+  if (!blocked) return void 0;
+  return ridersOf(nr).find((memberId) => busyWindowsFor(people, nr, [], memberId).length > 0);
 }
 function solve(input) {
   return applyFallbacks(input, solveBase(input), solveBase);
@@ -4970,14 +5271,15 @@ function solveExpanded(input) {
   warnings.push(...scoreWarnings.map((w) => ({ code: w.code, message: w.message, requestId: w.requestId })));
   const byRequestId = new Map(normalized.map((nr) => [nr.id, nr]));
   const units = buildUnits(roundTrips, pairs, byRequestId, scores, seriesUnits);
-  const { placed, unmetUnits } = runGreedy(units, timelines, input);
+  const people = buildPersonBook(input, normalized, timelines);
+  const { placed, unmetUnits } = runGreedy(units, timelines, input, people);
   const placedSingles = placed.filter((p) => p.kind === "single");
-  const improveResult = runImprove(unmetUnits, placedSingles, timelines, input, scores);
-  const seriesRepair = runSeriesRepair(improveResult.stillUnmetUnits, [...placedSingles, ...improveResult.newlyPlaced], timelines, input);
+  const improveResult = runImprove(unmetUnits, placedSingles, timelines, input, scores, people);
+  const seriesRepair = runSeriesRepair(improveResult.stillUnmetUnits, [...placedSingles, ...improveResult.newlyPlaced], timelines, input, people);
   let finalPlaced = [...placed, ...improveResult.newlyPlaced, ...seriesRepair.newlyPlaced];
   let stillUnmetUnits = seriesRepair.stillUnmetUnits;
   if (input.config.sharedRides !== false) {
-    const pooling = runPooling(finalPlaced, stillUnmetUnits, timelines, input, scores, carsMap);
+    const pooling = runPooling(finalPlaced, stillUnmetUnits, timelines, input, scores, carsMap, people);
     finalPlaced = pooling.placed;
     stillUnmetUnits = pooling.unmetUnits;
   }
@@ -4992,7 +5294,7 @@ function solveExpanded(input) {
   }
   const rideAlongPool = /* @__PURE__ */ new Map();
   for (const nr of [...unpaired, ...ownPairFallback, ...passengerOnly]) rideAlongPool.set(nr.id, nr);
-  const rideAlongIds = input.config.sharedRides !== false ? runRideAlong([...rideAlongPool.values()], finalPlaced, timelines, input, scores, carsMap) : /* @__PURE__ */ new Set();
+  const rideAlongIds = input.config.sharedRides !== false ? runRideAlong([...rideAlongPool.values()], finalPlaced, timelines, input, scores, carsMap, people) : /* @__PURE__ */ new Set();
   const preferenceSwaps = runPreferenceSwaps(finalPlaced, timelines, input, scores, carsMap).swaps;
   const oneWayPairs = pairComplementaryOneWays(
     [
@@ -5024,7 +5326,7 @@ function solveExpanded(input) {
   const { healed: healedNoDriverSingles, healedIds: healedNoDriverSingleIds } = chauffeurUnpairedRelayLegs(remainingPassengerOnly, timelines, input, carsMap, scores, "noDriver");
   const healedNoDriver = [...shortRides.healed, ...healedNoDriverSingles];
   const healedNoDriverIds = /* @__PURE__ */ new Set([...rideAlongIds, ...shortRides.healedIds, ...healedNoDriverSingleIds]);
-  const driverFirst = evictDriverlessForDrivers(stillUnmetUnits, finalPlaced, [...healed, ...healedNoDriver], timelines, input);
+  const driverFirst = evictDriverlessForDrivers(stillUnmetUnits, finalPlaced, [...healed, ...healedNoDriver], timelines, input, people);
   const evictedIds = driverFirst.evicted;
   const survivors = finalPlaced.filter((p) => !(p.kind === "single" && driverFirst.removedRideIds.has(`ride:${p.nr.id}`)));
   const hostsAfter = [...survivors, ...driverFirst.newPlaced];
@@ -5032,7 +5334,7 @@ function solveExpanded(input) {
   if (input.config.sharedRides !== false) {
     for (const nr of evictedOrder) {
       const side = nr.legs[0]?.side ?? "both";
-      if (seatAsGuest(nr, side, hostsAfter, timelines, input, carsMap)) evictedIds.delete(nr.id);
+      if (seatAsGuest(nr, side, hostsAfter, timelines, input, carsMap, people)) evictedIds.delete(nr.id);
     }
   }
   const solverAssignments = toAssignments(hostsAfter, input, carsMap);
@@ -5090,9 +5392,10 @@ function solveExpanded(input) {
     })();
     const oneWayCause = nr.tripType === "one_way" ? oneWayUnmetCause(nr, timelines, input) : { strands: false, atOrigin: false, awayAtWeekEnd: false };
     const takenBy = evictedIds.get(nr.id);
+    const busyMember = personBusyMember(input, nr, timelines, people);
     const origin = requestOriginName(input, nr.request, nr.originId);
     const dest = requestDestName(input, nr.request);
-    const { code: reasonCode, text: reasonText } = takenBy !== void 0 ? { code: "UNMET_CAR_TO_DRIVER", text: reason("UNMET_CAR_TO_DRIVER", { member: memberName(input, byRequestId.get(takenBy)?.request.memberId), dest }) } : needsLargeTrunk ? { code: "UNMET_NEEDS_LARGE_TRUNK", text: reason("UNMET_NEEDS_LARGE_TRUNK") } : needsTowHitch ? { code: "UNMET_NEEDS_TOW_HITCH", text: reason("UNMET_NEEDS_TOW_HITCH") } : seatsBusy ? { code: "UNMET_NO_CAR_SEATS_BUSY", text: reason("UNMET_NO_CAR_SEATS_BUSY", { cars: seatCarNames(input, nr), count: seatCount(nr) }) } : stillPassengerOnly.includes(nr) ? { code: "UNMET_PASSENGER_NO_HOST", text: reason("UNMET_NEEDS_DRIVER", { dest, dep: "" }) } : stillUnpairedRelay.includes(nr) && fittingCarFree(input, nr, timelines) ? { code: "UNMET_NO_RELAY_PARTNER", text: reason("UNMET_NO_RELAY_PARTNER", { dest }) } : oneWayCause.strands ? { code: "UNMET_ONE_WAY_STRANDS_CAR", text: reason("UNMET_ONE_WAY_STRANDS_CAR", { origin, dest }) } : oneWayCause.awayAtWeekEnd ? { code: "UNMET_ONE_WAY_AWAY_AT_WEEK_END", text: reason("UNMET_ONE_WAY_AWAY_AT_WEEK_END", { dest }) } : noCarReason(input, nr, timelines);
+    const { code: reasonCode, text: reasonText } = takenBy !== void 0 ? { code: "UNMET_CAR_TO_DRIVER", text: reason("UNMET_CAR_TO_DRIVER", { member: memberName(input, byRequestId.get(takenBy)?.request.memberId), dest }) } : needsLargeTrunk ? { code: "UNMET_NEEDS_LARGE_TRUNK", text: reason("UNMET_NEEDS_LARGE_TRUNK") } : needsTowHitch ? { code: "UNMET_NEEDS_TOW_HITCH", text: reason("UNMET_NEEDS_TOW_HITCH") } : seatsBusy ? { code: "UNMET_NO_CAR_SEATS_BUSY", text: reason("UNMET_NO_CAR_SEATS_BUSY", { cars: seatCarNames(input, nr), count: seatCount(nr) }) } : stillPassengerOnly.includes(nr) ? { code: "UNMET_PASSENGER_NO_HOST", text: reason("UNMET_NEEDS_DRIVER", { dest, dep: "" }) } : stillUnpairedRelay.includes(nr) && fittingCarFree(input, nr, timelines) ? { code: "UNMET_NO_RELAY_PARTNER", text: reason("UNMET_NO_RELAY_PARTNER", { dest }) } : oneWayCause.strands ? { code: "UNMET_ONE_WAY_STRANDS_CAR", text: reason("UNMET_ONE_WAY_STRANDS_CAR", { origin, dest }) } : oneWayCause.awayAtWeekEnd ? { code: "UNMET_ONE_WAY_AWAY_AT_WEEK_END", text: reason("UNMET_ONE_WAY_AWAY_AT_WEEK_END", { dest }) } : busyMember !== void 0 ? { code: "UNMET_PERSON_BUSY", text: reason("UNMET_PERSON_BUSY", { member: memberName(input, busyMember) || memberName(input, nr.request.memberId) }) } : noCarReason(input, nr, timelines);
     return {
       requestId: nr.id,
       score: scores.get(nr.id)?.total ?? 0,
@@ -5204,6 +5507,7 @@ function solveExpanded(input) {
 export {
   CarTimeline,
   DEFAULT_ALTERNATIVE_SERVED_WEIGHT,
+  MAX_STORED_FREED_OPTIONS,
   PolicyParamsError,
   SolverInvariantError,
   alternativeServedWeightOf,
@@ -5212,12 +5516,15 @@ export {
   dominates,
   effectiveTripType,
   fits,
+  freedSlotInputFrom,
   freedSlotOptions,
+  freedWeekDays,
   luggageFits,
   matchFreedSlot,
   needsFit,
   originIdOf,
   ruleRegistry,
+  runFreedSlot,
   slack,
   solve,
   sortUnits,

@@ -87,6 +87,14 @@ export function askPersonBusy(info: PersonBusyInfo): Promise<boolean> {
   return hostAsker ? hostAsker(info) : Promise.resolve(false);
 }
 
+// R21B7: how many times the question was answered yes - by either path below (`withPersonBusyRetry`, or the one
+// `rpc()` itself asks). A caller compares it before and after its call to learn that the overlap was confirmed
+// inside it (`submitRequest` reports it back, so the form does not ask again later in the same save).
+let yesCount = 0;
+export function personBusyYesCount(): number {
+  return yesCount;
+}
+
 /**
  * `call(false)`, and on `person_busy` the shared question, then `call(true)`. A "no" rejects with the original refusal
  * marked `declined`, so `showErrorToast` stays silent and callers' `catch` blocks keep working.
@@ -101,6 +109,7 @@ export async function withPersonBusyRetry<T>(call: (allowBusy: boolean) => Promi
       error.declined = true;
       throw error;
     }
+    yesCount += 1;
     return call(true);
   }
 }
@@ -133,7 +142,10 @@ export async function askPersonBusyRefusal(_name: string, args: unknown, error: 
   if (!isPersonBusy(error)) return null;
   const confirmed = personBusyConfirmedArgs(args);
   if (!confirmed) return null;
-  if (await ask(parsePersonBusyDetail(error.detail))) return confirmed;
+  if (await ask(parsePersonBusyDetail(error.detail))) {
+    yesCount += 1;
+    return confirmed;
+  }
   error.declined = true;
   return null;
 }

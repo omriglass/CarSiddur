@@ -4,7 +4,7 @@ import { t, tv } from "@/i18n/he";
 import type { TripType } from "@/lib/enums";
 
 import { overlapRefusalMessage } from "./overlapNames";
-import type { SubmitRequestResult, SubmitSeriesRequestResult } from "./api";
+import type { HostGuestQuestion, SeriesBlocker, SubmitRequestResult, SubmitSeriesRequestResult } from "./api";
 
 export interface SubmitOutcomeContext {
   /** Resolves a `cars.id` to its display name (both variants already have `carsQuery.data`). */
@@ -129,12 +129,28 @@ export function carStaysAwayConfirmation(result: SubmitRequestResult | null | un
   return { carName: result.car_name ?? "", nextRide: !!result.next_ride };
 }
 
+/** R20 Q2 redo: the shared ride's guests the edit no longer fits (the server changed nothing), or `null`. */
+export function hostGuestsConfirmation(result: SubmitRequestResult | null | undefined): HostGuestQuestion[] | null {
+  if (result?.needs_confirmation !== "host_guests") return null;
+  return result.host_guests?.length ? result.host_guests : null;
+}
+
 /** REQ §13.158: a refused edit (nothing changed, the booking kept) — the reason and the discussion holding the car. */
 export function editRefusal(
   result: SubmitRequestResult | null | undefined,
 ): { reason: "discussion" | "no_car" | "riders"; groupId: string | null } | null {
-  if (!result?.edit_refused) return null;
+  if (!result?.edit_refused || result.edit_refused === "car_taken") return null;
   return { reason: result.edit_refused, groupId: result.group_offer ?? null };
+}
+
+/** MD1 (REQ item 232): the multi-day edit's car is taken over the span — what blocks it and the latest return that fits. */
+export function seriesCarTaken(
+  result: SubmitRequestResult | null | undefined,
+): { blocker: SeriesBlocker; latestReturn: string | null } | null {
+  if (result?.edit_refused !== "car_taken" || !result.blocker) return null;
+  // R21B3: with no latest return only the member's own ride is asked about (it can be replaced)
+  if (!result.latest_return && result.blocker.kind !== "own_ride") return null;
+  return { blocker: result.blocker, latestReturn: result.latest_return ?? null };
 }
 
 /** R14U4: the other people on a ride the member drives (empty when they drive nobody), from a probe or a release answer. */

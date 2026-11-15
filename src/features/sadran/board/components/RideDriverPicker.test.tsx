@@ -6,14 +6,18 @@ import { he } from "@/i18n/he";
 import { DayEntries, RideDriverPicker } from "./RideDriverPicker";
 
 const mutate = vi.fn((..._args: unknown[]) => Promise.resolve());
-vi.mock("../../hooks", () => ({ useSetRideDriverMutation: () => ({ mutate, mutateAsync: mutate, isPending: false }) }));
+const serverBusy = vi.hoisted(() => ({ ids: [] as string[] }));
+vi.mock("../../hooks", () => ({
+  useSetRideDriverMutation: () => ({ mutate, mutateAsync: mutate, isPending: false }),
+  useRideBusyPeopleQuery: () => ({ data: serverBusy.ids }),
+}));
 
 const base = {
   rideId: "ride-1", version: 3, candidates: [{ id: "a", name: "A" }, { id: "b", name: "B" }],
   departmentId: "dept", weekStart: "2026-10-11",
 };
 
-beforeEach(() => mutate.mockReset());
+beforeEach(() => { mutate.mockReset(); serverBusy.ids = []; });
 
 describe("RideDriverPicker (R8U1: replace a volunteer in one step)", () => {
   it("a ride that needs a driver offers the assign picker only", () => {
@@ -117,5 +121,16 @@ describe("DayEntries (R13F2: what the chosen driver already has that day)", () =
     render(<DayEntries name="B" entries={[]} />);
     expect(screen.getByText(he.rideDriver.dayNone)).toBeInTheDocument();
     expect(screen.queryByTestId("ride-driver-day-entry")).not.toBeInTheDocument();
+  });
+});
+
+describe("RideDriverPicker (R20U7: who is free, by the server's own check)", () => {
+  it("a person the server finds busy (another week or department) is marked and listed after the free", () => {
+    serverBusy.ids = ["a"];
+    render(<RideDriverPicker {...base} needsDriver volunteerName={null} />);
+    const rows = screen.getAllByTestId("ride-driver-option");
+    expect(rows.map((row) => row.getAttribute("data-driver-id"))).toEqual(["b", "a"]);
+    expect(rows[1]).toHaveTextContent(he.rideDriver.busy);
+    expect(rows[0]).not.toHaveTextContent(he.rideDriver.busy);
   });
 });

@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 import { paths } from "../src/app/routes";
-import { he } from "../src/i18n/he";
+import { he, tv } from "../src/i18n/he";
 import { NEVO_DEPARTMENT_ID, SEEDED_USERS, serviceRoleClient, signIn, submitRequestForm } from "./helpers";
 import { publishedFixtureWeek } from "./published-week";
 import {
@@ -73,6 +73,86 @@ test.describe("request edits", { tag: ["@request-form"] }, () => {
     } finally {
       if (requestId) await deleteRequests(service, [requestId]);
       await service.from("children").delete().eq("id", child!.id);
+      await week.cleanup();
+    }
+  });
+
+  // R20 Q2 redo (owner 2026-11-14): a host's open-week edit never drops a merged guest silently — far hours ask
+  // "keep X / back to the waiting list / back"; "back" changes nothing, "keep" keeps the guest on the ride.
+  test("open week: a host's edit far from a guest's hours asks about the guest first", async ({ page }) => {
+    const service = serviceRoleClient();
+    const week = await memberOpenWeek();
+    const day = dayOfWeek(week.weekStart, 5);
+    const requestIds: string[] = [];
+    let rideId: string | undefined;
+    try {
+      const carId = await sharedCarIdByName(service, "יונדאי 1");
+      const hostId = await insertRequest(service, day, {
+        week: week.weekStart, requester: PROFILE_IDS.member1, depart: "08:00", return: "12:00", destinationId: PLACES.haifa.id, status: "assigned",
+      });
+      const guestId = await insertRequest(service, day, {
+        week: week.weekStart, requester: PROFILE_IDS.member2, depart: "08:00", return: "12:00", destinationId: PLACES.haifa.id, status: "merged",
+      });
+      requestIds.push(hostId, guestId);
+      const { data: ride, error: rideError } = await service.from("rides").insert({
+        department_id: NEVO_DEPARTMENT_ID, week_start: week.weekStart, car_id: carId, driver_id: PROFILE_IDS.member1, created_by: PROFILE_IDS.sadran,
+        starts_at: winterAt(day, "08:00"), ends_at: winterAt(day, "12:00"), blocked_until: winterAt(day, "12:30"),
+        origin_id: PLACES.home.id, destination_id: PLACES.home.id, status: "draft",
+      }).select("id").single();
+      if (rideError) throw rideError;
+      rideId = ride.id as string;
+      const { error: linkError } = await service.from("ride_requests").insert([
+        { ride_id: rideId, request_id: hostId, role: "driver", leg: "both", car_mode: "keep" },
+        { ride_id: rideId, request_id: guestId, role: "passenger", leg: "both", car_mode: "passenger" },
+      ]);
+      if (linkError) throw linkError;
+      const guestName = SEEDED_USERS.member2.fullName;
+      const guestOnRide = async () => (await service.from("ride_requests").select("rides!inner(status, starts_at)")
+        .eq("request_id", guestId).neq("rides.status", "cancelled")).data ?? [];
+
+      await signIn(page, SEEDED_USERS.member1);
+      const editToAfternoon = async () => {
+        await page.goto(paths.requests.edit(hostId));
+        await expect(page.getByTestId("request-sentence")).toBeVisible();
+        await page.getByTestId("chip-return").click();
+        await fillTimeField(page.getByTestId("time-sheet-return"), he.field.return, "19:00");
+        await page.getByRole("button", { name: he.requestSentence.sheetDone, exact: true }).click();
+        await page.getByTestId("chip-out").click();
+        await fillTimeField(page.getByTestId("time-sheet-out"), he.field.depart, "15:00");
+        await page.getByRole("button", { name: he.requestSentence.sheetDone, exact: true }).click();
+        await saveEditedRequest(page);
+      };
+      const ask = page.getByRole("dialog").filter({ hasText: he.request.hostGuestTitle });
+
+      await test.step("the save stops and asks; 'back' changes nothing", async () => {
+        await editToAfternoon();
+        await expect(ask).toBeVisible();
+        await expect(ask).toContainText(guestName);
+        await expect(ask).toContainText("08:00");
+        await expect(ask).toContainText("15:00");
+        await expect(ask.getByTestId("host-guest-release")).toBeVisible();
+        await ask.getByRole("button", { name: he.request.hostGuestBack, exact: true }).click();
+        await expect(ask).toHaveCount(0);
+        const { data: host } = await service.from("requests").select("depart_at").eq("id", hostId).single();
+        expect(jerusalemTime(host!.depart_at as string)).toBe("08:00");
+        expect(await guestOnRide()).toHaveLength(1);
+      });
+
+      await test.step("'keep' saves the edit and the guest rides on at the new hours", async () => {
+        await editToAfternoon();
+        await expect(ask).toBeVisible();
+        await ask.getByRole("button", { name: tv("request.hostGuestKeep", { name: guestName }), exact: true }).click();
+        await expect(page).toHaveURL(/\/my$/);
+        const { data: host } = await service.from("requests").select("depart_at").eq("id", hostId).single();
+        expect(jerusalemTime(host!.depart_at as string)).toBe("15:00");
+        const rows = await guestOnRide();
+        expect(rows).toHaveLength(1);
+        const { data: guest } = await service.from("requests").select("status, status_reason").eq("id", guestId).single();
+        expect(guest).toMatchObject({ status: "merged" });
+      });
+    } finally {
+      await deleteRequests(service, requestIds);
+      if (rideId) await service.from("rides").delete().eq("id", rideId);   // the first ride, cancelled by the edit
       await week.cleanup();
     }
   });

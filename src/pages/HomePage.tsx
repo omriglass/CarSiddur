@@ -1,4 +1,7 @@
 import { carOwnerIds } from "@/lib/carOwners";
+import { cancelRidePreview, editRidePreview, removeMePreview } from "@/features/rides/freedCarRequests";
+import { useFreedCarGate, useFreedCarLine } from "@/features/rides/useFreedCar";
+import { FreedCarConfirmDialog, KeepOutButton } from "@/features/rides/FreedCarConfirmDialog";
 import { useActiveDepartment } from "@/features/auth/useActiveDepartment";
 import { useWeekChangeWatch } from "@/features/liveSync/useWeekChangeWatch";
 import { ChevronDown, Inbox, MessageCircleQuestion } from "lucide-react";
@@ -46,6 +49,7 @@ import {
   useWithdrawFreedSlotClaimMutation,
   useWithdrawRequestMutation,
 } from "@/features/requests/hooks";
+import { isSeriesDay, useCancelSeriesDay } from "@/features/requests/useCancelSeriesDay";
 import type { ClosedRequestRow, MyRequestRow } from "@/features/requests/api";
 import { canEditRequest, isPublishedDayWindow } from "@/features/requests/window";
 import {
@@ -96,6 +100,7 @@ import { useTightRideIds } from "@/features/requests/myWeek/useTightRideIds";
 import { MyWeekDisplayMenu } from "@/features/requests/myWeek/MyWeekDisplayMenu";
 import { LongRangeMenu } from "@/features/planning/components/LongRangeMenu";
 import { he, t, tv } from "@/i18n/he";
+import { withFreedCarChoice } from "@/lib/appSurface";
 import { describeStatusReason } from "@/lib/statusReason";
 import { effectiveWeekSettings } from "@/lib/weekSettings";
 import { formatDayDate } from "@/lib/dayLabels";
@@ -183,6 +188,17 @@ export function HomePage() {
   const [selectedMyRide, setSelectedMyRide] = useState<BoardRide | null>(null);
   const collapsedWeeks = useCollapsedWeeks();
   const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null);
+  const freedGate = useFreedCarGate();
+  // FC1 (REQ item 231): the very call the confirmation sends, tried and rolled back - who waiting gets the freed car
+  const confirmFreedLine = useFreedCarLine(
+    confirmAction?.kind === "withdraw"
+      ? { action: confirmAction.row.editorOf ? "ride_editor_withdraw_request" : "withdraw_request",
+          args: { p_request_id: confirmAction.row.id, p_expected_version: confirmAction.row.version } }
+      : confirmAction?.kind === "cancel" && confirmAction.row.ride
+        ? { action: confirmAction.row.editorOf ? "ride_editor_cancel_ride" : "cancel_ride",
+            args: { p_ride_id: confirmAction.row.ride.id, p_reason: "CANCELLED_BY_MEMBER", p_expected_version: confirmAction.row.ride.version } }
+        : null);
+
   const [shortenRow, setShortenRow] = useState<DisplayRow | null>(null);
   // SP1 (REQ item 228): "פיצול" on a multi-day request — its first leg, length and the clicked row's version.
   const [splitTarget, setSplitTarget] = useState<SplitTarget | null>(null);
@@ -199,6 +215,7 @@ export function HomePage() {
   const [selectedSuggestion, setSelectedSuggestion] = useState<TemplateSuggestion | null>(null);
   const openProposal = useOpenProposal();
   const cancelRideMutation = useCancelRideMutation();
+  const cancelSeriesDay = useCancelSeriesDay();
   const removeMeMutation = useRemoveRidePassengerMutation();
   const editMutation = useEditRideMutation();
   // REQ §13.203: the car is taken at the new hours — ask the drivers in the way to make room, only after talking.
@@ -425,29 +442,37 @@ export function HomePage() {
       void makeRoom.startMove({ departmentId: editableRide.department_id, weekStart: editableRide.week_start }, move, null);
       return;
     }
-    try {
-      await editMutation.mutateAsync({
-        input: {
-          id: move.rideId,
-          department_id: editableRide.department_id,
-          week_start: editableRide.week_start,
-          car_id: move.carId,
-          starts_at: move.startsAt,
-          ends_at: move.endsAt,
-          origin_id: editableRide.origin_id,
-          destination_id: editableRide.destination_id,
-          driver_id: editableRide.driver_id,
-        },
-        expectedVersion: move.expectedVersion,
-        departmentId: editableRide.department_id,
-        weekStart: editableRide.week_start,
-      });
-      setSelectedMyRide(null);
-      toast.success(he.rideEditing.saved);
-    } catch { /* The mutation presents the database validation error. */ }
+    const departmentId = editableRide.department_id;
+    const weekStart = editableRide.week_start;
+    const input = {
+      id: move.rideId,
+      department_id: departmentId,
+      week_start: weekStart,
+      car_id: move.carId,
+      starts_at: move.startsAt,
+      ends_at: move.endsAt,
+      origin_id: editableRide.origin_id,
+      destination_id: editableRide.destination_id,
+      driver_id: editableRide.driver_id,
+    };
+    // FC1 (REQ item 231): a move that frees the car for someone waiting asks first ("הרכב יתפנה לאחרים")
+    await freedGate.run(editRidePreview(input, move.expectedVersion), (keepOut) => void (async () => {
+      try {
+        // REQ item 237: "לשמור בלי להעביר את הרכב" — the save's calls carry the keep header
+        await withFreedCarChoice(keepOut, () => editMutation.mutateAsync({ input, expectedVersion: move.expectedVersion, departmentId, weekStart }));
+        setSelectedMyRide(null);
+        toast.success(he.rideEditing.saved);
+      } catch { /* The mutation presents the database validation error. */ }
+    })());
   }
 
-  async function runConfirmAction() {
+  /** `keepOut`: "לבטל בלי להעביר את הרכב" (REQ item 237) — the calls carry the keep header. */
+  async function runConfirmAction(keepOut = false) {
+    if (!confirmAction) return;
+    await withFreedCarChoice(keepOut, () => runConfirmActionCalls());
+  }
+
+  async function runConfirmActionCalls() {
     if (!confirmAction) return;
     try {
       if (confirmAction.kind === "withdrawAll") {
@@ -474,7 +499,7 @@ export function HomePage() {
       ride={editableRide}
       cars={carsQuery.data ?? []}
       viewerId={profileQuery.data?.id}
-      saving={editMutation.isPending || makeRoom.pending}
+      saving={editMutation.isPending || makeRoom.pending || freedGate.checking}
       onSave={(move) => void saveMyRideMove(move)}
     />
   ) : null;
@@ -771,15 +796,22 @@ export function HomePage() {
         // once solved/published, before that only draft/manual-reservation pins do); the
         // RPC itself is the real gate (`week_archived`/`not_authorized` surface as toasts).
         showAddPassengers={!!selectedMyRide && selectedMyRide.status !== "cancelled" && isRideOfMine(selectedMyRide, viewerId, myRequestIds)}
-        onRemoveOwnRide={selectedMyRide?.id && selectedMyRide.driver_id === profileQuery.data?.id && !volunteerDriverOf(selectedMyRide) && selectedMyRide.version != null ? () => cancelRideMutation.mutate({ rideId: selectedMyRide.id!, expectedVersion: selectedMyRide.version!, reason: "CANCELLED_BY_MEMBER" }, { onSuccess: () => setSelectedMyRide(null) }) : undefined}
-        removingOwnRide={cancelRideMutation.isPending}
+        onRemoveOwnRide={selectedMyRide?.id && selectedMyRide.driver_id === profileQuery.data?.id && !volunteerDriverOf(selectedMyRide) && selectedMyRide.version != null ? (keepOut: boolean) => void withFreedCarChoice(keepOut, () => cancelRideMutation.mutateAsync({ rideId: selectedMyRide.id!, expectedVersion: selectedMyRide.version!, reason: "CANCELLED_BY_MEMBER" })).then(() => setSelectedMyRide(null), () => undefined) : undefined}
+        removingOwnRide={cancelRideMutation.isPending || cancelSeriesDay.busy}
+        onCancelSeriesDay={selectedMyRide && selectedMyRide.driver_id === profileQuery.data?.id && !volunteerDriverOf(selectedMyRide) && isSeriesDay(selectedMyRide)
+          ? () => cancelSeriesDay.start(selectedMyRide, () => setSelectedMyRide(null)) : undefined}
         onRemoveMe={(() => {
           const myKey = selectedMyRide ? myRidePersonKey(selectedMyRide, profileQuery.data?.id) : null;
           if (!selectedMyRide?.id || !myKey || selectedMyRide.version == null || !selectedMyRide.department_id || !selectedMyRide.week_start) return undefined;
           const { id, version, department_id, week_start } = selectedMyRide;
-          return () => removeMeMutation.mutate({ rideId: id, expectedVersion: version, key: myKey, departmentId: department_id, weekStart: week_start }, { onSuccess: () => setSelectedMyRide(null) });
+          return (keepOut: boolean) => void withFreedCarChoice(keepOut, () => removeMeMutation.mutateAsync({ rideId: id, expectedVersion: version, key: myKey, departmentId: department_id, weekStart: week_start }))
+            .then(() => setSelectedMyRide(null), () => undefined);
         })()}
         removingMe={removeMeMutation.isPending}
+        freedPreview={{
+          cancel: cancelRidePreview(selectedMyRide, false),
+          removeMe: removeMePreview(selectedMyRide, selectedMyRide ? myRidePersonKey(selectedMyRide, profileQuery.data?.id) : null),
+        }}
         // Owner 2026-10-11: the same "edit" button as on the siddur — opens my own request on this ride (day, stops, …).
         editRequestLinks={selectedRideEditHref ? [{ href: selectedRideEditHref, label: he.rideDetail.edit }] : []}
         canEditPublicNotes={canEditSelectedRideNotes}
@@ -847,6 +879,8 @@ export function HomePage() {
       <ShortenSeriesDialog row={shortenRow} onOpenChange={(open) => { if (!open) setShortenRow(null); }} />
       {splitTarget ? <SplitSeriesDialog target={splitTarget} onOpenChange={(open) => { if (!open) setSplitTarget(null); }} /> : null}
       {makeRoom.element}
+      <FreedCarConfirmDialog dialog={freedGate.dialog} loading={editMutation.isPending} />
+      {cancelSeriesDay.dialog}
       <ConfirmDialog
         open={!!confirmAction}
         onOpenChange={(open) => !open && setConfirmAction(null)}
@@ -856,7 +890,13 @@ export function HomePage() {
         destructive
         loading={withdrawMutation.isPending || cancelRideMutation.isPending || withdrawAllMutation.isPending || withdrawClaimMutation.isPending}
         onConfirm={() => void runConfirmAction()}
-      />
+      >
+        {confirmFreedLine ? <p className="text-sm" data-testid="freed-car-line">{confirmFreedLine}</p> : null}
+        {confirmFreedLine ? (
+          <KeepOutButton label={he.freedCar.keepOutCancel} disabled={withdrawMutation.isPending || cancelRideMutation.isPending}
+            onClick={() => void runConfirmAction(true)} />
+        ) : null}
+      </ConfirmDialog>
     </div>
   );
 }

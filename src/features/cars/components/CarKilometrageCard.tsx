@@ -22,13 +22,15 @@ interface CarKilometrageCardProps {
   loading?: boolean;
   /** `can_manage_car` (REQ item 150 a): admin, responsible person or (shared car) a car administrator. */
   canCorrect: boolean;
+  /** R20U3 (QA run 20): opens the reading step of the car report dialog. */
+  onLogKm?: () => void;
 }
 
 /**
  * The car's current kilometrage on `/cars/:carId` (REQ item 150 c). Members add readings from the car report
  * dialog; the car's managers get "תיקון הקילומטראז׳" here — any value, recorded as a correction.
  */
-export function CarKilometrageCard({ car, current, loading = false, canCorrect }: CarKilometrageCardProps) {
+export function CarKilometrageCard({ car, current, loading = false, canCorrect, onLogKm }: CarKilometrageCardProps) {
   const [open, setOpen] = useState(false);
   const [kmText, setKmText] = useState("");
   const [note, setNote] = useState("");
@@ -70,11 +72,18 @@ export function CarKilometrageCard({ car, current, loading = false, canCorrect }
               {current ? <p className="text-xs text-muted-foreground">{tv("carPage.kmCurrentAt", { date: formatDayDate(current.recorded_at) })}</p> : null}
             </div>
           </div>
-          {canCorrect ? (
-            <Button variant="outline" size="sm" onClick={() => setOpen(true)} data-testid="car-km-correct">
-              {he.carPage.kmCorrect}
-            </Button>
-          ) : null}
+          <div className="flex shrink-0 flex-col gap-1.5">
+            {onLogKm ? (
+              <Button variant="outline" size="sm" onClick={onLogKm} data-testid="car-log-km">
+                {he.carPage.kmLog}
+              </Button>
+            ) : null}
+            {canCorrect ? (
+              <Button variant="outline" size="sm" onClick={() => setOpen(true)} data-testid="car-km-correct">
+                {he.carPage.kmCorrect}
+              </Button>
+            ) : null}
+          </div>
         </CardContent>
       </Card>
       <FormDialog

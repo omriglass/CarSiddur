@@ -9,6 +9,7 @@
 
 import { compareUnitsByPriority, runGreedy, type Placed, type PlacedSingle, type Unit } from './greedy';
 import { findMergeHosts, type HostRide } from './merge';
+import { busyWindowsFor, clearOf, legWindow, seatGuest, type PersonBook } from './personBusy';
 import { sum } from './seatFit';
 import type { NormalizedRequest } from './slots';
 import type { CarTimeline } from './timeline';
@@ -72,6 +73,7 @@ function tryPool(
   carsMap: Map<string, Car>,
   /** 'both' = a whole round trip (pooling); 'out' / 'return' = one leg rides along (REQ item 136 b). */
   leg: LegSide = 'both',
+  people?: PersonBook,
 ): boolean {
   const hostPlaced = placed
     .filter((h): h is PlacedSingle => h.kind === 'single')
@@ -97,6 +99,15 @@ function tryPool(
     homeLocationId: input.homeLocationId,
     travel: input.travel,
   });
+  // R20B5 (SOLVER §3.7b): nobody on the ride is moved into another ride of theirs — the guest over the legs it rides,
+  // the host and its guests when the host's hours change.
+  const peopleClear = (h: PlacedSingle, rideId: string, window: { start: number; end: number }): boolean => {
+    if (!people) return true;
+    if (!clearOf(legWindow(window, leg, guest.travelSlots), busyWindowsFor(people, guest, [rideId]))) return false;
+    if (window.start === h.window.start && window.end === h.window.end) return true;
+    if (!clearOf(window, busyWindowsFor(people, h.nr, [rideId]))) return false;
+    return (h.guests ?? []).every((g) => clearOf(legWindow(window, h.guestLegs?.[g.id] ?? 'both', g.travelSlots), busyWindowsFor(people, g, [rideId])));
+  };
   // not drastic: the host's new window stays inside its own declared flexibility, and inside its day
   const best = candidates.find((c) => {
     const h = hostByRide.get(c.hostRideId);
@@ -107,7 +118,8 @@ function tryPool(
       c.window.start >= h.nr.flexDep[0] &&
       c.window.end <= h.nr.flexRet[1] &&
       c.window.start >= h.nr.dayWindow.start &&
-      c.window.end <= h.nr.dayWindow.end
+      c.window.end <= h.nr.dayWindow.end &&
+      peopleClear(h, c.hostRideId, c.window)
     );
   });
   const hostPl = best ? hostByRide.get(best.hostRideId) : undefined;
@@ -133,6 +145,7 @@ function tryPool(
   hostPl.balancedMileage = false;
   hostPl.guests = [...(hostPl.guests ?? []), guest];
   if (leg !== 'both') hostPl.guestLegs = { ...(hostPl.guestLegs ?? {}), [guest.id]: leg };
+  seatGuest(people, best.hostRideId, guest, leg);
   if (guestPlaced) placed.splice(placed.indexOf(guestPlaced), 1);
   return true;
 }
@@ -158,6 +171,7 @@ function poolRound(
   scores: Map<string, { total: number }>,
   carsMap: Map<string, Car>,
   pooled: Set<string>,
+  people?: PersonBook,
 ): number {
   const guestsOrder = placed
     .filter((p): p is PlacedSingle => p.kind === 'single')
@@ -169,7 +183,7 @@ function poolRound(
   for (const guestPlaced of guestsOrder) {
     // may have become a host earlier in this round
     if ((guestPlaced.guests?.length ?? 0) > 0 || !placed.includes(guestPlaced)) continue;
-    if (tryPool(guestPlaced.nr, guestPlaced, placed, timelines, input, carsMap)) {
+    if (tryPool(guestPlaced.nr, guestPlaced, placed, timelines, input, carsMap, 'both', people)) {
       pooled.add(guestPlaced.nr.id);
       count++;
     }
@@ -179,7 +193,7 @@ function poolRound(
     .sort(compareUnitsByPriority);
   for (const unit of unmetOrder) {
     if (!unit.single) continue;
-    if (tryPool(unit.single, undefined, placed, timelines, input, carsMap)) {
+    if (tryPool(unit.single, undefined, placed, timelines, input, carsMap, 'both', people)) {
       pooled.add(unit.single.id);
       unmet.splice(unmet.indexOf(unit), 1);
       count++;
@@ -199,16 +213,17 @@ export function runPooling(
   input: SolverInput,
   scores: Map<string, { total: number }>,
   carsMap: Map<string, Car>,
+  people?: PersonBook,
 ): PoolingResult {
   const pooledRequestIds = new Set<string>();
   let current = [...placed];
   let unmet = [...unmetUnits];
   for (;;) {
-    const pooledNow = poolRound(current, unmet, timelines, input, scores, carsMap, pooledRequestIds);
+    const pooledNow = poolRound(current, unmet, timelines, input, scores, carsMap, pooledRequestIds, people);
     if (pooledNow === 0) break;
     // the freed capacity may serve a still-unmet unit; whatever it places is a candidate in the next round
     if (unmet.length > 0) {
-      const retry = runGreedy(unmet, timelines, input);
+      const retry = runGreedy(unmet, timelines, input, people);
       current = [...current, ...retry.placed];
       unmet = retry.unmetUnits;
     }
@@ -230,6 +245,7 @@ export function runRideAlong(
   input: SolverInput,
   scores: Map<string, { total: number }>,
   carsMap: Map<string, Car>,
+  people?: PersonBook,
 ): Set<string> {
   const seated = new Set<string>();
   const order = [...candidates]
@@ -238,7 +254,7 @@ export function runRideAlong(
   for (const nr of order) {
     if (seated.has(nr.id)) continue;
     const side = nr.legs[0]?.side === 'return' ? 'return' : 'out';
-    if (tryPool(nr, undefined, placed, timelines, input, carsMap, side)) seated.add(nr.id);
+    if (tryPool(nr, undefined, placed, timelines, input, carsMap, side, people)) seated.add(nr.id);
   }
   return seated;
 }
@@ -251,6 +267,7 @@ export function seatAsGuest(
   timelines: Map<string, CarTimeline>,
   input: SolverInput,
   carsMap: Map<string, Car>,
+  people?: PersonBook,
 ): boolean {
-  return tryPool(guest, undefined, placed, timelines, input, carsMap, leg);
+  return tryPool(guest, undefined, placed, timelines, input, carsMap, leg, people);
 }

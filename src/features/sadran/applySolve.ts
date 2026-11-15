@@ -84,6 +84,7 @@ export function nowMs(): number {
 }
 
 import { isReservation, servedOf, type ServedEntry } from "@/features/rides/servedOf";
+import { peopleOf } from "@/features/rides/ridePeople";
 
 export { servedOf, namedPassengersOf, withChildNames, representativeRideTypeCode, relayPartnerOf, rideViaNames } from "@/features/rides/servedOf";
 export type { ServedEntry, RidePassengerEntry, RelayPartner } from "@/features/rides/servedOf";
@@ -156,9 +157,15 @@ export function boardRideToFixedRide(ride: BoardRide, weekStartMs: number): Fixe
   const luggageCount = Math.max(countOn("out", (s) => !!s.luggage && !s.luggage_waived), countOn("return", (s) => !!s.luggage && !s.luggage_waived));
   const towCount = Math.max(countOn("out", (s) => !!s.tow_hitch && !s.luggage_waived), countOn("return", (s) => !!s.tow_hitch && !s.luggage_waived));   // REQ §13.200
 
+  // R20B5 (SOLVER §3.7b): who rides it and on which leg — the solver never moves one of them into another ride.
+  const riders = peopleOf(ride).flatMap((person) =>
+    person.person_id ? [{ memberId: person.person_id, leg: person.leg ?? "both", ...(person.request_id ? { requestId: person.request_id } : {}) }] : []);
+  if (ride.driver_id && !riders.some((r) => r.memberId === ride.driver_id)) riders.unshift({ memberId: ride.driver_id, leg: "both" });
+
   return {
     id: ride.id,
     carId: ride.car_id,
+    riders,
     window: { start: isoToSlot(ride.starts_at, weekStartMs), end: isoToSlot(ride.ends_at, weekStartMs) },
     originId: ride.origin_id,
     destinationId: ride.destination_id,
@@ -320,6 +327,7 @@ export function draftFixedRides(
         ...hostFixed,
         window: { start: Math.min(hostFixed.window.start, window.start), end: Math.max(hostFixed.window.end, window.end) },
         servedRequestIds: [...hostFixed.servedRequestIds, request.id],
+        riders: [...(hostFixed.riders ?? []), { memberId: request.requester_id, leg: "both", requestId: request.id }],
         passengers: {
           adults: hostFixed.passengers.adults + request.adults,
           childSeats: hostFixed.passengers.childSeats + request.child_seats,
@@ -372,6 +380,7 @@ export function draftFixedRides(
         role: roundTrip ? "driver" : "passenger",
       }],
       servedRequestIds: [request.id],
+      riders: [{ memberId: request.requester_id, leg: "both", requestId: request.id }],
       passengers: { adults: request.adults, childSeats: request.child_seats, boosters: request.boosters },
       luggageCount: needsLargeTrunk(request) ? 1 : 0,
       ...(needsTowHitch(request) ? { towCount: 1 } : {}),

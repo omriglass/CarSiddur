@@ -445,7 +445,8 @@ export function isUnmetDropValid(ctx: BoardDropContext, item: UnmetListItem, car
   // host's business, not the guest's origin/destination.
   const originId = legStartPlaceId(item.request, ctx.homeDestinationId);
   const connects = !host && connectsOtherLeg(ctx, item, carId);
-  if (!host && !connects && originId && originMismatch(ctx, carId, originId, window.startsAt)) return false;
+  // R20H3 (owner 2026-11-15): a one-way leg from where the car is not standing stays a valid target too - the drop asks.
+  if (!host && !connects && originId && tripTypeOf(item.request) !== "one_way" && originMismatch(ctx, carId, originId, window.startsAt)) return false;
   if (!host && !connects && chauffeurCarElsewhere(ctx, item.request, carId, window.startsAt)) return false;
   // CH1 (REQ §13.93, owner 2026-11-07): a one-way leg that would strand the car's next ride stays a valid target —
   // the drop asks "לשבץ בכל זאת?" (useBoardDnd) instead of refusing.

@@ -10,6 +10,7 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { PortalSheetContent } from "@/components/PortalSheetContent";
 import { CarNameWithReport } from "@/features/carCare/components/CarNameWithReport";
 import { MyCarTasksCard } from "@/features/carTasks/components/MyCarTasksCard";
+import { formatDayDate } from "@/lib/dayLabels";
 import { rideBlockLabel } from "@/lib/rideLabel";
 import { siddurCarName } from "@/lib/siddurCarName";
 import { ridePassengerParts } from "@/lib/ridePassengerSummary";
@@ -32,6 +33,10 @@ import { parseRideRoute, routeHasIntermediates } from "@/lib/rideRoute";
 import { peopleOf } from "@/features/rides/ridePeople";
 import type { HandOverCandidate } from "@/features/rides/handOver";
 import type { OwnCar } from "@/features/rides/useOwnCarMove";
+import type { FreedCarPreviewRequest } from "@/features/rides/api";
+import { KeepOutButton } from "@/features/rides/FreedCarConfirmDialog";
+import { useFreedCarLine } from "@/features/rides/useFreedCar";
+import { ownCarMoveBody } from "@/features/rides/ownCarMove";
 
 /**
  * "<driver> ו<passengers> ל/מ<real destination>" (UX_FLOWS.md §20 — the
@@ -77,11 +82,19 @@ interface RideDetailSheetProps {
   coordinatorNotes?: string;
   canEditPublicNotes?: boolean;
   /** Available only when the signed-in member has a request served by this ride. */
-  onRemoveOwnRide?: () => void;
+  /** `keepOut`: "לבטל בלי להעביר את הרכב" (REQ item 237). */
+  onRemoveOwnRide?: (keepOut: boolean) => void;
   removingOwnRide?: boolean;
+  /** R20H1: one day of a multi-day ride — the cancel dialog also offers "לבטל רק את ד׳ 16.9" (`useCancelSeriesDay`). */
+  onCancelSeriesDay?: () => void;
   /** REQ §13.128: a non-driver passenger removes only themselves (`remove_ride_person`), never the whole ride. */
-  onRemoveMe?: () => void;
+  onRemoveMe?: (keepOut: boolean) => void;
   removingMe?: boolean;
+  /**
+   * FC1 (REQ item 231): the exact calls "cancel ride" / "remove me" will send — while their confirmation is open, it
+   * says who waiting would get the freed car.
+   */
+  freedPreview?: { cancel?: FreedCarPreviewRequest | null; removeMe?: FreedCarPreviewRequest | null };
   /** The edit entries: the member's own / related request, or every request on the ride (REQ §13.169 a). */
   editRequestLinks?: readonly { href: string; label: string }[];
   /**
@@ -100,6 +113,8 @@ interface RideDetailSheetProps {
   handOverOptions?: readonly HandOverCandidate[];
   /** REQ item 229: on a merge, the driver may leave with nobody driving (the ride waits for a driver). */
   onLeaveNoDriver?: () => void;
+  /** R20B15: the "לקצר את הנסיעה?" question `onLeaveNoDriver` may open (`useLeaveNoDriver`). */
+  leaveNoDriverDialog?: ReactNode;
   onHandOver?: (newDriverId: string) => void;
   handingOver?: boolean;
 }
@@ -112,10 +127,32 @@ interface RideDetailSheetProps {
  * §13.85; the `/requests/new?ride=` prefill path itself is untouched, still reachable from the
  * joinable-rides dialog after a waiting-list outcome).
  */
-export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = null, onOpenChange, editor, coordinatorNotes, canEditPublicNotes, onRemoveOwnRide, removingOwnRide = false, onRemoveMe, removingMe = false, editRequestLinks = [], showAddPassengers = false, weekRides, moveToCarOptions = [], onMoveToCar, movingToCar = false, handOverOptions = [], onHandOver, onLeaveNoDriver, handingOver = false }: RideDetailSheetProps) {
+export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = null, onOpenChange, editor, coordinatorNotes, canEditPublicNotes, onRemoveOwnRide, removingOwnRide = false, onCancelSeriesDay, onRemoveMe, removingMe = false, freedPreview, editRequestLinks = [], showAddPassengers = false, weekRides, moveToCarOptions = [], onMoveToCar, movingToCar = false, handOverOptions = [], onHandOver, onLeaveNoDriver, leaveNoDriverDialog, handingOver = false }: RideDetailSheetProps) {
   const [confirmCancel, setConfirmCancel] = useState(false);
+  const [notDriving, setNotDriving] = useState(false);
+  const canLeaveDriving = (handOverOptions.length > 0 && !!onHandOver) || !!onLeaveNoDriver;
+  const seriesDay = !!onCancelSeriesDay && !!ride?.series_id && (ride.series_count ?? 0) > 1;
+  /** The driver's ways out of the ride: hand it to someone on it who drives, or leave it waiting for a driver. */
+  const leaveChoices = (close: () => void) => (
+    <div className="space-y-2">
+      {onHandOver ? handOverOptions.map((option) => (
+        <Button key={option.id} type="button" className="w-full" variant="outline" disabled={handingOver} data-testid="hand-over-option"
+          onClick={() => { close(); onHandOver(option.id); }}>
+          {tv("rideDetail.handOverOption", { name: option.name })}
+        </Button>
+      )) : null}
+      {onLeaveNoDriver ? (
+        <Button type="button" className="w-full" variant="outline" disabled={handingOver} data-testid="leave-no-driver"
+          onClick={() => { close(); onLeaveNoDriver(); }}>
+          {he.rideDetail.leaveNoDriver}
+        </Button>
+      ) : null}
+    </div>
+  );
   const viewerId = useSession().session?.user.id;
   const [confirmRemoveMe, setConfirmRemoveMe] = useState(false);
+  const cancelFreedLine = useFreedCarLine(confirmCancel ? freedPreview?.cancel ?? null : null);
+  const removeMeFreedLine = useFreedCarLine(confirmRemoveMe ? freedPreview?.removeMe ?? null : null);
   const [moveCarId, setMoveCarId] = useState<string | null>(null);
   // `servedOf()` already maps `v_board_rides.served[].child_names` onto each entry's
   // `childNames` (`applySolve.ts`) — no more hand-rolled mapping needed here.
@@ -243,7 +280,7 @@ export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = 
                     open={!!moveCar}
                     onOpenChange={(open) => { if (!open) setMoveCarId(null); }}
                     title={tv("rideEditing.ownCarMoveTitle", { name: rideOwnerName })}
-                    description={tv("rideEditing.ownCarMoveBody", { name: rideOwnerName, car: moveCar?.name ?? "" })}
+                    description={ownCarMoveBody(ride.driver_id, rideOwnerName, moveCar?.name ?? "")}
                     confirmLabel={he.rideEditing.ownCarMoveConfirm}
                     loading={movingToCar}
                     onConfirm={() => { if (moveCar) { setMoveCarId(null); onMoveToCar(moveCar.id); } }}
@@ -272,11 +309,22 @@ export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = 
                     confirmLabel={leavingSomeonesRide ? he.rideDetail.leaveRideConfirm : removingMyRequest ? t("action.cancelRide") : he.rideDetail.removeMe}
                     destructive
                     loading={removingMe}
-                    onConfirm={() => { setConfirmRemoveMe(false); onRemoveMe(); }}
-                  />
+                    onConfirm={() => { setConfirmRemoveMe(false); onRemoveMe(false); }}
+                  >
+                    {removeMeFreedLine ? <p className="text-sm" data-testid="freed-car-line">{removeMeFreedLine}</p> : null}
+                    {removeMeFreedLine ? (
+                      <KeepOutButton label={removingMyRequest && !leavingSomeonesRide ? he.freedCar.keepOutCancel : he.freedCar.keepOutLeave} disabled={removingMe}
+                        onClick={() => { setConfirmRemoveMe(false); onRemoveMe(true); }} />
+                    ) : null}
+                  </ConfirmDialog>
                 </>
               ) : onRemoveOwnRide ? (
                 <>
+                  {canLeaveDriving ? (
+                    <Button className="w-full" size="lg" variant="outline" disabled={handingOver} onClick={() => setNotDriving(true)} data-testid="not-driving-this">
+                      {he.rideDetail.notDrivingThis}
+                    </Button>
+                  ) : null}
                   <Button className="w-full" size="lg" variant="destructive" disabled={removingOwnRide} onClick={() => setConfirmCancel(true)}>
                     {t("action.cancelRide")}
                   </Button>
@@ -284,35 +332,48 @@ export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = 
                   <ConfirmDialog
                     open={confirmCancel}
                     onOpenChange={setConfirmCancel}
-                    title={he.request.cancelConfirmTitle}
-                    confirmLabel={(handOverOptions.length && onHandOver) || onLeaveNoDriver ? he.rideDetail.cancelForAll : t("action.cancelRide")}
+                    title={seriesDay ? he.request.seriesCancelTitle : he.request.cancelConfirmTitle}
+                    confirmLabel={seriesDay ? he.request.cancelAllDays : canLeaveDriving ? he.rideDetail.cancelForAll : t("action.cancelRide")}
                     destructive
                     loading={removingOwnRide || handingOver}
-                    onConfirm={() => { setConfirmCancel(false); onRemoveOwnRide(); }}
+                    onConfirm={() => { setConfirmCancel(false); onRemoveOwnRide(false); }}
                   >
-                    {/* REQ §13.129 (b): the driver may instead hand the ride to someone on it who drives. */}
-                    {(handOverOptions.length && onHandOver) || onLeaveNoDriver ? (
-                      <div className="space-y-2">
-                        {onHandOver ? handOverOptions.map((option) => (
-                          <Button key={option.id} type="button" className="w-full" variant="outline" disabled={handingOver} data-testid="hand-over-option"
-                            onClick={() => { setConfirmCancel(false); onHandOver(option.id); }}>
-                            {tv("rideDetail.handOverOption", { name: option.name })}
-                          </Button>
-                        )) : null}
-                        {onLeaveNoDriver ? (
-                          <Button type="button" className="w-full" variant="outline" disabled={handingOver} data-testid="leave-no-driver"
-                            onClick={() => { setConfirmCancel(false); onLeaveNoDriver(); }}>
-                            {he.rideDetail.leaveNoDriver}
-                          </Button>
-                        ) : null}
+                    {/* R20H1 (owner 2026-11-14): one day of a multi-day ride, or every day. */}
+                    {seriesDay && ride.starts_at ? (
+                      <Button className="mb-2 w-full" variant="outline" disabled={removingOwnRide || handingOver} data-testid="cancel-only-day"
+                        onClick={() => { setConfirmCancel(false); onCancelSeriesDay?.(); }}>
+                        {tv("request.cancelOnlyDay", { day: formatDayDate(ride.starts_at) })}
+                      </Button>
+                    ) : null}
+                    {cancelFreedLine ? <p className="mb-2 text-sm" data-testid="freed-car-line">{cancelFreedLine}</p> : null}
+                    {cancelFreedLine ? (
+                      <div className="mb-2">
+                        <KeepOutButton label={he.freedCar.keepOutCancel} disabled={removingOwnRide || handingOver}
+                          onClick={() => { setConfirmCancel(false); onRemoveOwnRide(true); }} />
                       </div>
                     ) : null}
+                    {/* REQ §13.129 (b): the driver may instead hand the ride to someone on it who drives. */}
+                    {canLeaveDriving ? leaveChoices(() => setConfirmCancel(false)) : null}
+                  </ConfirmDialog>
+                  {/* R20U4 (owner 2026-11-14): the same choices under their own name, not only inside "בטל נסיעה". */}
+                  <ConfirmDialog
+                    open={notDriving}
+                    onOpenChange={setNotDriving}
+                    title={he.rideDetail.notDrivingThis}
+                    description={he.rideDetail.removeDriverHelp}
+                    cancelLabel={he.freedCar.confirmBack}
+                    hideConfirm
+                    loading={handingOver}
+                    onConfirm={() => undefined}
+                  >
+                    {leaveChoices(() => setNotDriving(false))}
                   </ConfirmDialog>
                 </>
               ) : null}
             </div>
           </>
         ) : null}
+        {leaveNoDriverDialog}
       </PortalSheetContent>
     </Sheet>
   );

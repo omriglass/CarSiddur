@@ -17,6 +17,7 @@ import {
   fetchRideChanges,
   handOverOwnRide,
   leaveMergedRide,
+  leaveMergedRideFit,
   releaseRideDriver,
   removeRidePerson,
   requestMakeRoom,
@@ -90,6 +91,19 @@ export function useLeaveMergedRideMutation() {
   return useMutation({
     mutationFn: ({ rideId, expectedVersion, newDriver }: { rideId: string; expectedVersion: number; newDriver: string | null; departmentId: string; weekStart: string }) =>
       leaveMergedRide(rideId, expectedVersion, newDriver),
+    onSuccess: (_data, { departmentId, weekStart, rideId }) => {
+      void invalidateWeekData(client, departmentId, weekStart, [rideId]);
+    },
+    onError: showErrorToast,
+  });
+}
+
+/** R20B15: leave with no driver and shrink the ride to its remaining riders' hours. */
+export function useLeaveMergedRideFitMutation() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ rideId, expectedVersion }: { rideId: string; expectedVersion: number; departmentId: string; weekStart: string }) =>
+      leaveMergedRideFit(rideId, expectedVersion),
     onSuccess: (_data, { departmentId, weekStart, rideId }) => {
       void invalidateWeekData(client, departmentId, weekStart, [rideId]);
     },

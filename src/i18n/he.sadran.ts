@@ -215,6 +215,12 @@ export const heSadran = {
     chainBreakTitle: "לשבץ בכל זאת?",
     chainBreakBody: "{{car}} יישאר ב{{place}}, אבל הנסיעה הבאה שלו ב־{{time}} יוצאת מ{{nextPlace}}. צריך לדאוג שהרכב יגיע לשם.",
     chainBreakConfirm: "לשבץ בכל זאת",
+    /** R20H3 (owner 2026-11-15): a one-way leg from a place where the car is not standing. */
+    chainBreakNotThereBody: "{{car}} לא נמצא ב{{place}} בשעה הזו (הוא ב{{carAt}}). צריך לדאוג שהרכב יגיע לשם.",
+    chainBreakElsewhere: "מקום אחר",
+    /** R20H3 (owner 2026-11-14): an unplaced opposite one-way leg fits the same car. */
+    chainBreakPairBody: "הרכב יישאר ב{{place}}. לשבץ יחד עם החזרה של {{name}} ({{from}}→{{to}}, {{time}})?",
+    chainBreakPairConfirm: "לשבץ את שתיהן",
     unassignedToast: "השיבוץ הוסר — הבקשות חזרו ללא שיבוץ",
     /** REQ §13.194: removing a reservation deletes it; the toast carries "ביטול". */
     reservationRemovedToast: "שמירת הזמן נמחקה",
@@ -499,6 +505,7 @@ export const heSadran = {
       car_unavailable: "הרכב אינו פעיל",
       car_not_at_origin: "הרכב לא נמצא בנקודת היציאה",
       next_ride_not_here: "הנסיעה הבאה ברכב לא יוצאת מהיעד של הנסיעה הזו",
+      turnaround: "הנסיעה הבאה ברכב מתחילה לפני שתם זמן ההתארגנות",
       request_day: "הבקשות בנסיעה לא באותו יום",
       driver: "בעיה בנהג/ת של הנסיעה",
       seats: "אין מספיק מקומות ברכב",
@@ -726,6 +733,8 @@ export const heSadran = {
     whatsapp: "הודעה בוואטסאפ",
     whatsappGreeting: "היי {{name}}, אני פונה אליך בכובע של הסידור לגבי הבקשה ל{{destination}} ב{{day}}.",
     filedAt: "הוגשה {{when}}",
+    // R20 Q2: the host of the merged ride this request rode on changed their request, and the guest no longer fit.
+    hostEdited: "ירד/ה מנסיעה מאוחדת: הבקשה של הנהג/ת השתנתה",
     scoreLine: "ציון {{score}}",
     placeOnCar: "שבץ ברכב…",
     placeOnCarTitle: "שיבוץ של {{name}} ברכב",
@@ -800,6 +809,20 @@ export const heSadran = {
     closedReason: "סיבת הסגירה: {{reason}}",
   },
   /** REQ §13.101 (d): the same named child on two overlapping requests of different parents. */
+  /** R20M1 (REQ item 233, owner wording 2026-11-14): the board strip of others' published-day events. */
+  liveEvents: {
+    title: "מאז שהסתכלת לאחרונה",
+    titleCount: "מאז שהסתכלת לאחרונה ({{count}})",
+    driverLeft: "{{name}} כבר לא נוהג/ת בנסיעה",
+    driverHanded: "{{name}} העביר/ה את הנהיגה ל{{other}}",
+    cancelled: "{{name}} ביטל/ה את הנסיעה",
+    freedPlaced: "{{name}} קיבל/ה את הרכב שהתפנה",
+    joined: "{{names}} הצטרף/ה לנסיעה של {{owner}}",
+    joinedNoOwner: "{{names}} הצטרף/ה לנסיעה",
+    proposalExpired: "ההצעה ל{{name}} פגה בלי תשובה",
+    /** R20H4 (owner 2026-11-14): an offer that went to nobody; the day and the car are on the line under it. */
+    freedNone: "הרכב שהתפנה ({{range}}) לא הוצע לאף אחד: אין בקשה מתאימה",
+  },
   duplicateChild: {
     banner: "ילד/ה {{child}} מופיע/ה בשתי בקשות חופפות",
     line: "{{a}} ו{{b}} · {{dayTime}}",

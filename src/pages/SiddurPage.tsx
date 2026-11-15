@@ -1,5 +1,9 @@
+import { withFreedCarChoice } from "@/lib/appSurface";
 import { carOwnerIds, isCarOwner } from "@/lib/carOwners";
+import { cancelRidePreview, removeMePreview } from "@/features/rides/freedCarRequests";
+import { FreedCarConfirmDialog } from "@/features/rides/FreedCarConfirmDialog";
 import { useMaintenanceGridEditing } from "@/features/fleet/useMaintenanceGridEditing";
+import { DayCarsStrip } from "@/components/DayCarsStrip";
 import { CarGlance } from "@/features/cars/components/CarGlance";
 import { useWeekChangeWatch } from "@/features/liveSync/useWeekChangeWatch";
 import { useProfile } from "@/features/auth/useProfile";
@@ -45,6 +49,7 @@ import { useIsSadran } from "@/features/auth/useIsSadran";
 import { ownRequestIds } from "@/features/requests/filedForOther";
 import { useRideEditorsQuery } from "@/features/member/hooks";
 import { useMyRequests, useCancelRideMutation } from "@/features/requests/hooks";
+import { isSeriesDay, useCancelSeriesDay } from "@/features/requests/useCancelSeriesDay";
 import { canEditRequest } from "@/features/requests/window";
 import { useCars, useDestinations, useRideTypes, useMaintenanceBlocks } from "@/features/fleet/hooks";
 import { AddRideFab } from "@/features/requests/components/AddRideFab";
@@ -156,6 +161,7 @@ export function SiddurPage() {
   const active = useActiveDepartment();
   const profileQuery = useProfile();
   const cancelRideMutation = useCancelRideMutation();
+  const cancelSeriesDay = useCancelSeriesDay();
   const removeMeMutation = useRemoveRidePassengerMutation();
 
   const defaultDepartmentId =
@@ -690,6 +696,17 @@ export function SiddurPage() {
                   ) : null}
                 </div>
               ) : null}
+              {/* R20U2: the car-name menu in the card view too (the table has it on the car header). */}
+              {!boardRidesQuery.isLoading && activeDayRides.length > 0 ? (
+                <DayCarsStrip
+                  cars={weekGridVisibleCars.filter((car) => car.group !== "phantom")}
+                  renderCarGlance={(carId) => <CarGlance carId={carId} />}
+                  canSwap={canSwapCarsOnActiveDay}
+                  onCarSwap={(carA, carB) => setCarSwapPair({ carA, carB })}
+                  enableCarReport
+                  onOpenCarPage={(carId) => navigate(paths.car(carId))}
+                />
+              ) : null}
               {boardRidesQuery.isLoading ? (
                 <CardListSkeleton />
               ) : activeDayRides.length === 0 && freeGapRows.length === 0 && activeDayWaitlistGroups.length === 0 && activeDayWaiting.length === 0 ? (
@@ -849,6 +866,7 @@ export function SiddurPage() {
         />
       ) : null}
       {maintenanceEditing.dialog}
+      {cancelSeriesDay.dialog}
       <RideDetailSheet
         {...sheetCarActions.sheetProps(selectedRide, () => setSelectedRideId(null))}
         {...(selectedRide?.id && ownsEditableRide(selectedRide.id) ? { moveToCarOptions: [] } : {})}
@@ -862,16 +880,24 @@ export function SiddurPage() {
         homeDestinationId={homeDestinationId}
         onOpenChange={(open) => !open && setSelectedRideId(null)}
         onRemoveOwnRide={selectedRide?.id && (selectedRide.driver_id === profileId || (!!selectedRide.driver_id && editorOwnerIds.has(selectedRide.driver_id))) && !volunteerDriverOf(selectedRide) && selectedRide.version != null
-          ? () => cancelRideMutation.mutate({ rideId: selectedRide.id!, expectedVersion: selectedRide.version!, reason: "CANCELLED_BY_MEMBER", asEditor: selectedRide.driver_id !== profileId }, { onSuccess: () => setSelectedRideId(null) })
+          ? (keepOut: boolean) => void withFreedCarChoice(keepOut, () => cancelRideMutation.mutateAsync({ rideId: selectedRide.id!, expectedVersion: selectedRide.version!, reason: "CANCELLED_BY_MEMBER", asEditor: selectedRide.driver_id !== profileId }))
+            .then(() => setSelectedRideId(null), () => undefined)
           : undefined}
-        removingOwnRide={cancelRideMutation.isPending}
+        removingOwnRide={cancelRideMutation.isPending || cancelSeriesDay.busy}
+        onCancelSeriesDay={selectedRide && selectedRide.driver_id === profileId && !volunteerDriverOf(selectedRide) && isSeriesDay(selectedRide)
+          ? () => cancelSeriesDay.start(selectedRide, () => setSelectedRideId(null)) : undefined}
         onRemoveMe={(() => {
           const myKey = selectedRide ? myRidePersonKey(selectedRide, profileId) : null;
           if (!selectedRide?.id || !myKey || selectedRide.version == null || !selectedRide.department_id || !selectedRide.week_start) return undefined;
           const { id, version, department_id, week_start } = selectedRide;
-          return () => removeMeMutation.mutate({ rideId: id, expectedVersion: version, key: myKey, departmentId: department_id, weekStart: week_start }, { onSuccess: () => setSelectedRideId(null) });
+          return (keepOut: boolean) => void withFreedCarChoice(keepOut, () => removeMeMutation.mutateAsync({ rideId: id, expectedVersion: version, key: myKey, departmentId: department_id, weekStart: week_start }))
+            .then(() => setSelectedRideId(null), () => undefined);
         })()}
         removingMe={removeMeMutation.isPending}
+        freedPreview={{
+          cancel: cancelRidePreview(selectedRide, !!selectedRide && selectedRide.driver_id !== profileId),
+          removeMe: removeMePreview(selectedRide, selectedRide ? myRidePersonKey(selectedRide, profileId) : null),
+        }}
         editRequestLinks={editLinksForRide}
         editor={selectedRide?.needs_driver && canEditWeek && selectedRide.ends_at && Date.parse(selectedRide.ends_at) > now.getTime() ? (
           <VolunteerDriverPanel ride={selectedRide} onDone={() => setSelectedRideId(null)}
@@ -921,6 +947,7 @@ export function SiddurPage() {
 
       {rideMoves.makeRoomElement}
       <ConfirmDialog {...rideMoves.ownCarDialog} />
+      <FreedCarConfirmDialog dialog={rideMoves.freedCarDialog} />
       {rideMoves.memberMergeElement}
 
       {isMyDepartment ? (

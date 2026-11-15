@@ -11,6 +11,8 @@ import { toast } from "sonner";
 import { CharCount } from "@/components/CharCount";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { FreedCarConfirmDialog } from "@/features/rides/FreedCarConfirmDialog";
+import { useFreedCarGate } from "@/features/rides/useFreedCar";
 import { SheetPortalContext } from "@/components/SheetPortalContext";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -33,7 +35,7 @@ import { siddurKeys } from "@/features/siddur/queryKeys";
 import { paths } from "@/app/routes";
 import { useSaveReservationMutation } from "@/features/planning/hooks";
 import { he, t, tv } from "@/i18n/he";
-import { asRequestFormSave } from "@/lib/appSurface";
+import { asRequestFormSave, withFreedCarChoice } from "@/lib/appSurface";
 import { showErrorToast } from "@/lib/rpc";
 import { formatTime, weekdayIndex } from "@/lib/time";
 import { DEFAULT_HOP_MINUTES } from "@/lib/rideRoute";
@@ -48,7 +50,7 @@ import type { DestinationValue } from "@/components/DestinationCombobox";
 
 import { invalidateSubmittedRequest } from "../submitInvalidation";
 import { fetchChildRequestOverlaps, fetchChildren, fetchRequestVersion, probeSubmitRequest } from "../api";
-import type { ChildOverlapRow, JoinableRideRow, RequestEditRow, SubmitRequestResult, SubmitSeriesRequestResult, TemplateSuggestion } from "../api";
+import type { ChildOverlapRow, HostGuestDecision, HostGuestQuestion, JoinableRideRow, RequestEditRow, SubmitRequestResult, SubmitSeriesRequestResult, TemplateSuggestion } from "../api";
 import { dayLabel } from "../dayLabel";
 import { CAR_NOW_DEFAULT_HOURS } from "../carNow";
 import { findOverlappingRequest } from "../duplicate";
@@ -87,7 +89,9 @@ import { isSeriesSubmission, seriesSpanDays } from "../series";
 import { extraAdultsFromStored, payloadSeatCounts, unnamedChildSeatsFromStored } from "../seatCounts";
 import { overlapNames } from "../overlapNames";
 import { childOverlapMessage } from "../childOverlap";
-import { affectedNames, editRefusal, carStaysAwayConfirmation, releaseConfirmation, shouldOfferJoinableRides, toastSeriesSubmitOutcome, toastSubmitOutcome } from "../submitOutcome";
+import { HostGuestsDialog } from "./HostGuestsDialog";
+import { SeriesCarTakenDialog, type SeriesCarTakenQuestion } from "./SeriesCarTakenDialog";
+import { affectedNames, editRefusal, seriesCarTaken, carStaysAwayConfirmation, hostGuestsConfirmation, releaseConfirmation, shouldOfferJoinableRides, toastSeriesSubmitOutcome, toastSubmitOutcome } from "../submitOutcome";
 import { shouldSuggestChildcare } from "../childcareType";
 import { suggestionToFormValues } from "../templatePrefill";
 import { canSwapPlaces, swapRequestPlaces } from "../dropOffMode";
@@ -111,6 +115,21 @@ import { useJoinWaitlistDiscussionMutation, useWaitlistGroupHoldsQuery, useWaitl
 import { fitsJoinWindow, groupJoinWindow } from "@/features/waitlist/summary";
 import { GroupSummary } from "@/features/waitlist/components/GroupSummary";
 import { STAGE_ONE_FIELDS, isStageOneField } from "./requestForm/sentence/sentenceModel";
+
+/** The answers a save may carry on its next attempt (each set after the member answered a question). */
+interface SubmitOptions {
+  confirmRelease?: boolean;
+  confirmLose?: boolean;
+  ignoreChildOverlap?: boolean;
+  allowCarAway?: boolean;
+  carAwayDeclined?: boolean;
+  /** R20 Q2 redo: the answer per guest of the shared ride this request hosts. */
+  hostGuests?: Record<string, HostGuestDecision>;
+  /** MD1: the answers to "the car is taken on a later day" (SeriesCarTakenDialog). */
+  returnEarlier?: boolean;
+  replaceRideId?: string;
+  keepLaterEnd?: boolean;
+}
 
 export interface QuickRequestCarOption {
   id: string;
@@ -325,6 +344,10 @@ export function RequestForm({
 
   // One refresh after the follow-up calls (`refreshAfterSubmit`), not one per call.
   const submitMutation = useSubmitRequestMutation({ deferInvalidation: true });
+  const freedGate = useFreedCarGate();
+  const freedAskedRef = useRef(false);
+  /** REQ item 237: the member answered "לשמור בלי להעביר את הרכב" in this save. */
+  const freedKeepRef = useRef(false);
   const submitSeriesMutation = useSubmitSeriesRequestMutation({ deferInvalidation: true });
   const joinableRidesMutation = useJoinableRidesMutation();
   const setCompanionsMutation = useSetRequestCompanionsMutation({ deferInvalidation: true });
@@ -392,6 +415,10 @@ export function RequestForm({
   const formRef = useRef<HTMLFormElement>(null);
   /** Owner 2026-10-11: the member answered "keep both" to the overlap warning — the server then places it like any request. */
   const overlapConfirmedRef = useRef(false);
+  /** R21B7: the answers given so far in this save - every later call of the save carries them all. */
+  const saveOptionsRef = useRef<SubmitOptions>({});
+  /** R21B7: the values of the last save, to tell "back, then save the same thing again" from a new save. */
+  const saveSignatureRef = useRef<string | null>(null);
   const onScrollToInvalid = useScrollToFirstError(form, formRef);
   // REQ §13.110 / UX_FLOWS §3.4a: one form state, two field arrangements (`profiles.classic_request_form`).
   const layout = useRequestFormLayout();
@@ -627,7 +654,8 @@ export function RequestForm({
   // a new one, or editing a multi-day request over its whole span (owner 2026-10-22, REQ §13.142); the quick/carNow
   // variants are always about a single live day.
   const seriesEdit = mode === "edit" && !!initial?.seriesId;
-  const showReturnDayPicker = variant === "weekly" && (mode === "new" || seriesEdit) && tripShape === "round_trip";
+  // MD1 (REQ item 232): editing a one-day round trip may also turn it into a multi-day ride.
+  const showReturnDayPicker = variant === "weekly" && (mode === "new" || (mode === "edit" && !isReservation)) && tripShape === "round_trip";
   const returnDayValue = values.returnDay ?? day;
   // The return-day picker is collapsed behind a small "return another day" link because
   // multi-day requests are rare; a later return day keeps it expanded (UX_FLOWS.md §3.4). A series edit opens with it.
@@ -757,13 +785,14 @@ export function RequestForm({
     return cars.length > 0 && !cars.some((c) => fits(c, passengers));
   }, [carsQuery.data, seatConfigsQuery.data, namedAdultCount, namedChildCount, values.boosters]);
 
+  const editedCarId = mode === "edit" && initial ? (myRequestsQuery.data ?? []).find((r) => r.id === initial.id)?.ride?.carId ?? null : null;
   const duplicate = useMemo(() => {
     if (!values.departTime && !values.returnTime) return null;
     // REQ §13.112 (c): a window request overlaps whatever its earliest block overlaps (the member's own other requests).
     const windowTimes = windowModeActive({ timeMode: values.timeMode, tripType: values.tripType, tripShape, day, returnDay: values.returnDay }) ? windowCarTimes({ windowHours: values.windowHours, windowStart: values.windowStart, windowEnd: values.windowEnd }) : null;
     // A malformed day/time gives no overlap hint instead of an `Invalid Date` crash (Safari, 2026-10-13).
-    const isoAt = (time: string) => {
-      const ms = toInstantMs(day, time);
+    const isoAt = (time: string, on: string = day) => {
+      const ms = toInstantMs(on, time);
       return Number.isNaN(ms) ? null : new Date(ms).toISOString();
     };
     const departAt = windowTimes
@@ -772,16 +801,19 @@ export function RequestForm({
     const returnAt = windowTimes
       ? isoAt(windowTimes.returnTime)
       : tripShape !== "one_way_to" && values.returnTime
-        ? isoAt(values.returnTime)
+        // MD1 (owner 2026-11-14): a multi-day ride overlaps whatever falls anywhere up to its return day.
+        ? isoAt(values.returnTime, isMultiDay ? returnDayValue : day)
         : null;
     // REQ §13.127: overlaps are the requester's own (a ride I filed for someone else is not mine).
     // R13B4: editing a multi-day request never overlaps its own days (they are replaced on save).
     const candidates = (myRequestsQuery.data ?? []).filter(
       (r) => r.requesterId === overlapRequesterId && r.departmentId === departmentId && !["withdrawn", "cancelled", "denied", "external"].includes(r.status)
-        && !(initial?.seriesId && r.seriesId === initial.seriesId),
+        && !(initial?.seriesId && r.seriesId === initial.seriesId)
+        // MD1: a multi-day edit asks about the edited ride's own car in the replace question (`SeriesCarTakenDialog`), never twice.
+        && !(isMultiDay && editedCarId && r.ride?.carId === editedCarId),
     );
     return findOverlappingRequest({ departAt, returnAt }, candidates, initial?.id);
-  }, [day, tripShape, values.departTime, values.returnTime, values.timeMode, values.tripType, values.returnDay, values.windowHours, values.windowStart, values.windowEnd, myRequestsQuery.data, departmentId, initial, overlapRequesterId]);
+  }, [day, tripShape, values.departTime, values.returnTime, values.timeMode, values.tripType, values.returnDay, values.windowHours, values.windowStart, values.windowEnd, myRequestsQuery.data, departmentId, initial, overlapRequesterId, isMultiDay, returnDayValue, editedCarId]);
 
   // Quick-variant-only: free-window pre-validation (server RPC remains the sole authority).
   const departTimeSafe = values.departTime || "08:00";
@@ -842,7 +874,10 @@ export function RequestForm({
   const [pendingRelease, setPendingRelease] = useState<{ values: RequestFormValues; names: string[] } | null>(null);
   // OW1 (REQ §13.210): a change to one way would leave the booked car at the destination — ask, then resubmit.
   const [pendingCarAway, setPendingCarAway] = useState<{ values: RequestFormValues; carName: string; nextRide: boolean } | null>(null);
+  // R20 Q2 redo: the shared ride's guests the edit no longer fits, asked one at a time, then sent once with every answer.
+  const [pendingHostGuests, setPendingHostGuests] = useState<{ values: RequestFormValues; options: SubmitOptions; guests: HostGuestQuestion[] } | null>(null);
   // REQ §13.158: the edit was refused (no car at the new hours) — nothing changed, the member stays on the form.
+  const [pendingCarTaken, setPendingCarTaken] = useState<{ values: RequestFormValues; options: SubmitOptions; question: SeriesCarTakenQuestion } | null>(null);
   const [editRefused, setEditRefused] = useState<{ reason: "discussion" | "no_car" | "riders"; groupId: string | null } | null>(null);
   // F4 (docs/TODO.md, owner A8-A10): a `waitlisted` outcome with nearby joinable rides holds off
   // the normal onDone/navigate — `afterJoinableDialog` runs it once the member picks "ask to
@@ -886,7 +921,18 @@ export function RequestForm({
   }
 
   async function submitChecked(formValues: RequestFormValues) {
-    overlapConfirmedRef.current = false;
+    // R21B7: "back" on a late question and saving the same values again keeps the plain yes answers already given
+    // (overlap, lose the car, release, a child's other ride); questions with a choice are asked again.
+    const signature = JSON.stringify([initial?.id ?? null, formValues]);
+    const sameValues = saveSignatureRef.current === signature;
+    saveSignatureRef.current = signature;
+    const previous = saveOptionsRef.current;
+    saveOptionsRef.current = sameValues
+      ? { confirmLose: previous.confirmLose, confirmRelease: previous.confirmRelease, ignoreChildOverlap: previous.ignoreChildOverlap }
+      : {};
+    if (!sameValues) overlapConfirmedRef.current = false;
+    freedAskedRef.current = false;
+    freedKeepRef.current = false;
     if (joinGroup && joinWindow) {
       const times = buildPayload(formValues, {});
       if (!fitsJoinWindow(times.depart_at, times.return_at, joinGroup, joinWindow)) {
@@ -898,7 +944,7 @@ export function RequestForm({
       finishUnchanged();
       return;
     }
-    if (duplicate && !waitlist) {
+    if (duplicate && !waitlist && !overlapConfirmedRef.current) {
       // The server may know better than the client check (`unchanged: true` on its probe): then there is nothing to ask.
       if (mode === "edit" && !isSeriesSubmit(formValues) && !seriesEdit) {
         try {
@@ -926,7 +972,7 @@ export function RequestForm({
   }
 
   /** The `submit_request` payload of validated form values (also used by the unchanged probe). */
-  function buildPayload(formValues: RequestFormValues, options: { confirmRelease?: boolean; allowCarAway?: boolean; carAwayDeclined?: boolean }) {
+  function buildPayload(formValues: RequestFormValues, options: SubmitOptions) {
     const isSeriesRequest = isSeriesSubmit(formValues);
     const guestNamesList = guestPassengerNames(formValues.guestNames);
     // REQ §13.93: only a הקפצה without a pickup books the quick missing-driver ride; a
@@ -964,6 +1010,9 @@ export function RequestForm({
       ...(waitlist ? { waitlist: true } : {}),
       ...(options.confirmRelease ? { confirm_release: true } : {}),
       ...(options.allowCarAway ? { allow_car_away: true } : {}),
+      ...(options.hostGuests ? { host_guests: options.hostGuests } : {}),
+      ...(options.returnEarlier ? { return_earlier: true } : {}),
+      ...(options.replaceRideId ? { replace_ride_id: options.replaceRideId, ...(options.keepLaterEnd ? { keep_later_end: true } : {}) } : {}),
       // REQ §13.211: a new request asks before waiting for the Sadran when a car is free but would stay at the destination.
       ...(mode === "new" && !isSeriesRequest && !options.carAwayDeclined ? { car_away_ask: true } : {}),
       // Owner 2026-10-11: "keep both" was answered — not left for the Sadran as a duplicate.
@@ -1016,11 +1065,15 @@ export function RequestForm({
   }
 
   // REQ §13.169 (c): every call of one save is marked as the request form's, so the riders get one notice of it.
-  function performSubmit(formValues: RequestFormValues, options: { confirmRelease?: boolean; confirmLose?: boolean; ignoreChildOverlap?: boolean; allowCarAway?: boolean; carAwayDeclined?: boolean } = {}) {
-    return asRequestFormSave(() => performSubmitCalls(formValues, options));
+  function performSubmit(formValues: RequestFormValues, answer: SubmitOptions = {}) {
+    // R21B7: an answer joins the ones already given in this save (a later question never drops an earlier answer).
+    const options = { ...saveOptionsRef.current, ...answer };
+    saveOptionsRef.current = options;
+    // REQ item 237: once "לשמור בלי להעביר את הרכב" is chosen, the rest of the save's calls carry the keep header.
+    return asRequestFormSave(() => withFreedCarChoice(() => freedKeepRef.current, () => performSubmitCalls(formValues, options)));
   }
 
-  async function performSubmitCalls(formValues: RequestFormValues, options: { confirmRelease?: boolean; confirmLose?: boolean; ignoreChildOverlap?: boolean; allowCarAway?: boolean; carAwayDeclined?: boolean } = {}) {
+  async function performSubmitCalls(formValues: RequestFormValues, options: SubmitOptions = {}) {
     if (quickContext && (isPast || invalidTime)) return;
     setSubmitError(null);
     // Editing a multi-day request always replaces the whole series, even when it shrinks to one day (REQ §13.142).
@@ -1091,8 +1144,25 @@ export function RequestForm({
         // Multi-day request (REQ §13.77): `submit_series_request` returns one `request_id`
         // per calendar day of the span — passengers/children apply to every leg so they show
         // on each day's ride, not just the first.
+        // MD1 + FC1: a booked one-day ride made multi-day may free hours for someone waiting — ask first.
+        if (mode === "edit" && !seriesEdit && initial?.id && !freedAskedRef.current && (initial.status === "assigned" || initial.status === "merged")) {
+          const go = await freedGate.ask({ action: "submit_series_request", args: { payload: { ...payload, short_turnaround_ask: true, overlap_confirmed: true } } });
+          if (!go) return;
+          freedAskedRef.current = true;
+          freedKeepRef.current = go === "keep";
+        }
         const raw = await submitSeriesMutation.mutateAsync(payload);
         const seriesResult = raw as unknown as SubmitSeriesRequestResult | null;
+        // MD1: the car is taken on a later day — ask (return earlier / replace my own ride / cancel the change).
+        const carTaken = seriesCarTaken(raw as unknown as SubmitRequestResult | null);
+        if (carTaken) {
+          setPendingCarTaken({
+            values: formValues,
+            options,
+            question: { ...carTaken, requestedReturn: payload.return_at ?? carTaken.latestReturn ?? carTaken.blocker.ends_at, editorIsRequester: !editingOthersRequest },
+          });
+          return;
+        }
         // REQ §13.158: an edit never costs the car — a refused one changed nothing.
         const seriesRefusal = editRefusal(raw as unknown as SubmitRequestResult | null);
         if (seriesRefusal) {
@@ -1123,9 +1193,20 @@ export function RequestForm({
         return;
       }
 
+      // FC1 (REQ item 231): a published edit that frees the car for someone waiting asks first ("הרכב יתפנה לאחרים");
+      // asked once per save, not again on the release / overlap questions that may follow. R21B7: the preview answers
+      // the overlap question with yes (the save asks it right after), else it would show nothing and never ask.
+      if (mode === "edit" && initial?.id && !freedAskedRef.current && (initial.status === "assigned" || initial.status === "merged")) {
+        const go = await freedGate.ask({ action: "submit_request", args: { payload: { ...payload, short_turnaround_ask: true, overlap_confirmed: true } } });
+        if (!go) return;
+        freedAskedRef.current = true;
+        freedKeepRef.current = go === "keep";
+      }
       const raw = await submitMutation.mutateAsync(payload);
       const result = raw as unknown as SubmitRequestResult | null;
       const requestId = result?.request_id ?? initial?.id;
+      // R21B7: the overlap question was answered yes inside that call - not asked again later in this save
+      if (result?.overlap_confirmed) overlapConfirmedRef.current = true;
 
       // R11B1: the server found nothing to change — no release/overlap questions, no outcome toast.
       if (result?.unchanged && !peopleDiffer(formValues)) {
@@ -1137,6 +1218,12 @@ export function RequestForm({
       const refusal = editRefusal(result);
       if (refusal) {
         setEditRefused(refusal);
+        return;
+      }
+      // R20 Q2 redo (owner 2026-11-14): the new hours no longer fit a guest of the shared ride - ask about each guest.
+      const hostGuests = hostGuestsConfirmation(result);
+      if (hostGuests) {
+        setPendingHostGuests({ values: formValues, options, guests: hostGuests });
         return;
       }
       // REQ §13.101 f: a car takes the new hours but the member's passengers lose their driver — ask, then resubmit
@@ -1670,7 +1757,7 @@ export function RequestForm({
             type="submit"
             className="w-full"
             size="lg"
-            disabled={submitMutation.isPending || submitSeriesMutation.isPending || saveReservationMutation.isPending || (!!quickContext && (isPast || invalidTime))}
+            disabled={submitMutation.isPending || submitSeriesMutation.isPending || saveReservationMutation.isPending || freedGate.checking || (!!quickContext && (isPast || invalidTime))}
             title={quickContext && isPast ? t("quickRequest.pastSlotTooltip") : undefined}
           >
             {isReservation
@@ -1688,6 +1775,21 @@ export function RequestForm({
         </div>
       </div>
     </form>
+    <FreedCarConfirmDialog dialog={freedGate.dialog} loading={submitMutation.isPending} />
+    <SeriesCarTakenDialog
+      question={pendingCarTaken?.question ?? null}
+      onCancel={() => setPendingCarTaken(null)}
+      onAnswer={(answer) => {
+        const pending = pendingCarTaken;
+        setPendingCarTaken(null);
+        if (!pending) return;
+        // a new answer may free other hours: the freed-car question is asked again for it
+        freedAskedRef.current = false;
+        void performSubmit(pending.values, answer.kind === "returnEarlier"
+          ? { ...pending.options, returnEarlier: true }
+          : { ...pending.options, replaceRideId: answer.rideId, keepLaterEnd: answer.keepLaterEnd });
+      }}
+    />
     <ConfirmDialog
       open={!!pendingOnBehalf}
       onOpenChange={(open) => { if (!open) setPendingOnBehalf(null); }}
@@ -1759,6 +1861,17 @@ export function RequestForm({
         const pending = pendingCarAway;
         setPendingCarAway(null);
         if (pending) void performSubmit(pending.values, { allowCarAway: true });
+      }}
+    />
+    <HostGuestsDialog
+      guests={pendingHostGuests?.guests ?? null}
+      initialDecisions={pendingHostGuests?.options.hostGuests}
+      loading={submitMutation.isPending}
+      onBack={() => setPendingHostGuests(null)}
+      onAnswered={(decisions) => {
+        const pending = pendingHostGuests;
+        setPendingHostGuests(null);
+        if (pending) void performSubmit(pending.values, { ...pending.options, ignoreChildOverlap: true, hostGuests: decisions });
       }}
     />
     <ConfirmDialog

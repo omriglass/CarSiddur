@@ -84,6 +84,7 @@ export function CarPage() {
       canDefineChecklist={canDefineChecklist}
       canSetStatusOnly={canSetStatusOnly}
       canManageOwners={canManage}
+      codeVisible={isAdmin || (myDepartmentsQuery.data ?? []).some((membership) => membership.department_id === car.department_id)}
     />
   );
 }

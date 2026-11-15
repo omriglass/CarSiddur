@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 
 import { useRequestLinkProps } from "@/app/overlayState";
 import { paths } from "@/app/routes";
+import { formatDayDate } from "@/lib/dayLabels";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { useRemoveRidePassengerMutation } from "@/features/rides/hooks";
@@ -82,7 +83,7 @@ interface RideSheetProps {
   onTogglePin: (nextPinned: boolean, reason: string | null) => void;
   /** REQ §13.162 (a): `closeRequestIds` = the requests the Sadran marked "הנסיעה כבר לא רלוונטית"; `continueRequestIds`
    *  (O29-2 (3)) = the requests that continue on the ride (non-empty: the ride is kept for them); the rest wait. */
-  onCancel: (reason: string, closeRequestIds: string[], continueRequestIds?: string[]) => void;
+  onCancel: (reason: string, closeRequestIds: string[], continueRequestIds?: string[], onlyDay?: boolean) => void;
   /** Return served requests to the unmet board without cancelling them. */
   onUnassign?: () => void;
   /** REQ §13.105 c: join this הקפצה's drop-off and pickup rides into one (the request id comes from `joinableDropOffLegs`). */
@@ -639,8 +640,10 @@ export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenCha
                           onOpenChange={setShowCancelDialog}
                           lines={rideCancelLines(servedOf(ride))}
                           series={!!ride.series_id}
+                          seriesDay={ride.series_id && (ride.series_count ?? 0) > 1 && ride.starts_at && rideCancelLines(servedOf(ride)).length <= 1
+                            ? formatDayDate(ride.starts_at) : null}
                           loading={saving}
-                          onConfirm={(reason, closeIds, continueIds) => onCancel(reason, closeIds, continueIds)}
+                          onConfirm={(reason, closeIds, continueIds, onlyDay) => onCancel(reason, closeIds, continueIds, onlyDay)}
                         />
                       </>
                     )}

@@ -5,7 +5,7 @@ import { tv } from "@/i18n/he";
 const mocks = vi.hoisted(() => ({ toast: vi.fn(), success: vi.fn(), warning: vi.fn() }));
 vi.mock("sonner", () => ({ toast: Object.assign(mocks.toast, { success: mocks.success, warning: mocks.warning }) }));
 
-import { affectedNames, editRefusal, releaseConfirmation, shouldOfferJoinableRides, toastSeriesSubmitOutcome, toastSubmitOutcome } from "./submitOutcome";
+import { affectedNames, editRefusal, releaseConfirmation, shouldOfferJoinableRides, toastSeriesSubmitOutcome, toastSubmitOutcome, seriesCarTaken } from "./submitOutcome";
 import type { SubmitRequestResult, SubmitSeriesRequestResult } from "./api";
 import { t } from "@/i18n/he";
 
@@ -162,5 +162,32 @@ describe("affectedNames", () => {
     expect(affectedNames({ ...base, drives_others: true, affected_names: ["Dana", " "] })).toEqual(["Dana"]);
     expect(affectedNames({ ...base, affected_names: ["Dana"] })).toEqual([]);
     expect(affectedNames(null)).toEqual([]);
+  });
+});
+
+describe("hostGuestsConfirmation (R20 Q2 redo)", () => {
+  it("returns the guests only for the host_guests question", async () => {
+    const { hostGuestsConfirmation } = await import("./submitOutcome");
+    const guest = { request_id: "g", name: "x", kind: "warn" as const, reason: null, wanted_at: null, ride_at: null };
+    const result = { request_id: "r", is_late: false, warnings: [] };
+    expect(hostGuestsConfirmation(result)).toBeNull();
+    expect(hostGuestsConfirmation({ ...result, needs_confirmation: "host_guests", host_guests: [] })).toBeNull();
+    expect(hostGuestsConfirmation({ ...result, needs_confirmation: "host_guests", host_guests: [guest] })).toEqual([guest]);
+  });
+});
+
+describe("seriesCarTaken (MD1, R21B3)", () => {
+  const blocker = { kind: "ride" as const, starts_at: "2026-11-23T16:00:00Z", ends_at: "2026-11-23T18:00:00Z", name: "דנה" };
+
+  it("asks with the latest return that fits", () => {
+    expect(seriesCarTaken({ edit_refused: "car_taken", blocker, latest_return: "2026-11-24T05:30:00Z" } as never))
+      .toEqual({ blocker, latestReturn: "2026-11-24T05:30:00Z" });
+  });
+
+  it("with no latest return asks only about the member's own ride (it can be replaced)", () => {
+    const own = { ...blocker, kind: "own_ride" as const, ride_id: "r" };
+    expect(seriesCarTaken({ edit_refused: "car_taken", blocker: own, latest_return: null } as never)).toEqual({ blocker: own, latestReturn: null });
+    expect(seriesCarTaken({ edit_refused: "car_taken", blocker, latest_return: null } as never)).toBeNull();
+    expect(seriesCarTaken({ edit_refused: "no_car" } as never)).toBeNull();
   });
 });

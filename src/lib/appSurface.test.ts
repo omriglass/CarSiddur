@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 
-import { APP_SURFACE_HEADER, REQUEST_FORM_HEADER, asRequestFormSave, setAppSurface, withAppSurface } from "./appSurface";
+import { APP_SURFACE_HEADER, FREED_CAR_HEADER, REQUEST_FORM_HEADER, asRequestFormSave, setAppSurface, withAppSurface, withFreedCarChoice } from "./appSurface";
 
 describe("withAppSurface", () => {
   afterEach(() => setAppSurface(null));
@@ -39,5 +39,22 @@ describe("withAppSurface", () => {
     await expect(asRequestFormSave(async () => { throw new Error("x"); })).rejects.toThrow("x");
     const init = {};
     expect(withAppSurface("http://x/rest/v1/rpc/submit_request", init)).toBe(init);
+  });
+
+  it("marks the calls of a save that keeps the freed car out, read per call, and stops after it (REQ item 237)", async () => {
+    const url = "http://x/rest/v1/rpc/cancel_ride";
+    const keepOf = () => new Headers(withAppSurface(url, {})?.headers).get(FREED_CAR_HEADER);
+    let chosen = false;
+    const seen: (string | null)[] = [];
+    await withFreedCarChoice(() => chosen, async () => {
+      seen.push(keepOf());
+      chosen = true;
+      seen.push(keepOf());
+    });
+    expect(seen).toEqual([null, "keep"]);
+    const init = {};
+    expect(withAppSurface(url, init)).toBe(init);
+    await expect(withFreedCarChoice(true, async () => { throw new Error("x"); })).rejects.toThrow("x");
+    expect(withAppSurface(url, init)).toBe(init);
   });
 });

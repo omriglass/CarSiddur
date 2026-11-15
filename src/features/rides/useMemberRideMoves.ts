@@ -11,18 +11,22 @@ import { toast } from "sonner";
 
 import { useCarSeatConfigs, useCars, useMaintenanceBlocks } from "@/features/fleet/hooks";
 import { useDepartmentSettings, useEditRideMutation } from "@/features/sadran/hooks";
+import type { EditRideInput } from "@/features/sadran/api";
 import type { Week } from "@/features/siddur/api";
 import { useBoardRides } from "@/features/siddur/hooks";
 import { siddurKeys } from "@/features/siddur/queryKeys";
 import { conflictingRides, moveOnRideDay, shortTurnaroundNextRide } from "@/features/siddur/rideEditing";
 import { he, tv } from "@/i18n/he";
+import { withFreedCarChoice } from "@/lib/appSurface";
 import { askShortTurnaround } from "@/lib/shortTurnaround";
 import { dateKey, formatTime, TZ } from "@/lib/time";
 import { effectiveWeekSettings } from "@/lib/weekSettings";
 
 import type { RideMove } from "./api";
+import { editRidePreview } from "./freedCarRequests";
 import { useRideChanges } from "./hooks";
-import { canMoveOntoMyCar, rideDayPublished } from "./ownCarMove";
+import { useFreedCarGate } from "./useFreedCar";
+import { canMoveOntoMyCar, ownCarMoveBody, rideDayPublished } from "./ownCarMove";
 import { isRideRelated, rideMovableByMember } from "./relatedRide";
 import { isRideDayEditable } from "./rideDayEditable";
 import { servedOf } from "./servedOf";
@@ -56,6 +60,7 @@ export function useMemberRideMoves({ departmentId, weekStart, week, profileId, m
   const settingsQuery = useDepartmentSettings(departmentId);
   const editMutation = useEditRideMutation();
   const makeRoom = useMakeRoom({ onDone });
+  const freedGate = useFreedCarGate();
   // REQ §13.129 (a): a drag of someone else's ride onto my private car waits for the owner's confirmation.
   const [ownCarMove, setOwnCarMove] = useState<RideMove | null>(null);
   const { myCars } = useOwnCarMove(profileId);
@@ -132,13 +137,18 @@ export function useMemberRideMoves({ departmentId, weekStart, week, profileId, m
         return;
       }
     }
+    const input = { id: move.rideId, department_id: departmentId, week_start: weekStart, car_id: move.carId,
+      starts_at: move.startsAt, ends_at: move.endsAt, origin_id: ride.origin_id, destination_id: ride.destination_id,
+      driver_id: ride.driver_id, ...(allowShortTurnaround ? { allow_short_turnaround: true } : {}) };
+    // FC1 (REQ item 231): a move that frees the car for someone waiting asks first ("הרכב יתפנה לאחרים")
+    await freedGate.run(editRidePreview(input, move.expectedVersion), (keepOut) => void saveEdit(input, move.expectedVersion, keepOut));
+  }
+
+  async function saveEdit(input: EditRideInput, expectedVersion: number, keepOut = false) {
+    if (!departmentId || !weekStart) return;
     try {
-      await editMutation.mutateAsync({
-        input: { id: move.rideId, department_id: departmentId, week_start: weekStart, car_id: move.carId,
-          starts_at: move.startsAt, ends_at: move.endsAt, origin_id: ride.origin_id, destination_id: ride.destination_id,
-          driver_id: ride.driver_id, ...(allowShortTurnaround ? { allow_short_turnaround: true } : {}) },
-        expectedVersion: move.expectedVersion, departmentId, weekStart,
-      });
+      // REQ item 237: "לשמור בלי להעביר את הרכב" — the save's calls carry the keep header
+      await withFreedCarChoice(keepOut, () => editMutation.mutateAsync({ input, expectedVersion, departmentId, weekStart }));
       await queryClient.invalidateQueries({ queryKey: siddurKeys.boardRides(departmentId, weekStart) });
       await queryClient.invalidateQueries({ queryKey: siddurKeys.carLocations(departmentId, weekStart) });
       onDone?.();
@@ -196,7 +206,7 @@ export function useMemberRideMoves({ departmentId, weekStart, week, profileId, m
     open: !!ownCarMove,
     onOpenChange: (open: boolean) => { if (!open) setOwnCarMove(null); },
     title: tv("rideEditing.ownCarMoveTitle", { name: ownCarOwnerName }),
-    description: tv("rideEditing.ownCarMoveBody", { name: ownCarOwnerName, car: ownCarName }),
+    description: ownCarMoveBody(ownCarMoveRide?.driver_id, ownCarOwnerName, ownCarName),
     confirmLabel: he.rideEditing.ownCarMoveConfirm,
     loading: editMutation.isPending,
     onConfirm: () => {
@@ -207,6 +217,8 @@ export function useMemberRideMoves({ departmentId, weekStart, week, profileId, m
   };
 
   return {
+    /** FC1: "הרכב יתפנה לאחרים" before a move that gives the car to someone waiting (`FreedCarConfirmDialog`). */
+    freedCarDialog: freedGate.dialog,
     ownsEditableRide,
     canDragRide,
     ownCarDialog,
