@@ -61,15 +61,18 @@ function whoLine(ride: BoardRide, served: ReturnType<typeof servedOf>, addedName
 /** Text lines of one ride block — the siddur's own label helpers, nothing new. */
 export function rideBlockLines(ride: BoardRide, homeDestinationId: string | null | undefined): string[] {
   const served = servedOf(ride);
+  const viaNames = rideViaNames(ride);
+  const labelled = !(!served.length && ride.notes) && !!(homeDestinationId && ride.origin_id && ride.destination_id);
   const base = (!served.length && ride.notes) || (homeDestinationId && ride.origin_id && ride.destination_id
     ? rideBlockLabel({
+      via: viaNames,
       originId: ride.origin_id, destinationId: ride.destination_id, originName: ride.origin_name ?? "",
       destinationName: ride.destination_name ?? "", homeDestinationId, served, driverName: ride.driver_name,
       isChauffeur: !!ride.is_chauffeur, needsDriver: !!ride.needs_driver, autoRelocation: !!ride.auto_relocation,
       carMove: ride.pin_reason === "CAR_MOVE", startsAt: ride.starts_at ?? undefined, relayPartner: relayPartnerOf(ride),
     })
     : (ride.destination_name ?? ""));
-  const via = viaLabel(rideViaNames(ride));
+  const via = labelled ? "" : viaLabel(viaNames);
   const baseRequestId = (served.find((e) => e.role === "driver") ?? served[0])?.request_id ?? null;
   const merged = parseRideRoute(ride.route).some((p) => (p.kind === "board" || p.kind === "alight") && p.requestId !== baseRequestId);
   const first = [base, via, merged ? he.mergedRide.marker : ""].filter(Boolean).join(" · ");

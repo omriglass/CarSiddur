@@ -16,7 +16,8 @@ import { formatDayDate } from "@/lib/dayLabels";
 import { rideBlockLabel } from "@/lib/rideLabel";
 import { siddurCarName } from "@/lib/siddurCarName";
 import { ridePassengerParts } from "@/lib/ridePassengerSummary";
-import { ridePublicDetails } from "@/lib/ridePublicDetails";
+import { ridePublicDetailLines, type RichLine } from "@/lib/ridePublicDetails";
+import { RichLines } from "@/components/RichLines";
 import { he, t, tv } from "@/i18n/he";
 import { formatTime } from "@/lib/time";
 import type { Car } from "@/features/fleet/api";
@@ -29,7 +30,7 @@ import { AddPassengersDialog } from "@/features/rides/components/AddPassengersDi
 import { RidePassengersList } from "@/features/rides/components/RidePassengersList";
 import { RidePersonBlocks } from "@/features/rides/components/RidePersonBlocks";
 import { buildPersonBlocks, needsPersonBlocks } from "@/features/rides/ridePersonBlocks";
-import { RidePublicNotesEditor } from "@/features/rides/components/RidePublicNotesEditor";
+import { EditableRideNotes } from "@/features/rides/components/RidePublicNotesEditor";
 import { RideCarHandover } from "@/features/rides/components/RideCarHandover";
 import { RideRouteStops } from "@/features/rides/components/RideRouteStops";
 import { RideStopsView } from "@/features/rides/components/RideStopsView";
@@ -84,7 +85,8 @@ interface RideDetailSheetProps {
   homeDestinationId?: string | null;
   onOpenChange: (open: boolean) => void;
   editor?: ReactNode;
-  coordinatorNotes?: string;
+  /** The Sadran-only notes, "<name>:" picked out (`rideCoordinatorNoteLines`). */
+  coordinatorNotes?: readonly RichLine[];
   canEditPublicNotes?: boolean;
   /** Available only when the signed-in member has a request served by this ride. */
   /** `keepOut`: "לבטל בלי להעביר את הרכב" (REQ item 237). */
@@ -243,13 +245,14 @@ export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = 
                       route={ride.route}
                     />
                   ) : null}
-                  {canEditPublicNotes && !summary && ride.id && ride.version != null ? (
-                    <RidePublicNotesEditor key={`${ride.id}:${ride.version}:notes`} rideId={ride.id} expectedVersion={ride.version} initialNotes={ride.notes} departmentId={ride.department_id ?? ""} weekStart={ride.week_start ?? ""} />
+                  {/* Owner 2026-11-16: the notes for everyone open their editor when tapped (also on a ride edited with "עריכה"). */}
+                  {canEditPublicNotes && ride.id && ride.version != null ? (
+                    <EditableRideNotes key={`${ride.id}:${ride.version}:notes`} rideId={ride.id} expectedVersion={ride.version} notes={ride.notes} departmentId={ride.department_id ?? ""} weekStart={ride.week_start ?? ""} />
                   ) : ride.notes ? <p className="whitespace-pre-wrap break-words">{ride.notes}</p> : null}
                   {/* Owner 2026-10-12: who rides is listed once, in the passenger list below — here only the requests' descriptions. */}
                   {/* Owner 2026-11-16: the summary carries the notes - the ride's and what each request said about it. */}
-                  {ridePublicDetails(served, { includeCompanions: false }) ? <p className="whitespace-pre-wrap break-words">{ridePublicDetails(served, { includeCompanions: false })}</p> : null}
-                  {coordinatorNotes ? <div className="whitespace-pre-wrap break-words text-muted-foreground"><span className="font-medium">{he.field.notes}: </span>{coordinatorNotes}</div> : null}
+                  {ridePublicDetailLines(served, { includeCompanions: false }).length ? <p className="whitespace-pre-wrap break-words"><RichLines lines={ridePublicDetailLines(served, { includeCompanions: false })} /></p> : null}
+                  {coordinatorNotes?.length ? <div className="whitespace-pre-wrap break-words text-muted-foreground"><span className="font-medium">{he.field.notes}: </span><RichLines lines={coordinatorNotes} /></div> : null}
                   {editor}
 
                   {/* Owner 2026-10-12: the driver is marked in the passenger list; only a missing driver / a chauffeur is said here. */}

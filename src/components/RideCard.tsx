@@ -12,6 +12,8 @@ import { useRideTypeColorClasses } from "@/components/rideTypeColorsContext";
 import { dateKey, formatTime } from "@/lib/time";
 import { rideSpanKind } from "@/lib/wholeDay";
 import { cn } from "@/lib/utils";
+import type { RichLine } from "@/lib/ridePublicDetails";
+import { RichLines } from "@/components/RichLines";
 
 /**
  * Decoupled from any single generated view/table — `v_board_rides` has no
@@ -32,7 +34,9 @@ export interface RideCardData {
   joining?: string[];
   driverName: string | null;
   description?: string;
+  descriptionLines?: readonly RichLine[];
   coordinatorNotes?: string;
+  coordinatorNoteLines?: readonly RichLine[];
   passengerSummary?: string;
   /** REQ §13.161 (a): requested -> got, beyond flexibility only (Sadran board list mode). */
   delta?: RideDeltaView | null;
@@ -122,7 +126,7 @@ export function RideCard({ ride, onClick }: RideCardProps) {
           </div>
 
           {ride.relatedLabel ? <span className="flex items-center gap-1 text-xs font-medium text-muted-foreground" data-testid="related-ride-label">{ride.relatedLabel}</span> : null}
-          {ride.isMine ? <span className={cn("flex items-center gap-1 text-xs font-bold", ride.needsDriver ? "text-destructive" : "text-primary")}><Star className="size-3 fill-current" aria-hidden="true" />{he.siddur.myRide}</span> : null}
+          {ride.isMine ? <span className={cn("flex items-center gap-1 text-xs font-bold", ride.needsDriver ? "text-destructive" : "text-primary")}><Star className="size-3 fill-current" aria-hidden="true" /><span className="sr-only">{he.siddur.myRide}</span></span> : null}
           {ride.seriesCount && ride.seriesCount > 1 ? (
             <span className="text-xs text-muted-foreground">
               {tv("ride.seriesDay", { index: String(ride.seriesIndex ?? 1), count: String(ride.seriesCount) })}
@@ -153,9 +157,9 @@ export function RideCard({ ride, onClick }: RideCardProps) {
           {ride.joining?.map((line, index) => <p key={index} className="whitespace-normal break-words text-sm">{line}</p>)}
           {ride.passengerSummary ? <p className="whitespace-pre-wrap break-words">{ride.passengerSummary}</p> : null}
           <RideDeltaLine view={ride.delta} className="text-xs" />
-          {ride.description ? <p className="whitespace-pre-wrap break-words text-muted-foreground">{ride.description}</p> : null}
+          {ride.description ? <p className="whitespace-pre-wrap break-words text-muted-foreground">{ride.descriptionLines ? <RichLines lines={ride.descriptionLines} /> : ride.description}</p> : null}
           {ride.handover ? <CarHandoverNotice notes={ride.handover} ride={{ startsAt: ride.startsAt, endsAt: ride.endsAt ?? ride.startsAt }} /> : null}
-          {ride.coordinatorNotes ? <p className="whitespace-pre-wrap break-words text-xs text-muted-foreground">{he.field.notes}: {ride.coordinatorNotes}</p> : null}
+          {ride.coordinatorNotes ? <p className="whitespace-pre-wrap break-words text-xs text-muted-foreground">{he.field.notes}: {ride.coordinatorNoteLines ? <RichLines lines={ride.coordinatorNoteLines} /> : ride.coordinatorNotes}</p> : null}
           <div className="flex flex-wrap items-center gap-x-2 text-muted-foreground">
             {ride.needsDriver ? <span className="font-semibold text-destructive">{he.rideCoordination.missingDriver}</span> : null}
             {ride.conflict ? <span className="font-semibold text-destructive">{he.board.conflicts}</span> : null}

@@ -281,6 +281,9 @@ export const he = {
     help: "המידע יוצג לכל מי שצופה בנסיעה. אפשר לעדכן אותו כבעלי הנסיעה או כסדרן/ית.",
     saved: "המידע לנסיעה עודכן",
     save: "שמירת המידע לכולם",
+    /** Owner 2026-11-16: on the ride sheet, when there are no notes yet. */
+    add: "הוספת מידע לכולם",
+    editAria: "עריכת המידע לכולם",
     companions: "נוסעים נוספים: {{names}}",
     invalidDescription: "אפשר להוסיף עד 1,000 תווים לתיאור הנסיעה",
     invalidGuestNames: "יש להזין שם בכל שורה, עד 100 תווים לשם ועד 20 שמות",

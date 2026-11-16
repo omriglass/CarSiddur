@@ -68,6 +68,9 @@ export interface RideLabelInput {
    *  ride id, driver (or first requester) name and time. REQUIREMENTS §13.93 "Display": a
    *  relay pair's leave/wait label names the partner and the time instead of just the place. */
   relayPartner?: { ride_id: string; name: string; at: string } | null;
+  /** The places the ride passes on each way, by name (`rideViaNames`). Owner 2026-11-16: folded into the label -
+   *  "חבר ל-זכרון יעקב, בנימינה. חזור: זכרון יעקב. אדמין מגבעת חביבה" - instead of a separate "דרך: … · חזרה דרך: …". */
+  via?: { out: readonly string[]; return: readonly string[] };
 }
 
 function firstName(fullName: string): string {
@@ -185,9 +188,9 @@ function resolveDirection(input: RideLabelInput): { kind: "to" | "from"; place: 
  * ride's own destination name if no served request carries one (shouldn't
  * happen for a real ride, but keeps this total).
  */
-export function rideBlockLabel(input: RideLabelInput): string {
-  if (input.carMove) return tv("sadranBoard.carMoveLabel", { from: input.originName, to: input.destinationName });
-  if (input.autoRelocation) return he.sadranBoard.autoRelocation;
+function rideLabelParts(input: RideLabelInput, toPlace: (place: string) => string | null): string[] {
+  if (input.carMove) return [tv("sadranBoard.carMoveLabel", { from: input.originName, to: input.destinationName })];
+  if (input.autoRelocation) return [he.sadranBoard.autoRelocation];
   const driver = input.served.find((s) => s.role === "driver");
   const passengers = input.served.filter((s) => s.role === "passenger");
 
@@ -201,22 +204,22 @@ export function rideBlockLabel(input: RideLabelInput): string {
   if (input.served.length === 1 && driver?.car_mode === "relay") {
     // R3B19: a one-way ride that ends at the department home leaves no car parked away.
     if (driver.trip_type === "one_way" && input.destinationId !== input.homeDestinationId) {
-      return tv("rideCoordination.oneWayParked", {
+      return [tv("rideCoordination.oneWayParked", {
         name: driver.requester ? firstName(driver.requester) : "",
         place: driver.leg === "return" ? input.originName : input.destinationName,
-      });
+      })];
     }
     if (driver.trip_type === "drop_off") {
       // QB24: a partner who is the same person as this leg's own requester is not named ("leaves the car for himself").
       const partner = input.relayPartner && driver.requester && firstName(input.relayPartner.name) === firstName(driver.requester) ? undefined : input.relayPartner;
       if (driver.leg === "return") {
-        return partner
+        return [partner
           ? tv("rideCoordination.relayWaitFrom", { place: input.originName, name: firstName(partner.name), time: formatTime(new Date(partner.at)) })
-          : tv("rideCoordination.relayWaitRoute", { place: input.originName, destination: input.destinationName });
+          : tv("rideCoordination.relayWaitRoute", { place: input.originName, destination: input.destinationName })];
       }
-      return partner
+      return [partner
         ? tv("rideCoordination.relayLeaveFor", { place: input.destinationName, name: firstName(partner.name), time: formatTime(new Date(partner.at)) })
-        : tv("rideCoordination.relayLeave", { place: input.destinationName });
+        : tv("rideCoordination.relayLeave", { place: input.destinationName })];
     }
   }
 
@@ -229,19 +232,21 @@ export function rideBlockLabel(input: RideLabelInput): string {
     })), input.startsAt, input.originId, { from: input.originName, to: input.destinationName });
     // A merged passenger leg must not hide the host's separate destination.
     if (driver?.destination && !passengers.some((passenger) => passenger.destination === driver.destination)) {
-      return `${label} · ${tv(driver.leg === "return" ? "rideCoordination.passengerFrom" : "rideCoordination.passengerTo", {
+      return [label, tv(driver.leg === "return" ? "rideCoordination.passengerFrom" : "rideCoordination.passengerTo", {
         name: driver.requester ? firstName(driver.requester) : "", destination: driver.destination,
-      })}`;
+      })];
     }
-    return label;
+    return [label];
   }
   const destinations = new Set(input.served.map((s) => s.destination).filter(Boolean));
   if (destinations.size > 1) {
-    return [driver, ...passengers].filter((s): s is RideLabelServedEntry => !!s).map((s) =>
-      tv(s.leg === "return" ? "rideCoordination.passengerFrom" : "rideCoordination.passengerTo", {
-        name: s.requester ? firstName(s.requester) : "", destination: s.destination ?? "",
-      }),
-    ).join(" · ");
+    return [driver, ...passengers].filter((s): s is RideLabelServedEntry => !!s).map((s) => {
+      const name = s.requester ? firstName(s.requester) : "";
+      const folded = s.leg === "return" ? null : toPlace(s.destination ?? "");
+      // A one-way request riding the way back gets on at its own origin ("אדמין מבנימינה"), not at its destination.
+      const from = s.leg === "return" && s.trip_type === "one_way" && s.origin_name ? s.origin_name : (s.destination ?? "");
+      return folded ? `${name} ${folded}` : tv(s.leg === "return" ? "rideCoordination.passengerFrom" : "rideCoordination.passengerTo", { name, destination: s.leg === "return" ? from : (s.destination ?? "") });
+    });
   }
   const names = [driver, ...passengers]
     .map((s) => (s?.requester ? firstName(s.requester) : null))
@@ -249,9 +254,33 @@ export function rideBlockLabel(input: RideLabelInput): string {
   const who = hebrewList(names);
 
   const { kind, place, originLabel } = resolveDirection(input);
-  const prefix = he.rideLabel[kind];
   const originPrefix = originLabel ? `${he.rideLabel.from}${originLabel} ` : "";
-  return who ? `${who} ${originPrefix}${prefix}${place}` : `${originPrefix}${prefix}${place}`;
+  const where = (kind === "to" ? toPlace(place) : null) ?? `${he.rideLabel[kind]}${place}`;
+  return [who ? `${who} ${originPrefix}${where}` : `${originPrefix}${where}`];
+}
+
+/**
+ * "<driver> ו<passenger1>… ל<destination>" (round trip / one-way-to), or "…מ<origin>" for a one-way-from leg (the leg's
+ * meaningful place is where it started, since it *ends* at home). With places in the middle (`via`), owner 2026-11-16:
+ * the way there is folded into the first destination and the way back follows it -
+ * "חבר ל-זכרון יעקב, בנימינה. חזור: זכרון יעקב. אדמין מגבעת חביבה".
+ */
+export function rideBlockLabel(input: RideLabelInput): string {
+  const out = input.via?.out ?? [];
+  const back = input.via?.return ?? [];
+  if (!out.length && !back.length) return rideLabelParts(input, () => null).join(" · ");
+  let folded = false;
+  const [first = "", ...rest] = rideLabelParts(input, (place) => {
+    if (folded || !out.length || !place) return null;
+    folded = true;
+    return tv("rideLabel.toMany", { places: [...out, place].join(", ") });
+  });
+  return [
+    first,
+    ...(out.length && !folded ? [tv("route.viaStops", { stops: out.join(", ") })] : []),
+    ...(back.length ? [tv("rideLabel.back", { stops: back.join(", ") })] : []),
+    ...rest,
+  ].filter(Boolean).join(". ");
 }
 
 /**

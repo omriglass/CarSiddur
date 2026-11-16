@@ -10,7 +10,8 @@ import { toast } from "sonner";
 import { useRemoveRidePassengerMutation } from "@/features/rides/hooks";
 import { useSplitRideCompanionMutation } from "../../hooks";
 import { MergedPassengerDialog, type MergedPassengerChoice, type MergedPassengerTarget } from "./MergedPassengerDialog";
-import { ridePublicDetails } from "@/lib/ridePublicDetails";
+import { ridePublicDetailLines, type RichLine } from "@/lib/ridePublicDetails";
+import { RichLines } from "@/components/RichLines";
 import { ridePassengerSummary } from "@/lib/ridePassengerSummary";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { joinableDropOffLegs } from "../joinLegs";
@@ -91,7 +92,8 @@ interface RideSheetProps {
   saving?: boolean;
   tightSchedule?: boolean;
   onClaimDriver?: () => void;
-  coordinatorNotes?: string;
+  /** The Sadran-only notes, "<name>:" picked out (`rideCoordinatorNoteLines`). */
+  coordinatorNotes?: readonly RichLine[];
   isPlanning?: boolean;
   /** Every request in the week (not just this ride's) — used to attach named children (`childNames`) to `servedOf(ride)`, since `v_board_rides.served[]` itself has no child-name field yet. */
   requests?: readonly WeekRequestRow[];
@@ -359,8 +361,8 @@ export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenCha
                   )}
 
                   {/* `includeCompanions: false` — the people are named once, on each request's line above. */}
-                  {ridePublicDetails(servedEntries, { includeCompanions: false }) ? <p className="whitespace-pre-wrap break-words">{ridePublicDetails(servedEntries, { includeCompanions: false })}</p> : null}
-                  {coordinatorNotes ? <div className="whitespace-pre-wrap break-words text-muted-foreground"><span className="font-medium">{he.field.notes}: </span>{coordinatorNotes}</div> : null}
+                  {ridePublicDetailLines(servedEntries, { includeCompanions: false }).length ? <p className="whitespace-pre-wrap break-words"><RichLines lines={ridePublicDetailLines(servedEntries, { includeCompanions: false })} /></p> : null}
+                  {coordinatorNotes?.length ? <div className="whitespace-pre-wrap break-words text-muted-foreground"><span className="font-medium">{he.field.notes}: </span><RichLines lines={coordinatorNotes} /></div> : null}
 
                   <div className="flex items-end gap-2">
                     <div className="flex-1 space-y-1">

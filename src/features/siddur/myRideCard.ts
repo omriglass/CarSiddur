@@ -1,7 +1,7 @@
 import type { RideCardData } from "@/components/RideCard";
 import type { MyRequestRow } from "@/features/requests/api";
 import { chauffeurRideLabel } from "@/lib/rideLabel";
-import { ridePublicDetails } from "@/lib/ridePublicDetails";
+import { rideDescriptionFields } from "@/lib/ridePublicDetails";
 import { tv } from "@/i18n/he";
 import { carHandoverNotes, type CarNeighbours } from "@/features/rides/carHandover";
 import { servedOf } from "@/features/rides/servedOf";
@@ -53,9 +53,7 @@ export function myRideCard(
     showDay: true,
     purpose: ownRequest?.rideTypeName || purposes.join(" / ") || rideTypes.find((type) => type.code === "other")?.name_he,
     joining,
-    description: [ride.notes, ridePublicDetails(served, {
-      addedNames: addedPeopleNames(ride, served),
-    })].filter(Boolean).join("\n"),
+    ...rideDescriptionFields(ride.notes, served, { addedNames: addedPeopleNames(ride, served) }),
     driverName: ride.driver_name, carName: ride.car_name, carId: ride.car_id, carType: ride.car_type ?? undefined,
     isChauffeur: chauffeur, needsDriver: !!ride.needs_driver, isMine: !handover?.relatedLabel,
     rideTypeCode: ownRequest?.rideTypeCode ?? served[0]?.ride_type,

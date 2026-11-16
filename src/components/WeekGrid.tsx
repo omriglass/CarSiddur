@@ -15,6 +15,7 @@ import { CarReportDialog } from "@/features/carCare/components/CarReportDialog";
 import { he, tv } from "@/i18n/he";
 import { useRideTypeColorClasses } from "@/components/rideTypeColorsContext";
 import { cn } from "@/lib/utils";
+import type { RichLine } from "@/lib/ridePublicDetails";
 import { GuestChips, type GuestDropTarget, type WeekGridGuest } from "./GuestChips";
 import { bottomNavInset, pageScroller, scrollerViewport } from "./pageScroller";
 import { DraftWatermark } from "./DraftWatermark";
@@ -24,6 +25,8 @@ import { useIsDesktop } from "./useIsDesktop";
 import { RideDeltaLine } from "./RideDeltaLine";
 import type { RideDeltaView } from "@/features/sadran/requestDelta";
 import { clampRideVertical, minutesFromClientY, snapTimeShift } from "./weekGridGeometry";
+import { RichLines } from "./RichLines";
+import { WeekGridNowLine } from "./WeekGridNowLine";
 import { HOLD_TO_DRAG_MS, holdStartOf, isDragAttempt, setTouchScrollLocked, watchHold, type HoldStart } from "./holdGesture";
 import { peekAnchorOf } from "./peekAnchor";
 
@@ -76,7 +79,10 @@ export interface WeekGridRide {
   endMinutes: number;
   label: string;
   description?: string;
+  /** The same with the names picked out (owner 2026-11-16); shown instead of `description` when given. */
+  descriptionLines?: readonly RichLine[];
   coordinatorNotes?: string;
+  coordinatorNoteLines?: readonly RichLine[];
   /** An original request time that a nearby drag should snap back to. */
   requestedStartMinutes?: number;
   passengerSummary?: string;
@@ -294,8 +300,8 @@ export interface WeekGridProps {
   onGuestHover?: (guest: WeekGridGuest, target: GuestDropTarget | null) => void;
   /** A chip was dropped: on the unmet list / a phantom lane (`unmet`), or on a car column at `minutes` (maybe on another ride). */
   onGuestDrop?: (guest: WeekGridGuest, target: GuestDropTarget) => void;
-  /** Minutes-since-midnight for "now", only when the grid's day is today — draws a thin primary line across every column (visual pass). Omit/`null` to hide it (e.g. a past or future day). */
-  nowMinutes?: number | null;
+  /** The grid's day is today: a thin, faint primary line at the current minute in every column, behind the rides (owner 2026-11-16). */
+  showNow?: boolean;
   /**
    * Start of the quarter hour "now" is in (07:58 → 07:45), when the grid shows today: that quarter of the
    * hour column is tinted lilac and labelled, like today's column header (owner 2026-10-13, `/my` week view).
@@ -402,8 +408,8 @@ function defaultRenderRide(ride: WeekGridRide) {
       {/* Owner 2026-10-22: notes take whatever height the block leaves (they were cut at two lines); the click popup shows them whole. */}
       {ride.description || ride.coordinatorNotes ? (
         <RideNotes>
-          {ride.description ? <span className="w-full whitespace-pre-wrap break-words text-xs" title={ride.description}>{ride.description}</span> : null}
-          {ride.coordinatorNotes ? <span className="w-full whitespace-pre-wrap break-words text-xs" title={`${he.field.notes}: ${ride.coordinatorNotes}`}>{he.field.notes}: {ride.coordinatorNotes}</span> : null}
+          {ride.description ? <span className="w-full whitespace-pre-wrap break-words text-xs" title={ride.description}>{ride.descriptionLines ? <RichLines lines={ride.descriptionLines} /> : ride.description}</span> : null}
+          {ride.coordinatorNotes ? <span className="w-full whitespace-pre-wrap break-words text-xs" title={`${he.field.notes}: ${ride.coordinatorNotes}`}>{he.field.notes}: {ride.coordinatorNoteLines ? <RichLines lines={ride.coordinatorNoteLines} /> : ride.coordinatorNotes}</span> : null}
         </RideNotes>
       ) : null}
       {/* REQ §13.161 (a): a delta line with both ends already shows the ride's hours (old → new). */}
@@ -493,7 +499,7 @@ export function WeekGrid({
   onRideDropOnUnmet,
   onGuestHover,
   onGuestDrop,
-  nowMinutes = null,
+  showNow = false,
   nowQuarterMinutes = null,
   watermark = false,
   initialScrollMinutes = null,
@@ -1191,13 +1197,6 @@ export function WeekGrid({
             />
           );
         })}
-        {nowMinutes != null && nowMinutes >= dayStartMinutes && nowMinutes <= dayEndMinutes ? (
-          <div
-            className="pointer-events-none absolute inset-x-0 z-20 h-0.5 bg-primary shadow-[0_0_4px_hsl(var(--primary)/0.6)]"
-            style={{ top: clampRideVertical(nowMinutes, nowMinutes, dayStartMinutes, dayEndMinutes).top }}
-            aria-hidden="true"
-          />
-        ) : null}
         {hours.map((h) => (
           <div
             key={h}
@@ -1206,6 +1205,7 @@ export function WeekGrid({
             aria-hidden="true"
           />
         ))}
+        {showNow ? <WeekGridNowLine dayStartMinutes={dayStartMinutes} dayEndMinutes={dayEndMinutes} /> : null}
         {(() => {
           let allDayIndex = 0;
           return ambientBlocks.filter((a) => a.carId === car.id).map((a) => {
@@ -1506,7 +1506,7 @@ export function WeekGrid({
                 {ride.luggage ? <span className="rounded-sm bg-foreground/10 px-1 font-medium" data-testid="luggage-marker" data-waived={ride.luggageWaived ? "true" : undefined}>{ride.luggageWaived ? he.smallTrunk.waivedLabel : he.request.luggageChip}</span> : null}
                 {ride.tow ? <span className="rounded-sm bg-foreground/10 px-1 font-medium" data-testid="tow-marker" data-waived={ride.towWaived ? "true" : undefined}>{ride.towWaived ? he.smallTrunk.towWaivedLabel : he.smallTrunk.towLabel}</span> : null}
                 {ride.connected ? <span className="rounded-sm bg-foreground/10 px-1 font-medium" data-testid="connected-marker">{he.connectedPair.marker}</span> : null}
-                {ride.isMine ? <span className={cn("flex items-center gap-1 font-bold", ride.needsDriver ? "text-destructive" : "text-foreground")}><Star className="size-3 shrink-0 fill-current" aria-hidden="true" />{he.siddur.myRide}</span> : null}
+                {ride.isMine ? <span className={cn("flex items-center gap-1 font-bold", ride.needsDriver ? "text-destructive" : "text-foreground")}><Star className="size-3 shrink-0 fill-current" aria-hidden="true" /><span className="sr-only">{he.siddur.myRide}</span></span> : null}
                 {ride.needsDriver ? <span className="flex items-center gap-1 font-semibold text-destructive"><UserRoundX className="size-3 shrink-0" aria-hidden="true" />{he.boardCoordination.needsDriver}</span> : null}
                 {ride.tightSchedule ? <span className="flex items-center gap-1 text-amber-700" title={he.boardCoordination.tightHelp}><Clock3 className="size-3 shrink-0" aria-hidden="true" />{he.boardCoordination.tight}</span> : null}
                 {ride.driverOverlapWarning ? <span className="flex items-center gap-1 font-medium text-amber-700" title={ride.driverOverlapWarning}>{ride.driverOverlapWarning}</span> : null}
@@ -1699,8 +1699,8 @@ export function WeekGrid({
           <p className="font-medium">{peekRide.label}</p>
           <p className="text-xs text-muted-foreground" dir="ltr">{formatMinutes(peekRide.startMinutes)}–{formatMinutes(peekRide.endMinutes)}</p>
           {peekRide.passengerSummary ? <p className="whitespace-pre-wrap break-words">{peekRide.passengerSummary}</p> : null}
-          {peekRide.description ? <p className="whitespace-pre-wrap break-words">{peekRide.description}</p> : null}
-          {peekRide.coordinatorNotes ? <p className="whitespace-pre-wrap break-words">{he.field.notes}: {peekRide.coordinatorNotes}</p> : null}
+          {peekRide.description ? <p className="whitespace-pre-wrap break-words">{peekRide.descriptionLines ? <RichLines lines={peekRide.descriptionLines} /> : peekRide.description}</p> : null}
+          {peekRide.coordinatorNotes ? <p className="whitespace-pre-wrap break-words">{he.field.notes}: {peekRide.coordinatorNoteLines ? <RichLines lines={peekRide.coordinatorNoteLines} /> : peekRide.coordinatorNotes}</p> : null}
           {onRideClick ? (
             <Button type="button" size="sm" variant="outline" className="self-start" data-testid="ride-peek-open" onClick={() => { setNotesPeek(null); onRideClick(peekRide.id); }}>
               {he.screen.ride.detail}

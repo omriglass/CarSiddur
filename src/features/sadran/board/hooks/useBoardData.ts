@@ -12,7 +12,7 @@ import { datesOfWeek, todayInJerusalem } from "@/components/dateFieldDates";
 import { t, tv } from "@/i18n/he";
 import { luggageMarker, towMarker } from "@/lib/luggageWaiver";
 import { TZ, dateKey, formatTime } from "@/lib/time";
-import { ridePublicDetails } from "@/lib/ridePublicDetails";
+import { rideDescriptionFields } from "@/lib/ridePublicDetails";
 import { ridePassengerSummary } from "@/lib/ridePassengerSummary";
 import { fetchCarSeatConfigs } from "@/features/fleet/api";
 import { useDestinations, useRideTypes } from "@/features/fleet/hooks";
@@ -22,7 +22,7 @@ import { useRideChanges } from "@/features/rides/hooks";
 import { isReservation } from "@/features/rides/servedOf";
 import { useMyDepartments } from "@/features/auth/useMyDepartments";
 import { useProfile } from "@/features/auth/useProfile";
-import { rideCoordinatorNotes } from "@/lib/rideCoordinatorNotes";
+import { rideCoordinatorNoteFields } from "@/lib/rideCoordinatorNotes";
 import type { WeekGridBlock, WeekGridCar, WeekGridDiscussionBlock, WeekGridRide } from "@/components/WeekGrid";
 import type { Window } from "@/solver";
 
@@ -771,15 +771,18 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
       // alone is always the department's own name ("נבו") for the common
       // case — `rideBlockLabel` composes "<driver> ו<passengers> ל<real
       // destination>" from `served` instead (see `rideLabel.ts`).
-      description: [servedOf(r).length ? r.notes : null, ridePublicDetails(withChildNames(servedOf(r), requestsQuery.data ?? []), { includeCompanions: false })].filter(Boolean).join("\n"),
+      ...rideDescriptionFields(servedOf(r).length ? r.notes : null, withChildNames(servedOf(r), requestsQuery.data ?? []), { includeCompanions: false }),
       passengerSummary: ridePassengerSummary(withChildNames(servedOf(r), requestsQuery.data ?? []), r.needs_driver ? null : r.driver_name),
-      coordinatorNotes: rideCoordinatorNotes(servedOf(r), requestsQuery.data ?? []),
+      ...rideCoordinatorNoteFields(servedOf(r), requestsQuery.data ?? []),
       // REQUIREMENTS §13.93 "Multi-stop rides" Display: "· דרך: פתח תקווה, תל אביב" — the stops by
       // name (owner 2026-10-05: not a count), only when the ride passes any (`rideViaNames`).
       label: (() => {
+        const viaNames = rideViaNames(r);
+        const labelled = !(!servedOf(r).length && r.notes) && !!(department?.home_destination_id && r.origin_id && r.destination_id);
         const base = (!servedOf(r).length && r.notes) || (
           department?.home_destination_id && r.origin_id && r.destination_id
             ? rideBlockLabel({
+                via: viaNames,
                 originId: r.origin_id,
                 destinationId: r.destination_id,
                 originName: r.origin_name ?? "",
@@ -795,7 +798,7 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
                 relayPartner: relayPartnerOf(r, rides),
               })
             : (r.destination_name ?? ""));
-        const via = viaLabel(rideViaNames(r));
+        const via = labelled ? "" : viaLabel(viaNames);
         return via ? `${base} · ${via}` : base;
       })(),
       pinned: !!r.is_pinned,

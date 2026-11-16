@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { ridePublicDetails } from "./ridePublicDetails";
+import { tv } from "@/i18n/he";
+
+import { ridePublicDetailLines, ridePublicDetails, rideDescriptionLines } from "./ridePublicDetails";
 
 describe("public ride details", () => {
   it("shows public text and both member and guest names without coordinator notes", () => {
@@ -13,10 +15,19 @@ describe("public ride details", () => {
     expect(result).not.toContain(entry.notes);
   });
 
-  it("keeps each merged request's text attached to its requester", () => {
-    expect(ridePublicDetails([{ requester: "Adi", ride_description: "Gate" }, { requester: "Ben", guest_passenger_names: ["Visitor"] }]))
-      .toMatch(/Adi:\nGate\nBen:\n.*Visitor/);
+  it("keeps each merged request's text after its requester's name; one line of other riders for the whole ride, last", () => {
+    // owner 2026-11-16: "עומרי: …" on one line, and a single "נוסעים נוספים" line at the bottom
+    const entries = [{ requester: "Adi", ride_description: "Gate", guest_passenger_names: ["Dan"] }, { requester: "Ben", guest_passenger_names: ["Visitor"] }];
+    expect(ridePublicDetails(entries, { addedNames: ["Gil"] }).split("\n")).toEqual(["Adi: Gate", tv("ridePublicDetails.companions", { names: "Dan, Visitor, Gil" })]);
     expect(ridePublicDetails([{}])).toBe("");
+  });
+
+  it("picks out the names: the requester before the colon and each other rider", () => {
+    const lines = ridePublicDetailLines([{ requester: "Adi", ride_description: "Gate" }, { requester: "Ben", guest_passenger_names: ["Visitor", "Dan"] }]);
+    expect(lines[0]).toEqual([{ text: "Adi:", emphasis: true }, { text: " Gate" }]);
+    expect(lines[1]?.filter((segment) => segment.emphasis).map((segment) => segment.text)).toEqual(["Visitor", "Dan"]);
+    expect(rideDescriptionLines("Own note", [{ ride_description: "Gate" }])?.map((line) => line.map((segment) => segment.text).join(""))).toEqual(["Own note", "Gate"]);
+    expect(rideDescriptionLines(null, [])).toBeUndefined();
   });
 
   it("includes named children alongside companions/guests instead of only counts", () => {

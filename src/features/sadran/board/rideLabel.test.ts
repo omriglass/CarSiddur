@@ -235,3 +235,22 @@ describe("R5U2: a pickup / chauffeur ride shows the car's real path", () => {
     expect(label).not.toContain("יציאה");
   });
 });
+
+describe("rideBlockLabel with places in the middle (owner 2026-11-16)", () => {
+  const base = { originId: HOME, destinationId: HOME, originName: "נבו", destinationName: "נבו", homeDestinationId: HOME };
+  it("folds the way there into the first destination, then the way back, then the others", () => {
+    const label = rideBlockLabel({ ...base, via: { out: ["זכרון יעקב"], return: ["זכרון יעקב"] },
+      served: [
+        { role: "driver", requester: "חבר", destination: "בנימינה", leg: "both" },
+        { role: "passenger", requester: "אדמין", destination: "נבו", origin_name: "בנימינה", trip_type: "one_way", leg: "return" },
+      ] });
+    // a one-way rider on the way back is named with where they get on
+    expect(label).toBe(`חבר ${tv("rideLabel.toMany", { places: "זכרון יעקב, בנימינה" })}. ${tv("rideLabel.back", { stops: "זכרון יעקב" })}. אדמין מבנימינה`);
+  });
+  it("one request: the same, nothing else; no places = the label as before", () => {
+    const served = [{ role: "driver" as const, requester: "עומרי כהן", destination: "בנימינה" }];
+    expect(rideBlockLabel({ ...base, served, via: { out: ["עין שמר"], return: [] } })).toBe(`עומרי ${tv("rideLabel.toMany", { places: "עין שמר, בנימינה" })}`);
+    expect(rideBlockLabel({ ...base, served, via: { out: [], return: ["עין שמר"] } })).toBe(`עומרי לבנימינה. ${tv("rideLabel.back", { stops: "עין שמר" })}`);
+    expect(rideBlockLabel({ ...base, served, via: { out: [], return: [] } })).toBe("עומרי לבנימינה");
+  });
+});

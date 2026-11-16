@@ -424,6 +424,7 @@
       "paths": [
         "src/features/siddur/**",
         "src/components/WeekGrid.tsx",
+        "src/components/WeekGridNowLine.tsx",
         "src/components/WeekGrid.test.ts",
         "src/components/WeekGrid.gestures.test.tsx",
         "src/components/weekGridCars.ts",
@@ -917,6 +918,9 @@
         "src/lib/ridePassengerSummary.test.ts",
         "src/lib/ridePublicDetails.ts",
         "src/lib/ridePublicDetails.test.ts",
+        "src/lib/rideCoordinatorNotes.ts",
+        "src/lib/rideCoordinatorNotes.test.ts",
+        "src/components/RichLines.tsx",
         "src/features/rides/ridePeople.ts",
         "src/features/rides/ridePeople.test.ts",
         "src/features/rides/addPassengers.ts",

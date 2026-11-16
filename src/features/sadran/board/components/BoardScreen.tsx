@@ -1,3 +1,4 @@
+import { todayInJerusalem } from "@/components/dateFieldDates";
 import { useRecentlyWashedCarIds } from "@/features/carCare/hooks";
 import { CarGlance } from "@/features/cars/components/CarGlance";
 import { useMaintenanceGridEditing } from "@/features/fleet/useMaintenanceGridEditing";
@@ -47,9 +48,9 @@ import { formatDayDate } from "@/lib/dayLabels";
 import { TZ, dateKey, formatTime } from "@/lib/time";
 import { useWeeks } from "@/features/siddur/hooks";
 import { isPastWeek } from "@/lib/pastWeek";
-import { ridePublicDetails } from "@/lib/ridePublicDetails";
+import { rideDescriptionFields } from "@/lib/ridePublicDetails";
 import { ridePassengerSummary } from "@/lib/ridePassengerSummary";
-import { rideCoordinatorNotes } from "@/lib/rideCoordinatorNotes";
+import { rideCoordinatorNoteLines, rideCoordinatorNoteFields } from "@/lib/rideCoordinatorNotes";
 
 import { peopleNames, peopleOf } from "@/features/rides/ridePeople";
 import { resolveRideRealDestination } from "../rideLabel";
@@ -529,6 +530,7 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
             dayStartMinutes={dayStartMinutes}
             dayEndMinutes={dayEndMinutes}
             readOnly={false}
+            showNow={board.selectedDay === todayInJerusalem()}
             draggable
             holdToDrag={!editMode}
             // Rides the board never drags (merges, drafts) are not "someone else's": only the "turn on edit mode" hint.
@@ -622,9 +624,9 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
                 originName: r.origin_name ?? "",
                 // Same fix as the grid's `rideBlockLabel` (bug #3): a round
                 // trip's own `destination_name` is always home ("נבו").
-                description: [servedOf(r).length ? r.notes : null, ridePublicDetails(withChildNames(servedOf(r), board.requestsQuery.data ?? []), { includeCompanions: false })].filter(Boolean).join("\n"),
+                ...rideDescriptionFields(servedOf(r).length ? r.notes : null, withChildNames(servedOf(r), board.requestsQuery.data ?? []), { includeCompanions: false }),
                 passengerSummary: ridePassengerSummary(withChildNames(servedOf(r), board.requestsQuery.data ?? []), r.needs_driver ? null : r.driver_name),
-                coordinatorNotes: rideCoordinatorNotes(servedOf(r), board.requestsQuery.data ?? []),
+                ...rideCoordinatorNoteFields(servedOf(r), board.requestsQuery.data ?? []),
                 label: board.weekGridRides.find((item) => item.id === r.id)?.label,
                 destinationName: (
                   board.department?.home_destination_id && r.origin_id && r.destination_id
@@ -931,7 +933,7 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
         key={selectedPlanningChange?.id ?? selectedRide?.id ?? "no-ride"}
         ride={selectedRide && selectedPlanningChange ? { ...selectedRide, car_id: selectedPlanningChange.car_id, starts_at: selectedPlanningChange.starts_at, ends_at: selectedPlanningChange.ends_at } : selectedRide}
         isPlanning={!!selectedPlanningChange}
-        coordinatorNotes={selectedRide ? rideCoordinatorNotes(servedOf(selectedRide), board.requestsQuery.data ?? []) : undefined}
+        coordinatorNotes={selectedRide ? rideCoordinatorNoteLines(servedOf(selectedRide), board.requestsQuery.data ?? []) : undefined}
         requests={board.requestsQuery.data ?? []}
         departmentId={departmentId}
         weekStart={weekStart}

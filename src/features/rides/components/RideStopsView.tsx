@@ -66,8 +66,9 @@ export function RideStopsView({ rideId, version, route, people, served }: RideSt
                 ) : null}
               </span>
             </div>
-            {row.off.length ? <p className="text-xs" data-testid="ride-stop-off">{tv("rideStops.off", { names: row.off.join(", ") })}</p> : null}
-            {row.on.length ? <p className="text-xs" data-testid="ride-stop-on">{tv("rideStops.on", { names: row.on.join(", ") })}</p> : null}
+            {/* Owner 2026-11-16: a light tint helps follow who gets off (reddish) and on (green). */}
+            {row.off.length ? <p className="text-xs text-rose-800 dark:text-rose-300" data-testid="ride-stop-off">{tv("rideStops.off", { names: row.off.join(", ") })}</p> : null}
+            {row.on.length ? <p className="text-xs text-emerald-800 dark:text-emerald-300" data-testid="ride-stop-on">{tv("rideStops.on", { names: row.on.join(", ") })}</p> : null}
             {row.free != null ? <p className="text-xs text-muted-foreground" data-testid="ride-stop-free">{freeLabel(row.free)}</p> : null}
           </li>
         ))}

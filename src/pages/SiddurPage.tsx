@@ -56,9 +56,9 @@ import { AddRideFab } from "@/features/requests/components/AddRideFab";
 import { RequestDeadlineNote } from "@/features/requests/components/RequestDeadlineNote";
 import { CarNowButton } from "@/features/requests/components/CarNowButton";
 import { QuickRequestSheet } from "@/features/requests/components/QuickRequestSheet";
-import { ridePublicDetails } from "@/lib/ridePublicDetails";
+import { rideDescriptionFields } from "@/lib/ridePublicDetails";
 import { ridePassengerSummary } from "@/lib/ridePassengerSummary";
-import { rideCoordinatorNotes } from "@/lib/rideCoordinatorNotes";
+import { rideCoordinatorNoteLines, rideCoordinatorNoteFields } from "@/lib/rideCoordinatorNotes";
 import { siddurCarName } from "@/lib/siddurCarName";
 import { VolunteerDriverChange } from "@/features/rides/components/VolunteerDriverChange";
 import { VolunteerDriverPanel } from "@/features/rides/components/VolunteerDriverPanel";
@@ -503,8 +503,11 @@ export function SiddurPage() {
       // REQUIREMENTS §13.93 "Multi-stop rides" Display: "· N עצירות" appended only when the
       // ride actually serves a request with stops (same marker as the Sadran board).
       label: (() => {
+        const viaNames = rideViaNames(r);
+        const labelled = !(!servedOf(r).length && r.notes) && !!(homeDestinationId && r.origin_id && r.destination_id);
         const base = (!servedOf(r).length && r.notes) || (homeDestinationId && r.origin_id && r.destination_id
           ? rideBlockLabel({
+              via: viaNames,
               originId: r.origin_id,
               destinationId: r.destination_id,
               originName: r.origin_name ?? "",
@@ -519,13 +522,14 @@ export function SiddurPage() {
               startsAt: r.starts_at ?? undefined,
             })
           : (r.destination_name ?? ""));
-        const via = viaLabel(rideViaNames(r));
+        // Owner 2026-11-16: a labelled ride says its places inside the label ("חבר ל-זכרון יעקב, בנימינה. חזור: …").
+        const via = labelled ? "" : viaLabel(viaNames);
         return via ? `${base} · ${via}` : base;
       })(),
       rideTypeCode: representativeRideTypeCode(servedOf(r)),
-      description: [servedOf(r).length ? r.notes : null, ridePublicDetails(servedOf(r), { includeCompanions: !isSadran, addedNames: addedNamesOf(r) })].filter(Boolean).join("\n"),
+      ...rideDescriptionFields(servedOf(r).length ? r.notes : null, servedOf(r), { includeCompanions: !isSadran, addedNames: addedNamesOf(r) }),
       passengerSummary: isSadran ? ridePassengerSummary(servedOf(r), r.needs_driver ? null : r.driver_name, { addedNames: addedNamesOf(r) }) : undefined,
-      coordinatorNotes: rideCoordinatorNotes(servedOf(r), coordinatorRequests),
+      ...rideCoordinatorNoteFields(servedOf(r), coordinatorRequests),
       shadowed: shadowedRideIds.has(r.id as string),
       needsDriver: !!r.needs_driver,
       isMine: isMyRideToPaint(r),
@@ -740,9 +744,9 @@ export function SiddurPage() {
                     originName: r.origin_name ?? "",
                     destinationName,
                     label: weekGridRides.find((item) => item.id === r.id)?.label,
-                    description: [servedOf(r).length ? r.notes : null, ridePublicDetails(servedOf(r), { includeCompanions: !isSadran, addedNames: addedNamesOf(r) })].filter(Boolean).join("\n"),
+                    ...rideDescriptionFields(servedOf(r).length ? r.notes : null, servedOf(r), { includeCompanions: !isSadran, addedNames: addedNamesOf(r) }),
                     passengerSummary: isSadran ? ridePassengerSummary(servedOf(r), r.needs_driver ? null : r.driver_name, { addedNames: addedNamesOf(r) }) : undefined,
-                    coordinatorNotes: rideCoordinatorNotes(servedOf(r), coordinatorRequests),
+                    ...rideCoordinatorNoteFields(servedOf(r), coordinatorRequests),
                     driverName: r.driver_name,
                     isChauffeur: !!r.is_chauffeur,
                     needsDriver: !!r.needs_driver,
@@ -814,6 +818,7 @@ export function SiddurPage() {
                 dayStartMinutes={dayStartMinutes}
                 dayEndMinutes={dayEndMinutes}
                 initialScrollMinutes={initialGridScrollMinutes}
+                showNow={activeDay === today}
                 readOnly={!canEditWeek}
                 draggable={canEditWeek && !rideMoves.saving && !waitingDrop.saving}
                 canDragRide={(ride) => (waitingRequestIdOf(ride.id) ? canDragWaiting(ride.id) : canDragRide(ride.id))}
@@ -872,7 +877,7 @@ export function SiddurPage() {
         {...(selectedRide?.id && ownsEditableRide(selectedRide.id) ? { moveToCarOptions: [] } : {})}
         ride={selectedRide}
         weekRides={rides}
-        coordinatorNotes={selectedRide ? rideCoordinatorNotes(servedOf(selectedRide), coordinatorRequests) : undefined}
+        coordinatorNotes={selectedRide ? rideCoordinatorNoteLines(servedOf(selectedRide), coordinatorRequests) : undefined}
         canEditPublicNotes={canEditPublicNotes}
         showAddPassengers={!!selectedRide && selectedRide.status !== "cancelled" && weekIsPublic}
         car={selectedCar}

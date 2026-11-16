@@ -7,7 +7,7 @@ import { isRideOfMine, type RelatedRideLabel } from "@/features/rides/myRides";
 import { representativeRideTypeCode, rideViaNames, servedOf } from "@/features/rides/servedOf";
 import { tv } from "@/i18n/he";
 import { addedPeopleNames } from "@/features/rides/ridePeople";
-import { ridePublicDetails } from "@/lib/ridePublicDetails";
+import { richLinesText, rideDescriptionLines, type RichLine } from "@/lib/ridePublicDetails";
 import { rideBlockLabel } from "@/lib/rideLabel";
 import { viaLabel } from "@/lib/routeLabel";
 import { dateKey } from "@/lib/time";
@@ -63,8 +63,11 @@ export function isMyBoardRide(ride: BoardRide, profileId: string | undefined, my
 /** The ride's route text, same recipe as the siddur grid (`rideBlockLabel`, multi-stop "· דרך …"). */
 export function rideRouteLabel(ride: BoardRide, homeDestinationId: string | null | undefined): string {
   const served = servedOf(ride);
+  const viaNames = rideViaNames(ride);
+  const labelled = !(!served.length && ride.notes) && !!(homeDestinationId && ride.origin_id && ride.destination_id);
   const base = (!served.length && ride.notes) || (homeDestinationId && ride.origin_id && ride.destination_id
     ? rideBlockLabel({
+      via: viaNames,
         originId: ride.origin_id,
         destinationId: ride.destination_id,
         originName: ride.origin_name ?? "",
@@ -79,7 +82,7 @@ export function rideRouteLabel(ride: BoardRide, homeDestinationId: string | null
         startsAt: ride.starts_at ?? undefined,
       })
     : (ride.destination_name ?? ""));
-  const via = viaLabel(rideViaNames(ride));
+  const via = labelled ? "" : viaLabel(viaNames);
   return via ? `${base} · ${via}` : base;
 }
 
@@ -126,10 +129,9 @@ export function rideBlocks(
           return row ? requestDetailLines(row) : [];
         })
       : [];
-    const description = [...new Set(myDetails), served.length ? ride.notes : null, ridePublicDetails(served, {
-      includeCompanions: true,
-      addedNames: addedPeopleNames(ride, served),
-    })].filter(Boolean).join("\n") || undefined;
+    const descriptionLines = [...[...new Set(myDetails)].map((text): RichLine => [{ text }]),
+      ...(rideDescriptionLines(served.length ? ride.notes : null, served, { includeCompanions: true, addedNames: addedPeopleNames(ride, served) }) ?? [])];
+    const description = richLinesText(descriptionLines) || undefined;
     segments.forEach((segment, index) => {
       out.push({
         target: { type: "ride", ride },
@@ -140,6 +142,7 @@ export function rideBlocks(
           endMinutes: segment.endMinutes,
           label,
           description,
+          descriptionLines: descriptionLines.length ? descriptionLines : undefined,
           isMine: !notMine,
           muted: notMine,
           tightSchedule: !notMine && !!extras.tightIds?.has(ride.id!),
