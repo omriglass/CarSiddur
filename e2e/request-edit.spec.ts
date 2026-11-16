@@ -224,9 +224,11 @@ test.describe("request edits", { tag: ["@request-form"] }, () => {
         await page.getByRole("button", { name: he.requestSentence.sheetDone, exact: true }).click();
         await saveEditedRequest(page);
 
-        const refusal = page.getByRole("dialog").filter({ hasText: he.request.editRefusedTitle });
+        // PR3 (REQ item 242): the own car is taken and no other car is free — the car-taken question, with no other car offered
+        const refusal = page.getByRole("dialog").filter({ hasText: he.request.carTakenTitle });
         await expect(refusal).toBeVisible();
-        await expect(refusal).toContainText(he.request.editRefusedBody);
+        await expect(refusal.getByTestId("car-taken-choice")).toBeVisible();
+        await expect(refusal.getByTestId("car-taken-other-car")).toHaveCount(0);
         await refusal.getByRole("button", { name: he.request.editRefusedBack, exact: true }).click();
         await expect(refusal).toHaveCount(0);
         // back on the form (still editing), nothing saved
