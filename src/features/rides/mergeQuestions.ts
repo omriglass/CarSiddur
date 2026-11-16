@@ -23,12 +23,12 @@ export function parseLongDetour(r: Record<string, unknown>): LongDetour | null {
     })
     : [];
   const fixed = r.fixed_hour && typeof r.fixed_hour === "object" ? (r.fixed_hour as Record<string, unknown>) : null;
+  const base = { outMinutes: Number(r.added_out_minutes) || 0, returnMinutes: Number(r.added_return_minutes) || 0, unknownHops: hops };
+  if (!fixed || typeof fixed.at !== "string") return base;
   return {
-    outMinutes: Number(r.added_out_minutes) || 0, returnMinutes: Number(r.added_return_minutes) || 0, unknownHops: hops,
+    ...base,
+    fixedHour: { name: typeof fixed.name === "string" ? fixed.name : "", at: fixed.at, minutes: Math.abs(Number(fixed.minutes) || 0) },
     detourLong: r.detour_problem !== false,
-    fixedHour: fixed && typeof fixed.at === "string"
-      ? { name: typeof fixed.name === "string" ? fixed.name : "", at: fixed.at, minutes: Math.abs(Number(fixed.minutes) || 0) }
-      : null,
   };
 }
 

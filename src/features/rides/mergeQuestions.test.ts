@@ -23,6 +23,6 @@ describe("mergeQuestions: a stop's stated hour", () => {
   });
 
   it("no stated hour: as before", () => {
-    expect(parseLongDetour({ detour_waivable: true, added_out_minutes: 30, detour_problem: true })?.fixedHour).toBeNull();
+    expect(parseLongDetour({ detour_waivable: true, added_out_minutes: 30, detour_problem: true })?.fixedHour).toBeUndefined();
   });
 });
