@@ -3215,8 +3215,10 @@ begin
       v_far_end := case
         when g.leg = 'return' or gq.depart_at is null or q.depart_at is null then 'return'
         when g.leg = 'out' or gq.return_at is null or q.return_at is null then 'depart'
-        when abs(extract(epoch from (gq.return_at - q.return_at))) > abs(extract(epoch from (gq.depart_at - q.depart_at))) then 'return'
-        else 'depart' end;
+        -- the departure is asked about whenever it moved (2 hours or more from the guest's); only a return-only move
+        -- is quoted as the return
+        when abs(extract(epoch from (gq.depart_at - q.depart_at))) >= 7200 then 'depart'
+        else 'return' end;
       v_asks := v_asks || jsonb_build_object(
         'request_id', g.request_id,
         'name', (select p.full_name from public.profiles p where p.id = gq.requester_id),
