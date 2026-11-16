@@ -951,11 +951,6 @@ export function RequestForm({
   }
 
   function onSubmit(formValues: RequestFormValues) {
-    // REQ item 246: hours that cannot all be kept are never sent (the server refuses them too).
-    if (!isMultiDay && stopSchedule?.conflict) {
-      toast.error(he.errors.stopTimesConflict);
-      return Promise.resolve();
-    }
     // REQ §13.127 (a): always confirm a ride filed for someone else — Sadranim too.
     if (whoOf(formValues).requesterId) {
       setPendingOnBehalf(formValues);

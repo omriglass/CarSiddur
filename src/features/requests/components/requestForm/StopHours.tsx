@@ -192,9 +192,10 @@ export function AddStopOptions({ departmentId, values, points, hops, place, plac
           : legLabel;
         const at = (key: string) => o.schedule.points.find((p) => p.key === key);
         const lines: { text: string; flex?: boolean }[] = [];
+        // Owner 2026-11-16: hours that cannot all be kept are a warning, never a refusal - the option can still be added.
         if (!o.ok) {
           const c = o.schedule.conflict;
-          lines.push({ text: tv("request.stopOptionImpossible", { minutes: String(c?.lateBy ?? 0), place: c ? nameOf(c.key) : "" }) });
+          lines.push({ flex: true, text: tv("request.stopTight", { place: c ? nameOf(c.key) : "" }) });
         } else {
           lines.push({ text: tv("request.stopOptionEta", { place: placeName, time: clock(o.newArrive) }) });
           if (o.departEarlier > 0) lines.push({ text: tv("request.stopOptionDepartEarlier", { time: clock(o.schedule.points[0]?.leave ?? 0), minutes: String(o.departEarlier) }) });
@@ -207,7 +208,7 @@ export function AddStopOptions({ departmentId, values, points, hops, place, plac
         return (
           <div
             key={`${leg}:${o.beforeIndex}`}
-            className={cn("space-y-1 rounded-lg border p-3", o.ok ? "border-primary/30 bg-primary/5" : "bg-muted text-muted-foreground")}
+            className={cn("space-y-1 rounded-lg border p-3", o.ok ? "border-primary/30 bg-primary/5" : "bg-muted")}
             data-testid="stop-option"
             data-ok={o.ok ? "true" : "false"}
           >
@@ -218,12 +219,10 @@ export function AddStopOptions({ departmentId, values, points, hops, place, plac
             {lines.map((line, k) => (
               <div key={k} className={cn("text-sm", line.flex && "w-fit rounded bg-amber-100 px-1 text-amber-950 dark:bg-amber-900/40 dark:text-amber-100")}>{line.text}</div>
             ))}
-            {o.ok ? (
-              <Button type="button" size="sm" className="mt-1 min-h-11" data-testid="stop-option-add"
-                onClick={() => onPick({ leg, beforeIndex: o.beforeIndex, shortened: o.shortened.filter((s) => s.key !== NEW_KEY) })}>
-                {he.request.stopOptionAdd}
-              </Button>
-            ) : null}
+            <Button type="button" size="sm" variant={o.ok ? "default" : "outline"} className="mt-1 min-h-11" data-testid="stop-option-add"
+              onClick={() => onPick({ leg, beforeIndex: o.beforeIndex, shortened: o.shortened.filter((s) => s.key !== NEW_KEY) })}>
+              {he.request.stopOptionAdd}
+            </Button>
           </div>
         );
       })}

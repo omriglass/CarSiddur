@@ -225,6 +225,9 @@ export function MergePrefillDialog({ prefill, carName, hostDriverName, hostLabel
             {verdict?.status === "ok" && verdict.timeFar ? (
               <p className="font-medium text-amber-700 dark:text-amber-400" data-testid="merge-time-far">{timeFarWarning(verdict.timeFar)}</p>
             ) : null}
+            {verdict?.status === "ok" && verdict.tight ? (
+              <p className="font-medium text-amber-700 dark:text-amber-400" data-testid="merge-tight">{he.rideStops.tight}</p>
+            ) : null}
             {verdict?.status === "ok" && verdict.longDetour ? (
               <p className="font-medium text-amber-700 dark:text-amber-400" data-testid="merge-long-detour">
                 {tv("mergedRide.longDetourNote", { minutes: String(Math.max(verdict.longDetour.outMinutes, verdict.longDetour.returnMinutes)) })}

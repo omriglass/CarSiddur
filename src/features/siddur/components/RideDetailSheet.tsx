@@ -1,11 +1,13 @@
 import { carModeLabel } from "../carModeLine";
 import { useSession } from "@/features/auth/useSession";
-import { Car as CarIcon, MapPin } from "lucide-react";
+import { Car as CarIcon } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { cn } from "@/lib/utils";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { PortalSheetContent } from "@/components/PortalSheetContent";
 import { CarNameWithReport } from "@/features/carCare/components/CarNameWithReport";
@@ -18,7 +20,7 @@ import { ridePublicDetails } from "@/lib/ridePublicDetails";
 import { he, t, tv } from "@/i18n/he";
 import { formatTime } from "@/lib/time";
 import type { Car } from "@/features/fleet/api";
-import { RequestHistoryDialog } from "@/features/requests/components/RequestHistoryDialog";
+import { RequestTimeline } from "@/features/requests/components/RequestHistoryDialog";
 import { useMyRequests } from "@/features/requests/hooks";
 import { relayPartnerOf, servedOf, type ServedEntry } from "@/features/rides/servedOf";
 
@@ -31,6 +33,7 @@ import { RidePublicNotesEditor } from "@/features/rides/components/RidePublicNot
 import { RideCarHandover } from "@/features/rides/components/RideCarHandover";
 import { RideRouteStops } from "@/features/rides/components/RideRouteStops";
 import { RideStopsView } from "@/features/rides/components/RideStopsView";
+import { RideSummaryLine } from "@/features/rides/components/RideSummaryLine";
 import { parseRideRoute, routeHasIntermediates } from "@/lib/rideRoute";
 import { peopleOf } from "@/features/rides/ridePeople";
 import type { HandOverCandidate } from "@/features/rides/handOver";
@@ -131,7 +134,6 @@ interface RideDetailSheetProps {
  */
 export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = null, onOpenChange, editor, coordinatorNotes, canEditPublicNotes, onRemoveOwnRide, removingOwnRide = false, onCancelSeriesDay, onRemoveMe, removingMe = false, freedPreview, editRequestLinks = [], showAddPassengers = false, weekRides, moveToCarOptions = [], onMoveToCar, movingToCar = false, handOverOptions = [], onHandOver, onLeaveNoDriver, leaveNoDriverDialog, handingOver = false }: RideDetailSheetProps) {
   const [confirmCancel, setConfirmCancel] = useState(false);
-  const [historyOpen, setHistoryOpen] = useState(false);
   // The viewer's own request on this ride (theirs, filed by them, or one they may edit) — its history is theirs to read.
   const myRequestIds = new Set((useMyRequests().data ?? []).map((request) => request.id));
   const historyRequestId = ride ? servedOf(ride).map((entry) => entry.request_id).find((id) => !!id && myRequestIds.has(id)) ?? null : null;
@@ -208,175 +210,182 @@ export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = 
               </div>
 
               <RideCarHandover ride={ride} />
-              {/* Owner 2026-11-15: a small way from the ride to my request's story ("מה קרה?", REQ §13.204). */}
-              {historyRequestId ? (
-                <button type="button" className="text-xs text-muted-foreground underline underline-offset-2" data-testid="ride-request-history"
-                  onClick={() => setHistoryOpen(true)}>
-                  {he.requestHistory.open}
-                </button>
-              ) : null}
-
               {/* REQ item 150 b: this ride's car tasks for me, inside its window only (member surfaces; the board has its own sheet). */}
               {ride.id ? <MyCarTasksCard rideId={ride.id} /> : null}
 
-              <div className="flex items-center gap-1 font-medium">
-                <MapPin className="size-4 shrink-0 text-muted-foreground" />
-                <span>{headerLabel(ride, served, homeDestinationId, weekRides)}</span>
-              </div>
+              {/* Owner 2026-11-16: three tabs - the summary (who goes where in words, notes, car, the people), the details (each
+                  place, who gets on and off, what each request asked) and my request's history. */}
+              <Tabs key={ride.id ?? ""} defaultValue="summary">
+                <TabsList className={cn("grid h-auto w-full", historyRequestId ? "grid-cols-3" : "grid-cols-2")} aria-label={he.rideSummary.tabsLabel}>
+                  {(["summary", "details", ...(historyRequestId ? ["history" as const] : [])] as const).map((id) => (
+                    <TabsTrigger key={id} value={id} className="min-h-11" data-testid={`ride-detail-tab-${id}`}>{he.rideSummary.tabs[id]}</TabsTrigger>
+                  ))}
+                </TabsList>
+                <TabsContent value="summary" className="space-y-4">
+                  <RideSummaryLine rideId={ride.id} version={ride.version} route={ride.route} people={peopleOf(ride)} lead={headerLabel(ride, served, homeDestinationId, weekRides)} />
 
-              {ride.series_count && ride.series_count > 1 ? (
-                <p className="text-sm text-muted-foreground">
-                  {tv("rideDetail.seriesLine", { index: String(ride.series_index ?? 1), count: String(ride.series_count) })}
-                </p>
-              ) : null}
+                  {ride.series_count && ride.series_count > 1 ? (
+                    <p className="text-sm text-muted-foreground">
+                      {tv("rideDetail.seriesLine", { index: String(ride.series_index ?? 1), count: String(ride.series_count) })}
+                    </p>
+                  ) : null}
 
-              {carModeLabel(ride, viewerId) ? <p className="text-muted-foreground">{carModeLabel(ride, viewerId)}</p> : null}
-              {/* REQ item 246 h: "+ נוסע/ת" sits high on the ride, above the stops. */}
-              {showAddPassengers && !(summary && viewerRides) && ride.id && ride.version != null ? (
-                <AddPassengersDialog
-                  key={`${ride.id}:${ride.version}:add-passengers`}
-                  rideId={ride.id}
-                  expectedVersion={ride.version}
-                  departmentId={ride.department_id ?? ""}
-                  weekStart={ride.week_start ?? ""}
-                  people={peopleOf(ride)}
-                  route={ride.route}
-                />
-              ) : null}
-              {routeHasIntermediates(parseRideRoute(ride.route)) ? <RideStopsView rideId={ride.id} version={ride.version} route={ride.route} people={peopleOf(ride)} served={served} /> : <RideRouteStops served={served} />}
-              {canEditPublicNotes && !summary && ride.id && ride.version != null ? (
-                <RidePublicNotesEditor key={`${ride.id}:${ride.version}:notes`} rideId={ride.id} expectedVersion={ride.version} initialNotes={ride.notes} departmentId={ride.department_id ?? ""} weekStart={ride.week_start ?? ""} />
-              ) : ride.notes ? <p className="whitespace-pre-wrap break-words">{ride.notes}</p> : null}
-              {/* Owner 2026-10-12: who rides is listed once, in the passenger list below — here only the requests' descriptions. */}
-              {ridePublicDetails(served, { includeCompanions: false }) ? <p className="whitespace-pre-wrap break-words">{ridePublicDetails(served, { includeCompanions: false })}</p> : null}
-              {coordinatorNotes ? <div className="whitespace-pre-wrap break-words text-muted-foreground"><span className="font-medium">{he.field.notes}: </span>{coordinatorNotes}</div> : null}
-              {editor}
+                  {carModeLabel(ride, viewerId) ? <p className="text-muted-foreground">{carModeLabel(ride, viewerId)}</p> : null}
+                  {/* REQ item 246 h: "+ נוסע/ת" sits high on the ride, above the stops. */}
+                  {showAddPassengers && !(summary && viewerRides) && ride.id && ride.version != null ? (
+                    <AddPassengersDialog
+                      key={`${ride.id}:${ride.version}:add-passengers`}
+                      rideId={ride.id}
+                      expectedVersion={ride.version}
+                      departmentId={ride.department_id ?? ""}
+                      weekStart={ride.week_start ?? ""}
+                      people={peopleOf(ride)}
+                      route={ride.route}
+                    />
+                  ) : null}
+                  {canEditPublicNotes && !summary && ride.id && ride.version != null ? (
+                    <RidePublicNotesEditor key={`${ride.id}:${ride.version}:notes`} rideId={ride.id} expectedVersion={ride.version} initialNotes={ride.notes} departmentId={ride.department_id ?? ""} weekStart={ride.week_start ?? ""} />
+                  ) : ride.notes ? <p className="whitespace-pre-wrap break-words">{ride.notes}</p> : null}
+                  {/* Owner 2026-10-12: who rides is listed once, in the passenger list below — here only the requests' descriptions. */}
+                  {/* Owner 2026-11-16: the summary carries the notes - the ride's and what each request said about it. */}
+                  {ridePublicDetails(served, { includeCompanions: false }) ? <p className="whitespace-pre-wrap break-words">{ridePublicDetails(served, { includeCompanions: false })}</p> : null}
+                  {coordinatorNotes ? <div className="whitespace-pre-wrap break-words text-muted-foreground"><span className="font-medium">{he.field.notes}: </span>{coordinatorNotes}</div> : null}
+                  {editor}
 
-              {/* Owner 2026-10-12: the driver is marked in the passenger list; only a missing driver / a chauffeur is said here. */}
-              {/* R17U3: the volunteer panel (passed as `editor`) already says it. */}
-              {ride.needs_driver && !editor ? <p className="font-semibold text-destructive">{he.rideCoordination.missingDriver}</p> : null}
-              {ride.is_chauffeur && !ride.needs_driver && ride.driver_name ? <p>{he.rideDetail.chauffeur}: {ride.driver_name}</p> : null}
+                  {/* Owner 2026-10-12: the driver is marked in the passenger list; only a missing driver / a chauffeur is said here. */}
+                  {/* R17U3: the volunteer panel (passed as `editor`) already says it. */}
+                  {ride.needs_driver && !editor ? <p className="font-semibold text-destructive">{he.rideCoordination.missingDriver}</p> : null}
+                  {ride.is_chauffeur && !ride.needs_driver && ride.driver_name ? <p>{he.rideDetail.chauffeur}: {ride.driver_name}</p> : null}
 
-              {car ? (
-                <p className="flex items-center gap-1">
-                  <CarIcon className="size-4 shrink-0 text-muted-foreground" aria-label={he.rideDetail.car} />
-                  <CarNameWithReport carId={car.id} carName={siddurCarName(car)} />
-                  {car.type === "temporary" ? ` · ${he.car.type.temporary}` : ""}
-                </p>
-              ) : null}
-
-              {mergedNames.length > 1 ? <p className="text-muted-foreground" data-testid="ride-merged-of">{tv("rideDetail.mergedOf", { names: mergedNames.join(", ") })}</p> : null}
-
-              {needsPersonBlocks(ride, served) ? <RidePersonBlocks blocks={buildPersonBlocks({ ride, served, homeDestinationId })} /> : null}
-
-              <RidePassengersList
-                rideId={ride.id}
-                expectedVersion={ride.version}
-                people={peopleOf(ride)}
-                served={served}
-                canManagePeople={showAddPassengers && !summary}
-                rideCancelled={ride.status === "cancelled"}
-                departmentId={ride.department_id}
-                weekStart={ride.week_start}
-                route={ride.route}
-                viewerId={viewerId}
-              />
-
-              {unnamedLine ? <p className="text-muted-foreground">{unnamedLine}</p> : null}
+                  {car ? (
+                    <p className="flex items-center gap-1">
+                      <CarIcon className="size-4 shrink-0 text-muted-foreground" aria-label={he.rideDetail.car} />
+                      <CarNameWithReport carId={car.id} carName={siddurCarName(car)} />
+                      {car.type === "temporary" ? ` · ${he.car.type.temporary}` : ""}
+                    </p>
+                  ) : null}
 
 
-              {onMoveToCar && moveToCarOptions.length ? (
-                <>
-                  {moveToCarOptions.map((option) => (
-                    <Button key={option.id} className="w-full" size="lg" variant="outline" disabled={movingToCar} onClick={() => setMoveCarId(option.id)} data-testid="move-to-my-car">
-                      {moveToCarOptions.length === 1 ? he.rideDetail.moveToMyCar : tv("rideDetail.moveToCar", { car: option.name })}
+                  <RidePassengersList
+                    rideId={ride.id}
+                    expectedVersion={ride.version}
+                    people={peopleOf(ride)}
+                    served={served}
+                    canManagePeople={showAddPassengers && !summary}
+                    rideCancelled={ride.status === "cancelled"}
+                    departmentId={ride.department_id}
+                    weekStart={ride.week_start}
+                    route={ride.route}
+                    viewerId={viewerId}
+                  />
+
+                  {unnamedLine ? <p className="text-muted-foreground">{unnamedLine}</p> : null}
+
+
+                  {onMoveToCar && moveToCarOptions.length ? (
+                    <>
+                      {moveToCarOptions.map((option) => (
+                        <Button key={option.id} className="w-full" size="lg" variant="outline" disabled={movingToCar} onClick={() => setMoveCarId(option.id)} data-testid="move-to-my-car">
+                          {moveToCarOptions.length === 1 ? he.rideDetail.moveToMyCar : tv("rideDetail.moveToCar", { car: option.name })}
+                        </Button>
+                      ))}
+                      <ConfirmDialog
+                        open={!!moveCar}
+                        onOpenChange={(open) => { if (!open) setMoveCarId(null); }}
+                        title={tv("rideEditing.ownCarMoveTitle", { name: rideOwnerName })}
+                        description={ownCarMoveBody(ride.driver_id, rideOwnerName, moveCar?.name ?? "")}
+                        confirmLabel={he.rideEditing.ownCarMoveConfirm}
+                        loading={movingToCar}
+                        onConfirm={() => { if (moveCar) { setMoveCarId(null); onMoveToCar(moveCar.id); } }}
+                      />
+                    </>
+                  ) : null}
+
+                  {editRequestLinks.map((link) => (
+                    <Button key={link.href} asChild className="w-full" size="lg">
+                      <Link to={link.href} data-testid="ride-edit-request">{link.label}</Link>
                     </Button>
                   ))}
-                  <ConfirmDialog
-                    open={!!moveCar}
-                    onOpenChange={(open) => { if (!open) setMoveCarId(null); }}
-                    title={tv("rideEditing.ownCarMoveTitle", { name: rideOwnerName })}
-                    description={ownCarMoveBody(ride.driver_id, rideOwnerName, moveCar?.name ?? "")}
-                    confirmLabel={he.rideEditing.ownCarMoveConfirm}
-                    loading={movingToCar}
-                    onConfirm={() => { if (moveCar) { setMoveCarId(null); onMoveToCar(moveCar.id); } }}
-                  />
-                </>
-              ) : null}
 
-              {editRequestLinks.map((link) => (
-                <Button key={link.href} asChild className="w-full" size="lg">
-                  <Link to={link.href} data-testid="ride-edit-request">{link.label}</Link>
-                </Button>
-              ))}
-
-              {onRemoveMe ? (
-                <>
-                  <Button className="w-full" size="lg" variant="destructive" disabled={removingMe} onClick={() => setConfirmRemoveMe(true)} data-testid="remove-me">
-                    {leavingSomeonesRide ? he.rideDetail.leaveRide : removingMyRequest ? t("action.cancelRide") : he.rideDetail.removeMe}
-                  </Button>
-                  <ConfirmDialog
-                    open={confirmRemoveMe}
-                    onOpenChange={setConfirmRemoveMe}
-                    title={leavingSomeonesRide ? he.rideDetail.leaveRideConfirmTitle : removingMyRequest ? he.request.cancelConfirmTitle : he.rideDetail.removeMeConfirmTitle}
-                    description={leavingSomeonesRide
-                      ? tv(removingMyRequest ? "rideDetail.leaveRideConfirmBody" : "rideDetail.leaveRideConfirmBodyAdded", { driver: ride.driver_name ?? "" })
-                      : undefined}
-                    confirmLabel={leavingSomeonesRide ? he.rideDetail.leaveRideConfirm : removingMyRequest ? t("action.cancelRide") : he.rideDetail.removeMe}
-                    destructive
-                    loading={removingMe}
-                    onConfirm={() => { setConfirmRemoveMe(false); onRemoveMe(false); }}
-                  >
-                    {removeMeFreedLine ? <p className="text-sm" data-testid="freed-car-line">{removeMeFreedLine}</p> : null}
-                    {removeMeFreedLine ? (
-                      <KeepOutButton label={removingMyRequest && !leavingSomeonesRide ? he.freedCar.keepOutCancel : he.freedCar.keepOutLeave} disabled={removingMe}
-                        onClick={() => { setConfirmRemoveMe(false); onRemoveMe(true); }} />
-                    ) : null}
-                  </ConfirmDialog>
-                </>
-              ) : onRemoveOwnRide ? (
-                <>
-                  {/* Owner 2026-11-15: with others on the ride the one entry is "אני לא נוסע/ת" — then cancel for everyone, or
-                      remove only me; a bare "בטל נסיעה" read as either. */}
-                  <Button className="w-full" size="lg" variant="destructive" disabled={removingOwnRide || handingOver} onClick={() => setConfirmCancel(true)}
-                    data-testid={canLeaveDriving ? "not-driving-this" : undefined}>
-                    {canLeaveDriving ? he.rideDetail.notDrivingThis : t("action.cancelRide")}
-                  </Button>
-                  {/* R12M1: cancelling a ride is never one tap. */}
-                  <ConfirmDialog
-                    open={confirmCancel}
-                    onOpenChange={setConfirmCancel}
-                    title={seriesDay ? he.request.seriesCancelTitle : canLeaveDriving ? he.rideDetail.notDrivingThis : he.request.cancelConfirmTitle}
-                    description={canLeaveDriving ? he.rideDetail.removeDriverHelp : undefined}
-                    confirmLabel={seriesDay ? he.request.cancelAllDays : canLeaveDriving ? he.rideDetail.cancelForAll : t("action.cancelRide")}
-                    destructive
-                    loading={removingOwnRide || handingOver}
-                    onConfirm={() => { setConfirmCancel(false); onRemoveOwnRide(false); }}
-                  >
-                    {/* R20H1 (owner 2026-11-14): one day of a multi-day ride, or every day. */}
-                    {seriesDay && ride.starts_at ? (
-                      <Button className="mb-2 w-full" variant="outline" disabled={removingOwnRide || handingOver} data-testid="cancel-only-day"
-                        onClick={() => { setConfirmCancel(false); onCancelSeriesDay?.(); }}>
-                        {tv("request.cancelOnlyDay", { day: formatDayDate(ride.starts_at) })}
+                  {onRemoveMe ? (
+                    <>
+                      <Button className="w-full" size="lg" variant="destructive" disabled={removingMe} onClick={() => setConfirmRemoveMe(true)} data-testid="remove-me">
+                        {leavingSomeonesRide ? he.rideDetail.leaveRide : removingMyRequest ? t("action.cancelRide") : he.rideDetail.removeMe}
                       </Button>
-                    ) : null}
-                    {cancelFreedLine ? <p className="mb-2 text-sm" data-testid="freed-car-line">{cancelFreedLine}</p> : null}
-                    {cancelFreedLine ? (
-                      <div className="mb-2">
-                        <KeepOutButton label={he.freedCar.keepOutCancel} disabled={removingOwnRide || handingOver}
-                          onClick={() => { setConfirmCancel(false); onRemoveOwnRide(true); }} />
-                      </div>
-                    ) : null}
-                    {/* REQ §13.129 (b): the driver may instead hand the ride to someone on it who drives. */}
-                    {canLeaveDriving ? leaveChoices(() => setConfirmCancel(false)) : null}
-                  </ConfirmDialog>
-                </>
-              ) : null}
+                      <ConfirmDialog
+                        open={confirmRemoveMe}
+                        onOpenChange={setConfirmRemoveMe}
+                        title={leavingSomeonesRide ? he.rideDetail.leaveRideConfirmTitle : removingMyRequest ? he.request.cancelConfirmTitle : he.rideDetail.removeMeConfirmTitle}
+                        description={leavingSomeonesRide
+                          ? tv(removingMyRequest ? "rideDetail.leaveRideConfirmBody" : "rideDetail.leaveRideConfirmBodyAdded", { driver: ride.driver_name ?? "" })
+                          : undefined}
+                        confirmLabel={leavingSomeonesRide ? he.rideDetail.leaveRideConfirm : removingMyRequest ? t("action.cancelRide") : he.rideDetail.removeMe}
+                        destructive
+                        loading={removingMe}
+                        onConfirm={() => { setConfirmRemoveMe(false); onRemoveMe(false); }}
+                      >
+                        {removeMeFreedLine ? <p className="text-sm" data-testid="freed-car-line">{removeMeFreedLine}</p> : null}
+                        {removeMeFreedLine ? (
+                          <KeepOutButton label={removingMyRequest && !leavingSomeonesRide ? he.freedCar.keepOutCancel : he.freedCar.keepOutLeave} disabled={removingMe}
+                            onClick={() => { setConfirmRemoveMe(false); onRemoveMe(true); }} />
+                        ) : null}
+                      </ConfirmDialog>
+                    </>
+                  ) : onRemoveOwnRide ? (
+                    <>
+                      {/* Owner 2026-11-15: with others on the ride the one entry is "אני לא נוסע/ת" — then cancel for everyone, or
+                          remove only me; a bare "בטל נסיעה" read as either. */}
+                      <Button className="w-full" size="lg" variant="destructive" disabled={removingOwnRide || handingOver} onClick={() => setConfirmCancel(true)}
+                        data-testid={canLeaveDriving ? "not-driving-this" : undefined}>
+                        {canLeaveDriving ? he.rideDetail.notDrivingThis : t("action.cancelRide")}
+                      </Button>
+                      {/* R12M1: cancelling a ride is never one tap. */}
+                      <ConfirmDialog
+                        open={confirmCancel}
+                        onOpenChange={setConfirmCancel}
+                        title={seriesDay ? he.request.seriesCancelTitle : canLeaveDriving ? he.rideDetail.notDrivingThis : he.request.cancelConfirmTitle}
+                        description={canLeaveDriving ? he.rideDetail.removeDriverHelp : undefined}
+                        confirmLabel={seriesDay ? he.request.cancelAllDays : canLeaveDriving ? he.rideDetail.cancelForAll : t("action.cancelRide")}
+                        destructive
+                        loading={removingOwnRide || handingOver}
+                        onConfirm={() => { setConfirmCancel(false); onRemoveOwnRide(false); }}
+                      >
+                        {/* R20H1 (owner 2026-11-14): one day of a multi-day ride, or every day. */}
+                        {seriesDay && ride.starts_at ? (
+                          <Button className="mb-2 w-full" variant="outline" disabled={removingOwnRide || handingOver} data-testid="cancel-only-day"
+                            onClick={() => { setConfirmCancel(false); onCancelSeriesDay?.(); }}>
+                            {tv("request.cancelOnlyDay", { day: formatDayDate(ride.starts_at) })}
+                          </Button>
+                        ) : null}
+                        {cancelFreedLine ? <p className="mb-2 text-sm" data-testid="freed-car-line">{cancelFreedLine}</p> : null}
+                        {cancelFreedLine ? (
+                          <div className="mb-2">
+                            <KeepOutButton label={he.freedCar.keepOutCancel} disabled={removingOwnRide || handingOver}
+                              onClick={() => { setConfirmCancel(false); onRemoveOwnRide(true); }} />
+                          </div>
+                        ) : null}
+                        {/* REQ §13.129 (b): the driver may instead hand the ride to someone on it who drives. */}
+                        {canLeaveDriving ? leaveChoices(() => setConfirmCancel(false)) : null}
+                      </ConfirmDialog>
+                    </>
+                  ) : null}
+                </TabsContent>
+                <TabsContent value="details" className="space-y-4">
+                  {routeHasIntermediates(parseRideRoute(ride.route)) ? <RideStopsView rideId={ride.id} version={ride.version} route={ride.route} people={peopleOf(ride)} served={served} /> : <RideRouteStops served={served} />}
+                  {mergedNames.length > 1 ? <p className="text-muted-foreground" data-testid="ride-merged-of">{tv("rideDetail.mergedOf", { names: mergedNames.join(", ") })}</p> : null}
+                  {/* What each request asked, one card per request (its words are also on the summary, with the notes). */}
+                  {needsPersonBlocks(ride, served) ? <RidePersonBlocks blocks={buildPersonBlocks({ ride, served, homeDestinationId })} /> : null}
+                </TabsContent>
+                {historyRequestId ? (
+                  <TabsContent value="history" data-testid="ride-detail-history">
+                    <RequestTimeline requestId={historyRequestId} />
+                  </TabsContent>
+                ) : null}
+              </Tabs>
             </div>
           </>
         ) : null}
         {leaveNoDriverDialog}
-        {historyRequestId ? <RequestHistoryDialog requestId={historyRequestId} open={historyOpen} onOpenChange={setHistoryOpen} /> : null}
       </PortalSheetContent>
     </Sheet>
   );

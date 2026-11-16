@@ -73,28 +73,24 @@ begin
     'TEST 4 FAILED: places-only stops keep the stop hours';
 
   -----------------------------------------------------------------------
-  -- 5) Hours that cannot all be kept are refused and change nothing: Binyamina by 08:05 when the car leaves 08:00 (10-minute drive).
+  -- 5) Hours that cannot all be kept are kept as sent (owner 2026-11-16: a warning, never a refusal): Binyamina by 08:05
+  --    when the car leaves 08:00 (10-minute drive) - saved, and the schedule reports the 5 minutes ("לו״ז צפוף").
   -----------------------------------------------------------------------
   select version into v_version from public.requests where id = req;
-  v_failed := false;
-  begin
-    perform public.submit_request(v_payload || jsonb_build_object('request_id', req, 'expected_version', v_version,
-      'stops', jsonb_build_array(jsonb_build_object('leg', 'out', 'place_id', binyamina, 'fixed_anchor', 'arrive',
-        'fixed_at', (w + 1 + time '08:05') at time zone 'Asia/Jerusalem', 'flex_minutes', 0, 'stay_minutes', null))));
-  exception when others then
-    v_failed := sqlerrm = 'stop_times_conflict';
-    get stacked diagnostics v_detail = pg_exception_detail;
-  end;
-  assert v_failed, 'TEST 5 FAILED: stop_times_conflict';
-  assert v_detail::jsonb = jsonb_build_object('key', 'out:1', 'late_by', 5), format('TEST 5 FAILED: detail %s', v_detail);
-  assert (select flex_minutes from public.request_stops where request_id = req) = 30, 'TEST 5 FAILED: nothing changed';
+  perform public.submit_request(v_payload || jsonb_build_object('request_id', req, 'expected_version', v_version,
+    'stops', jsonb_build_array(jsonb_build_object('leg', 'out', 'place_id', binyamina, 'fixed_anchor', 'arrive',
+      'fixed_at', (w + 1 + time '08:05') at time zone 'Asia/Jerusalem', 'flex_minutes', 0, 'stay_minutes', null))));
+  assert (select flex_minutes from public.request_stops where request_id = req) = 0, 'TEST 5 FAILED: saved as sent';
+  assert public.request_schedule(req) -> 'conflict' = jsonb_build_object('key', 'out:1', 'late_by', 5),
+    format('TEST 5 FAILED: reported %s', public.request_schedule(req) -> 'conflict');
 
   -----------------------------------------------------------------------
   -- 6) The same hour within its flexibility is accepted; the ETA is 08:10 (flexibility used 5).
   -----------------------------------------------------------------------
+  select version into v_version from public.requests where id = req;
   v_result := public.submit_request(v_payload || jsonb_build_object('request_id', req, 'expected_version', v_version,
     'stops', jsonb_build_array(jsonb_build_object('leg', 'out', 'place_id', binyamina, 'fixed_anchor', 'arrive',
-      'fixed_at', (w + 1 + time '08:05') at time zone 'Asia/Jerusalem', 'flex_minutes', 10, 'stay_minutes', null))));
+      'fixed_at', (w + 1 + time '08:05') at time zone 'Asia/Jerusalem', 'flex_minutes', 15, 'stay_minutes', null))));
   select eta into v_eta from public.request_stop_etas(req) where leg = 'out';
   assert v_eta = (w + 1 + time '08:10') at time zone 'Asia/Jerusalem', format('TEST 6 FAILED: eta %s', v_eta);
 

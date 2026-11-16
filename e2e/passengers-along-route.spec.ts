@@ -79,8 +79,11 @@ async function cleanup(week: string) {
 async function openRide(page: Page, week: string, rideId: string) {
   await page.setViewportSize({ width: 430, height: 1600 });
   await page.goto(`/siddur/${NEVO_DEPARTMENT_ID}/${week}?ride=${rideId}`);
-  await expect(page.getByTestId("ride-stops-view")).toBeVisible();
+  await expect(page.getByTestId("ride-summary")).toBeVisible();
 }
+
+/** Owner 2026-11-16: the sheet's tabs - the summary (people) and the details (the stops view). */
+const tab = (page: Page, id: "summary" | "details") => page.getByTestId(`ride-detail-tab-${id}`).click();
 
 test("the stops view and the people summary; the Sadran makes a passenger 'only there'", { tag: ["@ride-passengers"] }, async ({ browser }) => {
   test.slow();
@@ -90,11 +93,15 @@ test("the stops view and the people summary; the Sadran makes a passenger 'only 
   try {
     const page = sadran.page;
     await openRide(page, WEEK, ride.id);
+    // the summary says the place in the middle in words
+    await expect(page.getByTestId("ride-summary")).toContainText(tv("rideSummary.via", { place: "זכרון יעקב" }));
+    await tab(page, "details");
     const school = page.getByTestId("ride-stop-out-1");
     await expect(school).toContainText(tv("rideStops.off", { names: "גל" }));
     await expect(school.getByTestId("ride-stop-fixed")).toContainText("08:15");
     await expect(page.getByTestId("ride-stop-out-0").getByTestId("ride-stop-free")).toBeVisible();
     await expect(page.getByTestId("ride-stop-return-1")).toContainText(tv("rideStops.on", { names: "גל" }));
+    await tab(page, "summary");
     await expect(page.locator('[data-person-key$=":1"]').getByTestId("ride-person-where")).toContainText("↓ זכרון יעקב (");
 
     // טל: tap the name -> "רק הלוך" -> save
@@ -136,6 +143,7 @@ test("'+ נוסע/ת' getting on in the middle; a one-way guest leaves with one 
     await page.getByRole("button", { name: he.addPassengers.submit }).click();
     await expect.poll(async () => (await service.from("ride_passengers").select("board_place_id, leg").eq("ride_id", ride.id).eq("person_id", ADMIN)
       .maybeSingle()).data).toEqual({ board_place_id: ZICHRON, leg: "out" });
+    await tab(page, "details");
     await expect(page.getByTestId("ride-stop-out-1")).toContainText(tv("rideStops.on", { names: SEEDED_USERS.admin.fullName }));
 
     // member2 leaves their own place on the way back

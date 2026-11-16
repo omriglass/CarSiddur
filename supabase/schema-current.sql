@@ -3555,7 +3555,6 @@ begin
   if v_err is null and (v_add_min[1] > 0 or v_add_min[2] > 0) then
     v_fixed := public._merge_fixed_hour_break(p_ride_id, v_rb, v_ra);
     -- like the detour limit: refused, unless the Sadran merges anyway ("לאחד בכל זאת", app.long_detour = 'allow') - then reported
-    if v_fixed is not null and coalesce(current_setting('app.long_detour', true), '') <> 'allow' then v_err := 'merge_fixed_hour'; end if;
   end if;
 
   -- REQ item 108 (2026-10-07): a merge that grows the window may not push the ride over a car
@@ -3782,9 +3781,8 @@ begin
   end if;
   if v_err is null and v_lug and v_prev <> 'allow' then v_err := 'merge_luggage_needs_large_trunk'; end if;
   if v_err is null and v_det and v_prev_det <> 'allow' then v_err := 'merge_detour_too_long'; end if;
-  -- REQ item 246 g (LT1 phase 2c): a stop's stated hour moved - waivable like a long detour ("לאחד בכל זאת")
+  -- REQ item 246 g: a stop's stated hour moved - reported only (owner 2026-11-16: a warning, never a refusal)
   v_fix := jsonb_typeof(v -> 'fixed_hour') = 'object';
-  if v_err is null and v_fix and v_prev_det <> 'allow' then v_err := 'merge_fixed_hour'; end if;
 
   -- REQ §13.175 (b): the merged ride reaches the guest at a different time than asked. Besides taking the guest at that
   -- time, the host's ride may stretch to the guest's own time: later on the way back (wait_ends_at - the return leg's
@@ -20316,9 +20314,7 @@ declare
   v_out_pos smallint := 0; v_return_pos smallint := 0;
   v_old jsonb;
   v_prev jsonb;
-  v_sent boolean := false;
   v_anchor public.time_anchor; v_fixed_at timestamptz; v_flex smallint; v_stay smallint;
-  v_s jsonb;
 begin
   if jsonb_typeof(p_stops) is distinct from 'array' then
     raise exception 'invalid_stops' using errcode = 'P0001';
@@ -20345,7 +20341,6 @@ begin
     ) then raise exception 'invalid_stops' using errcode = 'P0001'; end if;
 
     if v_item ? 'fixed_anchor' then
-      v_sent := true;
       if nullif(v_item ->> 'fixed_anchor', '') is not null and v_item ->> 'fixed_anchor' not in ('arrive', 'leave') then
         raise exception 'invalid_stops' using errcode = 'P0001';
       end if;
@@ -20380,13 +20375,6 @@ begin
     end if;
   end loop;
 
-  if v_sent and exists (select 1 from public.request_stops s where s.request_id = p_request_id and s.fixed_anchor is not null
-                          and (s.leg = 'out' or p_has_return)) then
-    v_s := public.request_schedule(p_request_id);
-    if v_s is not null and jsonb_typeof(v_s -> 'conflict') = 'object' then
-      raise exception 'stop_times_conflict' using errcode = 'P0001', detail = (v_s -> 'conflict')::text;
-    end if;
-  end if;
 end;
 $$;
 

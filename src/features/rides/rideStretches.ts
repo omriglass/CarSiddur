@@ -68,9 +68,9 @@ export interface StopRow {
   /** First place of the leg (the header goes above it). */
   first: boolean;
   point: RoutePoint;
-  /** Names getting off here (never at the leg's last place - everyone does). */
+  /** Names getting off here (at the leg's last place: everyone still on - owner 2026-11-16, easy to follow). */
   off: string[];
-  /** Names getting on here (never at the leg's first place - everyone does). */
+  /** Names getting on here (at the leg's first place: everyone starting there). */
   on: string[];
   /** Free adult seats on the stretch after this place; null at the last place or when unknown. */
   free: number | null;
@@ -90,8 +90,8 @@ export function stopRows(points: readonly RoutePoint[], people: readonly RidePer
       for (const person of people) {
         const span = personSpan(person, data);
         if (!span) continue;
-        if (i > 0 && span[0] === i) on.push(person.display_name.trim());
-        if (i < last && span[1] === i) off.push(person.display_name.trim());
+        if (span[0] === i) on.push(person.display_name.trim());
+        if (span[1] === i) off.push(person.display_name.trim());
       }
       rows.push({ leg, first: i === 0, point, off, on, free: i < last ? (data.free[i] ?? null) : null });
     });

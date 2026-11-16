@@ -1,17 +1,12 @@
 // REQ §13.175: the questions a merge asks before it is made — "the detour is long, merge anyway?" and "take the guest
 // at the ride's time, or stretch the ride to the guest's time?" — shared by the Sadran's board and the member's siddur.
-import { he, tv } from "@/i18n/he";
-import { formatTime } from "@/lib/time";
+import { tv } from "@/i18n/he";
 
 /** REQ §13.175 (a): the added driving per leg of a long detour, and the hops whose travel time is not known. */
 export interface LongDetour {
   outMinutes: number;
   returnMinutes: number;
   unknownHops: { from: string; to: string }[];
-  /** REQ item 246 g: a stop's stated hour the merge would move (the Sadran may merge anyway). */
-  fixedHour?: { name: string; at: string; minutes: number } | null;
-  /** The added driving is over the department's limit (else only the stated hour is the question). */
-  detourLong?: boolean;
 }
 
 export function parseLongDetour(r: Record<string, unknown>): LongDetour | null {
@@ -22,14 +17,12 @@ export function parseLongDetour(r: Record<string, unknown>): LongDetour | null {
       return typeof row.from === "string" && typeof row.to === "string" ? [{ from: row.from, to: row.to }] : [];
     })
     : [];
-  const fixed = r.fixed_hour && typeof r.fixed_hour === "object" ? (r.fixed_hour as Record<string, unknown>) : null;
-  const base = { outMinutes: Number(r.added_out_minutes) || 0, returnMinutes: Number(r.added_return_minutes) || 0, unknownHops: hops };
-  if (!fixed || typeof fixed.at !== "string") return base;
-  return {
-    ...base,
-    fixedHour: { name: typeof fixed.name === "string" ? fixed.name : "", at: fixed.at, minutes: Math.abs(Number(fixed.minutes) || 0) },
-    detourLong: r.detour_problem !== false,
-  };
+  return { outMinutes: Number(r.added_out_minutes) || 0, returnMinutes: Number(r.added_return_minutes) || 0, unknownHops: hops };
+}
+
+/** REQ item 246 g (owner 2026-11-16): a stop's stated hour the merge would move - an orange "לו״ז צפוף", never a question. */
+export function isTightSchedule(r: Record<string, unknown>): boolean {
+  return !!r.fixed_hour && typeof r.fixed_hour === "object";
 }
 
 /** REQ §13.175 (a): "העיקוף ארוך (הנסיעה של X ל…, האיסוף של Y מ…): עוד N דק׳ נסיעה. לאחד בכל זאת?" plus the unknown hops. */
@@ -40,12 +33,7 @@ export function longDetourText(detour: LongDetour, names: { host: string; hostPl
     stop,
     minutes: String(Math.max(detour.outMinutes, detour.returnMinutes)),
   });
-  const fixed = detour.fixedHour
-    ? [tv("mergedRide.fixedHourMoves", { place: detour.fixedHour.name, time: formatTime(new Date(detour.fixedHour.at)), minutes: String(detour.fixedHour.minutes) })]
-    : [];
-  // REQ item 246 g: only a stated hour moves (the detour itself is within the limit) - that is the whole question
-  if (detour.fixedHour && detour.detourLong === false) return [...fixed, he.mergedRide.fixedHourMergeAnyway].join(" ");
-  return [body, ...fixed, ...detour.unknownHops.map((hop) => tv("mergedRide.longDetourUnknown", hop))].join(" ");
+  return [body, ...detour.unknownHops.map((hop) => tv("mergedRide.longDetourUnknown", hop))].join(" ");
 }
 
 /**

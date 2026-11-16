@@ -1,7 +1,7 @@
 -- REQ item 246 g/h (LT1 phase 2c): merges keep the stated hours and count a guest's seat from where they get on.
 -- (1) The ride's own hours move as before (owner asked). (2) A stop's stated "arrive by" on the way back is kept: a
--- guest inserted before it is refused (`fixed_hour`, the place named), passes within its flexibility, and the Sadran's
--- "merge anyway" only reports it. (3) Seats: a guest boarding after the main request's people got off fits in
+-- guest inserted before it is reported (`fixed_hour`, the place named) but never refused (owner 2026-11-16: a warning,
+-- "לו״ז צפוף"), and within its flexibility not even reported. (3) Seats: a guest boarding after the main request's people got off fits in
 -- their seats; without those rider rows the same guest is refused for seats. Transactional (rolled back). Seeded
 -- נבו department; car …0040 seats 5 adults; home …0010, חיפה …0011, בנימינה …0012, זכרון יעקב …0013.
 begin;
@@ -49,26 +49,19 @@ begin
      and (v_x ->> 'added_return_minutes')::int > 0, format('TEST 1 FAILED: the ride''s own hours move as before (%s)', v_x);
 
   -----------------------------------------------------------------------
-  -- 2) A stop's own fixed hour on the way back is kept: m1 stops at בנימינה (arrive by, no flexibility) - the guest
-  --    inserted before it is refused, the place named; with 60 minutes of flexibility it passes; the Sadran's
-  --    "לאחד בכל זאת" only reports it.
+  -- 2) A stop's own fixed hour on the way back: m1 stops at בנימינה (arrive by, no flexibility) - the guest inserted
+  --    before it is reported with the place named, never refused; with 60 minutes of flexibility nothing is reported.
   -----------------------------------------------------------------------
   insert into public.request_stops(request_id, department_id, leg, position, place_id, fixed_anchor, fixed_at, flex_minutes)
     values (qA, dept, 'return', 1, bin, 'arrive', d0 + interval '7 hours 30 minutes', 0);
   v_x := public._merge_check(rA, qB, 'return');
-  assert v_x ->> 'code' = 'fixed_hour' and v_x #>> '{fixed_hour,anchor}' = 'arrive' and v_x #>> '{fixed_hour,leg}' = 'return'
-     and v_x #>> '{fixed_hour,name}' = 'בנימינה' and (v_x #>> '{fixed_hour,minutes}')::int > 0, format('TEST 2 FAILED: the stop''s hour kept (%s)', v_x);
-  -- the board's preview: a waivable refusal, asked like a long detour ("לאחד בכל זאת")
+  assert v_x ->> 'error' is null and v_x #>> '{fixed_hour,anchor}' = 'arrive' and v_x #>> '{fixed_hour,leg}' = 'return'
+     and v_x #>> '{fixed_hour,name}' = 'בנימינה' and (v_x #>> '{fixed_hour,minutes}')::int > 0, format('TEST 2 FAILED: reported, not refused (%s)', v_x);
   v_x := public.merge_preview(rA, qB, 'return');
-  assert v_x ->> 'code' = 'fixed_hour' and (v_x ->> 'waivable')::boolean and (v_x ->> 'detour_waivable')::boolean,
-    format('TEST 2 FAILED: the preview asks (%s)', v_x);
-  perform set_config('app.long_detour', 'allow', true);
-  v_x := public._merge_check(rA, qB, 'return');
-  assert coalesce(v_x ->> 'code', '') <> 'fixed_hour' and v_x -> 'fixed_hour' <> 'null'::jsonb, format('TEST 2 FAILED: reported when merged anyway (%s)', v_x);
-  perform set_config('app.long_detour', '', true);
+  assert (v_x ->> 'ok')::boolean and v_x -> 'fixed_hour' <> 'null'::jsonb, format('TEST 2 FAILED: the preview warns (%s)', v_x);
   update public.request_stops set flex_minutes = 60 where request_id = qA;
   v_x := public._merge_check(rA, qB, 'return');
-  assert coalesce(v_x ->> 'code', '') <> 'fixed_hour', format('TEST 2 FAILED: within the flexibility (%s)', v_x);
+  assert v_x -> 'fixed_hour' = 'null'::jsonb, format('TEST 2 FAILED: within the flexibility (%s)', v_x);
   delete from public.request_stops where request_id = qA;
 
   -----------------------------------------------------------------------

@@ -68,8 +68,10 @@ test("a guest on a shared ride edits the ride itself, after agreeing with its dr
 
     await test.step("the sheet names the shared ride and its edit opens the driver's trip", async () => {
       await openRideDetails(page, block);
+      await page.getByTestId("ride-detail-tab-details").click();
       await expect(page.getByTestId("ride-merged-of")).toHaveText(
         tv("rideDetail.mergedOf", { names: `${SEEDED_USERS.member1.fullName}, ${SEEDED_USERS.member2.fullName}` }));
+      await page.getByTestId("ride-detail-tab-summary").click();
       await page.getByTestId("ride-edit-request").click();
       await expect(page).toHaveURL(new RegExp(`/requests/${hostRequest}/edit`));
     });

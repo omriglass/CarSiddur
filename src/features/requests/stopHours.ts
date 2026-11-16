@@ -10,7 +10,8 @@ import type { RoutePreviewPoint } from "./api";
 import { timeToMinutes } from "./duration";
 import type { FlexValue } from "./mapper";
 
-export const STOP_FLEX_MINUTES = [0, 10, 15, 30, 60] as const;
+/** Owner 2026-11-16: 15, 30 or 60 minutes (0 = exact). */
+export const STOP_FLEX_MINUTES = [0, 15, 30, 60] as const;
 export const STOP_STAY_MINUTES = [5, 10, 15, 20, 30, 45, 60, 90, 120, 180, 240, 300, 360, 420, 480] as const;
 
 export interface StopHoursValue {

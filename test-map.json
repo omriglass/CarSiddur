@@ -954,6 +954,9 @@
         "supabase/migrations/**/*leave_ride_fit*",
         "src/features/rides/rideStretches.ts",
         "src/features/rides/rideStretches.test.ts",
+        "src/features/rides/rideSummary.ts",
+        "src/features/rides/rideSummary.test.ts",
+        "src/features/rides/components/RideSummaryLine.tsx",
         "src/features/rides/components/RidePartsPicker.tsx",
         "src/features/rides/components/RidePersonDialog.tsx",
         "src/features/rides/components/RideStopsView.tsx",
@@ -965,6 +968,7 @@
       ],
       "vitest": [
         "src/features/rides/rideStretches.test.ts",
+        "src/features/rides/rideSummary.test.ts",
         "src/features/rides/components/RidePassengersList.test.tsx",
         "src/features/requests/riders.test.ts",
         "src/lib/ridePassengerSummary.test.ts",

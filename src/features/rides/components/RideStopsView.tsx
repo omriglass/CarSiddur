@@ -58,9 +58,10 @@ export function RideStopsView({ rideId, version, route, people, served }: RideSt
                     <span dir="ltr" className="tabular-nums">{formatTime(new Date(stated.kept.get(`${row.leg}:${row.point.position}`) as string))}</span>
                   </span>
                 ) : null}
+                {/* Owner 2026-11-16: a stated hour the estimate misses is a warning in few words, never a refusal. */}
                 {stated.missed.has(`${row.leg}:${row.point.position}`) ? (
-                  <span className="ms-1.5 text-destructive" data-testid="ride-stop-missed">
-                    {tv("rideStops.missed", { time: formatTime(new Date(stated.missed.get(`${row.leg}:${row.point.position}`) as string)) })}
+                  <span className="ms-1.5 rounded bg-amber-100 px-1 font-medium text-amber-950 dark:bg-amber-900/40 dark:text-amber-100" data-testid="ride-stop-missed">
+                    {he.rideStops.tight}
                   </span>
                 ) : null}
               </span>

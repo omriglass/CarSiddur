@@ -124,7 +124,7 @@ describe("StopsField / StopsSheet (REQUIREMENTS §13.93, TODO ST1 rework)", () =
       hops.value = undefined;
     });
 
-    it("fixes a stop's hour with its flexibility and stay; an impossible hour is named", () => {
+    it("fixes a stop's hour with its flexibility and stay; an impossible hour is a warning", () => {
       withHops();
       render(<Harness hasReturn outStops={[binyamina]} extra={priced} />);
       fireEvent.click(screen.getByTestId("add-stop"));
@@ -133,11 +133,11 @@ describe("StopsField / StopsSheet (REQUIREMENTS §13.93, TODO ST1 rework)", () =
       fireEvent.change(within(editor).getByTestId("stop-hours-stay"), { target: { value: "30" } });
       fireEvent.click(within(editor).getByTestId("stop-hours-arrive"));
       fireEvent.change(within(editor).getByTestId("stop-hours-time"), { target: { value: "09:20" } });
-      fireEvent.change(within(editor).getByTestId("stop-hours-flex"), { target: { value: "10" } });
+      fireEvent.change(within(editor).getByTestId("stop-hours-flex"), { target: { value: "15" } });
       fireEvent.click(within(editor).getByTestId("stop-hours-apply"));
-      expect(JSON.parse(screen.getByTestId("hours").textContent!)).toEqual({ "out|p:binyamina-dest": { anchor: "arrive", time: "09:20", flex: 10, stay: 30 } });
-      // 09:20 + 30 there + 20 driving = 10:10, past חיפה's fixed 10:00 (no flexibility): named, not saved silently
-      expect(screen.getByTestId("stop-hours-conflict")).toHaveTextContent(tv("request.stopHoursConflict", { place: "חיפה", minutes: "10" }));
+      expect(JSON.parse(screen.getByTestId("hours").textContent!)).toEqual({ "out|p:binyamina-dest": { anchor: "arrive", time: "09:20", flex: 15, stay: 30 } });
+      // 09:20 + 30 there + 20 driving = 10:10, past חיפה's fixed 10:00 (no flexibility): a warning, "לו״ז צפוף"
+      expect(screen.getByTestId("stop-hours-conflict")).toHaveTextContent(tv("request.stopTight", { place: "חיפה" }));
       hops.value = undefined;
     });
 

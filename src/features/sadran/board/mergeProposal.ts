@@ -3,7 +3,7 @@
 // keeps its start and its end grows by the added driving (computed by `apply_proposal` from the
 // ride route; `src/lib/rideRoute.ts` is the TS twin used to preview it). No React, no Supabase.
 import { he, tv } from "@/i18n/he";
-import { parseLongDetour, type LongDetour, type MergeWaitChoice } from "@/features/rides/mergeQuestions";
+import { isTightSchedule, parseLongDetour, type LongDetour, type MergeWaitChoice } from "@/features/rides/mergeQuestions";
 import { parseFlexInterval } from "@/features/solverBridge/buildSolverInput";
 import { formatTime } from "@/lib/time";
 import { fallbackRoute, mergePassengerIntoRoute, parseRideRoute, type Hop, type HopKm, type MergedRoute, type MergeInvalid } from "@/lib/rideRoute";
@@ -192,6 +192,8 @@ export interface ServerMergePreview {
   personOverlaps?: { rideId: string; startsAt: string; endsAt: string; role: string }[];
   /** R13B9: the ride passes the guest's place far from the guest's own time - allowed for the Sadran, but unlikely. */
   timeFar?: TimeFar | null;
+  /** REQ item 246 g: a stop's stated hour moves - shown as "לו״ז צפוף", never refused. */
+  tight?: boolean;
 }
 
 /** R13B9 far from the guest's time; R19B1 `kind: "order"` = the leg lands on the wrong side of the guest's other leg. */
@@ -215,6 +217,7 @@ export function parseServerMergePreview(raw: unknown): ServerMergePreview | null
     luggageWaivable: r.luggage_waivable === true || (r.waivable === true && r.luggage_waivable === undefined && r.code === "luggage"),
     needs: Array.isArray(r.needs) ? r.needs.filter((n): n is "large_trunk" | "tow_hitch" => n === "large_trunk" || n === "tow_hitch") : undefined,
     longDetour: parseLongDetour(r),
+    tight: isTightSchedule(r),
     waitWindow: isoOrNull(r.wait_ends_at) || isoOrNull(r.wait_starts_at)
       ? { startsAt: isoOrNull(r.wait_starts_at), endsAt: isoOrNull(r.wait_ends_at) } : null,
     personOverlaps: Array.isArray(r.person_overlaps)
@@ -307,9 +310,10 @@ export type MergeVerdict =
   | { status: "loading" }
   /**
    * `waivable`: allowed, but only after the Sadran accepts a car without a large trunk for a large-luggage request (REQ §13.111 a);
-   * `longDetour`: allowed after the Sadran accepts the long detour (REQ §13.175 a).
+   * `longDetour`: allowed after the Sadran accepts the long detour (REQ §13.175 a);
+   * `tight`: a stop's stated hour moves - only said ("לו״ז צפוף", REQ item 246 g).
    */
-  | { status: "ok"; waivable?: boolean; needs?: ("large_trunk" | "tow_hitch")[]; longDetour?: LongDetour; timeFar?: TimeFar }
+  | { status: "ok"; waivable?: boolean; needs?: ("large_trunk" | "tow_hitch")[]; longDetour?: LongDetour; timeFar?: TimeFar; tight?: boolean }
   | { status: "refused"; message: string; code: string | null; source: "server" | "twin" };
 
 /** What `useQuery` says about one `merge_preview` call (a subset, so tests need no React). */
@@ -329,8 +333,10 @@ export function mergeVerdict(states: readonly MergePreviewState[], twinInvalid: 
   const needs = new Set<"large_trunk" | "tow_hitch">();
   let longDetour: LongDetour | undefined;
   let timeFar: TimeFar | undefined;
+  let tight = false;
   for (const state of states) {
     if (state.data) {
+      if (state.data.tight) tight = true;
       if (state.data.timeFar && (state.data.ok || state.data.waivable)) timeFar ??= state.data.timeFar;
       if (!state.data.ok && state.data.waivable) {
         if (state.data.luggageWaivable ?? !state.data.longDetour) { waivable = true; for (const need of state.data.needs ?? []) needs.add(need); }
@@ -343,7 +349,7 @@ export function mergeVerdict(states: readonly MergePreviewState[], twinInvalid: 
     }
   }
   if (loading) return { status: "loading" };
-  return { status: "ok", ...(waivable ? { waivable: true, ...(needs.size > 0 ? { needs: [...needs] } : {}) } : {}), ...(longDetour ? { longDetour } : {}), ...(timeFar ? { timeFar } : {}) };
+  return { status: "ok", ...(waivable ? { waivable: true, ...(needs.size > 0 ? { needs: [...needs] } : {}) } : {}), ...(longDetour ? { longDetour } : {}), ...(timeFar ? { timeFar } : {}), ...(tight ? { tight } : {}) };
 }
 
 /**

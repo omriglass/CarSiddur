@@ -343,8 +343,8 @@ export function StopsSheet({ form, places, hasReturn, open, onOpenChange }: Stop
             </div>
           ) : null}
           {conflict ? (
-            <p className="rounded-md bg-destructive/10 p-2 text-sm text-destructive" role="alert" data-testid="stop-hours-conflict">
-              {tv("request.stopHoursConflict", { place: nameOf(conflict.key), minutes: String(conflict.lateBy) })}
+            <p className="w-fit rounded bg-amber-100 px-1.5 text-sm font-medium text-amber-950 dark:bg-amber-900/40 dark:text-amber-100" data-testid="stop-hours-conflict">
+              {tv("request.stopTight", { place: nameOf(conflict.key) })}
             </p>
           ) : null}
         </div>

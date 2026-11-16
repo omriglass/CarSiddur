@@ -241,7 +241,8 @@ export const heMember = {
     stopHoursCountNone: "בנסיעה הזאת אין שעות קבועות.",
     stopHoursCountOne: "בנסיעה הזאת שעה קבועה אחת.",
     stopHoursCountMany: "בנסיעה הזאת {{count}} שעות קבועות.",
-    stopHoursConflict: "לא מספיק זמן להגיע ל{{place}} בשעה הקבועה — חסרות {{minutes}} דק׳. אפשר לקצר זמן שהייה, להוסיף גמישות, להזיז שעה קבועה או לבטל קביעה.",
+    /** Owner 2026-11-16: a warning only ("times aren't always exact"). */
+    stopTight: "לו״ז צפוף ב{{place}}",
     stopHoursDurMinutes: "{{minutes}} דק׳",
     stopHoursDurHour: "שעה",
     stopHoursDurTwoHours: "שעתיים",
@@ -262,7 +263,6 @@ export const heMember = {
     stopOptionFlex: "{{place}} ~{{time}} — בתוך הגמישות שלך",
     stopOptionHomeLater: "בבית ~{{time}} — {{minutes}} דק׳ מאוחר יותר",
     stopOptionNoChange: "בלי שינוי בשעות האחרות",
-    stopOptionImpossible: "לא אפשרי: מאחר ב־{{minutes}} דק׳ את {{place}} (שעה קבועה)",
     stopOptionAdd: "להוסיף כאן",
     addStopHere: "+ הוספת עצירה",
     stopDragHandle: "גרירת עצירה (אפשר גם בחיצים למעלה ולמטה)",
@@ -708,6 +708,17 @@ export const heMember = {
     left: "יצאת מהנסיעה. הבקשה שלך נשמרה — נמצא לך רכב או שתופיע/י ברשימת ההמתנה.",
   },
   /** REQ item 246 h: the stops view — at each place who gets off (↓) and on (↑), free seats on the next stretch. */
+  /** Owner 2026-11-16: the ride sheet in three tabs; the summary says the places in the middle in words. */
+  rideSummary: {
+    tabs: { summary: "סיכום", details: "פרטים", history: "היסטוריה" },
+    tabsLabel: "פרטי הנסיעה",
+    via: "עוברים ב{{place}}",
+    drop: "להוריד את {{names}}",
+    pick: "לאסוף את {{names}}",
+    dropAndPick: "להוריד את {{off}} ולאסוף את {{on}}",
+    back: "בחזור {{text}}",
+    listAnd: "{{init}} ו{{last}}",
+  },
   rideStops: {
     title: "עצירות — מי עולה ומי יורד",
     off: "↓ {{names}}",
@@ -717,8 +728,8 @@ export const heMember = {
     full: "מלא בהמשך",
     /** LT1 phase 2e: a stated hour (it does not move). */
     fixed: "שעה קבועה",
-    /** QA run seed 3972: the ride's estimate does not keep the stated hour. */
-    missed: "(השעה הקבועה {{time}} לא נשמרת)",
+    /** Owner 2026-11-16: hours that cannot all be kept are a warning, never a refusal - in few words. */
+    tight: "לו״ז צפוף",
     whereOn: "↑ {{name}}",
     whereOnAt: "↑ {{name}} ({{time}})",
     whereOff: "↓ {{name}}",

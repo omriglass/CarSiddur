@@ -882,8 +882,6 @@ export const heSadran = {
     longDetourDrop: "ההורדה של {{name}} ב{{place}}",
     longDetourUnknown: "זמן הנסיעה בין {{from}} ל{{to}} לא ידוע, ולכן נספר כשעה.",
     /** REQ item 246 g: a stop's stated hour the merge would move. */
-    fixedHourMoves: "השעה הקבועה ב{{place}} ({{time}}) תזוז ב־{{minutes}} דק׳.",
-    fixedHourMergeAnyway: "לאחד בכל זאת?",
     longDetourConfirm: "לאחד בכל זאת",
     longDetourNote: "העיקוף ארוך מהמותר (עוד {{minutes}} דק׳ נסיעה) — אפשר לאחד בכל זאת",
     /** REQ §13.175 (b): the ride reaches the guest at another time than asked - the Sadran picks which side gives. */

@@ -45,15 +45,15 @@ describe("rideStretches", () => {
     expect(personSpan(ron, stretches?.out)).toBeNull();
   });
 
-  it("the stops view: who gets off and on at each place, free seats on the next stretch", () => {
+  it("the stops view: who gets off and on at each place (everyone at the start and the end), free seats on the next stretch", () => {
     const rows = stopRows(points, people, stretches);
     expect(rows.map((r) => [r.leg, r.point.name, r.off, r.on, r.free])).toEqual([
-      ["out", "נבו", [], [], 1],
+      ["out", "נבו", [], ["עומרי", "נועה", "מאיה"], 1],
       ["out", "עין שמר", ["נועה"], [], 2],
-      ["out", "בנימינה", [], [], null],
-      ["return", "בנימינה", [], [], 2],
+      ["out", "בנימינה", ["עומרי", "מאיה"], [], null],
+      ["return", "בנימינה", [], ["עומרי", "רון"], 2],
       ["return", "עין שמר", [], ["נועה"], 1],
-      ["return", "נבו", [], [], null],
+      ["return", "נבו", ["עומרי", "נועה", "רון"], [], null],
     ]);
   });
 
