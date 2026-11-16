@@ -96,11 +96,14 @@ describe("rideStretches", () => {
     expect(personDialogSetup(ron, points, undefined).initial).toEqual({ choice: "return", out: null, return: [0, 2] });
   });
 
-  it("stated hours replace the estimates where the main request states them", () => {
-    const withFixed: RideStretches = { ...stretches, out: { ...stretches!.out!, fixed: [null, { at: "2026-11-19T06:15:00Z", anchor: "arrive" }, null] } };
-    const { points: stated, fixed } = withStatedHours(points, withFixed);
-    expect(stated.find((p) => p.leg === "out" && p.position === 1)?.eta).toBe("2026-11-19T06:15:00Z");
-    expect([...fixed]).toEqual(["out:1"]);
-    expect(personWhere(noa, stated, withFixed, words, time)).toBe("↓ עין שמר (06:15) · ↑ עין שמר (14:30)");
+  it("stated hours beside the estimates: kept within the flexibility, else missed", () => {
+    const at = (time: string, flex: number): RideStretches => ({ ...stretches, out: { ...stretches!.out!, fixed: [null, { at: time, anchor: "arrive", flex }, null] } });
+    // the estimate at school is 06:15
+    expect([...withStatedHours(points, at("2026-11-19T06:15:00Z", 0)).kept.keys()]).toEqual(["out:1"]);
+    expect(withStatedHours(points, at("2026-11-19T06:00:00Z", 15)).kept.get("out:1")).toBe("2026-11-19T06:00:00Z");
+    const missed = withStatedHours(points, at("2026-11-19T06:00:00Z", 10));
+    expect(missed.kept.size).toBe(0);
+    expect(missed.missed.get("out:1")).toBe("2026-11-19T06:00:00Z");
+    expect(missed.points.find((p) => p.leg === "out" && p.position === 1)?.eta).toBe("2026-11-19T06:15:00Z");
   });
 });

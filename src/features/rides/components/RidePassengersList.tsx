@@ -9,7 +9,7 @@ import { parseRideRoute, routeHasIntermediates } from "@/lib/rideRoute";
 import { formatTime } from "@/lib/time";
 
 import { canRemoveRidePerson, legMarkedName, type RidePerson } from "../ridePeople";
-import { baseRequestId, personDialogSetup, personWhere, rideLegs, withStatedHours, type SummaryWords } from "../rideStretches";
+import { baseRequestId, personDialogSetup, personWhere, rideLegs, type SummaryWords } from "../rideStretches";
 import type { ServedEntry } from "../servedOf";
 import { useLeaveRideAsGuestMutation, useRemoveRidePassengerMutation, useRideStretchesQuery } from "../hooks";
 import { RidePersonDialog } from "./RidePersonDialog";
@@ -87,7 +87,7 @@ export function RidePassengersList({ rideId, expectedVersion, people, served, ca
             && person.request_id !== mainRequest && rideId != null && expectedVersion != null && !rideCancelled;
           const removable = !editable && !ownGuestRow && rideId != null && expectedVersion != null &&
             canRemoveRidePerson(person, { canManagePeople, rideCancelled }) && !locked;
-          const where = stretches ? personWhere(person, withStatedHours(points, stretches).points, stretches, WORDS, time) : "";
+          const where = stretches ? personWhere(person, points, stretches, WORDS, time) : "";
           const name = stretches ? person.display_name.trim() : legMarkedName(person, served);
           const label = (
             <span className="min-w-0">
@@ -161,7 +161,7 @@ export function RidePassengersList({ rideId, expectedVersion, people, served, ca
           expectedVersion={expectedVersion}
           departmentId={departmentId ?? ""}
           weekStart={weekStart ?? ""}
-          points={withStatedHours(points, stretches).points}
+          points={points}
           legs={setup.legs}
           initial={setup.initial}
           stretches={stretches}

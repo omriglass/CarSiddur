@@ -23193,15 +23193,15 @@ begin
     select coalesce(jsonb_agg(
              case
                when x.request_id is distinct from v_base or x.kind not in ('origin', 'stop', 'destination') then null
-               when x.k = 1 and v_leg = 'out' then
-                 case when q.depart_anchor = 'leave' and q.depart_at is not null then jsonb_build_object('at', q.depart_at, 'anchor', 'leave') end
+               -- the ride's own two hours (leave home, home by) are the ride's times, shown in its header - not here
+               when (x.k = 1 and v_leg = 'out') or (x.k = x.n and v_leg = 'return') then null
                when x.k = x.n and v_leg = 'out' then
-                 case when q.depart_anchor = 'arrive' and q.arrive_by is not null then jsonb_build_object('at', q.arrive_by, 'anchor', 'arrive') end
+                 case when q.depart_anchor = 'arrive' and q.arrive_by is not null then jsonb_build_object('at', q.arrive_by, 'anchor', 'arrive',
+                   'flex', (extract(epoch from q.flex_depart_late) / 60)::int) end
                when x.k = 1 and v_leg = 'return' then
-                 case when q.return_anchor = 'leave' and q.leave_dest_at is not null then jsonb_build_object('at', q.leave_dest_at, 'anchor', 'leave') end
-               when x.k = x.n and v_leg = 'return' then
-                 case when q.return_anchor = 'arrive' and q.return_at is not null then jsonb_build_object('at', q.return_at, 'anchor', 'arrive') end
-               else (select case when s.fixed_anchor is not null then jsonb_build_object('at', s.fixed_at, 'anchor', s.fixed_anchor) end
+                 case when q.return_anchor = 'leave' and q.leave_dest_at is not null then jsonb_build_object('at', q.leave_dest_at, 'anchor', 'leave',
+                   'flex', (extract(epoch from q.flex_return_late) / 60)::int) end
+               else (select case when s.fixed_anchor is not null then jsonb_build_object('at', s.fixed_at, 'anchor', s.fixed_anchor, 'flex', s.flex_minutes) end
                        from public.request_stops s where s.request_id = v_base and s.leg = v_leg
                       order by s."position" offset x.k - 2 limit 1)
              end order by x.pos), '[]'::jsonb)

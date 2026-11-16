@@ -32,7 +32,7 @@ export function RideStopsView({ rideId, version, route, people, served }: RideSt
   const hasMiddle = routeHasIntermediates(points);
   const query = useRideStretchesQuery(rideId, version, hasMiddle);
   if (!hasMiddle || !query.data) return <RideRoute route={route} served={served} />;
-  // LT1 phase 2e: a stated hour as stated (bold, a lock), a worked-out one with "~"
+  // LT1 phase 2e: the ride's estimate ("~"), and beside it a stated hour - a lock when kept, said when not
   const stated = withStatedHours(points, query.data);
   const rows = stopRows(stated.points, people, query.data);
   if (!rows.length) return <RideRoute route={route} served={served} />;
@@ -50,14 +50,20 @@ export function RideStopsView({ rideId, version, route, people, served }: RideSt
             ) : null}
             <div className="flex items-baseline justify-between gap-2">
               <span className="font-medium">{row.point.name}</span>
-              {row.point.eta ? (
-                stated.fixed.has(`${row.leg}:${row.point.position}`) ? (
-                  <span className="inline-flex items-center gap-1 text-xs font-semibold text-primary" data-testid="ride-stop-fixed">
+              <span className="text-xs">
+                {row.point.eta ? <span dir="ltr" className="tabular-nums text-muted-foreground">~{formatTime(new Date(row.point.eta))}</span> : null}
+                {stated.kept.has(`${row.leg}:${row.point.position}`) ? (
+                  <span className="ms-1.5 inline-flex items-center gap-1 font-semibold text-primary" data-testid="ride-stop-fixed">
                     <Lock className="size-3" aria-label={he.rideStops.fixed} />
-                    <span dir="ltr" className="tabular-nums">{formatTime(new Date(row.point.eta))}</span>
+                    <span dir="ltr" className="tabular-nums">{formatTime(new Date(stated.kept.get(`${row.leg}:${row.point.position}`) as string))}</span>
                   </span>
-                ) : <span dir="ltr" className="text-xs tabular-nums text-muted-foreground">~{formatTime(new Date(row.point.eta))}</span>
-              ) : null}
+                ) : null}
+                {stated.missed.has(`${row.leg}:${row.point.position}`) ? (
+                  <span className="ms-1.5 text-destructive" data-testid="ride-stop-missed">
+                    {tv("rideStops.missed", { time: formatTime(new Date(stated.missed.get(`${row.leg}:${row.point.position}`) as string)) })}
+                  </span>
+                ) : null}
+              </span>
             </div>
             {row.off.length ? <p className="text-xs" data-testid="ride-stop-off">{tv("rideStops.off", { names: row.off.join(", ") })}</p> : null}
             {row.on.length ? <p className="text-xs" data-testid="ride-stop-on">{tv("rideStops.on", { names: row.on.join(", ") })}</p> : null}

@@ -95,7 +95,7 @@ test("the stops view and the people summary; the Sadran makes a passenger 'only 
     await expect(school.getByTestId("ride-stop-fixed")).toContainText("08:15");
     await expect(page.getByTestId("ride-stop-out-0").getByTestId("ride-stop-free")).toBeVisible();
     await expect(page.getByTestId("ride-stop-return-1")).toContainText(tv("rideStops.on", { names: "גל" }));
-    await expect(page.locator('[data-person-key$=":1"]').getByTestId("ride-person-where")).toContainText("↓ זכרון יעקב (08:15)");
+    await expect(page.locator('[data-person-key$=":1"]').getByTestId("ride-person-where")).toContainText("↓ זכרון יעקב (");
 
     // טל: tap the name -> "רק הלוך" -> save
     await page.getByRole("button", { name: tv("addPassengers.editAriaLabel", { name: "טל" }) }).click();

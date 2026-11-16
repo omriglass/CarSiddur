@@ -717,6 +717,8 @@ export const heMember = {
     full: "מלא בהמשך",
     /** LT1 phase 2e: a stated hour (it does not move). */
     fixed: "שעה קבועה",
+    /** QA run seed 3972: the ride's estimate does not keep the stated hour. */
+    missed: "(השעה הקבועה {{time}} לא נשמרת)",
     whereOn: "↑ {{name}}",
     whereOnAt: "↑ {{name}} ({{time}})",
     whereOff: "↓ {{name}}",
