@@ -25,6 +25,11 @@ describe("HostGuestsDialog (R20 Q2 redo)", () => {
     expect(onAnswered).toHaveBeenCalledWith({ g1: "keep" });
   });
 
+  it("R21U1: a far return is asked about as the return", () => {
+    render(<HostGuestsDialog guests={[{ ...far, end: "return" }]} onAnswered={vi.fn()} onBack={vi.fn()} />);
+    expect(screen.getByText(tv("request.hostGuestFarBodyReturn", { name: "דנה", wanted: "08:00", ride: "15:00" }))).toBeInTheDocument();
+  });
+
   it("sends a far guest back to the waiting list, and 'back' saves nothing", () => {
     const onAnswered = vi.fn();
     const onBack = vi.fn();

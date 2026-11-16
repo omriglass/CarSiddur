@@ -145,6 +145,7 @@ export const heMember = {
     // R20 Q2 redo (owner-approved 2026-11-14): a host's edit no longer fits a guest on the shared ride.
     hostGuestTitle: "לשנות את הנסיעה המשותפת?",
     hostGuestFarBody: "השעות החדשות רחוקות מהבקשה של {{name}} ({{name}} ביקש/ה לצאת ב־{{wanted}}, הנסיעה תצא ב־{{ride}}).",
+    hostGuestFarBodyReturn: "השעות החדשות רחוקות מהבקשה של {{name}} ({{name}} ביקש/ה לחזור ב־{{wanted}}, הנסיעה תחזור ב־{{ride}}).",
     hostGuestKeep: "להשאיר את {{name}} בנסיעה",
     hostGuestRelease: "להחזיר את {{name}} לרשימת ההמתנה",
     hostGuestLuggageBody: "ל{{name}} יש ציוד רב, וברכב הזה אין תא מטען גדול.",

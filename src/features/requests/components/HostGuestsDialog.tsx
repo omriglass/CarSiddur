@@ -31,7 +31,7 @@ function stepBody({ guest, warning }: Step): string {
   if (warning === "luggage") return tv("request.hostGuestLuggageBody", { name: guest.name });
   if (warning === "detour") return tv("request.hostGuestDetourBody", { name: guest.name, minutes: String(guest.added_minutes ?? 0) });
   const time = (at: string | null) => (at ? formatTime(new Date(at)) : "");
-  return tv("request.hostGuestFarBody", { name: guest.name, wanted: time(guest.wanted_at), ride: time(guest.ride_at) });
+  return tv(guest.end === "return" ? "request.hostGuestFarBodyReturn" : "request.hostGuestFarBody", { name: guest.name, wanted: time(guest.wanted_at), ride: time(guest.ride_at) });
 }
 
 export interface HostGuestsDialogProps {

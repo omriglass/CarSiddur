@@ -153,6 +153,22 @@ begin
      and (dtl -> 'guests' -> 0 ->> 'wanted_at')::timestamptz = ((w + 5) + time '08:00') at time zone 'Asia/Jerusalem'
      and (dtl -> 'guests' -> 0 ->> 'ride_at')::timestamptz = ((w + 5) + time '15:00') at time zone 'Asia/Jerusalem',
     format('the question names the guest, both times, and that the guest may stay: %s', dtl);
+  assert dtl -> 'guests' -> 0 ->> 'end' = 'depart', format('R21U1: the departure moved as far as the return: asked about the departure, %s', dtl);
+  -- R21U1 (owner 2026-11-16): only the return moves far — the question quotes the return pair
+  dtl := null;
+  begin
+    perform public.submit_request(jsonb_build_object('request_id', qc, 'expected_version', (select version from public.requests where id = qc),
+      'department_id', dept, 'week_start', w, 'destination_id', haifa, 'ride_type_id', typ, 'trip_type', 'round_trip', 'adults', 1,
+      'depart_at', ((w + 5) + time '08:30') at time zone 'Asia/Jerusalem', 'return_at', ((w + 5) + time '19:00') at time zone 'Asia/Jerusalem'));
+    raise exception 'a far return was decided without asking';
+  exception when raise_exception then
+    if sqlerrm <> 'host_edit_guests' then raise; end if;
+    get stacked diagnostics dtl = pg_exception_detail;
+  end;
+  assert dtl -> 'guests' -> 0 ->> 'end' = 'return'
+     and (dtl -> 'guests' -> 0 ->> 'wanted_at')::timestamptz = ((w + 5) + time '12:00') at time zone 'Asia/Jerusalem'
+     and (dtl -> 'guests' -> 0 ->> 'ride_at')::timestamptz = ((w + 5) + time '19:00') at time zone 'Asia/Jerusalem',
+    format('R21U1: a far return is asked about with the return times, got %s', dtl);
   assert exists (select 1 from public.ride_requests rr join public.rides rd on rd.id = rr.ride_id
                  where rr.request_id = qd and rd.id = rx and rd.status <> 'cancelled'
                    and rd.starts_at = ((w + 5) + time '08:30') at time zone 'Asia/Jerusalem'), 'asking changed nothing';

@@ -915,6 +915,8 @@ export interface HostGuestQuestion {
   reason: "seats" | "day" | "busy" | "other" | null;
   /** The detour's extra driving (both legs), for the "detour" warning. */
   added_minutes?: number;
+  /** R21U1: which end is far from the guest's own hours (absent from older servers = the departure). */
+  end?: "depart" | "return";
   wanted_at: string | null;
   ride_at: string | null;
 }
