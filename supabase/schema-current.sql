@@ -26564,6 +26564,7 @@ declare
   v_person record;
   v_hard jsonb; v_soft jsonb; v_short jsonb;
   v_all_ids uuid[]; v_skip uuid[] := '{}';
+  v_from_car text; v_new_car text; v_old_ids uuid[]; v_old record; v_notif uuid;
 begin
   perform public._small_trunk_mode(p_allow_small_trunk);
   if p_series_mode not in ('whole', 'day') then
@@ -26715,10 +26716,34 @@ begin
     order by (pe ->> 'person_id')::uuid, (r.id = any(v_day_ids)) desc, r.starts_at, r.id
   loop
     if v_person.person_id is distinct from v_actor then
-      perform public.enqueue_notification(v_person.person_id, 'car_swapped', p_department_id, p_week_start,
-        jsonb_build_object('fromCar', coalesce(v_old_car_names ->> v_person.ride_id::text, '')),
-        jsonb_build_object('ride_id', v_person.ride_id),
-        format('car_swapped:%s:%s', v_person.ride_id, v_person.person_id));
+      -- Owner 2026-11-16 (Omri's ride, swapped שרק→סילביה then סילביה→טוסיה): every swap tells the person; the key
+      -- was once per ride and person, so the second swap was dropped. One unread notice per person and ride: a later
+      -- swap replaces it and keeps the car they last saw ("משרק לטוסיה"); swapped back to that car = nothing new.
+      perform pg_advisory_xact_lock(hashtextextended(format('car_swapped:%s:%s', v_person.ride_id, v_person.person_id), 0));
+      v_from_car := coalesce(v_old_car_names ->> v_person.ride_id::text, '');
+      v_old_ids := null;
+      -- a board swap held until "שלח" is merged when it is sent; the delivered notice stays until then
+      for v_old in
+        select n.id, n.data from public.notifications n
+        where n.recipient_id = v_person.person_id and n.event = 'car_swapped' and n.read_at is null
+          and n.data ->> 'ride_id' = v_person.ride_id::text
+          and not public._board_hold_applies(v_person.person_id, 'car_swapped', p_department_id, p_week_start)
+        order by n.created_at, n.id
+      loop
+        if v_old_ids is null and nullif(v_old.data ->> 'from_car', '') is not null then v_from_car := v_old.data ->> 'from_car'; end if;
+        v_old_ids := array_append(v_old_ids, v_old.id);
+      end loop;
+      if v_old_ids is not null then delete from public.notifications where id = any(v_old_ids); end if;
+      select c.name into v_new_car from public.rides r join public.cars c on c.id = r.car_id where r.id = v_person.ride_id;
+      continue when v_new_car is not distinct from v_from_car;   -- back on the car they last saw
+      v_notif := public.enqueue_notification(v_person.person_id, 'car_swapped', p_department_id, p_week_start,
+        jsonb_build_object('fromCar', v_from_car),
+        jsonb_build_object('ride_id', v_person.ride_id, 'from_car', v_from_car),
+        format('car_swapped:%s:%s:%s', v_person.ride_id, v_person.person_id, clock_timestamp()));
+      if v_notif is not null then
+        update public.push_outbox set payload = payload || jsonb_build_object('tag', format('replace:car_swapped:%s', v_person.ride_id))
+        where notification_id = v_notif;
+      end if;
       v_notified := v_notified + 1;
     end if;
   end loop;
