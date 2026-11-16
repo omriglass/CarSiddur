@@ -3,6 +3,7 @@
 --       say "<guest> יצא/ה מהנסיעה של <host> · בלי רכב כרגע" — no "נהג/ת: X במקום Y", no separate "בלי רכב כרגע"
 --   U6  a freed-car notice quotes the hours that matter: the candidates' span, else the freed ride's — never the whole
 --       free gap from midnight; "kept out of the app" opens the board on its day
+--   U9  the week's Sadran saves the request form of a request whose ride is confirmed on a published day
 -- Transactional, rolled back at the end.
 begin;
 do $$
@@ -76,6 +77,18 @@ begin
       format('U6: kept out opens the board on its day, got %s',
              public.notification_default_url('claim_contested', jsonb_build_object('offer_id', o, 'ride_id', rc, 'variant', 'freed_kept_out'), dept, w, manager));
     raise notice 'U6 passed: the hours that matter, and the board link';
+  end;
+  -- ======== U9 ========
+  declare res jsonb;
+  begin
+    perform set_config('request.jwt.claims', jsonb_build_object('sub', manager, 'role', 'authenticated')::text, true);
+    res := public.submit_request(jsonb_build_object('request_id', qh, 'expected_version', (select version from public.requests where id = qh),
+      'department_id', dept, 'week_start', w, 'destination_id', haifa, 'ride_type_id', typ, 'trip_type', 'round_trip', 'adults', 1,
+      'origin_id', home, 'notes', 'U9 Sadran note',
+      'depart_at', ((w + 2) + time '08:00') at time zone 'Asia/Jerusalem', 'return_at', ((w + 2) + time '12:00') at time zone 'Asia/Jerusalem'));
+    assert (select notes = 'U9 Sadran note' from public.requests where id = qh), format('U9: the Sadran''s save is stored, got %s', res);
+    assert exists (select 1 from public.ride_requests rr where rr.ride_id = r and rr.request_id = qh), 'U9: the booking is kept';
+    raise notice 'U9 passed: the Sadran saves the form of a confirmed ride on a published day';
   end;
 end $$;
 rollback;
