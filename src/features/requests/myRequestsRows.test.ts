@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { he, tv } from "@/i18n/he";
 import type { MyRequestRow } from "./api";
-import { confirmDialogDescription, displayStatus, legStateLine, originDestinationLabel, ownLegWindow, requestStart, seriesSpanLine, toDisplayRows } from "./myRequestsRows";
+import { confirmDialogDescription, confirmDialogLabel, confirmDialogTitle, displayStatus, seriesDayChoices, legStateLine, originDestinationLabel, ownLegWindow, requestStart, seriesSpanLine, toDisplayRows } from "./myRequestsRows";
 
 function request(overrides: Partial<MyRequestRow> = {}): MyRequestRow {
   return {
@@ -178,3 +178,26 @@ describe("a request served by its plan B (R10B5, R10U7)", () => {
   });
 });
 
+describe("seriesDayChoices (R21U5)", () => {
+  const ride = (id: string, startsAt: string) => ({
+    id, version: 3, startsAt, endsAt: startsAt, status: "confirmed" as const, originName: "Home", destinationName: "Home",
+    carName: "Car", carType: "shared" as const, driverName: "Driver", isChauffeur: false, role: "driver" as const,
+  });
+  const legs = [
+    request({ id: "l1", seriesId: "s", seriesIndex: 1, seriesCount: 2, ride: ride("r1", "2026-09-15T08:00:00+03:00") }),
+    request({ id: "l2", seriesId: "s", seriesIndex: 2, seriesCount: 2, ride: ride("r2", "2026-09-16T08:00:00+03:00") }),
+  ];
+  it("offers each day of a multi-day ride and words the main button as every day", () => {
+    const row = { ...toDisplayRows([legs[0]!])[0]!, seriesLegs: legs };
+    const action = { kind: "cancel" as const, row };
+    expect(seriesDayChoices(action).map((leg) => leg.rideId)).toEqual(["r1", "r2"]);
+    expect(confirmDialogTitle(action)).toBe(he.request.seriesCancelTitle);
+    expect(confirmDialogLabel(action)).toBe(he.request.cancelAllDays);
+  });
+  it("a one-day ride, a withdrawal or a ride I only edit get no day choice", () => {
+    const one = toDisplayRows([legs[0]!])[0]!;
+    expect(seriesDayChoices({ kind: "cancel", row: one })).toEqual([]);
+    expect(seriesDayChoices({ kind: "withdraw", row: { ...one, seriesLegs: legs } })).toEqual([]);
+    expect(seriesDayChoices({ kind: "cancel", row: { ...one, seriesLegs: legs, editorOf: "someone" } as never })).toEqual([]);
+  });
+});

@@ -56,6 +56,7 @@ import {
   confirmDialogDescription,
   confirmDialogLabel,
   confirmDialogTitle,
+  seriesDayChoices,
   requestStart,
   toDisplayRows,
   displayStatus,
@@ -891,6 +892,12 @@ export function HomePage() {
         loading={withdrawMutation.isPending || cancelRideMutation.isPending || withdrawAllMutation.isPending || withdrawClaimMutation.isPending}
         onConfirm={() => void runConfirmAction()}
       >
+        {seriesDayChoices(confirmAction).map((leg) => (
+          <Button key={leg.rideId} className="mb-2 w-full" variant="outline" data-testid="cancel-only-day" disabled={cancelSeriesDay.busy}
+            onClick={() => { setConfirmAction(null); cancelSeriesDay.start({ id: leg.rideId, version: leg.version, starts_at: leg.startsAt } as BoardRide, () => undefined); }}>
+            {tv("request.cancelOnlyDay", { day: formatDayDate(leg.startsAt) })}
+          </Button>
+        ))}
         {confirmFreedLine ? <p className="text-sm" data-testid="freed-car-line">{confirmFreedLine}</p> : null}
         {confirmFreedLine ? (
           <KeepOutButton label={he.freedCar.keepOutCancel} disabled={withdrawMutation.isPending || cancelRideMutation.isPending}

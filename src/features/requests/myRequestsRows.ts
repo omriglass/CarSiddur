@@ -120,10 +120,18 @@ export type ConfirmAction =
   | { kind: "withdrawFreedClaim"; offerId: string; requestId: string }
   | { kind: "withdrawAll"; departmentId: string; weekStart: string };
 
+/** R21U5 (owner 2026-11-16): cancelling a multi-day ride from `/my` offers each day on its own, as the siddur does. */
+export function seriesDayChoices(action: ConfirmAction | null): { rideId: string; version: number; startsAt: string }[] {
+  if (action?.kind !== "cancel" || action.row.editorOf || (action.row.seriesLegs?.length ?? 0) < 2) return [];
+  return (action.row.seriesLegs ?? []).flatMap((leg) =>
+    leg.ride && leg.ride.version != null ? [{ rideId: leg.ride.id, version: leg.ride.version, startsAt: leg.ride.startsAt }] : []);
+}
+
 export function confirmDialogTitle(action: ConfirmAction | null): string {
   if (!action) return "";
   if (action.kind === "withdrawAll") return he.requestsList.withdrawAllTitle;
   if (action.kind === "withdrawFreedClaim") return he.freedSlot.withdrawClaimTitle;
+  if (seriesDayChoices(action).length) return he.request.seriesCancelTitle;
   return action.kind === "withdraw" ? he.request.withdrawConfirmTitle : he.request.cancelConfirmTitle;
 }
 
@@ -166,6 +174,7 @@ export function confirmDialogLabel(action: ConfirmAction | null): string {
   if (!action) return "";
   if (action.kind === "withdrawAll") return he.requestsList.withdrawAll;
   if (action.kind === "withdrawFreedClaim") return he.freedSlot.stepOut;
+  if (seriesDayChoices(action).length) return he.request.cancelAllDays;
   return action.kind === "withdraw" ? he.requestsList.withdraw : he.requestsList.cancelRide;
 }
 
