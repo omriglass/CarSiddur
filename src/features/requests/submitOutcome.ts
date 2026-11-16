@@ -164,9 +164,9 @@ export function hostGuestsConfirmation(result: SubmitRequestResult | null | unde
 /** REQ §13.158: a refused edit (nothing changed, the booking kept) — the reason and the discussion holding the car. */
 export function editRefusal(
   result: SubmitRequestResult | null | undefined,
-): { reason: "discussion" | "no_car" | "riders"; groupId: string | null } | null {
+): { reason: "discussion" | "no_car" | "riders"; groupId: string | null; rideReturnAt: string | null } | null {
   if (!result?.edit_refused || result.edit_refused === "car_taken") return null;
-  return { reason: result.edit_refused, groupId: result.group_offer ?? null };
+  return { reason: result.edit_refused, groupId: result.group_offer ?? null, rideReturnAt: result.guest_ride_return_at ?? null };
 }
 
 /** MD1 (REQ item 232): the multi-day edit's car is taken over the span — what blocks it and the latest return that fits. */

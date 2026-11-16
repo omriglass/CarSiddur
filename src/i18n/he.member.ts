@@ -130,6 +130,8 @@ export const heMember = {
     /** QA run 17 R17B13: the member drives others on the ride — the car stays with them. */
     editRefusedRidersTitle: "יש עוד נוסעים בנסיעה שלך",
     editRefusedRidersBody: "את/ה נוהג/ת גם עבור אחרים, והרכב נשאר איתם בשעות שלהם — לכן השינוי לא נשמר והנסיעה נשארת כמו שהייתה. אפשר לתאם עם הנוסעים או לפנות לסדרן/ית.",
+    /** R21U3 (owner 2026-11-16): a guest whose return alone left the ride stays and comes back with it. */
+    editRefusedRideReturn: "להישאר בנסיעה ולחזור איתה ב־{{time}}",
     editRefusedBack: "חזרה לטופס",
     /** MD1 (owner-approved 2026-11-14): a one-day ride made multi-day, and its car is taken on a later day. */
     carTakenRide: "{{name}} צריך/ה את הרכב ביום {{day}} בשעה {{time}}. להקדים את שעת החזרה או לבטל את השינוי?",

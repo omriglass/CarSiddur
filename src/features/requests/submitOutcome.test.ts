@@ -154,9 +154,11 @@ describe("releaseConfirmation", () => {
 describe("editRefusal", () => {
   const base = { request_id: "r", is_late: false, warnings: [] };
   it("maps a refused edit with its reason and the holding discussion (REQ §13.158)", () => {
-    expect(editRefusal({ ...base, edit_refused: "discussion", group_offer: "g" })).toEqual({ reason: "discussion", groupId: "g" });
-    expect(editRefusal({ ...base, edit_refused: "no_car" })).toEqual({ reason: "no_car", groupId: null });
-    expect(editRefusal({ ...base, edit_refused: "riders" })).toEqual({ reason: "riders", groupId: null });
+    expect(editRefusal({ ...base, edit_refused: "discussion", group_offer: "g" })).toEqual({ reason: "discussion", groupId: "g", rideReturnAt: null });
+    expect(editRefusal({ ...base, edit_refused: "no_car" })).toEqual({ reason: "no_car", groupId: null, rideReturnAt: null });
+    expect(editRefusal({ ...base, edit_refused: "riders" })).toEqual({ reason: "riders", groupId: null, rideReturnAt: null });
+    // R21U3: the ride's return, for "להישאר בנסיעה ולחזור איתה ב־…"
+    expect(editRefusal({ ...base, edit_refused: "no_car", guest_ride_return_at: "2026-11-20T10:00:00Z" })?.rideReturnAt).toBe("2026-11-20T10:00:00Z");
   });
   it("is null for an ordinary result", () => {
     expect(editRefusal({ ...base, status: "assigned" })).toBeNull();

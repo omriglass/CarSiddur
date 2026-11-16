@@ -132,6 +132,8 @@ interface SubmitOptions {
   returnEarlier?: boolean;
   replaceRideId?: string;
   keepLaterEnd?: boolean;
+  /** R21U3: a guest stays on the ride and comes back with it (the return they typed stays a wish). */
+  rideReturn?: boolean;
 }
 
 export interface QuickRequestCarOption {
@@ -882,7 +884,8 @@ export function RequestForm({
   const [pendingHostGuests, setPendingHostGuests] = useState<{ values: RequestFormValues; options: SubmitOptions; guests: HostGuestQuestion[] } | null>(null);
   // REQ §13.158: the edit was refused (no car at the new hours) — nothing changed, the member stays on the form.
   const [pendingCarTaken, setPendingCarTaken] = useState<{ values: RequestFormValues; options: SubmitOptions; question: SeriesCarTakenQuestion } | null>(null);
-  const [editRefused, setEditRefused] = useState<{ reason: "discussion" | "no_car" | "riders"; groupId: string | null } | null>(null);
+  const [editRefused, setEditRefused] = useState<{ reason: "discussion" | "no_car" | "riders"; groupId: string | null; rideReturnAt?: string | null;
+    values?: RequestFormValues; options?: SubmitOptions } | null>(null);
   // F4 (docs/TODO.md, owner A8-A10): a `waitlisted` outcome with nearby joinable rides holds off
   // the normal onDone/navigate — `afterJoinableDialog` runs it once the member picks "ask to
   // join" or "stay on the waiting list". State (not a ref): it's only ever set from an event
@@ -1015,6 +1018,7 @@ export function RequestForm({
       ...(options.confirmRelease ? { confirm_release: true } : {}),
       ...(options.allowCarAway ? { allow_car_away: true } : {}),
       ...(options.allowOtherCar ? { allow_other_car: true } : {}),
+      ...(options.rideReturn ? { guest_ride_return: true } : {}),
       // PR3 "attach": the hours cut to the ride in the way, with the short gap the member just chose
       ...(options.attach ? { ...(options.attach.departAt ? { depart_at: options.attach.departAt } : {}), ...(options.attach.returnAt ? { return_at: options.attach.returnAt } : {}), allow_short_turnaround: true } : {}),
       ...(options.hostGuests ? { host_guests: options.hostGuests } : {}),
@@ -1224,7 +1228,7 @@ export function RequestForm({
       // REQ §13.158: no car takes the new hours — the edit is refused and the booking kept.
       const refusal = editRefusal(result);
       if (refusal) {
-        setEditRefused(refusal);
+        setEditRefused({ ...refusal, values: formValues, options });
         return;
       }
       // R20 Q2 redo (owner 2026-11-14): the new hours no longer fit a guest of the shared ride - ask about each guest.
@@ -1961,6 +1965,16 @@ export function RequestForm({
       onConfirm={() => setEditRefused(null)}
     >
       {refusingGroup ? <p className="text-sm font-medium" data-testid="edit-refused-group"><GroupSummary members={refusingGroup.members} /></p> : null}
+      {editRefused?.rideReturnAt && editRefused.values ? (
+        <Button type="button" variant="outline" className="min-h-11 w-full whitespace-normal" data-testid="edit-refused-ride-return"
+          onClick={() => {
+            const again = editRefused;
+            setEditRefused(null);
+            if (again.values) void performSubmit(again.values, { ...(again.options ?? {}), rideReturn: true });
+          }}>
+          {tv("request.editRefusedRideReturn", { time: formatTime(new Date(editRefused.rideReturnAt)) })}
+        </Button>
+      ) : null}
     </ConfirmDialog>
     <ConfirmDialog
       open={!!pendingOverlapSubmit}

@@ -3,6 +3,8 @@
 --       say "<guest> יצא/ה מהנסיעה של <host> · בלי רכב כרגע" — no "נהג/ת: X במקום Y", no separate "בלי רכב כרגע"
 --   U6  a freed-car notice quotes the hours that matter: the candidates' span, else the freed ride's — never the whole
 --       free gap from midnight; "kept out of the app" opens the board on its day
+--   U3  a guest's moved return past the host's ride: refused with the ride's return offered; with `guest_ride_return`
+--       the guest stays on the ride (the typed return a wish), nothing else moves
 --   U9  the week's Sadran saves the request form of a request whose ride is confirmed on a published day
 -- Transactional, rolled back at the end.
 begin;
@@ -89,6 +91,31 @@ begin
     assert (select notes = 'U9 Sadran note' from public.requests where id = qh), format('U9: the Sadran''s save is stored, got %s', res);
     assert exists (select 1 from public.ride_requests rr where rr.ride_id = r and rr.request_id = qh), 'U9: the booking is kept';
     raise notice 'U9 passed: the Sadran saves the form of a confirmed ride on a published day';
+  end;
+  -- ======== U3 ========
+  declare res jsonb;
+  begin
+    insert into public.car_maintenance_blocks(car_id, department_id, starts_at, ends_at, reason, created_by)
+      select c, dept, ((w + 2) + time '06:00') at time zone 'Asia/Jerusalem', ((w + 2) + time '23:00') at time zone 'Asia/Jerusalem', 'SCHEDULED', manager
+      from unnest(array['00000000-0000-0000-0000-000000000041'::uuid, '00000000-0000-0000-0000-000000000042'::uuid]) c;
+    set constraints all immediate; set constraints all deferred;
+    perform set_config('request.jwt.claims', jsonb_build_object('sub', m2, 'role', 'authenticated')::text, true);
+    res := public.submit_request(jsonb_build_object('request_id', qg, 'expected_version', (select version from public.requests where id = qg),
+      'department_id', dept, 'week_start', w, 'destination_id', haifa, 'ride_type_id', typ, 'trip_type', 'round_trip', 'adults', 1, 'origin_id', home,
+      'depart_at', ((w + 2) + time '09:00') at time zone 'Asia/Jerusalem', 'return_at', ((w + 2) + time '13:00') at time zone 'Asia/Jerusalem'));
+    assert res ->> 'edit_refused' = 'no_car' and (res ->> 'guest_ride_return_at')::timestamptz = ((w + 2) + time '12:00') at time zone 'Asia/Jerusalem',
+      format('U3: refused, with the ride''s return offered, got %s', res);
+    assert (select return_at = ((w + 2) + time '12:00') at time zone 'Asia/Jerusalem' from public.requests where id = qg), 'U3: nothing changed yet';
+    perform set_config('request.jwt.claims', jsonb_build_object('sub', m2, 'role', 'authenticated')::text, true);
+    res := public.submit_request(jsonb_build_object('request_id', qg, 'expected_version', (select version from public.requests where id = qg),
+      'department_id', dept, 'week_start', w, 'destination_id', haifa, 'ride_type_id', typ, 'trip_type', 'round_trip', 'adults', 1, 'origin_id', home,
+      'depart_at', ((w + 2) + time '09:00') at time zone 'Asia/Jerusalem', 'return_at', ((w + 2) + time '13:00') at time zone 'Asia/Jerusalem',
+      'guest_ride_return', true));
+    set constraints all immediate; set constraints all deferred;
+    assert exists (select 1 from public.ride_requests where ride_id = r and request_id = qg) and (select status = 'merged' from public.requests where id = qg),
+      format('U3: the guest stays on the ride, got %s', res);
+    assert (select ends_at = ((w + 2) + time '12:00') at time zone 'Asia/Jerusalem' from public.rides where id = r), 'U3: the ride did not move';
+    raise notice 'U3 passed: a guest may come back with the ride';
   end;
 end $$;
 rollback;

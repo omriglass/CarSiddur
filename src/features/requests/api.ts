@@ -969,6 +969,8 @@ export interface SubmitRequestResult {
    * group), else `no_car`.
    */
   edit_refused?: "discussion" | "no_car" | "riders" | "car_taken";
+  /** R21U3: a guest whose return alone left the ride may stay and come back with it (resubmit with `guest_ride_return`). */
+  guest_ride_return_at?: string | null;
   /**
    * MD1 (REQ item 232), with `car_taken`: turning a booked one-day ride into a multi-day one needs the same car for the
    * whole span, and this is the first thing on it — another member's ride (`name` = its owner), the requester's own
