@@ -1301,6 +1301,7 @@ export function RequestForm({
       const outcomeToasted = toastSubmitOutcome(result, {
         carName: (id) => carLookup.find((c) => c.id === id)?.name ?? myPrivateCars.find((c) => c.id === id)?.name ?? "",
         preferredCarId: formValues.preferredCarId,
+        previousCarId: editedCarId,
         tripType: formValues.tripType,
         departTime: formValues.departTime,
         returnTime: formValues.returnTime,

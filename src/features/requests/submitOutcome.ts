@@ -11,6 +11,8 @@ export interface SubmitOutcomeContext {
   carName: (id: string | null | undefined) => string;
   /** The requester's own preferred/requested car, for the "assigned to a different car" case. */
   preferredCarId?: string | null;
+  /** R21U2: an edited request's car before the save — kept = an ordinary "assigned" toast, never "instead". */
+  previousCarId?: string | null;
   /** The submitted trip type (G2): only a drop-off ever reads as "a driver is still needed". */
   tripType?: TripType;
   departTime?: string;
@@ -62,7 +64,7 @@ export function toastSubmitOutcome(result: SubmitRequestResult | null | undefine
   if (result.status === "assigned" && result.car_id) {
     if (ctx.tripType === "one_way") {
       toast.success(tv("quickRequest.successOneWayAssigned", { car: ctx.carName(result.car_id), start: ctx.departTime ?? "" }));
-    } else if (result.car_id === ctx.preferredCarId) {
+    } else if (result.car_id === ctx.preferredCarId || !ctx.preferredCarId || result.car_id === ctx.previousCarId) {
       toast.success(tv("quickRequest.successAssigned", { car: ctx.carName(result.car_id), start: ctx.departTime ?? "", end: ctx.returnTime ?? "" }));
     } else {
       toast.success(tv("quickRequest.successFallback", { car: ctx.carName(result.car_id), preferredCar: ctx.carName(ctx.preferredCarId) }));

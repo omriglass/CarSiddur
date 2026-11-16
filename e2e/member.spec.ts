@@ -182,7 +182,7 @@ test("member edits own request, saves directional flexibility, and confirms scop
     // `/my` renders every upcoming week inside one section; scope to this week's group.
     const weekSection = page.locator("[data-week-start]").filter({ has: page.getByText("E2E editable request", { exact: true }) });
     await weekSection.getByRole("button", { name: he.requestsList.withdrawAll }).click();
-    await page.getByRole("dialog").getByRole("button", { name: he.common.cancel }).click();
+    await page.getByRole("dialog").getByRole("button", { name: he.common.back }).click();
     const { data: untouched } = await service.from("requests").select("status").eq("id", mine[0]!.id).single();
     expect(untouched?.status).toBe("submitted");
     await weekSection.getByRole("button", { name: he.requestsList.withdrawAll }).click();

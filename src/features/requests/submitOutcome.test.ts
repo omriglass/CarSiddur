@@ -74,6 +74,14 @@ describe("toastSubmitOutcome", () => {
     expect(mocks.success).toHaveBeenCalledWith(tv("quickRequest.successFallback", { car: "Car", preferredCar: "Preferred" }));
   });
 
+  it("R21U2: no preferred car, or an edit that kept its car, never says 'instead'", () => {
+    const result: SubmitRequestResult = { request_id: "r", is_late: false, warnings: [], status: "assigned", car_id: "car" };
+    toastSubmitOutcome(result, ctx({ preferredCarId: "", departTime: "08:00", returnTime: "12:00" }));
+    expect(mocks.success).toHaveBeenLastCalledWith(tv("quickRequest.successAssigned", { car: "Car", start: "08:00", end: "12:00" }));
+    toastSubmitOutcome(result, ctx({ preferredCarId: "preferred", previousCarId: "car", departTime: "08:00", returnTime: "12:00" }));
+    expect(mocks.success).toHaveBeenLastCalledWith(tv("quickRequest.successAssigned", { car: "Car", start: "08:00", end: "12:00" }));
+  });
+
   it("shows the waitlisted toast with a view-requests action", () => {
     const onViewRequests = vi.fn();
     const result: SubmitRequestResult = { request_id: "r", is_late: false, warnings: [], status: "waitlisted" };

@@ -55,7 +55,7 @@ export function ConfirmDialog({
   description,
   children,
   confirmLabel = he.common.confirm,
-  cancelLabel = he.common.cancel,
+  cancelLabel,
   destructive = false,
   loading = false,
   confirmDisabled = false,
@@ -86,7 +86,8 @@ export function ConfirmDialog({
             disabled={loading}
             onClick={() => onOpenChange(false)}
           >
-            {cancelLabel}
+            {/* R21U4 (owner 2026-11-16): beside a destructive action ("בטל נסיעה") a "ביטול" reads as the action itself */}
+            {cancelLabel ?? (destructive ? he.common.back : he.common.cancel)}
           </Button>
           {hideConfirm ? null : (
             <Button
