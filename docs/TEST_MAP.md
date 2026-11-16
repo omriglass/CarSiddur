@@ -367,7 +367,7 @@ matching `*proposal*`; `e2e/proposal.spec.ts`, `proposal-retry.spec.ts`, `board-
 **Automated**:
 - Vitest: `npx vitest run src/features/rides/rideStretches.test.ts src/features/rides/components/RidePassengersList.test.tsx src/features/requests/riders.test.ts src/lib/ridePassengerSummary.test.ts src/lib/ridePublicDetails.test.ts src/features/siddur/ridePeople.test.ts src/features/siddur/addPassengers.test.ts src/features/sadran/board/reservationPeople.test.ts`
 - SQL: `ride_passengers.sql`, `ride_people_parts.sql` (REQ item 246 h: stops view data, editing who rides which part, places on `add_ride_passengers`, seats per stretch), `leave_merged_ride.sql` (REQ item 229; the "לקצר" shrink, REQ item 238 f: `qa20_low_bugs.sql` TEST 5, Vitest `src/features/rides/useLeaveNoDriver.test.tsx`, e2e `merged-ride-parts.spec.ts` R20B15, reached through "אני לא נוהג/ת בנסיעה הזו", REQ item 239 a), `qa20_fixes.sql` (REQ item 230)
-- Playwright: `npx playwright test --grep "@ride-passengers"` (coverage gap — see below)
+- Playwright: `npx playwright test --grep "@ride-passengers"` — `e2e/passengers-along-route.spec.ts` (REQ item 246 h: the stops view and people summary, the Sadran makes a passenger "רק הלוך", "+ נוסע/ת" getting on midway, a one-way guest leaves)
 
 **QA script**:
 1. As `sadran`, create a manual reservation ("שמירת זמן") and name a department member plus a

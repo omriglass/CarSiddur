@@ -43,6 +43,9 @@ test.describe("multi-stop rides", { tag: ["@request-form", "@board"] }, () => {
     await page.getByTestId("add-stop-here").click();
     await page.getByPlaceholder(he.request.stopPlaceholder).fill(BINYAMINA);
     await page.getByRole("option").filter({ hasText: BINYAMINA }).first().click();
+    // REQ item 246 (e): the place is offered at each position with what changes, the smallest change first - the
+    // first option is on the way there.
+    await page.getByTestId("stop-option-add").first().click();
 
     // The stop is a block in the editor; close the sheet.
     await expect(page.getByTestId("stop-block")).toContainText(BINYAMINA);

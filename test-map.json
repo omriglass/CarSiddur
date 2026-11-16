@@ -960,7 +960,8 @@
         "src/features/rides/components/RidePassengersList.test.tsx",
         "src/features/requests/riders.ts",
         "src/features/requests/riders.test.ts",
-        "src/features/requests/components/requestForm/RequestRidersField.tsx"
+        "src/features/requests/components/requestForm/RequestRidersField.tsx",
+        "e2e/passengers-along-route.spec.ts"
       ],
       "vitest": [
         "src/features/rides/rideStretches.test.ts",
