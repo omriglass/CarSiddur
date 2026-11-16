@@ -279,6 +279,7 @@ export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = 
                 departmentId={ride.department_id}
                 weekStart={ride.week_start}
                 route={ride.route}
+                viewerId={viewerId}
               />
 
               {unnamedLine ? <p className="text-muted-foreground">{unnamedLine}</p> : null}

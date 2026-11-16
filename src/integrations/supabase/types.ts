@@ -6708,6 +6708,10 @@ export type Database = {
       }
       _undo_row_where: { Args: { p_table: string }; Returns: string }
       _undo_tables: { Args: never; Returns: string[] }
+      _unmerge_core: {
+        Args: { p_reason: string; p_request_id: string; p_ride_id: string }
+        Returns: undefined
+      }
       _validate_alternative_payload: {
         Args: { p_payload: Json; p_request_id: string }
         Returns: Json
@@ -7435,6 +7439,14 @@ export type Database = {
             }
             Returns: Json
           }
+      leave_ride_as_guest: {
+        Args: {
+          p_expected_version: number
+          p_request_id: string
+          p_ride_id: string
+        }
+        Returns: Json
+      }
       leave_ride_fit_preview:
         | {
             Args: { p_expected_version: number; p_ride_id: string }

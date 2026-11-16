@@ -21,6 +21,7 @@ import {
   releaseRideDriver,
   removeRidePerson,
   fetchRideStretches,
+  leaveRideAsGuest,
   setRidePersonPart,
   requestMakeRoom,
   respondRideChange,
@@ -90,6 +91,19 @@ export function useSetRidePersonPartMutation() {
     mutationFn: ({ rideId, expectedVersion, personKey, parts }: {
       rideId: string; expectedVersion: number; personKey: string; parts: Record<string, unknown>; departmentId: string; weekStart: string;
     }) => setRidePersonPart(rideId, expectedVersion, personKey, parts),
+    onSuccess: (_data, { departmentId, weekStart, rideId }) => {
+      void invalidateWeekData(client, departmentId, weekStart, [rideId]);
+    },
+    onError: showErrorToast,
+  });
+}
+
+/** REQ item 246 h (phase 2d): "לצאת מהנסיעה" on a guest's own row. */
+export function useLeaveRideAsGuestMutation() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ rideId, requestId, expectedVersion }: { rideId: string; requestId: string; expectedVersion: number; departmentId: string; weekStart: string }) =>
+      leaveRideAsGuest(rideId, requestId, expectedVersion),
     onSuccess: (_data, { departmentId, weekStart, rideId }) => {
       void invalidateWeekData(client, departmentId, weekStart, [rideId]);
     },

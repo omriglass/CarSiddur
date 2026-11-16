@@ -246,6 +246,12 @@ export async function setRidePersonPart(rideId: string, expectedVersion: number,
   await rpc("set_ride_person_part", { p_ride_id: rideId, p_expected_version: expectedVersion, p_key: key, p_parts: parts as unknown as Json });
 }
 
+/** REQ item 246 h (phase 2d): a guest leaves someone else's ride; their request is their own again (placed or waiting). */
+export async function leaveRideAsGuest(rideId: string, requestId: string, expectedVersion: number): Promise<{ request_status?: string; status?: string }> {
+  const data = await rpc("leave_ride_as_guest", { p_ride_id: rideId, p_request_id: requestId, p_expected_version: expectedVersion });
+  return (data ?? {}) as { request_status?: string; status?: string };
+}
+
 export async function removeRidePerson(rideId: string, expectedVersion: number, key: string): Promise<void> {
   await rpc("remove_ride_person", { p_ride_id: rideId, p_expected_version: expectedVersion, p_key: key });
 }

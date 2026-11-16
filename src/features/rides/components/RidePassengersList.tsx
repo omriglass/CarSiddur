@@ -2,15 +2,16 @@ import { useState } from "react";
 import { ChevronRight, X } from "lucide-react";
 import { toast } from "sonner";
 
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Button } from "@/components/ui/button";
 import { he, tv } from "@/i18n/he";
 import { parseRideRoute, routeHasIntermediates } from "@/lib/rideRoute";
 import { formatTime } from "@/lib/time";
 
 import { canRemoveRidePerson, legMarkedName, type RidePerson } from "../ridePeople";
-import { personDialogSetup, personWhere, rideLegs, type SummaryWords } from "../rideStretches";
+import { baseRequestId, personDialogSetup, personWhere, rideLegs, type SummaryWords } from "../rideStretches";
 import type { ServedEntry } from "../servedOf";
-import { useRemoveRidePassengerMutation, useRideStretchesQuery } from "../hooks";
+import { useLeaveRideAsGuestMutation, useRemoveRidePassengerMutation, useRideStretchesQuery } from "../hooks";
 import { RidePersonDialog } from "./RidePersonDialog";
 
 interface RidePassengersListProps {
@@ -33,6 +34,8 @@ interface RidePassengersListProps {
   requestRowsLocked?: boolean;
   /** REQ item 246 h: the ride's route (`BoardRide["route"]`) - each person's part of it in words, tap a name to edit. */
   route?: unknown;
+  /** REQ item 246 h (phase 2d): the signed-in member - their own row as a guest on someone else's ride says "לצאת מהנסיעה". */
+  viewerId?: string | null;
 }
 
 const WORDS: SummaryWords = {
@@ -54,14 +57,19 @@ const EDITABLE = new Set<RidePerson["source"]>(["companion", "child", "guest", "
  * when it is not the whole ride ("רק הלוך", "↓ עין שמר (08:15)"), built from the stops view; tapping a name opens
  * how they ride, with "הסרה מהנסיעה" (no separate edit button).
  */
-export function RidePassengersList({ rideId, expectedVersion, people, served, canManagePeople = false, rideCancelled = false, departmentId, weekStart, requestRowsLocked = false, route }: RidePassengersListProps) {
+export function RidePassengersList({ rideId, expectedVersion, people, served, canManagePeople = false, rideCancelled = false, departmentId, weekStart, requestRowsLocked = false, route, viewerId }: RidePassengersListProps) {
   const mutation = useRemoveRidePassengerMutation();
   const points = parseRideRoute(route);
   const hasMiddle = routeHasIntermediates(points);
   const stretchesQuery = useRideStretchesQuery(rideId, expectedVersion, hasMiddle);
   const stretches = hasMiddle ? stretchesQuery.data : undefined;
   const [editing, setEditing] = useState<RidePerson | null>(null);
+  const [leaving, setLeaving] = useState<RidePerson | null>(null);
+  const leave = useLeaveRideAsGuestMutation();
   if (!people.length) return null;
+  // the ride's own (main) request: its people do not "leave" a ride that is theirs
+  const mainRequest = baseRequestId(points) ?? served.find((entry) => entry.role === "driver")?.request_id ?? null;
+  const driverName = people.find((person) => person.source === "driver")?.display_name ?? "";
 
   const legs = rideLegs(points);
   const time = (iso: string) => formatTime(new Date(iso));
@@ -75,7 +83,9 @@ export function RidePassengersList({ rideId, expectedVersion, people, served, ca
         {people.map((person) => {
           const locked = requestRowsLocked && (person.source === "requester" || person.source === "companion");
           const editable = canEditRows && EDITABLE.has(person.source) && !locked;
-          const removable = !editable && rideId != null && expectedVersion != null &&
+          const ownGuestRow = !!viewerId && person.source === "requester" && person.person_id === viewerId && !!person.request_id
+            && person.request_id !== mainRequest && rideId != null && expectedVersion != null && !rideCancelled;
+          const removable = !editable && !ownGuestRow && rideId != null && expectedVersion != null &&
             canRemoveRidePerson(person, { canManagePeople, rideCancelled }) && !locked;
           const where = stretches ? personWhere(person, points, stretches, WORDS, time) : "";
           const name = stretches ? person.display_name.trim() : legMarkedName(person, served);
@@ -96,6 +106,12 @@ export function RidePassengersList({ rideId, expectedVersion, people, served, ca
                   <ChevronRight className="size-4 shrink-0 text-muted-foreground rtl:rotate-180" aria-hidden="true" />
                 </button>
               ) : label}
+              {ownGuestRow ? (
+                <Button type="button" variant="outline" size="sm" className="shrink-0 text-destructive" data-testid="ride-guest-leave"
+                  disabled={leave.isPending} onClick={() => setLeaving(person)}>
+                  {he.addPassengers.leave}
+                </Button>
+              ) : null}
               {removable ? (
                 <Button
                   type="button"
@@ -119,6 +135,22 @@ export function RidePassengersList({ rideId, expectedVersion, people, served, ca
           );
         })}
       </ul>
+      {leaving && rideId != null && expectedVersion != null && leaving.request_id ? (
+        <ConfirmDialog
+          open
+          onOpenChange={(open) => { if (!open && !leave.isPending) setLeaving(null); }}
+          title={tv("addPassengers.leaveTitle", { driver: driverName })}
+          description={tv("addPassengers.leaveBody", { driver: driverName })}
+          confirmLabel={he.addPassengers.leaveConfirm}
+          cancelLabel={he.addPassengers.back}
+          destructive
+          loading={leave.isPending}
+          onConfirm={() => leave.mutate(
+            { rideId, requestId: leaving.request_id as string, expectedVersion, departmentId: departmentId ?? "", weekStart: weekStart ?? "" },
+            { onSuccess: () => { toast.success(he.addPassengers.left); setLeaving(null); } },
+          )}
+        />
+      ) : null}
       {editing && setup && rideId != null && expectedVersion != null ? (
         <RidePersonDialog
           key={`${editing.key}:${expectedVersion}`}

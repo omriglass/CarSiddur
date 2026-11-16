@@ -183,6 +183,8 @@
         "supabase/migrations/**/*ride_people_parts*",
         "supabase/tests/merge_fixed_hours.sql",
         "supabase/migrations/**/*merge_fixed_hours*",
+        "supabase/tests/leave_ride_as_guest.sql",
+        "supabase/migrations/**/*leave_ride_as_guest*",
         "src/features/rides/mergeQuestions.test.ts",
         "supabase/migrations/**/*route_hops*"
       ],
@@ -216,7 +218,8 @@
         "stop_hours.sql",
         "rider_stretches.sql",
         "ride_people_parts.sql",
-        "merge_fixed_hours.sql"
+        "merge_fixed_hours.sql",
+        "leave_ride_as_guest.sql"
       ],
       "playwrightTags": [
         "@request-form"

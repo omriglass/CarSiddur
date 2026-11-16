@@ -700,6 +700,12 @@ export const heMember = {
     back: "חזרה",
     editAriaLabel: "{{name}} — שינוי איפה עולה ויורד/ת",
     editHint: "לוחצים על שם כדי לשנות איפה עולה ויורד/ת, או להסיר.",
+    // REQ item 246 h (phase 2d, owner mock board 4): a guest leaves someone else's ride with one tap
+    leave: "לצאת מהנסיעה",
+    leaveTitle: "לצאת מהנסיעה של {{driver}}?",
+    leaveBody: "הנסיעה שלך חוזרת להיות בקשה משלך: מנסים רכב פנוי, ואם אין — רשימת ההמתנה. {{driver}} ממשיך/ה כרגיל ומקבל/ת הודעה אחת.",
+    leaveConfirm: "לצאת",
+    left: "יצאת מהנסיעה. הבקשה שלך נשמרה — נמצא לך רכב או שתופיע/י ברשימת ההמתנה.",
   },
   /** REQ item 246 h: the stops view — at each place who gets off (↓) and on (↑), free seats on the next stretch. */
   rideStops: {

@@ -10,6 +10,7 @@ vi.mock("../hooks", () => ({
   useRemoveRidePassengerMutation: () => ({ mutate: vi.fn(), isPending: false }),
   useSetRidePersonPartMutation: () => ({ mutate: vi.fn(), isPending: false }),
   useRideStretchesQuery: () => ({ data: undefined }),
+  useLeaveRideAsGuestMutation: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 
 const person = (key: string, source: RidePerson["source"], name: string): RidePerson => ({
@@ -54,4 +55,16 @@ describe("RidePassengersList on a merged ride (owner 2026-11-09)", () => {
     expect(xFor("גיל")).not.toBeNull();
     expect(editFor("דנה")).toBeNull();
   });
+
+  // REQ item 246 h (phase 2d): my own row as a guest on someone else's ride says "לצאת מהנסיעה"; the main request's does not.
+  it("a guest's own row: one tap to leave", () => {
+    const guest = { ...person("req:g", "requester", "גיל"), request_id: "g", person_id: "me" };
+    const main = { ...person("driver:d", "driver", "דנה"), request_id: "r2" };
+    const served = [{ request_id: "r2", role: "driver" }, { request_id: "g", role: "passenger" }] as never;
+    const { rerender } = render(<RidePassengersList rideId="r" expectedVersion={1} people={[main, guest]} served={served} viewerId="me" />);
+    expect(screen.getByTestId("ride-guest-leave")).toBeTruthy();
+    rerender(<RidePassengersList rideId="r" expectedVersion={1} people={[main, guest]} served={served} viewerId="someone-else" />);
+    expect(screen.queryByTestId("ride-guest-leave")).toBeNull();
+  });
 });
+
