@@ -79,6 +79,7 @@ export type ErrorCode =
   | "trip_type_needs_return"
   | "invalid_duration_lock"
   | "merge_window_locked"
+  | "merge_fixed_hour"
   | "merge_boards_at_end"
   | "merge_detour_too_long"
   | "merge_luggage_needs_large_trunk"
@@ -257,6 +258,7 @@ const MESSAGE_TO_CODE: Record<string, ErrorCode> = {
   trip_type_needs_return: "trip_type_needs_return",
   invalid_duration_lock: "invalid_duration_lock",
   merge_window_locked: "merge_window_locked",
+  merge_fixed_hour: "merge_fixed_hour",
   merge_boards_at_end: "merge_boards_at_end",
   merge_detour_too_long: "merge_detour_too_long",
   merge_luggage_needs_large_trunk: "merge_luggage_needs_large_trunk",
@@ -449,6 +451,7 @@ const CODE_TO_MESSAGE: Record<ErrorCode, string> = {
   trip_type_needs_return: he.errors.tripTypeNeedsReturn,
   invalid_duration_lock: he.errors.invalidDurationLock,
   merge_window_locked: he.mergedRide.invalid.window_locked,
+  merge_fixed_hour: he.mergedRide.invalid.fixed_hour,
   merge_boards_at_end: he.mergedRide.invalid.boards_at_end,
   merge_detour_too_long: he.mergedRide.invalid.detour_too_long,
   merge_luggage_needs_large_trunk: he.mergedRide.invalid.luggage_needs_large_trunk,

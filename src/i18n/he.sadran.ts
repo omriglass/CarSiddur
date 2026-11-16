@@ -881,6 +881,9 @@ export const heSadran = {
     longDetourPickup: "האיסוף של {{name}} מ{{place}}",
     longDetourDrop: "ההורדה של {{name}} ב{{place}}",
     longDetourUnknown: "זמן הנסיעה בין {{from}} ל{{to}} לא ידוע, ולכן נספר כשעה.",
+    /** REQ item 246 g: a stop's stated hour the merge would move. */
+    fixedHourMoves: "השעה הקבועה ב{{place}} ({{time}}) תזוז ב־{{minutes}} דק׳.",
+    fixedHourMergeAnyway: "לאחד בכל זאת?",
     longDetourConfirm: "לאחד בכל זאת",
     longDetourNote: "העיקוף ארוך מהמותר (עוד {{minutes}} דק׳ נסיעה) — אפשר לאחד בכל זאת",
     /** REQ §13.175 (b): the ride reaches the guest at another time than asked - the Sadran picks which side gives. */
@@ -955,6 +958,8 @@ export const heSadran = {
       leg_missing: "אי אפשר לצרף — לבקשה אין את הכיוון הזה (אולי בוטל)",
       /** REQ §13.112 (c): the ride serves a "N hours between A and B" request whose length never changes. */
       window_locked: "אי אפשר לצרף — הנסיעה היא בחלון זמן קבוע והצירוף היה מאריך אותה",
+      /** REQ item 246 g: a stop's stated hour would move beyond its flexibility. */
+      fixed_hour: "אי אפשר לצרף — שעה קבועה של עצירה בנסיעה הייתה זזה",
       // REQ item 108 (M1): reasons only the server's `merge_preview` can give.
       window: "אי אפשר לצרף — הנסיעה המאוחדת תחרוג מהיום של הנסיעה",
       time_far: "אי אפשר לצרף — הנסיעה עוברת שם בשעה רחוקה מהשעה המבוקשת",

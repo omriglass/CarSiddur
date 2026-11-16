@@ -285,6 +285,7 @@ const MERGE_CODE_TEXT: Record<string, string> = {
   time_far: he.mergedRide.invalid.time_far,
   window_locked: he.mergedRide.invalid.window_locked,
   maintenance: he.mergedRide.invalid.maintenance,
+  fixed_hour: he.mergedRide.invalid.fixed_hour,
 };
 
 /** Hebrew reason for a `merge_preview` refusal `code` (REQ item 108 M1). */

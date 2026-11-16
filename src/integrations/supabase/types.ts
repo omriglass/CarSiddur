@@ -6151,6 +6151,10 @@ export type Database = {
         Returns: Json
       }
       _merge_error_code: { Args: { _err: string }; Returns: string }
+      _merge_fixed_hour_break: {
+        Args: { p_ra: Json; p_rb: Json; p_ride_id: string }
+        Returns: Json
+      }
       _merge_guest_swapped: {
         Args: { p_request_id: string; p_ride_id: string }
         Returns: boolean
@@ -6391,6 +6395,17 @@ export type Database = {
           p_leg: Database["public"]["Enums"]["ride_leg"]
           p_ride_id: string
           p_with_passengers?: boolean
+        }
+        Returns: boolean
+      }
+      _ride_leg_fits_with_guest: {
+        Args: {
+          p_car_id: string
+          p_extra: Json
+          p_guest: string
+          p_guest_leg: Database["public"]["Enums"]["ride_leg"]
+          p_leg: Database["public"]["Enums"]["ride_leg"]
+          p_ride_id: string
         }
         Returns: boolean
       }

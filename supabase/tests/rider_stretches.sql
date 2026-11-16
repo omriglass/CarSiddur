@@ -110,10 +110,10 @@ begin
     format('TEST 3 FAILED: loads 5 / 5 (%s)', v_x);
   perform public.assert_ride_seats_fit(rA);
   assert public.ride_seats_verdict(rA, '[]'::jsonb) is null, 'TEST 3 FAILED: the read-only twin agrees';
-  -- a guest only proposed (not on the ride yet) is counted on the whole leg: 5 + 2 to בנימינה does not fit
+  -- a guest only proposed (not on the ride yet) counts from where they get on (LT1 phase 2c): 5 to בנימינה, 3 + 2 after
   delete from public.ride_requests where ride_id = rA and request_id = qB;
-  assert public.ride_seats_verdict(rA, jsonb_build_array(jsonb_build_object('request_id', qB, 'leg', 'out'))) = 'seat_config_violation',
-    'TEST 3 FAILED: a proposed guest rides the whole leg';
+  assert public.ride_seats_verdict(rA, jsonb_build_array(jsonb_build_object('request_id', qB, 'leg', 'out'))) is null,
+    'TEST 3 FAILED: a proposed guest counts from their boarding place';
   insert into public.ride_requests(ride_id, request_id, role, leg, car_mode) values (rA, qB, 'passenger', 'out', 'passenger');
 
   -- the way back has no rider rows: m2 riding back too would be 7 on the whole return leg
