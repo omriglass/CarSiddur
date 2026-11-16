@@ -25179,6 +25179,7 @@ declare
   v_row public.ride_passengers%rowtype;
   v_request_id uuid; v_rider_key text; v_seat text; v_cov_out boolean; v_cov_ret boolean;
   l public.ride_leg; v_part jsonb;
+  v_names text; v_new_version int; v_actor_name text; v_route text; v_recipient uuid; v_recipients uuid[] := '{}';
 begin
   select * into v_ride from public.rides where id = p_ride_id for update;
   if not found or v_ride.status = 'cancelled' then raise exception 'ride_not_found' using errcode = 'P0001'; end if;
@@ -25217,6 +25218,9 @@ begin
   if v_prefix = 'added' then
     select * into v_row from public.ride_passengers where id = nullif(split_part(p_key, ':', 2), '')::uuid and ride_id = p_ride_id;
     if not found then raise exception 'ride_not_found' using errcode = 'P0001'; end if;
+    v_names := v_row.display_name;
+    v_recipients := array_remove(array[v_row.person_id, v_row.added_by], null)
+      || coalesce((select array_agg(cg.profile_id) from public.child_guardians cg where cg.child_id = v_row.child_id), '{}');
     if not ((v_has_out and v_rides_out) or (v_has_ret and v_rides_ret)) then raise exception 'invalid_ride_passenger' using errcode = 'P0001'; end if;
     -- one row: the directions it rides, the way there's places, and for both ways the way back's
     update public.ride_passengers rp set
@@ -25249,6 +25253,14 @@ begin
       raise exception 'ride_not_found' using errcode = 'P0001';
     end if;
     if not ((v_cov_out and v_rides_out) or (v_cov_ret and v_rides_ret)) then raise exception 'invalid_ride_passenger' using errcode = 'P0001'; end if;
+    v_names := case v_prefix
+      when 'comp' then (select p.full_name from public.profiles p where p.id = nullif(split_part(p_key, ':', 3), '')::uuid)
+      when 'child' then (select c.full_name from public.children c where c.id = nullif(split_part(p_key, ':', 3), '')::uuid)
+      else (select q.guest_passenger_names[nullif(split_part(p_key, ':', 3), '')::int] from public.requests q where q.id = v_request_id) end;
+    v_recipients := array_remove(array[(select q.requester_id from public.requests q where q.id = v_request_id),
+                                       case when v_prefix = 'comp' then nullif(split_part(p_key, ':', 3), '')::uuid end], null)
+      || case when v_prefix = 'child' then coalesce((select array_agg(cg.profile_id) from public.child_guardians cg
+                                                     where cg.child_id = nullif(split_part(p_key, ':', 3), '')::uuid), '{}') else '{}' end;
     v_seat := case when v_prefix = 'child' then coalesce((select s.seat_kind from public.request_rider_stops s
                      where s.request_id = v_request_id and s.rider_key = v_rider_key order by s.leg limit 1), 'child_seat') else 'adult' end;
     -- the directions this ride carries for the request; the other one (another ride) keeps its row
@@ -25280,7 +25292,19 @@ begin
     raise exception 'ride_seats_exceeded' using errcode = 'P0001';
   end if;
 
-  update public.rides set updated_at = now() where id = p_ride_id;
+  update public.rides set updated_at = now() where id = p_ride_id returning version into v_new_version;
+
+  -- REQ item 246 h (owner 2026-11-17): a change to my ride tells me - the driver, the person (a child's guardians), the
+  -- request's owner / whoever added them; never the one who made it. One notice each.
+  v_recipients := array_append(v_recipients, v_ride.driver_id);
+  select full_name into v_actor_name from public.profiles where id = v_actor;
+  v_route := public.ride_notice_route(p_ride_id);
+  for v_recipient in select distinct x from unnest(v_recipients) x where x is not null and x is distinct from v_actor order by 1 loop
+    perform public.enqueue_notification(v_recipient, 'outcome_changed', v_ride.department_id, v_ride.week_start,
+      jsonb_build_object('byName', coalesce(v_actor_name, ''), 'names', coalesce(v_names, ''), 'route', coalesce(v_route, '')),
+      jsonb_build_object('variant', 'rider_part_changed', 'ride_id', p_ride_id),
+      format('rider_part_changed:%s:%s:%s', p_ride_id, v_new_version, v_recipient));
+  end loop;
 end;
 $$;
 

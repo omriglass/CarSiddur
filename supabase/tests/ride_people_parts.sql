@@ -20,7 +20,7 @@ declare
   car1 uuid := '00000000-0000-0000-0000-000000000040';
   w date := public.current_week_start() + 1463;
   d0 timestamptz;
-  qA uuid; rA uuid; dana uuid; v_x jsonb; v_failed boolean; v_err text;
+  qA uuid; rA uuid; dana uuid; pub uuid; v_x jsonb; v_failed boolean; v_err text;
 begin
   insert into public.weeks(department_id, week_start, phase, open_at, close_at, publish_at)
     values (dept, w, 'solving', now() - interval '3 days', now() - interval '2 days', now() - interval '1 day');
@@ -173,6 +173,27 @@ begin
   exception when others then v_err := sqlerrm;
   end;
   assert v_err = 'invalid_ride_passenger', format('TEST 8 FAILED: way-back places on a one-way row (%s)', v_err);
+
+  -----------------------------------------------------------------------
+  -- 9) A change to my ride tells me (owner 2026-11-17): m1 (driver, and the request's owner) moves m2's seat; m2 and
+  --    the Sadran who added them hear it once each, m1 (who made it) does not.
+  -----------------------------------------------------------------------
+  insert into public.siddur_versions(department_id, week_start, snapshot, published_by) values (dept, w, '{}', manager) returning id into pub;
+  perform set_config('app.in_publish', 'on', true);
+  update public.weeks set phase = 'published', published_version_id = pub, published_at = now(), published_days = array[w + 1]
+    where department_id = dept and week_start = w;
+  update public.rides set status = 'confirmed' where id = rA;
+  perform set_config('app.in_publish', 'off', true);
+  delete from public.notifications where data ->> 'variant' = 'rider_part_changed';   -- the earlier tests' (made by the Sadran)
+  perform set_config('request.jwt.claims', jsonb_build_object('sub', m1, 'role', 'authenticated')::text, true);
+  perform public.set_ride_person_part(rA, (select version from public.rides where id = rA),
+    'added:' || (select id from public.ride_passengers where ride_id = rA and person_id = m2), jsonb_build_object('return', null));
+  assert (select count(*) from public.notifications where recipient_id = m2 and data ->> 'variant' = 'rider_part_changed'
+            and data ->> 'ride_id' = rA::text) = 1, 'TEST 9 FAILED: the person is told once';
+  assert (select count(*) from public.notifications where recipient_id = manager and data ->> 'variant' = 'rider_part_changed') = 1,
+    'TEST 9 FAILED: whoever added them is told';
+  assert not exists (select 1 from public.notifications where recipient_id = m1 and data ->> 'variant' = 'rider_part_changed'),
+    'TEST 9 FAILED: not the one who made the change';
 
   raise notice 'ride_people_parts.sql: all assertions passed';
 end $$;
