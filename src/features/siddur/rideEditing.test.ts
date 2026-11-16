@@ -38,5 +38,9 @@ describe("member ride changes", () => {
     expect(shortTurnaroundNeighbours(move, [overlapping], 30)).toBeNull();
     // nothing in the way: nothing to ask
     expect(shortTurnaroundNeighbours(move, [], 30)).toBeNull();
+    // owner 2026-11-15: asked only when the gap is less than the turnaround — exactly the turnaround on both sides is no question
+    const fullBefore = { ...ride, id: "fullBefore", starts_at: "2026-09-10T07:00:00Z", ends_at: "2026-09-10T08:30:00Z" };
+    const fullNext = { ...ride, id: "fullNext", starts_at: "2026-09-10T12:15:00Z", ends_at: "2026-09-10T13:00:00Z" };
+    expect(shortTurnaroundNeighbours(move, [fullBefore, fullNext], 30)).toBeNull();
   });
 });

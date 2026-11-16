@@ -143,7 +143,10 @@ export function freedSlotInputFrom(raw: FreedSlotRaw): { input: FreedSlotInput; 
     ...(raw.car.baseLocationId ? { baseLocationId: raw.car.baseLocationId } : {}),
   };
   const bufferSlots = minutesToSlots(config.bufferMinutes);
-  const timeline = buildTimelines([car], bufferSlots, weekSlots, raw.homeLocationId).get(car.id)!;
+  // WT1 (owner 2026-11-15, REQ item 243): a waiting request takes the freed car also inside a turnaround — the
+  // turnaround is a warning, so the gap is fitted with no buffer around the car's other rides. `bufferSlots` still
+  // separates two waiting requests chained into one gap (`freedSlotOptions`).
+  const timeline = buildTimelines([car], 0, weekSlots, raw.homeLocationId).get(car.id)!;
   for (const ride of raw.otherRides) {
     timeline.forceAdd({
       rideId: ride.id,

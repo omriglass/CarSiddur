@@ -2807,6 +2807,23 @@ $$;
 ALTER FUNCTION "public"."_freed_cause_note"("p_offer_id" "uuid") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."_freed_tight_note"("p_ride_id" "uuid") RETURNS "text"
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  select coalesce((
+    select ' ' || replace(f.body, '{{name}}', coalesce(v.info ->> 'name', ''))
+    from public.rides r
+    cross join lateral (select public._short_turnaround_before_info(r.car_id, r.starts_at, r.id) as info) v
+    join public.text_fragments f on f.key = 'freed_tight.before'
+    where r.id = p_ride_id and v.info is not null and (v.info ->> 'name') is not null
+      and (v.info ->> 'recipient_id')::uuid is distinct from r.driver_id), '');
+$$;
+
+
+ALTER FUNCTION "public"."_freed_tight_note"("p_ride_id" "uuid") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."_guest_edit_stays"("p_request_id" "uuid", "payload" "jsonb", "p_trip_type" "public"."trip_type", "p_trip_shape" "public"."trip_shape", "p_needs_car" boolean, "p_one_way_mode" "public"."leg_car_mode", "p_origin_id" "uuid", "p_origin_text" "text", "p_depart_at" timestamp with time zone, "p_return_at" timestamp with time zone) RETURNS boolean
     LANGUAGE "plpgsql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -12985,7 +13002,8 @@ CREATE OR REPLACE FUNCTION "public"."freed_slot_candidates"("_offer" "uuid") RET
          -- a plan-B request's own plan-B rides are released when it takes the car
          and not exists (select 1 from ride_requests rr where rr.ride_id = r2.id
                           and (rr.request_id = p.id or rr.request_id in (select x.id from requests x where x.plan_b_parent_id = p.id)))
-         and tstzrange(r2.starts_at, r2.blocked_until, '[)') && tstzrange(p.dep, p.ret, '[)'))
+         -- WT1 (REQ item 243): only a real overlap rules a candidate out — the turnaround is a warning
+         and tstzrange(r2.starts_at, r2.ends_at, '[)') && tstzrange(p.dep, p.ret, '[)'))
     -- REQ §13.114: a scheduled maintenance period on the freed car (also one added after the offer was
     -- made) is never offered, incl. the turnaround buffer before it.
     and not exists (select 1 from car_maintenance_blocks b where b.car_id = o.car_id
@@ -16142,7 +16160,7 @@ CREATE OR REPLACE FUNCTION "public"."place_freed_slot_request"("p_offer_id" "uui
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
-declare v_offer public.freed_slot_offers%rowtype; q public.requests%rowtype; v_ride uuid; v_covered text[]; v_prev text; v_supp text; v_claims text;
+declare v_offer public.freed_slot_offers%rowtype; q public.requests%rowtype; v_ride uuid; v_covered text[]; v_prev text; v_supp text; v_claims text; v_gap smallint; v_new public.rides%rowtype;
 begin
   select * into v_offer from public.freed_slot_offers where id = p_offer_id;
   select * into q from public.requests where id = p_request_id for update;
@@ -16181,10 +16199,17 @@ begin
   elsif cardinality(v_covered) > 0 then
     raise exception 'freed_slot_not_applicable' using errcode = 'P0001';
   else
+    -- WT1 (owner 2026-11-15, REQ item 243): a waiting request takes the freed car also inside a turnaround — the
+    -- ride before gives up the rest of its turnaround, and this ride keeps only the gap to the car's next ride.
+    update public.rides p
+       set turnaround_override_minutes = greatest((extract(epoch from (q.depart_at - p.ends_at)) / 60)::int, 0)::smallint
+     where p.car_id = v_offer.car_id and p.status <> 'cancelled' and not p.draft_hold
+       and p.ends_at <= q.depart_at and p.blocked_until > q.depart_at;
+    v_gap := (public._short_turnaround_info(v_offer.car_id, q.return_at, null) ->> 'gap')::smallint;
     insert into public.rides (department_id, week_start, car_id, starts_at, ends_at, origin_id, destination_id,
-      driver_id, status, is_pinned, pin_reason, created_by)
+      driver_id, status, is_pinned, pin_reason, created_by, turnaround_override_minutes)
     select r.department_id, r.week_start, v_offer.car_id, q.depart_at, q.return_at, r.origin_id, r.destination_id,
-      q.requester_id, 'confirmed', true, p_reason, coalesce(p_actor, q.requester_id)
+      q.requester_id, 'confirmed', true, p_reason, coalesce(p_actor, q.requester_id), v_gap
     from public.rides r where r.id = v_offer.cancelled_ride_id
     returning id into v_ride;
     insert into public.ride_requests (ride_id, request_id, role, leg, car_mode)
@@ -16193,6 +16218,12 @@ begin
     update public.requests set status = 'assigned', status_reason = p_reason where id = p_request_id;
   end if;
   perform set_config('app.system_status_transition', v_prev, true);
+  -- WT1: the drivers right before and right after (when they are someone else) are told the schedule is tight.
+  if p_reason <> 'FREED_SLOT_PROBE' and q.trip_type <> 'drop_off' then
+    select * into v_new from public.rides where id = v_ride;
+    perform public._notify_short_turnaround_before(v_new.car_id, v_new.starts_at, v_new.id, q.requester_id);
+    perform public._notify_short_turnaround(v_new.car_id, v_new.ends_at, v_new.id, q.requester_id);
+  end if;
   return v_ride;
 end $$;
 
@@ -20896,14 +20927,14 @@ begin
         perform public.enqueue_notification(m.profile_id, 'waitlist_contested', v_g.department_id, v_g.week_start,
           jsonb_build_object('car', coalesce(v_car_name, ''), 'day', public.day_date_label(v_g.starts_at),
             'depart', to_char(v_g.starts_at at time zone 'Asia/Jerusalem', 'HH24:MI'),
-            'return', to_char(v_g.ends_at at time zone 'Asia/Jerusalem', 'HH24:MI'), 'causeNote', v_cause),
+            'return', to_char(v_g.ends_at at time zone 'Asia/Jerusalem', 'HH24:MI'), 'causeNote', v_cause, 'tightNote', ''),
           jsonb_build_object('group_id', v_group, 'request_id', m.request_id, 'day', v_g.day::text, 'variant', 'car_freed'),
           format('waitlist_car_freed:%s:%s:%s', v_group, p_offer_id, m.profile_id));
       end loop;
       perform public.enqueue_notification(s.profile_id, 'waitlist_contested', v_g.department_id, v_g.week_start,
         jsonb_build_object('car', coalesce(v_car_name, ''), 'day', public.day_date_label(v_g.starts_at),
           'depart', to_char(v_g.starts_at at time zone 'Asia/Jerusalem', 'HH24:MI'),
-          'return', to_char(v_g.ends_at at time zone 'Asia/Jerusalem', 'HH24:MI'), 'causeNote', v_cause),
+          'return', to_char(v_g.ends_at at time zone 'Asia/Jerusalem', 'HH24:MI'), 'causeNote', v_cause, 'tightNote', ''),
         jsonb_build_object('group_id', v_group, 'day', v_g.day::text, 'variant', 'car_freed_sadran'),
         format('waitlist_car_freed:%s:%s:sadran:%s', v_group, p_offer_id, s.profile_id))
       from public.sadranim_of(v_g.department_id, v_g.week_start) as s(profile_id);
@@ -20936,7 +20967,7 @@ begin
       'day', coalesce(public.day_date_label(v_ride.starts_at), ''),
       'timeRange', coalesce(public._window_text(v_ride.starts_at, v_ride.ends_at), ''),
       'route', coalesce(public.request_route_label((v_first ->> 'request_id')::uuid), ''),
-      'causeNote', v_cause);
+      'causeNote', v_cause, 'tightNote', public._freed_tight_note(v_ride_id));
     for v_person in
       select x.pid from (
         select (v_first ->> 'requester_id')::uuid as pid
@@ -26533,6 +26564,7 @@ declare
   v_person record;
   v_hard jsonb; v_soft jsonb; v_short jsonb;
   v_all_ids uuid[]; v_skip uuid[] := '{}';
+  v_from_car text; v_new_car text; v_old_ids uuid[]; v_old record; v_notif uuid;
 begin
   perform public._small_trunk_mode(p_allow_small_trunk);
   if p_series_mode not in ('whole', 'day') then
@@ -26684,10 +26716,34 @@ begin
     order by (pe ->> 'person_id')::uuid, (r.id = any(v_day_ids)) desc, r.starts_at, r.id
   loop
     if v_person.person_id is distinct from v_actor then
-      perform public.enqueue_notification(v_person.person_id, 'car_swapped', p_department_id, p_week_start,
-        jsonb_build_object('fromCar', coalesce(v_old_car_names ->> v_person.ride_id::text, '')),
-        jsonb_build_object('ride_id', v_person.ride_id),
-        format('car_swapped:%s:%s', v_person.ride_id, v_person.person_id));
+      -- Owner 2026-11-16 (Omri's ride, swapped שרק→סילביה then סילביה→טוסיה): every swap tells the person; the key
+      -- was once per ride and person, so the second swap was dropped. One unread notice per person and ride: a later
+      -- swap replaces it and keeps the car they last saw ("משרק לטוסיה"); swapped back to that car = nothing new.
+      perform pg_advisory_xact_lock(hashtextextended(format('car_swapped:%s:%s', v_person.ride_id, v_person.person_id), 0));
+      v_from_car := coalesce(v_old_car_names ->> v_person.ride_id::text, '');
+      v_old_ids := null;
+      -- a board swap held until "שלח" is merged when it is sent; the delivered notice stays until then
+      for v_old in
+        select n.id, n.data from public.notifications n
+        where n.recipient_id = v_person.person_id and n.event = 'car_swapped' and n.read_at is null
+          and n.data ->> 'ride_id' = v_person.ride_id::text
+          and not public._board_hold_applies(v_person.person_id, 'car_swapped', p_department_id, p_week_start)
+        order by n.created_at, n.id
+      loop
+        if v_old_ids is null and nullif(v_old.data ->> 'from_car', '') is not null then v_from_car := v_old.data ->> 'from_car'; end if;
+        v_old_ids := array_append(v_old_ids, v_old.id);
+      end loop;
+      if v_old_ids is not null then delete from public.notifications where id = any(v_old_ids); end if;
+      select c.name into v_new_car from public.rides r join public.cars c on c.id = r.car_id where r.id = v_person.ride_id;
+      continue when v_new_car is not distinct from v_from_car;   -- back on the car they last saw
+      v_notif := public.enqueue_notification(v_person.person_id, 'car_swapped', p_department_id, p_week_start,
+        jsonb_build_object('fromCar', v_from_car),
+        jsonb_build_object('ride_id', v_person.ride_id, 'from_car', v_from_car),
+        format('car_swapped:%s:%s:%s', v_person.ride_id, v_person.person_id, clock_timestamp()));
+      if v_notif is not null then
+        update public.push_outbox set payload = payload || jsonb_build_object('tag', format('replace:car_swapped:%s', v_person.ride_id))
+        where notification_id = v_notif;
+      end if;
       v_notified := v_notified + 1;
     end if;
   end loop;
@@ -35937,6 +35993,11 @@ GRANT ALL ON FUNCTION "public"."_freed_car_kept_out"() TO "service_role";
 
 REVOKE ALL ON FUNCTION "public"."_freed_cause_note"("p_offer_id" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."_freed_cause_note"("p_offer_id" "uuid") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."_freed_tight_note"("p_ride_id" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_freed_tight_note"("p_ride_id" "uuid") TO "service_role";
 
 
 
