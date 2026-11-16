@@ -59,7 +59,7 @@ describe("query cache policy: key factories", () => {
     carForRide: "live", carStartLocations: "live", carLocations: "live", myUpcomingRides: "live", myChildren: "live",
     myChildrenRides: "live", myCoGuardians: "live", weekExport: "live",
   });
-  checkFactory("ridesKeys", ridesKeys, { rideChanges: "live", carNeighbours: "live" });
+  checkFactory("ridesKeys", ridesKeys, { rideChanges: "live", carNeighbours: "live", stretches: "live" });
   checkFactory("sadranKeys", sadranKeys, {
     week: "live", weekRow: "weeks", boardRides: "live", carLocations: "live", weekRequestsWithNames: "live",
     cars: "catalog", seatConfigs: "catalog", destinations: "catalog", fairnessStats: "live", mileageTotals: "live",

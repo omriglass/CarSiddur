@@ -15,4 +15,6 @@ export const ridesKeys = {
    * family, which keeps the "be back on time" neighbours (REQ §13.108 f) fresh with no extra wiring.
    */
   carNeighbours: (rideIds: readonly string[]) => [siddurKeys.all[0], "carNeighbours", [...rideIds].sort().join(",")] as const,
+  /** REQ item 246 h: one ride's stops view (`ride_stretches`), read when its sheet opens; the ride's version keeps it fresh. */
+  stretches: (rideId: string, version: number | null | undefined) => [siddurKeys.all[0], "rideStretches", rideId, version ?? null] as const,
 };

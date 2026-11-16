@@ -8,6 +8,7 @@ import type { Database, Json } from "@/integrations/supabase/types";
 
 import type { CarNeighbourRow } from "./carHandover";
 import { parseLongDetour, type LongDetour } from "./mergeQuestions";
+import { rideStretchesSchema, type RideStretches } from "./rideStretches";
 
 /**
  * Shared ride-level pieces the `siddur` and `sadran` features both need (moved out of
@@ -207,6 +208,16 @@ export interface RidePassengerInput {
   seat_kind: "adult" | "child_seat" | "booster";
   /** REQ §13.176: which way they ride (default the whole ride); their part of the ride follows it. */
   leg?: "out" | "return" | "both";
+  /** REQ item 246 h: where they get on / off on the ride's route (absent = where the leg starts / ends); for a row
+   * riding both ways the `return_*` places are the way back's. */
+  board_place_id?: string;
+  board_place_text?: string;
+  alight_place_id?: string;
+  alight_place_text?: string;
+  return_board_place_id?: string;
+  return_board_place_text?: string;
+  return_alight_place_id?: string;
+  return_alight_place_text?: string;
 }
 
 /** Appends named passengers to a ride's existing list (never replaces it); duplicates already on the ride or already served are silently skipped by the RPC. */
@@ -223,6 +234,18 @@ export async function addRidePassengers(rideId: string, expectedVersion: number,
  * `ride_passengers.id`, with this key-based, ride-scoped RPC open to any approved department
  * member on a published/live week (or a Sadran/admin who manages it).
  */
+/** REQ item 246 h: who rides which stretch of the ride and the free seats per stretch (`ride_stretches`), for the stops view. */
+export async function fetchRideStretches(rideId: string): Promise<RideStretches> {
+  const data = await rpc("ride_stretches", { p_ride_id: rideId });
+  const parsed = rideStretchesSchema.safeParse(data);
+  return parsed.success ? parsed.data : null;
+}
+
+/** REQ item 246 h: how someone on the ride rides it (`parts`: per leg null = not riding, else the board / alight places). */
+export async function setRidePersonPart(rideId: string, expectedVersion: number, key: string, parts: Record<string, unknown>): Promise<void> {
+  await rpc("set_ride_person_part", { p_ride_id: rideId, p_expected_version: expectedVersion, p_key: key, p_parts: parts as unknown as Json });
+}
+
 export async function removeRidePerson(rideId: string, expectedVersion: number, key: string): Promise<void> {
   await rpc("remove_ride_person", { p_ride_id: rideId, p_expected_version: expectedVersion, p_key: key });
 }

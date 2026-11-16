@@ -1,12 +1,17 @@
-import { X } from "lucide-react";
+import { useState } from "react";
+import { ChevronRight, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { he, tv } from "@/i18n/he";
+import { parseRideRoute, routeHasIntermediates } from "@/lib/rideRoute";
+import { formatTime } from "@/lib/time";
 
 import { canRemoveRidePerson, legMarkedName, type RidePerson } from "../ridePeople";
+import { personDialogSetup, personWhere, rideLegs, type SummaryWords } from "../rideStretches";
 import type { ServedEntry } from "../servedOf";
-import { useRemoveRidePassengerMutation } from "../hooks";
+import { useRemoveRidePassengerMutation, useRideStretchesQuery } from "../hooks";
+import { RidePersonDialog } from "./RidePersonDialog";
 
 interface RidePassengersListProps {
   rideId: string | null;
@@ -16,7 +21,7 @@ interface RidePassengersListProps {
   served: readonly ServedEntry[];
   /** Same authorization gate `add_ride_passengers()`/`remove_ride_person()` use — any department
    * member once the ride's week is public, or a Sadran/admin who manages it. Callers already
-   * compute this to decide whether to show the "+ נוסעים" button (`showAddPassengers`), so it is
+   * compute this to decide whether to show the "+ נוסע/ת" button (`showAddPassengers`), so it is
    * reused here rather than recomputed. */
   canManagePeople?: boolean;
   rideCancelled?: boolean;
@@ -26,34 +31,71 @@ interface RidePassengersListProps {
   /** A merged ride on the board: requester and companion rows have no ✕ - removing a requester here withdraws
    * the request, so they leave through "הוצא מהנסיעה" in נסיעות מאוחדות instead (owner 2026-11-09). */
   requestRowsLocked?: boolean;
+  /** REQ item 246 h: the ride's route (`BoardRide["route"]`) - each person's part of it in words, tap a name to edit. */
+  route?: unknown;
 }
+
+const WORDS: SummaryWords = {
+  outOnly: he.addPassengers.part.out,
+  returnOnly: he.addPassengers.part.return,
+  on: (name, time) => (time ? tv("rideStops.whereOnAt", { name, time }) : tv("rideStops.whereOn", { name })),
+  off: (name, time) => (time ? tv("rideStops.whereOffAt", { name, time }) : tv("rideStops.whereOff", { name })),
+};
+
+/** People whose part of the ride is edited here (the driver drives it; a requester's part is their request's). */
+const EDITABLE = new Set<RidePerson["source"]>(["companion", "child", "guest", "added"]);
 
 /**
  * ONE list of everyone on the ride (owner decision 2026-09-14: "people added directly are
  * indistinguishable at a glance from request-filed ones") — driver first (marked, never
  * removable), then every served request's requester/companions/children/guests and every
  * directly `add_ride_passengers()`-added row, all read from the unified
- * `v_board_rides.people` (`../ridePeople.ts`). Replaces the previous `source: 'added'`-only
- * list this component used to render.
+ * `v_board_rides.people` (`../ridePeople.ts`). REQ item 246 h: the people summary - each name with how they ride
+ * when it is not the whole ride ("רק הלוך", "↓ עין שמר (08:15)"), built from the stops view; tapping a name opens
+ * how they ride, with "הסרה מהנסיעה" (no separate edit button).
  */
-export function RidePassengersList({ rideId, expectedVersion, people, served, canManagePeople = false, rideCancelled = false, departmentId, weekStart, requestRowsLocked = false }: RidePassengersListProps) {
+export function RidePassengersList({ rideId, expectedVersion, people, served, canManagePeople = false, rideCancelled = false, departmentId, weekStart, requestRowsLocked = false, route }: RidePassengersListProps) {
   const mutation = useRemoveRidePassengerMutation();
+  const points = parseRideRoute(route);
+  const hasMiddle = routeHasIntermediates(points);
+  const stretchesQuery = useRideStretchesQuery(rideId, expectedVersion, hasMiddle);
+  const stretches = hasMiddle ? stretchesQuery.data : undefined;
+  const [editing, setEditing] = useState<RidePerson | null>(null);
   if (!people.length) return null;
+
+  const legs = rideLegs(points);
+  const time = (iso: string) => formatTime(new Date(iso));
+  const canEditRows = canManagePeople && !rideCancelled && rideId != null && expectedVersion != null && legs.length > 0;
+  const setup = editing ? personDialogSetup(editing, points, stretches) : null;
 
   return (
     <div className="space-y-1">
       <span className="font-medium">{he.rideDetail.passengers}</span>
       <ul className="space-y-0.5">
         {people.map((person) => {
-          const removable = rideId != null && expectedVersion != null &&
-            canRemoveRidePerson(person, { canManagePeople, rideCancelled }) &&
-            !(requestRowsLocked && (person.source === "requester" || person.source === "companion"));
+          const locked = requestRowsLocked && (person.source === "requester" || person.source === "companion");
+          const editable = canEditRows && EDITABLE.has(person.source) && !locked;
+          const removable = !editable && rideId != null && expectedVersion != null &&
+            canRemoveRidePerson(person, { canManagePeople, rideCancelled }) && !locked;
+          const where = stretches ? personWhere(person, points, stretches, WORDS, time) : "";
+          const name = stretches ? person.display_name.trim() : legMarkedName(person, served);
+          const label = (
+            <span className="min-w-0">
+              {name}
+              {person.source === "driver" ? ` · ${he.ride.driver}` : ""}
+              {where ? <span className="ms-1.5 text-xs text-muted-foreground" data-testid="ride-person-where">{where}</span> : null}
+            </span>
+          );
           return (
-            <li key={person.key} className="flex items-center justify-between gap-2">
-              <span>
-                {legMarkedName(person, served)}
-                {person.source === "driver" ? ` · ${he.ride.driver}` : ""}
-              </span>
+            <li key={person.key} className="flex items-center justify-between gap-2" data-person-key={person.key}>
+              {editable ? (
+                <button type="button" className="flex min-h-9 w-full items-center justify-between gap-2 rounded-md text-start hover:bg-muted"
+                  aria-label={tv("addPassengers.editAriaLabel", { name: person.display_name })} onClick={() => setEditing(person)}
+                  data-testid="ride-person-edit">
+                  {label}
+                  <ChevronRight className="size-4 shrink-0 text-muted-foreground rtl:rotate-180" aria-hidden="true" />
+                </button>
+              ) : label}
               {removable ? (
                 <Button
                   type="button"
@@ -77,6 +119,26 @@ export function RidePassengersList({ rideId, expectedVersion, people, served, ca
           );
         })}
       </ul>
+      {editing && setup && rideId != null && expectedVersion != null ? (
+        <RidePersonDialog
+          key={`${editing.key}:${expectedVersion}`}
+          open
+          onOpenChange={(open) => { if (!open) setEditing(null); }}
+          person={editing}
+          rideId={rideId}
+          expectedVersion={expectedVersion}
+          departmentId={departmentId ?? ""}
+          weekStart={weekStart ?? ""}
+          points={points}
+          legs={setup.legs}
+          initial={setup.initial}
+          stretches={stretches}
+          middle={setup.middle}
+          allowedPositions={setup.allowedPositions}
+          wholeLegsOnly={setup.wholeLegsOnly}
+          canRemove={canRemoveRidePerson(editing, { canManagePeople, rideCancelled })}
+        />
+      ) : null}
     </div>
   );
 }

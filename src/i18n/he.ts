@@ -942,6 +942,7 @@ export const he = {
     rideMoveNeedsAgreement: "השינוי מזיז גם נוסעים אחרים בנסיעה — צריך לאשר שדיברת איתם",
     rideSeatsExceeded: "אין מספיק מקום ברכב לכל האנשים שנבחרו",
     invalidRidePassenger: "פרטי הנוסע/ת אינם תקינים",
+    ridePersonNotEditable: "את הנהג/ת ואת מי שהגיש/ה את הבקשה לא משנים מכאן",
     rideDriverNotRemovable: "לא ניתן להסיר את הנהג/ת מהנסיעה — יש לבטל את הנסיעה במקום זאת",
     rideWeekNotPublic: "אפשר להוסיף או להסיר נוסעים רק בשבוע שפורסם",
     dayCarSwapBlocked: "החילוף נחסם — נתוני היום השתנו בינתיים, יש לפתוח את החלון הזה מחדש",

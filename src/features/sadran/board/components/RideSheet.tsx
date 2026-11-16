@@ -19,8 +19,8 @@ import { RidePassengersList } from "@/features/rides/components/RidePassengersLi
 import { RidePersonBlocks } from "@/features/rides/components/RidePersonBlocks";
 import { buildPersonBlocks, needsPersonBlocks, type RequestExtras } from "@/features/rides/ridePersonBlocks";
 import { RidePublicNotesEditor } from "@/features/rides/components/RidePublicNotesEditor";
-import { RideRoute } from "@/features/rides/components/RideRoute";
 import { RideRouteStops } from "@/features/rides/components/RideRouteStops";
+import { RideStopsView } from "@/features/rides/components/RideStopsView";
 import { parseRideRoute, routeHasIntermediates, routeOverrunsWindow } from "@/lib/rideRoute";
 import type { DestinationPreset } from "@/components/DestinationCombobox";
 
@@ -487,6 +487,18 @@ export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenCha
 
                   {/* "+ נוסעים" (REQ §13.85): appends, works on any confirmed, uncancelled ride. Same unified
                       `people` list the siddur's `RideDetailSheet` renders. */}
+                  {/* REQ item 246 h: "+ נוסע/ת" high, above the people. */}
+                  {!isPlanning && ride.id && ride.version != null && !cancelled && departmentId && weekStart ? (
+                    <AddPassengersDialog
+                      key={`${ride.id}:${ride.version}:add-passengers`}
+                      rideId={ride.id}
+                      expectedVersion={ride.version}
+                      departmentId={departmentId}
+                      weekStart={weekStart}
+                      people={peopleOf(ride)}
+                      route={ride.route}
+                    />
+                  ) : null}
                   {!merged && needsPersonBlocks(ride, servedEntries) ? personBlocks : null}
                   <RidePassengersList
                     rideId={ride.id}
@@ -498,22 +510,13 @@ export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenCha
                     departmentId={departmentId}
                     weekStart={weekStart}
                     requestRowsLocked={merged}
+                    route={ride.route}
                   />
-                  {!isPlanning && ride.id && ride.version != null && !cancelled && departmentId && weekStart ? (
-                    <AddPassengersDialog
-                      key={`${ride.id}:${ride.version}:add-passengers`}
-                      rideId={ride.id}
-                      expectedVersion={ride.version}
-                      departmentId={departmentId}
-                      weekStart={weekStart}
-                      people={peopleOf(ride)}
-                    />
-                  ) : null}
                 </TabsContent>
 
                 {/* ── יעדים ── */}
                 <TabsContent value="route" className="space-y-4">
-                  {reservation ? null : routeHasIntermediates(parseRideRoute(ride.route)) ? <RideRoute route={ride.route} served={servedEntries} /> : <RideRouteStops served={servedEntries} />}
+                  {reservation ? null : routeHasIntermediates(parseRideRoute(ride.route)) ? <RideStopsView rideId={ride.id} version={ride.version} route={ride.route} people={peopleOf(ride)} served={servedEntries} /> : <RideRouteStops served={servedEntries} />}
 
                   {/* REQ §13.94 (G8): start, end and stops per leg. */}
                   {!reservation && onSaveRoute && destinations && !isPlanning && ride.id && !cancelled && (baseRequest || !servedEntries.length) ? (

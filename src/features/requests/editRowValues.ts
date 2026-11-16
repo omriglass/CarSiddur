@@ -48,6 +48,7 @@ export function editRowToFormValues(row: RequestEditRow, weekStart: string, comp
     outStops: row.outStops ?? [],
     returnStops: row.returnStops ?? [],
     stopHours: row.stopHours ?? {},
+    riders: row.riders ?? [],
     rideTypeId: row.rideTypeId,
     preferredCarId: row.preferredCarId ?? "",
     // A kept-car request reopens as a round trip, so its legacy fields are the round trip's.

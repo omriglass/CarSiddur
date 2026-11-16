@@ -673,13 +673,11 @@ export const heMember = {
    * `add_ride_passengers()`/`remove_ride_passenger()`, 20260914170000_add_ride_passengers_rpc.sql.
    */
   addPassengers: {
-    button: "+ נוסעים",
+    /** REQ item 246 h (mock board 5): one name per "+ נוסע/ת" sits high on the ride, above the stops. */
+    button: "+ נוסע/ת",
     title: "הוספת נוסעים לנסיעה",
     submit: "הוספה",
     added: "הנוסעים נוספו לנסיעה",
-    // REQ §13.176: which way the people added here ride
-    legLabel: "לאיזה כיוון?",
-    leg: { both: "הלוך וחזור", out: "רק הלוך", return: "רק חזור" },
     removed: "הנוסע/ת הוסר/ה מהנסיעה",
     removeAriaLabel: "הסרת {{name}}",
     weekNotPublicHint: "אפשר להוסיף נוסעים רק לנסיעה מפורסמת",
@@ -687,6 +685,34 @@ export const heMember = {
      * the ride themself — replaces the siddur's old "ask to join" button on a published week. */
     self: "אני",
     selfAlreadyOn: "כבר רשומ/ה על הנסיעה הזו",
+    // REQ item 246 h (owner mock "LT1 stop hours mock", board 5): how someone rides the route
+    part: { whole: "כל הנסיעה", out: "רק הלוך", return: "רק חזור", middle: "עולה או יורד/ת באמצע…" },
+    partLabel: "איזה חלק מהנסיעה?",
+    legTitle: { out: "הלוך", return: "חזור" },
+    boardAt: "↑ עולה ב:",
+    alightAt: "↓ יורד/ת ב:",
+    skipLeg: { out: "לא נוסע/ת בהלוך", return: "לא נוסע/ת בחזור" },
+    room: "יש מקום",
+    noRoom: "אין מקום בחלק מהדרך — אפשר לבחור לעלות או לרדת באמצע.",
+    save: "שמירה",
+    saved: "נשמר",
+    removeFromRide: "הסרה מהנסיעה",
+    back: "חזרה",
+    editAriaLabel: "{{name}} — שינוי איפה עולה ויורד/ת",
+    editHint: "לוחצים על שם כדי לשנות איפה עולה ויורד/ת, או להסיר.",
+  },
+  /** REQ item 246 h: the stops view — at each place who gets off (↓) and on (↑), free seats on the next stretch. */
+  rideStops: {
+    title: "עצירות — מי עולה ומי יורד",
+    off: "↓ {{names}}",
+    on: "↑ {{names}}",
+    freeMany: "{{n}} מקומות פנויים בהמשך",
+    freeOne: "מקום אחד פנוי בהמשך",
+    full: "מלא בהמשך",
+    whereOn: "↑ {{name}}",
+    whereOnAt: "↑ {{name}} ({{time}})",
+    whereOff: "↓ {{name}}",
+    whereOffAt: "↓ {{name}} ({{time}})",
   },
   proposalScreen: {
     loading: "טוען הצעה…",

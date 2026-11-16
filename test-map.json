@@ -179,6 +179,8 @@
         "supabase/tests/fixtures/stretch_load_cases.json",
         "scripts/test-stretch-load-parity.mjs",
         "supabase/migrations/**/*rider_stretches*",
+        "supabase/tests/ride_people_parts.sql",
+        "supabase/migrations/**/*ride_people_parts*",
         "supabase/migrations/**/*route_hops*"
       ],
       "vitest": [
@@ -209,7 +211,8 @@
         "one_way_change_asks.sql",
         "one_way_pair_drop.sql",
         "stop_hours.sql",
-        "rider_stretches.sql"
+        "rider_stretches.sql",
+        "ride_people_parts.sql"
       ],
       "playwrightTags": [
         "@request-form"
@@ -941,9 +944,21 @@
         "src/features/rides/keys.ts",
         "src/features/rides/useLeaveNoDriver.tsx",
         "src/features/rides/useLeaveNoDriver.test.tsx",
-        "supabase/migrations/**/*leave_ride_fit*"
+        "supabase/migrations/**/*leave_ride_fit*",
+        "src/features/rides/rideStretches.ts",
+        "src/features/rides/rideStretches.test.ts",
+        "src/features/rides/components/RidePartsPicker.tsx",
+        "src/features/rides/components/RidePersonDialog.tsx",
+        "src/features/rides/components/RideStopsView.tsx",
+        "src/features/rides/components/RidePassengersList.test.tsx",
+        "src/features/requests/riders.ts",
+        "src/features/requests/riders.test.ts",
+        "src/features/requests/components/requestForm/RequestRidersField.tsx"
       ],
       "vitest": [
+        "src/features/rides/rideStretches.test.ts",
+        "src/features/rides/components/RidePassengersList.test.tsx",
+        "src/features/requests/riders.test.ts",
         "src/lib/ridePassengerSummary.test.ts",
         "src/lib/ridePublicDetails.test.ts",
         "src/features/siddur/ridePeople.test.ts",
@@ -956,6 +971,7 @@
         "qa20_fixes.sql",
         "qa20_low_bugs.sql",
         "ride_passengers.sql",
+        "ride_people_parts.sql",
         "split_ride_companion.sql"
       ],
       "playwrightTags": [
@@ -963,12 +979,15 @@
       ],
       "reqRefs": [
         "13.82",
-        "13.85"
+        "13.85",
+        "246"
       ],
       "qaChecklist": [
         "Name a member and a child on a manual reservation; confirm first named becomes driver (REQ §13.82)",
         "Open a ride's people list; confirm one unified list, driver-first (REQ §13.85)",
-        "Cancel a ride with several people; confirm each gets notified individually (REQ §13.68)"
+        "Cancel a ride with several people; confirm each gets notified individually (REQ §13.68)",
+        "On a ride with a stop, add a passenger who gets on midway; confirm the stops view shows ↑ at that stop and the free seats per stretch (REQ item 246 h)",
+        "Tap a passenger's name; change them to 'רק הלוך' and to getting off at a stop; confirm the summary text and the seat line (REQ item 246 h)"
       ]
     },
     {

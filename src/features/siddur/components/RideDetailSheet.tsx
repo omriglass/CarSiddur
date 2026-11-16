@@ -28,9 +28,9 @@ import { RidePassengersList } from "@/features/rides/components/RidePassengersLi
 import { RidePersonBlocks } from "@/features/rides/components/RidePersonBlocks";
 import { buildPersonBlocks, needsPersonBlocks } from "@/features/rides/ridePersonBlocks";
 import { RidePublicNotesEditor } from "@/features/rides/components/RidePublicNotesEditor";
-import { RideRoute } from "@/features/rides/components/RideRoute";
 import { RideCarHandover } from "@/features/rides/components/RideCarHandover";
 import { RideRouteStops } from "@/features/rides/components/RideRouteStops";
+import { RideStopsView } from "@/features/rides/components/RideStopsView";
 import { parseRideRoute, routeHasIntermediates } from "@/lib/rideRoute";
 import { peopleOf } from "@/features/rides/ridePeople";
 import type { HandOverCandidate } from "@/features/rides/handOver";
@@ -231,7 +231,19 @@ export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = 
               ) : null}
 
               {carModeLabel(ride, viewerId) ? <p className="text-muted-foreground">{carModeLabel(ride, viewerId)}</p> : null}
-              {routeHasIntermediates(parseRideRoute(ride.route)) ? <RideRoute route={ride.route} served={served} /> : <RideRouteStops served={served} />}
+              {/* REQ item 246 h: "+ נוסע/ת" sits high on the ride, above the stops. */}
+              {showAddPassengers && !(summary && viewerRides) && ride.id && ride.version != null ? (
+                <AddPassengersDialog
+                  key={`${ride.id}:${ride.version}:add-passengers`}
+                  rideId={ride.id}
+                  expectedVersion={ride.version}
+                  departmentId={ride.department_id ?? ""}
+                  weekStart={ride.week_start ?? ""}
+                  people={peopleOf(ride)}
+                  route={ride.route}
+                />
+              ) : null}
+              {routeHasIntermediates(parseRideRoute(ride.route)) ? <RideStopsView rideId={ride.id} version={ride.version} route={ride.route} people={peopleOf(ride)} served={served} /> : <RideRouteStops served={served} />}
               {canEditPublicNotes && !summary && ride.id && ride.version != null ? (
                 <RidePublicNotesEditor key={`${ride.id}:${ride.version}:notes`} rideId={ride.id} expectedVersion={ride.version} initialNotes={ride.notes} departmentId={ride.department_id ?? ""} weekStart={ride.week_start ?? ""} />
               ) : ride.notes ? <p className="whitespace-pre-wrap break-words">{ride.notes}</p> : null}
@@ -266,20 +278,11 @@ export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = 
                 rideCancelled={ride.status === "cancelled"}
                 departmentId={ride.department_id}
                 weekStart={ride.week_start}
+                route={ride.route}
               />
 
               {unnamedLine ? <p className="text-muted-foreground">{unnamedLine}</p> : null}
 
-              {showAddPassengers && !(summary && viewerRides) && ride.id && ride.version != null ? (
-                <AddPassengersDialog
-                  key={`${ride.id}:${ride.version}:add-passengers`}
-                  rideId={ride.id}
-                  expectedVersion={ride.version}
-                  departmentId={ride.department_id ?? ""}
-                  weekStart={ride.week_start ?? ""}
-                  people={peopleOf(ride)}
-                />
-              ) : null}
 
               {onMoveToCar && moveToCarOptions.length ? (
                 <>

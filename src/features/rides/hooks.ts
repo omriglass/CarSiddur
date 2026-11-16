@@ -20,6 +20,8 @@ import {
   leaveMergedRideFit,
   releaseRideDriver,
   removeRidePerson,
+  fetchRideStretches,
+  setRidePersonPart,
   requestMakeRoom,
   respondRideChange,
   takeOverRideDriver,
@@ -67,6 +69,29 @@ export function useAddRidePassengersMutation() {
       } else {
         for (const key of [siddurKeys.all, sadranKeys.all, requestsKeys.all]) void client.invalidateQueries({ queryKey: key });
       }
+    },
+    onError: showErrorToast,
+  });
+}
+
+/** REQ item 246 h: the stops view of one ride, only when it has places in the middle (a plain ride reads nothing). */
+export function useRideStretchesQuery(rideId: string | null | undefined, version: number | null | undefined, enabled: boolean) {
+  return useQuery({
+    queryKey: ridesKeys.stretches(rideId ?? "", version),
+    queryFn: () => fetchRideStretches(rideId as string),
+    enabled: enabled && !!rideId,
+  });
+}
+
+/** REQ item 246 h: edit how someone on the ride rides it (tap their name). */
+export function useSetRidePersonPartMutation() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ rideId, expectedVersion, personKey, parts }: {
+      rideId: string; expectedVersion: number; personKey: string; parts: Record<string, unknown>; departmentId: string; weekStart: string;
+    }) => setRidePersonPart(rideId, expectedVersion, personKey, parts),
+    onSuccess: (_data, { departmentId, weekStart, rideId }) => {
+      void invalidateWeekData(client, departmentId, weekStart, [rideId]);
     },
     onError: showErrorToast,
   });

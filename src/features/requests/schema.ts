@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { riderRowSchema } from "./riders";
 
 import { he } from "@/i18n/he";
 import { carTypeSchema, requestFallbackSchema, TRIP_SHAPES, TRIP_TYPES, timeAnchorSchema, tripTypeSchema } from "@/lib/enums";
@@ -225,6 +226,11 @@ export const requestFormSchema = z
      * and sent as `guest_passenger_names` alongside `companions`/`children`.
      */
     guestNames: z.string(),
+    /**
+     * REQ item 246 h: who of the request rides which part of its route (`request_rider_stops`; no row = the whole
+     * ride). Undefined = never loaded / touched: `riders` is not sent and the stored rows stay.
+     */
+    riders: z.array(riderRowSchema).optional(),
     /**
      * Car-now-variant-only (`RequestForm` `variant="carNow"`, UX_FLOWS.md §18): whole hours,
      * 1–12, default 2 (`../carNow.ts`). Drives `returnTime` (`departTime` + this many hours,

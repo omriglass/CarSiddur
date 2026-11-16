@@ -110,6 +110,7 @@ import { OriginField } from "./requestForm/OriginField";
 import { StopsField } from "./requestForm/StopsField";
 import { FlexibilityFields, TimeFields } from "./requestForm/TimesFlexibilityFields";
 import { PassengersFields } from "./requestForm/PassengersFields";
+import { RequestRidersField } from "./requestForm/RequestRidersField";
 import { RepeatWeeklyField } from "./requestForm/RepeatWeeklyField";
 import { readNoAutoDialogs } from "@/features/member/useNoAutoDialogs";
 import { SentenceFields } from "./requestForm/sentence/SentenceFields";
@@ -1601,7 +1602,14 @@ export function RequestForm({
           quickContext={quickContext ? { cars: quickContext.cars, showCarPicker: quickContext.showCarPicker } : undefined}
           quickWindow={{ startMs, endMs, carIsFree, isAway, otherFreeCar, oneWay }}
         />
-      ) : (
+      ) : null}
+      {/* REQ item 246 h: who of the request rides which part of its route (tap a name). */}
+      {isSentence && variant !== "carNow" && !isMultiDay ? (
+        <RequestRidersField form={form} hasReturn={needsReturn} members={companionMembers} childOptions={childrenQuery.data ?? []}
+          places={(destinationsQuery.data ?? []).map((d) => ({ id: d.id, name: d.name, aliases: d.aliases, zone: d.zone, travelMinutes: d.travel_minutes }))} />
+      ) : null}
+
+      {isSentence ? null : (
         <>
         <div className="flex items-center gap-2">
           <OriginField
@@ -1696,6 +1704,10 @@ export function RequestForm({
           namedChildCount={namedChildCount}
           guestNamesError={form.formState.errors.guestNames?.message}
         />
+        {variant !== "carNow" && !isMultiDay ? (
+          <RequestRidersField form={form} hasReturn={needsReturn} members={companionMembers} childOptions={childrenQuery.data ?? []}
+            places={(destinationsQuery.data ?? []).map((d) => ({ id: d.id, name: d.name, aliases: d.aliases, zone: d.zone, travelMinutes: d.travel_minutes }))} />
+        ) : null}
 
         {/* Luggage, flexibility and the note to the Sadran are weekly-solver inputs; a same-day
             quick/car-now request is placed immediately with nobody reading them (owner, 2026-09-14). */}

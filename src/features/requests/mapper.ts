@@ -7,6 +7,7 @@ import { keepCarActive } from "./keepCar";
 import { hasAltPlace, planBActive, planBOffered } from "./planB";
 import { isSamePlace, type RequestFormValues } from "./schema";
 import { destinationValuesToStopPayload } from "./stops";
+import { ridersOfPeople } from "./riders";
 import { stopHoursOf, stopHoursPayload } from "./stopHours";
 import { slackInterval, windowCarTimes, windowModeActive } from "./timeWindow";
 
@@ -239,6 +240,10 @@ export function toSubmitRequestPayload(
       if (!place) return stop;
       return { ...stop, ...stopHoursPayload(stopHoursOf(values.stopHours, leg, place), (time) => toInstant(values.day, time, false)) };
     }),
+    // REQ item 246 h: who rides which part (the complete list of the people still on the request); absent = untouched.
+    ...(values.riders && !options.isSeries
+      ? { riders: ridersOfPeople(values.riders, { companions: values.companions, children: values.children, guests: options.guestPassengerNames?.length ?? 0 }) }
+      : {}),
     ...(options.layout === "sentence" && !options.isSeries ? anchorPayload(values) : {}),
     ...(options.layout === "sentence" && !options.isSeries ? windowPayload(values) : {}),
     // Both layouts show plan B (REQ §13.112 e), so both send it; quick / car-now never do.

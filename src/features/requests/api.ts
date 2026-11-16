@@ -36,6 +36,7 @@ import { isHiddenOutcome, isRequestDayPublished, type PlacedLeg } from "./publis
 import type { StoredAlternative } from "./planB";
 import type { RawFreedOfferOutcome } from "./freedSlotThanks";
 import type { RequestWindow } from "./window";
+import type { RiderRow } from "./riders";
 
 /**
  * The only file in the `requests` feature that calls `supabase.from`/`.rpc`.
@@ -524,6 +525,8 @@ export interface RequestEditRow {
   returnStops: DestinationValue[];
   /** REQ item 246: the stops' fixed hours / flexibility / stays (`stopHours.ts`). */
   stopHours?: StopHoursRecord;
+  /** REQ item 246 h: who of the request rides which part of its route (`request_rider_stops`). */
+  riders?: RiderRow[];
   tripType: TripType;
   /** REQ §13.126 (g): stored as a two-way הקפצה; the form reopens it as a round trip with the flag on. */
   keepCarAtDestination?: boolean;
@@ -577,6 +580,7 @@ const EDIT_SELECT = `
   destination:destinations!requests_destination_id_fkey(name),
   origin:destinations!requests_origin_id_fkey(name),
   stops:request_stops(leg, position, place_id, place_text, fixed_anchor, fixed_at, flex_minutes, stay_minutes, place:destinations(name)),
+  riders:request_rider_stops(rider_key, leg, rides, seat_kind, board_place_id, board_place_text, alight_place_id, alight_place_text),
   window:weeks(phase, open_at, close_at),
   ride_requests(ride:rides(status))
 `;
@@ -671,6 +675,7 @@ export async function fetchRequestRowById(requestId: string): Promise<RequestEdi
     origin: { name: string } | null;
     stops: { leg: "out" | "return"; position: number; active?: boolean; place_id: string | null; place_text: string | null; place: { name: string } | null;
       fixed_anchor?: TimeAnchor | null; fixed_at?: string | null; flex_minutes?: number | null; stay_minutes?: number | null }[];
+    riders?: RiderRow[] | null;
   };
   const outStops: DestinationValue[] = row.stops
     .filter((s) => s.leg === "out")
@@ -695,6 +700,7 @@ export async function fetchRequestRowById(requestId: string): Promise<RequestEdi
   }
   return {
     stopHours,
+    riders: row.riders ?? [],
     requesterId: row.requester_id,
     requesterName: row.requester?.full_name ?? null,
     filedById: row.filed_by,

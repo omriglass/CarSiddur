@@ -372,3 +372,18 @@ it("sends requester_id only when filing for another member (REQ §13.127 a)", ()
   expect(toSubmitRequestPayload(baseValues()).requester_id).toBeUndefined();
   expect(toSubmitRequestPayload(baseValues(), { requesterId: "member-1" }).requester_id).toBe("member-1");
 });
+
+// REQ item 246 h: `riders` only when the form holds them, the rows of people still on the request, never for a series.
+describe("toSubmitRequestPayload riders", () => {
+  const rows = [
+    { rider_key: "companion:a", leg: "return" as const, rides: false },
+    { rider_key: "companion:gone", leg: "return" as const, rides: false },
+    { rider_key: "guest:1", leg: "out" as const, rides: true, alight_place_id: "x" },
+  ];
+  it("absent when never loaded; the current people's rows otherwise", () => {
+    expect("riders" in toSubmitRequestPayload(baseValues())).toBe(false);
+    const payload = toSubmitRequestPayload(baseValues({ companions: ["a"], riders: rows }), { guestPassengerNames: ["גל"] });
+    expect((payload as { riders?: unknown[] }).riders).toEqual([rows[0], rows[2]]);
+    expect("riders" in toSubmitRequestPayload(baseValues({ companions: ["a"], riders: rows }), { isSeries: true })).toBe(false);
+  });
+});

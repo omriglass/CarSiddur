@@ -11,17 +11,18 @@ import { Textarea } from "@/components/ui/textarea";
 import { useDepartmentMembers } from "@/features/auth/useDepartmentMembers";
 import { useProfile } from "@/features/auth/useProfile";
 import { fetchChildren } from "@/features/requests/api";
+import { guestPassengerNames } from "@/features/requests/quickRequest";
 import { useSession } from "@/features/auth/useSession";
 import { he, t } from "@/i18n/he";
 
+import { parseRideRoute, routeHasIntermediates } from "@/lib/rideRoute";
+
 import { buildAddPassengerInputs } from "../addPassengers";
-import { useAddRidePassengersMutation } from "../hooks";
+import { useAddRidePassengersMutation, useRideStretchesQuery } from "../hooks";
+import { addPayload, partsFor, rideLegs, roomFor, type PersonParts } from "../rideStretches";
+import { RidePartsPicker } from "./RidePartsPicker";
 
-import type { RidePassengerInput } from "../api";
 import type { RidePerson } from "../ridePeople";
-
-type PassengerLeg = NonNullable<RidePassengerInput["leg"]>;
-const PASSENGER_LEGS: readonly PassengerLeg[] = ["both", "out", "return"];
 
 /**
  * The "+ נוסעים" button (siddur `RideDetailSheet`, board `RideSheet`; REQ §13.85, owner
@@ -32,7 +33,7 @@ const PASSENGER_LEGS: readonly PassengerLeg[] = ["both", "out", "return"];
  * (which *replaces* a Sadran reservation's whole people list via `set_ride_passengers()`),
  * this only *appends* via `add_ride_passengers()` and never touches the driver.
  */
-export function AddPassengersDialog({ rideId, expectedVersion, departmentId, weekStart, people, disabled }: {
+export function AddPassengersDialog({ rideId, expectedVersion, departmentId, weekStart, people, disabled, route }: {
   rideId: string;
   expectedVersion: number;
   departmentId: string;
@@ -41,14 +42,21 @@ export function AddPassengersDialog({ rideId, expectedVersion, departmentId, wee
    * hint) when the signed-in member is already on this ride. */
   people: readonly RidePerson[];
   disabled?: boolean;
+  /** The ride's route (`BoardRide["route"]`): which part of it the people added here ride (REQ item 246 h). */
+  route?: unknown;
 }) {
   const [open, setOpen] = useState(false);
   const [includeSelf, setIncludeSelf] = useState(false);
   const [memberIds, setMemberIds] = useState<string[]>([]);
   const [childIds, setChildIds] = useState<string[]>([]);
   const [guestNames, setGuestNames] = useState("");
-  // REQ §13.176: one direction for everyone added here - there, back, or the whole ride.
-  const [leg, setLeg] = useState<PassengerLeg>("both");
+  // REQ §13.176 / item 246 h: one part of the ride for everyone added here - all of it (already chosen), one way, or
+  // getting on / off in the middle.
+  const points = parseRideRoute(route);
+  const legs = rideLegs(points);
+  const hasMiddle = routeHasIntermediates(points);
+  const [parts, setParts] = useState<PersonParts>(() => partsFor("whole", points, legs));
+  const stretchesQuery = useRideStretchesQuery(rideId, expectedVersion, open && hasMiddle);
 
   const { session } = useSession();
   const profileId = session?.user.id;
@@ -69,14 +77,14 @@ export function AddPassengersDialog({ rideId, expectedVersion, departmentId, wee
     setMemberIds([]);
     setChildIds([]);
     setGuestNames("");
-    setLeg("both");
+    setParts(partsFor("whole", points, legs));
   }
 
   function submit() {
     const passengers = [
       ...(includeSelf && profileId ? [{ person_id: profileId, display_name: profileQuery.data?.full_name ?? "", seat_kind: "adult" as const }] : []),
       ...buildAddPassengerInputs(memberIds, childIds, guestNames, membersQuery.data ?? [], childrenQuery.data ?? []),
-    ].map((passenger) => ({ ...passenger, leg }));
+    ].map((passenger) => ({ ...passenger, ...(legs.length ? addPayload(parts, points) : { leg: "both" as const }) }));
     if (!passengers.length) return;
     mutation.mutate(
       { rideId, expectedVersion, passengers, departmentId, weekStart },
@@ -91,6 +99,9 @@ export function AddPassengersDialog({ rideId, expectedVersion, departmentId, wee
   }
 
   const hasPick = includeSelf || memberIds.length > 0 || childIds.length > 0 || guestNames.trim().length > 0;
+  // the seat line: adults only (child seats depend on the car's configurations - the server decides those)
+  const adults = (includeSelf ? 1 : 0) + memberIds.length + guestPassengerNames(guestNames).length;
+  const room = hasMiddle && stretchesQuery.data && hasPick ? roomFor(parts, stretchesQuery.data, adults) : null;
 
   return (
     <>
@@ -104,7 +115,7 @@ export function AddPassengersDialog({ rideId, expectedVersion, departmentId, wee
         onSubmit={submit}
         submitLabel={he.addPassengers.submit}
         loading={mutation.isPending}
-        submitDisabled={!hasPick}
+        submitDisabled={!hasPick || room === false || (!parts.out && !parts.return && legs.length > 0)}
       >
         <div className="space-y-4">
           <div className="flex items-center gap-2">
@@ -131,22 +142,14 @@ export function AddPassengersDialog({ rideId, expectedVersion, departmentId, wee
             onChange={setChildIds}
             label={t("field.children")}
           />
-          <div className="space-y-1" role="group" aria-labelledby="add-passengers-leg-label">
-            <p id="add-passengers-leg-label" className="text-sm font-medium">{he.addPassengers.legLabel}</p>
-            <div className="flex flex-wrap gap-2">
-              {PASSENGER_LEGS.map((option) => (
-                <Button key={option} type="button" size="sm" variant={leg === option ? "default" : "outline"} aria-pressed={leg === option}
-                  data-testid={`add-passengers-leg-${option}`} onClick={() => setLeg(option)}>
-                  {he.addPassengers.leg[option]}
-                </Button>
-              ))}
-            </div>
-          </div>
           <div className="space-y-1">
             <Label htmlFor="add-passengers-guest-names">{t("quickRequest.guestPassengers")}</Label>
             <Textarea id="add-passengers-guest-names" value={guestNames} onChange={(e) => setGuestNames(e.target.value)} rows={2} />
             <p className="text-xs text-muted-foreground">{t("quickRequest.guestPassengersHelp")}</p>
           </div>
+          {legs.length ? (
+            <RidePartsPicker points={points} legs={legs} value={parts} onChange={setParts} middle={hasMiddle} room={room} />
+          ) : null}
         </div>
       </FormDialog>
     </>
