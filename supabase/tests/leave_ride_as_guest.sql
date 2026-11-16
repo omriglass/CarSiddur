@@ -74,6 +74,17 @@ begin
      and exists (select 1 from public.notifications where recipient_id = m1 and data ->> 'variant' in ('passenger_left', 'passenger_left_many')),
     'TEST 2 FAILED: the ride''s owner hears it once';
 
+  -----------------------------------------------------------------------
+  -- 3) QA run seed 3972 (R-LT1-M4): a הקפצה guest leaves - never auto-placed, so on the published day it waits on the
+  --    waiting list (not 'submitted' with nobody looking at it).
+  -----------------------------------------------------------------------
+  insert into public.requests(department_id, week_start, requester_id, filed_by, origin_id, destination_id, ride_type_id, depart_at,
+                              trip_shape, trip_type, one_way_car_mode, status, adults)
+    values (dept, w, m2, m2, home, zich, typ, d0, 'one_way_to', 'drop_off', 'passenger', 'merged', 1) returning id into qB;
+  insert into public.ride_requests(ride_id, request_id, role, leg, car_mode) values (rA, qB, 'passenger', 'out', 'passenger');
+  v_x := public.leave_ride_as_guest(rA, qB, (select version from public.rides where id = rA));
+  assert (select status = 'waitlisted' from public.requests where id = qB), format('TEST 3 FAILED: waiting list (%s)', v_x);
+
   raise notice 'leave_ride_as_guest.sql: all assertions passed';
 end $$;
 

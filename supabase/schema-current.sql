@@ -14953,7 +14953,7 @@ CREATE OR REPLACE FUNCTION "public"."leave_ride_as_guest"("p_ride_id" "uuid", "p
 declare
   v_ride public.rides%rowtype;
   v_actor uuid := (select auth.uid());
-  v_res jsonb; v_leaver uuid; v_name text;
+  v_res jsonb; v_leaver uuid; v_name text; v_prev text;
 begin
   select * into v_ride from public.rides where id = p_ride_id for update;
   if not found or v_ride.status = 'cancelled' then raise exception 'ride_not_found' using errcode = 'P0001'; end if;
@@ -14977,6 +14977,15 @@ begin
   end if;
   if (select q.status from public.requests q where q.id = p_request_id) = 'submitted' then
     v_res := public.try_auto_approve(p_request_id);
+  end if;
+  -- QA run seed 3972 (R-LT1-M4): what try_auto_approve does not place (a הקפצה never is) waits on the waiting list on a
+  -- published day, like a new request there - not 'submitted' with nobody looking at it
+  if (select q.status from public.requests q where q.id = p_request_id) = 'submitted'
+     and public.is_day_public(v_ride.department_id, v_ride.week_start, (v_ride.starts_at at time zone 'Asia/Jerusalem')::date) then
+    v_prev := coalesce(nullif(current_setting('app.system_status_transition', true), ''), 'off');
+    perform set_config('app.system_status_transition', 'on', true);
+    update public.requests set status = 'waitlisted', status_reason = 'WAITLISTED_NO_CAR' where id = p_request_id;
+    perform set_config('app.system_status_transition', v_prev, true);
   end if;
   return coalesce(v_res, '{}'::jsonb) || jsonb_build_object('request_status', (select q.status from public.requests q where q.id = p_request_id));
 end;
