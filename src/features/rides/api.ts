@@ -88,14 +88,15 @@ export async function leaveMergedRide(rideId: string, expectedVersion: number, n
 }
 
 /** R20B15: the hours a ride left with no driver would shrink to (those still on it), or null when nothing would change. */
-export async function leaveRideFitPreview(rideId: string, expectedVersion: number): Promise<{ startsAt: string; endsAt: string } | null> {
-  const data = (await rpc("leave_ride_fit_preview", { p_ride_id: rideId, p_expected_version: expectedVersion })) as { starts_at?: string; ends_at?: string } | null;
+export async function leaveRideFitPreview(rideId: string, expectedVersion: number, newDriver: string | null = null): Promise<{ startsAt: string; endsAt: string } | null> {
+  // R19B2: with a new driver (a handover), the hours the riders still on it need
+  const data = (await rpc("leave_ride_fit_preview", { p_ride_id: rideId, p_expected_version: expectedVersion, ...(newDriver ? { p_new_driver: newDriver } : {}) })) as { starts_at?: string; ends_at?: string } | null;
   return data?.starts_at && data.ends_at ? { startsAt: data.starts_at, endsAt: data.ends_at } : null;
 }
 
 /** R20B15: "לקצר" — leave with no driver and shrink the ride to the hours of those still on it, in one step. */
-export async function leaveMergedRideFit(rideId: string, expectedVersion: number): Promise<void> {
-  await rpc("leave_merged_ride_fit", { p_ride_id: rideId, p_expected_version: expectedVersion });
+export async function leaveMergedRideFit(rideId: string, expectedVersion: number, newDriver: string | null = null): Promise<void> {
+  await rpc("leave_merged_ride_fit", { p_ride_id: rideId, p_expected_version: expectedVersion, ...(newDriver ? { p_new_driver: newDriver } : {}) });
 }
 
 /**

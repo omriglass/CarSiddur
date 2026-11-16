@@ -24,11 +24,11 @@ const ride = {
   starts_at: "2026-11-16T04:45:00Z", ends_at: "2026-11-16T16:00:00Z",
 } as unknown as BoardRide;
 
-function Harness({ onNoFit }: { onNoFit?: () => void }) {
+function Harness({ onNoFit, newDriver = null }: { onNoFit?: () => void; newDriver?: { id: string; name: string } | null }) {
   const leave = useLeaveNoDriver();
   return (
     <>
-      <button type="button" onClick={() => void leave.start(ride, "דנה", () => undefined, null, onNoFit)}>go</button>
+      <button type="button" onClick={() => void leave.start(ride, "דנה", () => undefined, null, onNoFit, newDriver)}>go</button>
       {leave.dialog}
     </>
   );
@@ -70,7 +70,7 @@ describe("useLeaveNoDriver (R20B15)", () => {
   it("\"לקצר\" leaves and shrinks in one call", async () => {
     await go();
     await act(async () => { fireEvent.click(screen.getByTestId("leave-fit-shrink")); });
-    expect(m.fit).toHaveBeenCalledWith({ rideId: "r1", expectedVersion: 3, departmentId: "d", weekStart: "2026-11-15" });
+    expect(m.fit).toHaveBeenCalledWith({ rideId: "r1", expectedVersion: 3, departmentId: "d", weekStart: "2026-11-15", newDriver: null });
     expect(m.leave).not.toHaveBeenCalled();
   });
 
@@ -79,5 +79,15 @@ describe("useLeaveNoDriver (R20B15)", () => {
     await act(async () => { fireEvent.click(screen.getByTestId("leave-fit-keep")); });
     expect(m.leave).toHaveBeenCalledTimes(1);
     expect(m.fit).not.toHaveBeenCalled();
+  });
+
+  it("R19B2: a handover asks about the riders' hours and keeps the new driver either way", async () => {
+    render(<Harness newDriver={{ id: "p2", name: "ניר" }} />);
+    await act(async () => { fireEvent.click(screen.getByText("go")); });
+    expect(screen.getByText(he.rideDetail.leaveFitHandOverTitle)).toBeTruthy();
+    expect(screen.getByText("ניר ינהג/תנהג. מי שנשאר בנסיעה צריך אותה ב־07:00–07:45 — לשנות את השעות?")).toBeTruthy();
+    expect(screen.getByTestId("leave-fit-shrink").textContent).toBe("לשנות ל־07:00–07:45");
+    await act(async () => { fireEvent.click(screen.getByTestId("leave-fit-keep")); });
+    expect(m.leave).toHaveBeenCalledWith(expect.objectContaining({ newDriver: "p2" }), expect.anything());
   });
 });

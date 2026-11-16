@@ -548,6 +548,10 @@ export const heMember = {
     leaveFitBody: "בלי {{name}} הנסיעה צריכה רק {{range}}. לקצר אותה ולשחרר את הרכב בשאר השעות?",
     leaveFitShrink: "לקצר ל־{{range}}",
     leaveFitKeep: "להשאיר {{range}}",
+    // R19B2 (owner 2026-11-16): handing the ride to another rider — their hours may differ, so ask
+    leaveFitHandOverTitle: "לשנות את שעות הנסיעה?",
+    leaveFitHandOverBody: "{{driver}} ינהג/תנהג. מי שנשאר בנסיעה צריך אותה ב־{{range}} — לשנות את השעות?",
+    leaveFitChange: "לשנות ל־{{range}}",
     removeDriverConfirm: "הבקשה של {{name}} תבוטל, וכל מי שבנסיעה יקבל/תקבל הודעה.",
     removeDriverConfirmButton: "אישור",
     title: "פרטי הנסיעה",

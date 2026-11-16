@@ -30,8 +30,9 @@ export function LeaveMergedRideActions({ ride, onDone }: { ride: BoardRide; onDo
     <div className="space-y-2" data-testid="leave-merged-ride">
       <p className="text-sm font-medium">{tv("rideDetail.removeDriverTitle", { name: driverName })}</p>
       {options.candidates.map((option) => (
-        <Button key={option.id} variant="outline" className="w-full" disabled={mutation.isPending} data-testid="remove-driver-option"
-          onClick={() => setPick({ id: option.id, label: tv("rideDetail.removeDriverOption", { name: option.name }) })}>
+        <Button key={option.id} variant="outline" className="w-full" disabled={mutation.isPending || leaveNoDriver.busy} data-testid="remove-driver-option"
+          onClick={() => void leaveNoDriver.start(ride, driverName, onDone, tv("rideDetail.removeDriverConfirm", { name: driverName }),
+            () => setPick({ id: option.id, label: tv("rideDetail.removeDriverOption", { name: option.name }) }), { id: option.id, name: option.name })}>
           {tv("rideDetail.removeDriverOption", { name: option.name })}
         </Button>
       ))}

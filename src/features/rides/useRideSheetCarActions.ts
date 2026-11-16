@@ -47,7 +47,9 @@ export function useRideSheetCarActions({ departmentId, profileId, myRequestIds, 
       handOverOptions: candidates,
       onHandOver: department_id && week_start
         ? (newDriver: string) => merged
-          ? leave(newDriver)
+          // R19B2: the riders' hours may differ — ask first (falls through to leaving when nothing would change)
+          ? void leaveNoDriver.start(ride, ride.driver_name ?? "", onDone, null, () => leave(newDriver),
+              { id: newDriver, name: candidates.find((c) => c.id === newDriver)?.name ?? "" })
           : handOver.mutate({ rideId: id, expectedVersion: version, newDriver, departmentId: department_id, weekStart: week_start }, { onSuccess: onDone })
         : undefined,
       onLeaveNoDriver: merged?.noDriver && department_id && week_start ? () => void leaveNoDriver.start(ride, ride.driver_name ?? "", onDone) : undefined,

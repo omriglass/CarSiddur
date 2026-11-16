@@ -20,6 +20,8 @@ interface Ask {
   fit: { startsAt: string; endsAt: string };
   /** Shown under the question (the Sadran's "הבקשה של X תבוטל…"), when the question replaces that confirmation. */
   note: string | null;
+  /** R19B2: the rider who takes the wheel (a handover); null = nobody drives. */
+  newDriver: { id: string; name: string } | null;
   onDone: () => void;
 }
 
@@ -37,13 +39,14 @@ export function useLeaveNoDriver() {
    * (`note` is shown under it); otherwise leaves at once — or, given `onNoFit`, hands back to the caller's own
    * confirmation instead.
    */
-  async function start(ride: BoardRide, driverName: string, onDone: () => void, note: string | null = null, onNoFit?: () => void): Promise<void> {
+  async function start(ride: BoardRide, driverName: string, onDone: () => void, note: string | null = null, onNoFit?: () => void,
+    newDriver: { id: string; name: string } | null = null): Promise<void> {
     if (!ride.id || ride.version == null || !ride.department_id || !ride.week_start || !ride.starts_at || !ride.ends_at) return;
     const base = { id: ride.id, version: ride.version, departmentId: ride.department_id, weekStart: ride.week_start, startsAt: ride.starts_at, endsAt: ride.ends_at };
     setChecking(true);
     let preview: Ask["fit"] | null = null;
     try {
-      preview = await leaveRideFitPreview(base.id, base.version);
+      preview = await leaveRideFitPreview(base.id, base.version, newDriver?.id ?? null);
     } catch {
       preview = null;
     } finally {
@@ -51,22 +54,23 @@ export function useLeaveNoDriver() {
     }
     if (!preview) {
       if (onNoFit) onNoFit();
-      else keep(base, onDone);
+      else keep(base, onDone, newDriver?.id ?? null);
       return;
     }
-    setAsk({ ride: base, driverName, fit: preview, note, onDone });
+    setAsk({ ride: base, driverName, fit: preview, note, onDone, newDriver });
   }
 
-  function keep(ride: Ask["ride"], onDone: () => void) {
-    leave.mutate({ rideId: ride.id, expectedVersion: ride.version, newDriver: null, departmentId: ride.departmentId, weekStart: ride.weekStart },
+  function keep(ride: Ask["ride"], onDone: () => void, newDriver: string | null = null) {
+    leave.mutate({ rideId: ride.id, expectedVersion: ride.version, newDriver, departmentId: ride.departmentId, weekStart: ride.weekStart },
       { onSuccess: onDone });
   }
 
   function shrink(current: Ask) {
     const { ride } = current;
-    const args = { p_ride_id: ride.id, p_expected_version: ride.version };
+    const newDriver = current.newDriver?.id ?? null;
+    const args = { p_ride_id: ride.id, p_expected_version: ride.version, ...(newDriver ? { p_new_driver: newDriver } : {}) };
     void gate.run({ action: "leave_merged_ride_fit", args }, (keepOut) => {
-      void withFreedCarChoice(keepOut, () => fit.mutateAsync({ rideId: ride.id, expectedVersion: ride.version, departmentId: ride.departmentId, weekStart: ride.weekStart }))
+      void withFreedCarChoice(keepOut, () => fit.mutateAsync({ rideId: ride.id, expectedVersion: ride.version, departmentId: ride.departmentId, weekStart: ride.weekStart, newDriver }))
         .then(current.onDone, () => undefined);
     });
   }
@@ -77,8 +81,10 @@ export function useLeaveNoDriver() {
       <ConfirmDialog
         open={!!ask}
         onOpenChange={(open) => { if (!open) setAsk(null); }}
-        title={he.rideDetail.leaveFitTitle}
-        description={ask ? tv("rideDetail.leaveFitBody", { name: ask.driverName, range: range(ask.fit.startsAt, ask.fit.endsAt) }) : undefined}
+        title={ask?.newDriver ? he.rideDetail.leaveFitHandOverTitle : he.rideDetail.leaveFitTitle}
+        description={ask ? (ask.newDriver
+          ? tv("rideDetail.leaveFitHandOverBody", { driver: ask.newDriver.name, range: range(ask.fit.startsAt, ask.fit.endsAt) })
+          : tv("rideDetail.leaveFitBody", { name: ask.driverName, range: range(ask.fit.startsAt, ask.fit.endsAt) })) : undefined}
         cancelLabel={he.freedCar.confirmBack}
         hideConfirm
         loading={busy}
@@ -89,10 +95,10 @@ export function useLeaveNoDriver() {
           <div className="space-y-2">
             <Button className="w-full" disabled={busy} data-testid="leave-fit-shrink"
               onClick={() => { const current = ask; setAsk(null); shrink(current); }}>
-              <bdi>{tv("rideDetail.leaveFitShrink", { range: range(ask.fit.startsAt, ask.fit.endsAt) })}</bdi>
+              <bdi>{tv(ask.newDriver ? "rideDetail.leaveFitChange" : "rideDetail.leaveFitShrink", { range: range(ask.fit.startsAt, ask.fit.endsAt) })}</bdi>
             </Button>
             <Button className="w-full" variant="outline" disabled={busy} data-testid="leave-fit-keep"
-              onClick={() => { const current = ask; setAsk(null); keep(current.ride, current.onDone); }}>
+              onClick={() => { const current = ask; setAsk(null); keep(current.ride, current.onDone, current.newDriver?.id ?? null); }}>
               <bdi>{tv("rideDetail.leaveFitKeep", { range: range(ask.ride.startsAt, ask.ride.endsAt) })}</bdi>
             </Button>
           </div>

@@ -102,8 +102,8 @@ export function useLeaveMergedRideMutation() {
 export function useLeaveMergedRideFitMutation() {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: ({ rideId, expectedVersion }: { rideId: string; expectedVersion: number; departmentId: string; weekStart: string }) =>
-      leaveMergedRideFit(rideId, expectedVersion),
+    mutationFn: ({ rideId, expectedVersion, newDriver = null }: { rideId: string; expectedVersion: number; departmentId: string; weekStart: string; newDriver?: string | null }) =>
+      leaveMergedRideFit(rideId, expectedVersion, newDriver),
     onSuccess: (_data, { departmentId, weekStart, rideId }) => {
       void invalidateWeekData(client, departmentId, weekStart, [rideId]);
     },

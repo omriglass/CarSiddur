@@ -5,6 +5,8 @@
 --       free gap from midnight; "kept out of the app" opens the board on its day
 --   U3  a guest's moved return past the host's ride: refused with the ride's return offered; with `guest_ride_return`
 --       the guest stays on the ride (the typed return a wish), nothing else moves
+--   R19B2 handing a merged ride to another rider offers the riders' hours (preview with the new driver), and the fit
+--       applies them with that driver; without the fit the hours stay
 --   U9  the week's Sadran saves the request form of a request whose ride is confirmed on a published day
 -- Transactional, rolled back at the end.
 begin;
@@ -116,6 +118,31 @@ begin
       format('U3: the guest stays on the ride, got %s', res);
     assert (select ends_at = ((w + 2) + time '12:00') at time zone 'Asia/Jerusalem' from public.rides where id = r), 'U3: the ride did not move';
     raise notice 'U3 passed: a guest may come back with the ride';
+  end;
+  -- ======== R19B2 ========
+  declare
+    m3 uuid := '00000000-0000-0000-0000-000000000101'; qa uuid; qb uuid; qc2 uuid; rr2 uuid; pv jsonb;
+  begin
+    insert into public.requests(department_id, week_start, requester_id, filed_by, origin_id, destination_id, ride_type_id, depart_at, return_at, trip_shape, trip_type, status)
+      values (dept, w, m1, m1, home, haifa, typ, ((w+4)+time '06:15') at time zone 'Asia/Jerusalem', ((w+4)+time '16:00') at time zone 'Asia/Jerusalem', 'round_trip','round_trip','assigned') returning id into qa;
+    insert into public.requests(department_id, week_start, requester_id, filed_by, origin_id, destination_id, ride_type_id, depart_at, return_at, trip_shape, trip_type, status)
+      values (dept, w, m2, m2, home, haifa, typ, ((w+4)+time '06:30') at time zone 'Asia/Jerusalem', ((w+4)+time '14:00') at time zone 'Asia/Jerusalem', 'round_trip','round_trip','merged') returning id into qb;
+    insert into public.requests(department_id, week_start, requester_id, filed_by, origin_id, destination_id, ride_type_id, depart_at, return_at, trip_shape, trip_type, status)
+      values (dept, w, m3, m3, home, haifa, typ, ((w+4)+time '07:00') at time zone 'Asia/Jerusalem', ((w+4)+time '13:00') at time zone 'Asia/Jerusalem', 'round_trip','round_trip','merged') returning id into qc2;
+    insert into public.rides(department_id, week_start, car_id, starts_at, ends_at, origin_id, destination_id, driver_id, status, created_by)
+      values (dept, w, '00000000-0000-0000-0000-000000000042', ((w+4)+time '06:15') at time zone 'Asia/Jerusalem', ((w+4)+time '16:00') at time zone 'Asia/Jerusalem', home, home, m1, 'confirmed', manager) returning id into rr2;
+    insert into public.ride_requests(ride_id, request_id, role, leg, car_mode) values (rr2, qa, 'driver', 'both', 'keep'), (rr2, qb, 'passenger', 'both', 'passenger'), (rr2, qc2, 'passenger', 'both', 'passenger');
+    set constraints all immediate; set constraints all deferred;
+    perform set_config('request.jwt.claims', jsonb_build_object('sub', m1, 'role', 'authenticated')::text, true);
+    pv := public.leave_ride_fit_preview(rr2, (select version from public.rides where id = rr2), m2);
+    assert (pv ->> 'starts_at')::timestamptz = ((w+4)+time '06:30') at time zone 'Asia/Jerusalem'
+       and (pv ->> 'ends_at')::timestamptz = ((w+4)+time '14:00') at time zone 'Asia/Jerusalem', format('R19B2: the riders'' hours are offered, got %s', pv);
+    assert (select ends_at = ((w+4)+time '16:00') at time zone 'Asia/Jerusalem' and driver_id = m1 from public.rides where id = rr2), 'R19B2: the preview changed nothing';
+    perform public.leave_merged_ride_fit(rr2, (select version from public.rides where id = rr2), m2);
+    set constraints all immediate; set constraints all deferred;
+    assert (select driver_id = m2 and starts_at = ((w+4)+time '06:30') at time zone 'Asia/Jerusalem' and ends_at = ((w+4)+time '14:00') at time zone 'Asia/Jerusalem'
+            from public.rides where id = rr2), 'R19B2: the new driver drives at the riders'' hours';
+    raise notice 'R19B2 passed: the handover asks about the riders'' hours';
   end;
 end $$;
 rollback;
