@@ -531,6 +531,7 @@
         "day_car_swap.sql",
         "car_swap_from_hour.sql",
         "car_swap_repeat_notice.sql",
+        "fixes_2026_11_16.sql",
         "car_handover_notes.sql",
         "unpublished_day_requests.sql",
         "ride_change_settles.sql",

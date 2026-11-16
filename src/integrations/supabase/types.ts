@@ -5921,6 +5921,10 @@ export type Database = {
       _frag: { Args: { _key: string; _vars?: Json }; Returns: string }
       _freed_car_kept_out: { Args: never; Returns: boolean }
       _freed_cause_note: { Args: { p_offer_id: string }; Returns: string }
+      _freed_offer_hours: {
+        Args: { p_offer_id: string; p_request_ids: string[] }
+        Returns: string
+      }
       _freed_tight_note: { Args: { p_ride_id: string }; Returns: string }
       _guest_edit_stays: {
         Args: {
@@ -7204,14 +7208,32 @@ export type Database = {
         }
         Returns: Json
       }
-      leave_merged_ride_fit: {
-        Args: { p_expected_version: number; p_ride_id: string }
-        Returns: Json
-      }
-      leave_ride_fit_preview: {
-        Args: { p_expected_version: number; p_ride_id: string }
-        Returns: Json
-      }
+      leave_merged_ride_fit:
+        | {
+            Args: { p_expected_version: number; p_ride_id: string }
+            Returns: Json
+          }
+        | {
+            Args: {
+              p_expected_version: number
+              p_new_driver: string
+              p_ride_id: string
+            }
+            Returns: Json
+          }
+      leave_ride_fit_preview:
+        | {
+            Args: { p_expected_version: number; p_ride_id: string }
+            Returns: Json
+          }
+        | {
+            Args: {
+              p_expected_version: number
+              p_new_driver: string
+              p_ride_id: string
+            }
+            Returns: Json
+          }
       log_car_care: {
         Args: {
           _car_id: string
