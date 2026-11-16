@@ -7,6 +7,7 @@ import { keepCarActive } from "./keepCar";
 import { hasAltPlace, planBActive, planBOffered } from "./planB";
 import { isSamePlace, type RequestFormValues } from "./schema";
 import { destinationValuesToStopPayload } from "./stops";
+import { stopHoursOf, stopHoursPayload } from "./stopHours";
 import { slackInterval, windowCarTimes, windowModeActive } from "./timeWindow";
 
 import type { SubmitRequestPayload } from "./api";
@@ -226,10 +227,18 @@ export function toSubmitRequestPayload(
     // previously-added stop — `submit_request` only leaves existing stops untouched when the
     // key is entirely absent from the payload. REQ §13.97: the complete list for both legs — a
     // one-way request still sends its (inactive) return stops so the server keeps them.
+    // REQ item 246: each stop's hours ride along (a multi-day request sends places only: its
+    // hours would name one day, and the server keeps what is stored).
     stops: [
       ...destinationValuesToStopPayload(values.outStops, "out"),
       ...destinationValuesToStopPayload(values.returnStops, "return"),
-    ],
+    ].map((stop, i) => {
+      if (options.isSeries) return stop;
+      const leg = stop.leg;
+      const place = (leg === "out" ? values.outStops : values.returnStops)[leg === "out" ? i : i - values.outStops.length];
+      if (!place) return stop;
+      return { ...stop, ...stopHoursPayload(stopHoursOf(values.stopHours, leg, place), (time) => toInstant(values.day, time, false)) };
+    }),
     ...(options.layout === "sentence" && !options.isSeries ? anchorPayload(values) : {}),
     ...(options.layout === "sentence" && !options.isSeries ? windowPayload(values) : {}),
     // Both layouts show plan B (REQ §13.112 e), so both send it; quick / car-now never do.

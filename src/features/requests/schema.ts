@@ -109,6 +109,16 @@ export const requestFormSchema = z
     outStops: z.array(destinationValueSchema).max(10),
     /** Same shape, destination → stop → … → origin — only shown/submittable when the trip has a return. */
     returnStops: z.array(destinationValueSchema).max(10),
+    /**
+     * REQ item 246 (LT1): a stop's fixed hour / flexibility / stay, keyed by leg and place
+     * (`stopHours.ts` `stopHoursKey`) so every writer of the stop lists keeps them attached.
+     */
+    stopHours: z.record(z.string(), z.object({
+      anchor: timeAnchorSchema.nullable(),
+      time: z.string().nullable(),
+      flex: z.number(),
+      stay: z.number().nullable(),
+    })).optional(),
     rideTypeId: z.string().min(1, he.request.rideTypeRequired),
     preferredCarId: z.string().optional(),
     tripShape: z.enum(REQUEST_TRIP_SHAPES),
@@ -386,6 +396,7 @@ export const REQUEST_FORM_DEFAULTS: Omit<RequestFormValues, "departmentId" | "we
   includeMe: true,
   outStops: [],
   returnStops: [],
+  stopHours: {},
 };
 
 /**

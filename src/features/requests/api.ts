@@ -6,9 +6,12 @@ import { personBusyYesCount, withPersonBusyRetry } from "@/lib/personBusy";
 import { askShortTurnaround, parseShortTurnaround } from "@/lib/shortTurnaround";
 import { withSmallTrunkRetry } from "@/lib/smallTrunk";
 import { siddurCarName } from "@/lib/siddurCarName";
+import { formatTime } from "@/lib/time";
 
 import { splitMemberProposals } from "./pendingProposal";
 import { extraAdultsFromStored, unnamedChildSeatsFromStored } from "./seatCounts";
+import { withStopHours, type StopHoursRecord } from "./stopHours";
+import type { StopPayloadItem } from "./stops";
 import { joinableRideRowSchema, requestHistoryEventSchema, templateSuggestionRowSchema, type RequestHistoryEvent, type TemplateSuggestionRow } from "./schema";
 
 import type { DestinationValue } from "@/components/DestinationCombobox";
@@ -519,6 +522,8 @@ export interface RequestEditRow {
   /** REQ §13.93 "Multi-stop rides": prefill-ready form values (`RequestForm.tsx`'s `mapEditRowToValues`). */
   outStops: DestinationValue[];
   returnStops: DestinationValue[];
+  /** REQ item 246: the stops' fixed hours / flexibility / stays (`stopHours.ts`). */
+  stopHours?: StopHoursRecord;
   tripType: TripType;
   /** REQ §13.126 (g): stored as a two-way הקפצה; the form reopens it as a round trip with the flag on. */
   keepCarAtDestination?: boolean;
@@ -571,7 +576,7 @@ const EDIT_SELECT = `
   template:request_templates!requests_template_id_fkey(schedule, repeat_every_weeks),
   destination:destinations!requests_destination_id_fkey(name),
   origin:destinations!requests_origin_id_fkey(name),
-  stops:request_stops(leg, position, place_id, place_text, place:destinations(name)),
+  stops:request_stops(leg, position, place_id, place_text, fixed_anchor, fixed_at, flex_minutes, stay_minutes, place:destinations(name)),
   window:weeks(phase, open_at, close_at),
   ride_requests(ride:rides(status))
 `;
@@ -664,7 +669,8 @@ export async function fetchRequestRowById(requestId: string): Promise<RequestEdi
     template?: { schedule: "weekly" | "dated"; repeat_every_weeks: number } | null;
     destination: { name: string } | null;
     origin: { name: string } | null;
-    stops: { leg: "out" | "return"; position: number; active?: boolean; place_id: string | null; place_text: string | null; place: { name: string } | null }[];
+    stops: { leg: "out" | "return"; position: number; active?: boolean; place_id: string | null; place_text: string | null; place: { name: string } | null;
+      fixed_anchor?: TimeAnchor | null; fixed_at?: string | null; flex_minutes?: number | null; stay_minutes?: number | null }[];
   };
   const outStops: DestinationValue[] = row.stops
     .filter((s) => s.leg === "out")
@@ -676,7 +682,19 @@ export async function fetchRequestRowById(requestId: string): Promise<RequestEdi
     .filter((s) => s.leg === "return")
     .sort((a, b) => a.position - b.position)
     .map((s) => (s.place_id ? { presetId: s.place_id, name: s.place?.name ?? "" } : { freeText: s.place_text ?? "" }));
+  // REQ item 246: the stop hours, keyed by leg and place like the form keeps them.
+  let stopHours: StopHoursRecord = {};
+  for (const stop of row.stops) {
+    const value: DestinationValue = stop.place_id ? { presetId: stop.place_id, name: stop.place?.name ?? "" } : { freeText: stop.place_text ?? "" };
+    stopHours = withStopHours(stopHours, stop.leg, value, {
+      anchor: stop.fixed_anchor ?? null,
+      time: stop.fixed_at ? formatTime(new Date(stop.fixed_at)) : null,
+      flex: stop.flex_minutes ?? 0,
+      stay: stop.stay_minutes ?? null,
+    });
+  }
   return {
+    stopHours,
     requesterId: row.requester_id,
     requesterName: row.requester?.full_name ?? null,
     filedById: row.filed_by,
@@ -814,7 +832,8 @@ export interface SubmitRequestPayload {
    * leg; the key must always be present on edit — its absence leaves existing stops untouched
    * (`submit_request`'s own convention, same as `notes`) — `mapper.ts` always sends it.
    */
-  stops?: { leg: "out" | "return"; place_id?: string; place_text?: string }[];
+  /** REQ item 246: each stop may carry its hours (`StopPayloadItem`). */
+  stops?: StopPayloadItem[];
   depart_at?: string;
   return_at?: string;
   /**
@@ -1591,6 +1610,13 @@ export interface RoutePreviewPoint {
  */
 export async function fetchRouteMinutesPreview(departmentId: string, points: readonly RoutePreviewPoint[]): Promise<number> {
   return rpc("route_minutes_preview", { p_department_id: departmentId, p_points: points as unknown as Json });
+}
+
+/** REQ item 246: minutes of each hop of an unsaved route and the department's stop minutes (`route_hops_preview`). */
+export async function fetchRouteHopsPreview(departmentId: string, points: readonly RoutePreviewPoint[]): Promise<{ hops: number[]; stopMinutes: number }> {
+  const raw = (await rpc("route_hops_preview", { p_department_id: departmentId, p_points: points as unknown as Json })) as { hops?: unknown; stop_minutes?: unknown } | null;
+  const hops = Array.isArray(raw?.hops) ? raw.hops.map((m) => (typeof m === "number" ? m : 60)) : [];
+  return { hops, stopMinutes: typeof raw?.stop_minutes === "number" ? raw.stop_minutes : 5 };
 }
 
 /** REQ §13.204: one request's story (`request_history`), oldest first; events of unknown shape are dropped. */

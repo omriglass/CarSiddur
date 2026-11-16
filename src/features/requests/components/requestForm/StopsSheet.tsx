@@ -14,6 +14,11 @@ import { he, tv } from "@/i18n/he";
 import { cn } from "@/lib/utils";
 
 import type { RequestFormValues } from "../../schema";
+import { stopHoursOf, withStopHours, type StopHoursRecord } from "../../stopHours";
+import { timeToMinutes } from "../../duration";
+import { AddStopOptions, HourChip, StopHoursEditor, type PickedOption } from "./StopHours";
+import { clock, durationLabel } from "./stopHoursLabels";
+import { useStopSchedule } from "./useStopSchedule";
 import { FieldSheet } from "./sentence/FieldSheet";
 import { PlacePicker, type PlaceOption } from "./sentence/PlacePicker";
 import { placeName, legAt, type Leg, fromBlocks, insertStop, addPosition, moveStop, nudgeStop, removeBlock, replaceStop, toBlocks, type StopBlock } from "./stopsModel";
@@ -38,6 +43,11 @@ export function StopsSheet({ form, places, hasReturn, open, onOpenChange }: Stop
   const hiddenReturn = returnStops ?? [];
   const blocks = toBlocks({ outStops: outStops ?? [], returnStops: hiddenReturn }, hasReturn);
   const [picking, setPicking] = useState<Picking>(null);
+  // REQ item 246: the stop whose hours are being edited, and a picked place waiting for "where on the route?".
+  const [editingHours, setEditingHours] = useState<number | null>(null);
+  const [addingPlace, setAddingPlace] = useState<DestinationValue | null>(null);
+  const stopHours = useWatch({ control: form.control, name: "stopHours" }) as StopHoursRecord | undefined;
+  const timing = useStopSchedule(form, hasReturn, open);
   const [drag, setDrag] = useState<{ from: number; at: number } | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
@@ -53,7 +63,7 @@ export function StopsSheet({ form, places, hasReturn, open, onOpenChange }: Stop
   }
 
   function close(next: boolean) {
-    if (!next) { setPicking(null); setDrag(null); }
+    if (!next) { setPicking(null); setDrag(null); setEditingHours(null); setAddingPlace(null); }
     onOpenChange(next);
   }
 
@@ -62,7 +72,9 @@ export function StopsSheet({ form, places, hasReturn, open, onOpenChange }: Stop
     if (picking.kind === "origin" || picking.kind === "destination") {
       form.setValue(picking.kind, value, { shouldDirty: true, shouldValidate: true });
     } else if (picking.kind === "add") {
-      commit(insertStop(blocks, picking.index, value));
+      // REQ item 246: with the route priced, offer every position with what changes (owner 2026-11-16).
+      if (timing.schedule && timing.hops && timing.values) setAddingPlace(value);
+      else commit(insertStop(blocks, picking.index, value));
     } else if (picking.kind === "edit") {
       commit(replaceStop(blocks, picking.index, value));
     }
@@ -79,11 +91,80 @@ export function StopsSheet({ form, places, hasReturn, open, onOpenChange }: Stop
   }
 
   const addIndex = addPosition(blocks);
+
+  // REQ item 246: the schedule point of a block (keys as in SQL request_schedule).
+  const destinationAt = blocks.findIndex((b) => b.kind === "destination");
+  const outValues = outStops ?? [];
+  function nameOf(key: string): string {
+    if (key === "start" || key === "end") return originName;
+    if (key === "dest" || key === "back") return destinationName;
+    const [leg, pos] = key.split(":");
+    const list = leg === "out" ? outValues : hiddenReturn;
+    return placeName(list[Number(pos) - 1], places);
+  }
+  const pointOf = (key: string) => timing.schedule?.points.find((p) => p.key === key);
+  const fixedOf = (key: string) => timing.points.find((p) => p.key === key)?.fixed ?? null;
+  function stopKey(index: number): { leg: Leg; key: string; value: DestinationValue } | null {
+    const block = blocks[index];
+    if (!block || block.kind !== "stop") return null;
+    const leg = legAt(blocks, index);
+    const position = leg === "out" ? index : index - destinationAt;
+    return { leg, key: `${leg}:${position}`, value: block.value };
+  }
+  function chipFor(key: string, which: "arrive" | "leave", testId: string, onClick?: () => void, isOpen?: boolean) {
+    const point = pointOf(key);
+    if (!point) return null;
+    const fixed = fixedOf(key);
+    const label = fixed
+      ? (fixed.anchor === "leave" ? he.request.stopHoursLeaveAt : key === "end" ? he.request.stopHoursHomeBy : he.request.stopHoursArriveBy)
+      : which === "leave" ? he.request.stopHoursEstLeave : he.request.stopHoursEstArrive;
+    const minutes = fixed ? fixed.at : which === "leave" ? point.leave : point.arrive;
+    return (
+      <HourChip
+        label={label} minutes={minutes} fixed={!!fixed} flex={fixed?.flex} onClick={onClick} open={isOpen} testId={testId}
+        ariaLabel={onClick ? tv("request.stopHoursEditAria", { place: nameOf(key) }) : undefined}
+      />
+    );
+  }
+  function applyPicked(picked: PickedOption) {
+    if (!addingPlace) return;
+    const blockIndex = picked.leg === "out" ? picked.beforeIndex : picked.beforeIndex - 1;
+    let hours = stopHours;
+    for (const s of picked.shortened) {
+      const [leg, pos] = s.key.split(":");
+      const value = (leg === "out" ? outValues : hiddenReturn)[Number(pos) - 1];
+      if (!value || (leg !== "out" && leg !== "return")) continue;
+      const current = stopHoursOf(hours, leg, value);
+      if (current.stay !== null) hours = withStopHours(hours, leg, value, { ...current, stay: Math.max(1, current.stay - s.minutes) });
+    }
+    if (hours !== stopHours) form.setValue("stopHours", hours, { shouldDirty: true });
+    commit(insertStop(blocks, blockIndex, addingPlace));
+    setAddingPlace(null);
+  }
+  const fixedCount = timing.points.filter((p) => p.fixed).length;
+  const conflict = timing.schedule?.conflict ?? null;
   const pickerPlaces = picking && picking.kind === "origin" ? places : placesWithoutOrigin;
 
   return (
     <FieldSheet open={open} onOpenChange={close} title={he.request.stopsEditorTitle} testId="stops-sheet">
-      {picking ? (
+      {addingPlace && timing.schedule && timing.hops && timing.values ? (
+        <div className="space-y-2">
+          <AddStopOptions
+            departmentId={timing.departmentId}
+            values={timing.values}
+            points={timing.points}
+            hops={timing.hops}
+            place={addingPlace}
+            placeName={placeName(addingPlace, places)}
+            nameOf={nameOf}
+            defaultStart={timing.values.departTime ? timeToMinutes(timing.values.departTime) : 8 * 60}
+            onPick={applyPicked}
+          />
+          <button type="button" className="text-sm text-muted-foreground underline-offset-2 hover:underline" onClick={() => setAddingPlace(null)}>
+            {he.request.stopBackToList}
+          </button>
+        </div>
+      ) : picking ? (
         <div className="space-y-2">
           <PlacePicker places={pickerPlaces} value={null} onPick={pick} placeholder={he.request.stopPlaceholder} />
           <button type="button" className="text-sm text-muted-foreground underline-offset-2 hover:underline" onClick={() => setPicking(null)}>
@@ -160,6 +241,10 @@ export function StopsSheet({ form, places, hasReturn, open, onOpenChange }: Stop
                         >
                           {placeName(block.value, places)}
                         </button>
+                        {(() => {
+                          const sk = stopKey(index);
+                          return sk ? chipFor(sk.key, "arrive", "stop-hour", () => setEditingHours(editingHours === index ? null : index), editingHours === index) : null;
+                        })()}
                         <button
                           type="button"
                           aria-label={`${he.request.removeStop}: ${placeName(block.value, places)}`}
@@ -171,16 +256,68 @@ export function StopsSheet({ form, places, hasReturn, open, onOpenChange }: Stop
                         </button>
                       </div>
                     ) : (
+                      <div className="flex items-center gap-1 pe-1">
                       <button
                         type="button"
-                        className={`min-h-11 w-full truncate px-3 text-start text-sm font-medium rounded-md ${block.kind === "destination" ? "bg-accent" : "bg-primary/10"}`}
+                        className={`min-h-11 min-w-0 flex-1 truncate px-3 text-start text-sm font-medium rounded-md ${block.kind === "destination" ? "bg-accent" : "bg-primary/10"}`}
                         data-testid={`stop-block-${block.kind === "origin" ? "origin" : block.kind === "originEnd" ? "origin-end" : "destination"}`}
                         aria-label={tv("request.stopChangeFixed", { place: block.kind === "destination" ? destinationName || he.field.destination : originName })}
                         onClick={() => setPicking({ kind: block.kind === "destination" ? "destination" : "origin" })}
                       >
                         {block.kind === "destination" ? destinationName || he.field.destination : originName}
                       </button>
+                      {/* REQ item 246: the ends' hours come from the form's own times (edited there). */}
+                      {block.kind === "origin" ? chipFor("start", "leave", "end-hour-start")
+                        : block.kind === "originEnd" ? chipFor("end", "arrive", "end-hour-end")
+                        : (
+                          <>
+                            {chipFor("dest", "arrive", "end-hour-dest")}
+                            {hasReturn ? chipFor("back", "leave", "end-hour-back") : null}
+                          </>
+                        )}
+                      </div>
                     )}
+                    {block.kind === "destination" && pointOf("dest") && hasReturn ? (
+                      <div className="px-3 pb-1 text-xs text-muted-foreground">
+                        {tv(pointOf("dest")!.stayWorkedOut ? "request.stopHoursStayWorkedOut" : "request.stopHoursStayGiven", { duration: durationLabel(pointOf("dest")!.stay) })}
+                      </div>
+                    ) : null}
+                    {(() => {
+                      const sk = stopKey(index);
+                      const point = sk ? pointOf(sk.key) : undefined;
+                      if (!sk) return null;
+                      const fixed = fixedOf(sk.key);
+                      return (
+                        <div className="space-y-1 px-2 pb-1">
+                          {point ? (
+                            <div className="text-xs text-muted-foreground" data-testid="stop-stay">
+                              {tv(point.stayWorkedOut ? "request.stopHoursStayWorkedOut" : "request.stopHoursStayGiven", { duration: durationLabel(point.stay) })}
+                              {" · "}
+                              {tv("request.stopHoursLeavesAt", { time: clock(point.leave) })}
+                            </div>
+                          ) : null}
+                          {point && point.early > 0 ? (
+                            <div className="w-fit rounded bg-green-100 px-1.5 text-xs text-green-900 dark:bg-green-900/40 dark:text-green-100">{tv("request.stopHoursEarly", { minutes: String(point.early) })}</div>
+                          ) : null}
+                          {point && fixed && point.flexUsed > 0 ? (
+                            <div className="w-fit rounded bg-amber-100 px-1.5 text-xs text-amber-950 dark:bg-amber-900/40 dark:text-amber-100">
+                              {tv("request.stopHoursFlexUsed", { time: clock(fixed.at + point.flexUsed), until: clock(fixed.at + fixed.flex) })}
+                            </div>
+                          ) : null}
+                          {editingHours === index ? (
+                            <StopHoursEditor
+                              hours={stopHoursOf(stopHours, sk.leg, sk.value)}
+                              shownMinutes={fixed ? fixed.at : point?.arrive ?? 8 * 60}
+                              onCancel={() => setEditingHours(null)}
+                              onApply={(hours) => {
+                                form.setValue("stopHours", withStopHours(stopHours, sk.leg, sk.value, hours), { shouldDirty: true });
+                                setEditingHours(null);
+                              }}
+                            />
+                          ) : null}
+                        </div>
+                      );
+                    })()}
                   </div>
                   </div>
                 </Fragment>
@@ -197,6 +334,19 @@ export function StopsSheet({ form, places, hasReturn, open, onOpenChange }: Stop
           >
             {he.request.addStopHere}
           </button>
+          {timing.schedule ? (
+            <div className="space-y-1 rounded-md border bg-muted/30 p-2 text-xs" data-testid="stop-hours-summary">
+              <p>{he.request.stopHoursLegend}</p>
+              <p className="font-medium text-primary">
+                {fixedCount === 0 ? he.request.stopHoursCountNone : fixedCount === 1 ? he.request.stopHoursCountOne : tv("request.stopHoursCountMany", { count: String(fixedCount) })}
+              </p>
+            </div>
+          ) : null}
+          {conflict ? (
+            <p className="rounded-md bg-destructive/10 p-2 text-sm text-destructive" role="alert" data-testid="stop-hours-conflict">
+              {tv("request.stopHoursConflict", { place: nameOf(conflict.key), minutes: String(conflict.lateBy) })}
+            </p>
+          ) : null}
         </div>
       )}
     </FieldSheet>

@@ -113,6 +113,7 @@ export type ErrorCode =
   | "shift_car_invalid"
   | "no_eligible_driver"
   | "invalid_stops"
+  | "stop_times_conflict"
   | "invalid_anchor"
   | "invalid_anchor_time"
   | "invalid_place"
@@ -290,6 +291,7 @@ const MESSAGE_TO_CODE: Record<string, ErrorCode> = {
   shift_car_invalid: "shift_car_invalid",
   no_eligible_driver: "no_eligible_driver",
   invalid_stops: "invalid_stops",
+  stop_times_conflict: "stop_times_conflict",
   invalid_anchor: "invalid_anchor",
   anchor_time_mismatch: "invalid_anchor",
   invalid_anchor_time: "invalid_anchor_time",
@@ -471,6 +473,7 @@ const CODE_TO_MESSAGE: Record<ErrorCode, string> = {
   shift_car_invalid: he.errors.shiftCarInvalid,
   no_eligible_driver: he.errors.noEligibleDriver,
   invalid_stops: he.errors.invalidStops,
+  stop_times_conflict: he.errors.stopTimesConflict,
   invalid_anchor: he.errors.invalidAnchor,
   invalid_anchor_time: he.errors.invalidAnchorTime,
   invalid_place: he.errors.invalidPlace,

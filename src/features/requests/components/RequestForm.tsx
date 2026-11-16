@@ -81,7 +81,10 @@ import { toInstantMs, toSubmitRequestPayload } from "../mapper";
 import { editSignature, isUnchangedEdit } from "../unchanged";
 import { requestFormSchema, type RequestFormValues } from "../schema";
 import { rushWindowsForDay } from "../rushHours";
-import { resolveCarTimes, switchOutAnchor, switchReturnAnchor } from "../timeAnchors";
+import { ceilToQuarter, clampedTime, floorToQuarter, resolveCarTimes, switchOutAnchor, switchReturnAnchor } from "../timeAnchors";
+import { hasFixedStopHours } from "../stopHours";
+import { useStopSchedule } from "./requestForm/useStopSchedule";
+import { timeToMinutes } from "../duration";
 import { windowCarTimes, windowModeActive } from "../timeWindow";
 import { recentDestinations } from "../recentDestinations";
 import { destinationValueToPoint, hasDestination, outboundRoutePoints, returnRoutePoints } from "../routePoints";
@@ -735,6 +738,32 @@ export function RequestForm({
     if (times.departTime !== current.departTime) form.setValue("departTime", times.departTime, { shouldDirty: true });
     if (times.returnTime !== current.returnTime) form.setValue("returnTime", times.returnTime, { shouldDirty: true });
   }, [anchorSyncActive, isMultiDay, outMinutes, returnMinutes, rushWindows, watchedDepartAnchor, watchedArriveBy, watchedReturnAnchor, watchedLeaveDest, form]);
+  // REQ item 246: the route through the one timing rule. A stop's fixed hour may move a worked-out end of the
+  // car's window (the departure under "arrive by", the return under "leave there at"), never a typed one.
+  const stopTiming = useStopSchedule(form, needsReturn, !isMultiDay);
+  const stopSchedule = stopTiming.schedule;
+  const stopRoute = stopTiming.values;
+  useEffect(() => {
+    if (!anchorSyncActive || isMultiDay) return;
+    const current = form.getValues();
+    // The anchors alone (same as the sync above), then widened for the stops' fixed hours; removing such an
+    // hour therefore brings the anchor-derived time back.
+    const base = resolveCarTimes(current, { outMinutes, returnMinutes }, rushWindows);
+    let departTime = base.departTime;
+    let returnTime = base.returnTime;
+    if (stopSchedule && stopRoute && hasFixedStopHours(stopRoute)) {
+      const first = stopSchedule.points[0];
+      const last = stopSchedule.points[stopSchedule.points.length - 1];
+      if (first && current.departAnchor === "arrive" && departTime && floorToQuarter(first.leave) < timeToMinutes(departTime)) {
+        departTime = clampedTime(floorToQuarter(first.leave));
+      }
+      if (last && needsReturn && current.returnAnchor === "leave" && returnTime && ceilToQuarter(last.arrive) > timeToMinutes(returnTime)) {
+        returnTime = clampedTime(ceilToQuarter(last.arrive));
+      }
+    }
+    if (departTime !== current.departTime) form.setValue("departTime", departTime, { shouldDirty: true });
+    if (returnTime !== current.returnTime) form.setValue("returnTime", returnTime, { shouldDirty: true });
+  }, [anchorSyncActive, stopSchedule, stopRoute, isMultiDay, needsReturn, outMinutes, returnMinutes, rushWindows, form]);
   const guests = guestPassengerNames(values.guestNames ?? "");
   // The requester is always one adult; every selected member, named child aged eight or
   // older and guest name is another. Named children below eight use a child seat instead.
@@ -919,6 +948,11 @@ export function RequestForm({
   }
 
   function onSubmit(formValues: RequestFormValues) {
+    // REQ item 246: hours that cannot all be kept are never sent (the server refuses them too).
+    if (!isMultiDay && stopSchedule?.conflict) {
+      toast.error(he.errors.stopTimesConflict);
+      return Promise.resolve();
+    }
     // REQ §13.127 (a): always confirm a ride filed for someone else — Sadranim too.
     if (whoOf(formValues).requesterId) {
       setPendingOnBehalf(formValues);

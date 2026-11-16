@@ -166,10 +166,20 @@
         "e2e/plan-b-form.spec.ts",
         "e2e/plan-b-cycle.spec.ts",
         "e2e/request-form.ts",
-        "e2e/destinations-drop-points.spec.ts"
+        "e2e/destinations-drop-points.spec.ts",
+        "src/lib/stopSchedule.ts",
+        "src/features/requests/stopHours.ts",
+        "src/features/requests/routeHopsQuery.ts",
+        "src/features/requests/components/requestForm/StopHours.tsx",
+        "src/features/requests/components/requestForm/useStopSchedule.ts",
+        "supabase/tests/stop_hours.sql",
+        "supabase/tests/fixtures/stop_schedule_cases.json",
+        "scripts/test-stop-schedule-parity.mjs",
+        "supabase/migrations/**/*route_hops*"
       ],
       "vitest": [
-        "src/features/requests"
+        "src/features/requests",
+        "src/lib/stopSchedule.test.ts"
       ],
       "sql": [
         "request_templates.sql",
@@ -192,7 +202,8 @@
         "plan_b_switch.sql",
         "qa_run11_noop_save.sql",
         "one_way_change_asks.sql",
-        "one_way_pair_drop.sql"
+        "one_way_pair_drop.sql",
+        "stop_hours.sql"
       ],
       "playwrightTags": [
         "@request-form"
@@ -201,7 +212,8 @@
         "13.28",
         "13.45",
         "13.76",
-        "13.77"
+        "13.77",
+        "246"
       ],
       "qaChecklist": [
         "Time window: tap \"יש לי חלון זמן?\", file \"3 שעות בין 07:00 ל־12:00\"; /my shows it; edit reopens in window mode (REQ §13.112 c)",
@@ -211,7 +223,8 @@
         "Edit a booked one-day ride, return the next day: saved on the same car; with your own ride on day 2 the question offers to replace it (two buttons when it ends later), another member's ride or maintenance offers an earlier return (REQ item 232)",
         "Submit with repeat-weekly on; confirm next-week suggestion, snooze, stop repeating (REQ §13.76)",
         "Repeat on, tap 'שינוי', pick 'שבועיים': /my reads 'חוזר כל שבועיים'; the suggestion shows two weeks later, not next week (REQ §13.159)",
-        "Submit a late single-day request; confirm accepted but flagged (REQ §13.6)"
+        "Submit a late single-day request; confirm accepted but flagged (REQ §13.6)",
+        "Stop hours (REQ item 246): open \"עצירות בדרך\" — every place shows its hour (lock = fixed, ~ = worked out); fix a stop's \"להגיע עד\" with ± and a stay, the next hours recalculate; an impossible hour is named and the form will not save; \"+ הוספת עצירה\" lists every position with what changes, smallest first, greyed when it breaks a fixed hour"
       ]
     },
     {

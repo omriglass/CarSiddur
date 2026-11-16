@@ -19,6 +19,11 @@ export interface StopPayloadItem {
   leg: "out" | "return";
   place_id?: string;
   place_text?: string;
+  /** REQ item 246: the stop hours (sent by the form; absent = the server keeps the stored ones). */
+  fixed_anchor?: "arrive" | "leave" | null;
+  fixed_at?: string | null;
+  flex_minutes?: number;
+  stay_minutes?: number | null;
 }
 
 /** `submit_request` payload `stops` entries for one leg, in chip (route) order (`mapper.ts`). */

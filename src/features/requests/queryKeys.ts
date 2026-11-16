@@ -9,6 +9,8 @@ export const requestsKeys = {
   /** Repeating-request suggestions (`v_request_template_suggestions`, REQ §76) — always "my own", RLS-scoped. */
   /** `route_minutes_preview` for an unsaved request leg (REQ §13.110 b). */
   routeMinutes: (departmentId: string | undefined, points: unknown) => ["requests", "routeMinutes", departmentId, points] as const,
+  /** REQ item 246: per-hop minutes of an unsaved route (`route_hops_preview`). */
+  routeHops: (departmentId: string | undefined, points: unknown) => ["requests", "routeHops", departmentId, points] as const,
   templateSuggestions: (profileId: string | undefined) => ["requests", "templateSuggestions", profileId] as const,
   /** REQ §13.204: one request's story (`request_history`). */
   history: (requestId: string | undefined) => ["requests", "history", requestId] as const,

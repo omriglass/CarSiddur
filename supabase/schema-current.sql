@@ -4368,6 +4368,25 @@ $$;
 ALTER FUNCTION "public"."_person_busy_rides"("p_profile_id" "uuid", "p_span" "tstzrange", "p_exclude_ride" "uuid", "p_exclude_request" "uuid", "p_include_draft" boolean) OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."_place_minutes"("p_from_id" "uuid", "p_from_text" "text", "p_to_id" "uuid", "p_to_text" "text") RETURNS integer
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  -- REQ item 246: driving minutes between two route points as request_stop_etas always priced them
+  -- (stored route via place_travel; a typed place = 60; the same place = 0).
+  select case
+    when p_from_id is not null and p_from_id = p_to_id then 0
+    when p_from_id is null and p_to_id is null and p_from_text is not null and lower(p_from_text) = lower(coalesce(p_to_text, '')) then 0
+    when p_from_id is not null and p_to_id is not null
+      then greatest(coalesce((select travel_minutes from public.place_travel(p_from_id, p_to_id)), 60), 0)
+    else 60
+  end;
+$$;
+
+
+ALTER FUNCTION "public"."_place_minutes"("p_from_id" "uuid", "p_from_text" "text", "p_to_id" "uuid", "p_to_text" "text") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."_place_travel_for_week"("p_department_id" "uuid", "p_week_start" "date") RETURNS TABLE("origin_id" "uuid", "destination_id" "uuid", "distance_km" numeric, "travel_minutes" integer, "source" "text")
     LANGUAGE "plpgsql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -4882,10 +4901,32 @@ begin
     return false;
   end if;
 
-  -- stops: the payload is the complete list, in route order per leg (replace_request_stops numbers them)
+  -- stops: the payload is the complete list, in route order per leg (replace_request_stops numbers them).
+  -- REQ item 246: when the payload carries the stop hours (an item has `fixed_anchor`) they are compared too;
+  -- items without them keep the stored hours, so only the places are compared then.
   if payload ? 'stops' then
     if jsonb_typeof(payload -> 'stops') is distinct from 'array' then return false; end if;
-    if exists (
+    if exists (select 1 from jsonb_array_elements(payload -> 'stops') t(item) where jsonb_typeof(t.item) = 'object' and t.item ? 'fixed_anchor') then
+      if exists (
+        (select x.leg, row_number() over (partition by x.leg order by x.ord)::int, x.place_id, x.place_text, x.fa, x.fat, x.fm, x.sm
+           from (select t.ord, t.item ->> 'leg' as leg, nullif(t.item ->> 'place_id', '')::uuid as place_id, nullif(t.item ->> 'place_text', '') as place_text,
+                        nullif(t.item ->> 'fixed_anchor', '') as fa, nullif(t.item ->> 'fixed_at', '')::timestamptz as fat,
+                        coalesce(nullif(t.item ->> 'flex_minutes', '')::int, 0) as fm, nullif(t.item ->> 'stay_minutes', '')::int as sm
+                   from jsonb_array_elements(payload -> 'stops') with ordinality t(item, ord)) x
+         except
+         select s.leg::text, s."position"::int, s.place_id, s.place_text, s.fixed_anchor::text, s.fixed_at, s.flex_minutes::int, s.stay_minutes::int
+           from public.request_stops s where s.request_id = e.id)
+        union all
+        (select s.leg::text, s."position"::int, s.place_id, s.place_text, s.fixed_anchor::text, s.fixed_at, s.flex_minutes::int, s.stay_minutes::int
+           from public.request_stops s where s.request_id = e.id
+         except
+         select x.leg, row_number() over (partition by x.leg order by x.ord)::int, x.place_id, x.place_text, x.fa, x.fat, x.fm, x.sm
+           from (select t.ord, t.item ->> 'leg' as leg, nullif(t.item ->> 'place_id', '')::uuid as place_id, nullif(t.item ->> 'place_text', '') as place_text,
+                        nullif(t.item ->> 'fixed_anchor', '') as fa, nullif(t.item ->> 'fixed_at', '')::timestamptz as fat,
+                        coalesce(nullif(t.item ->> 'flex_minutes', '')::int, 0) as fm, nullif(t.item ->> 'stay_minutes', '')::int as sm
+                   from jsonb_array_elements(payload -> 'stops') with ordinality t(item, ord)) x)
+      ) then return false; end if;
+    elsif exists (
       (select x.leg, row_number() over (partition by x.leg order by x.ord)::int, x.place_id, x.place_text
          from (select t.ord, t.item ->> 'leg' as leg, nullif(t.item ->> 'place_id', '')::uuid as place_id, nullif(t.item ->> 'place_text', '') as place_text
                  from jsonb_array_elements(payload -> 'stops') with ordinality t(item, ord)) x
@@ -6450,6 +6491,134 @@ end $$;
 
 
 ALTER FUNCTION "public"."_small_trunk_probe"("p_request_id" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."_stop_schedule"("p_points" "jsonb", "p_stop_minutes" integer, "p_default_start" bigint, "p_allow_shrink" boolean DEFAULT false) RETURNS "jsonb"
+    LANGUAGE "plpgsql" IMMUTABLE
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  n int := coalesce(jsonb_array_length(p_points), 0);
+  pt jsonb[]; kind text[]; tr bigint[]; st bigint[]; wo boolean[];
+  a bigint[]; l bigint[]; early bigint[]; fu bigint[]; sh bigint[]; done boolean[];
+  fixed_idx int[] := '{}'; anchors int[];
+  i int; j int; m int; q int; k int; v_best int;
+  v_due bigint; v_late bigint; v_tgt int; v_take bigint; v_flex bigint; v_at bigint;
+  v_conflict jsonb := null;
+  v_dest int; v_has_back boolean := false; v_need boolean := false;
+  v_out jsonb := '[]'::jsonb;
+begin
+  if n = 0 then
+    return jsonb_build_object('points', '[]'::jsonb, 'conflict', null, 'needs_return_hour', false);
+  end if;
+  for i in 1..n loop
+    pt[i] := p_points -> (i - 1);
+    kind[i] := pt[i] ->> 'kind';
+    tr[i] := coalesce((pt[i] ->> 'travel')::bigint, 0);
+    if i > 1 and i < n and kind[i] <> 'destLeave' then
+      wo[i] := jsonb_typeof(pt[i] -> 'stay') is distinct from 'number';
+      st[i] := case when wo[i] then p_stop_minutes else (pt[i] ->> 'stay')::bigint end;
+    else
+      wo[i] := false; st[i] := 0;
+    end if;
+    a[i] := 0; l[i] := 0; early[i] := 0; fu[i] := 0; sh[i] := 0; done[i] := false;
+    if jsonb_typeof(pt[i] -> 'fixed') = 'object' then fixed_idx := fixed_idx || i; end if;
+    if kind[i] = 'destLeave' then v_has_back := true; end if;
+    if kind[i] = 'destArrive' and v_dest is null then v_dest := i; end if;
+  end loop;
+
+  anchors := fixed_idx;
+  if coalesce(array_length(anchors, 1), 0) = 0 then
+    a[1] := p_default_start; l[1] := p_default_start; anchors := array[1];
+  else
+    foreach k in array anchors loop
+      v_at := (pt[k] -> 'fixed' ->> 'at')::bigint;
+      if pt[k] -> 'fixed' ->> 'anchor' = 'arrive' then a[k] := v_at; l[k] := v_at + st[k];
+      else l[k] := v_at; a[k] := v_at - st[k]; end if;
+    end loop;
+  end if;
+
+  -- before the first fixed hour: backwards
+  for i in reverse anchors[1] - 1 .. 1 loop
+    l[i] := a[i + 1] - tr[i + 1]; a[i] := l[i] - st[i];
+  end loop;
+
+  for q in 2 .. array_length(anchors, 1) loop
+    j := anchors[q - 1]; m := anchors[q];
+    v_at := (pt[m] -> 'fixed' ->> 'at')::bigint;
+    v_due := case when pt[m] -> 'fixed' ->> 'anchor' = 'arrive' then v_at else v_at - st[m] end;
+    v_flex := coalesce((pt[m] -> 'fixed' ->> 'flex')::bigint, 0);
+    -- run j -> m
+    if pt[j] -> 'fixed' ->> 'anchor' = 'arrive' then l[j] := a[j] + st[j]; end if;
+    for k in j + 1 .. m - 1 loop a[k] := l[k - 1] + tr[k]; l[k] := a[k] + st[k]; end loop;
+    v_late := l[m - 1] + tr[m] - v_due;
+
+    if v_late < 0 then
+      v_tgt := null;
+      for k in j .. m - 1 loop
+        if k > 1 and wo[k] and kind[k] = 'destArrive' and not (k = j and pt[j] -> 'fixed' ->> 'anchor' = 'leave') then
+          v_tgt := k; exit;
+        end if;
+      end loop;
+      if v_tgt is not null then
+        st[v_tgt] := st[v_tgt] - v_late;
+        if pt[j] -> 'fixed' ->> 'anchor' = 'arrive' then l[j] := a[j] + st[j]; end if;
+        for k in j + 1 .. m - 1 loop a[k] := l[k - 1] + tr[k]; l[k] := a[k] + st[k]; end loop;
+        v_late := 0;
+      else
+        early[m] := -v_late;
+      end if;
+    elsif v_late > 0 and p_allow_shrink then
+      loop
+        exit when v_late <= 0;
+        v_best := null;
+        for k in j .. m - 1 loop
+          if k > 1 and k < n and kind[k] <> 'destLeave' and not wo[k] and not done[k]
+             and not (k = j and pt[j] -> 'fixed' ->> 'anchor' = 'leave') and st[k] > p_stop_minutes
+             and (v_best is null or st[k] > st[v_best]) then
+            v_best := k;
+          end if;
+        end loop;
+        exit when v_best is null;
+        done[v_best] := true;
+        v_take := least(v_late, st[v_best] - p_stop_minutes);
+        st[v_best] := st[v_best] - v_take; sh[v_best] := sh[v_best] + v_take; v_late := v_late - v_take;
+      end loop;
+      if pt[j] -> 'fixed' ->> 'anchor' = 'arrive' then l[j] := a[j] + st[j]; end if;
+      for k in j + 1 .. m - 1 loop a[k] := l[k - 1] + tr[k]; l[k] := a[k] + st[k]; end loop;
+      v_late := l[m - 1] + tr[m] - v_due;
+    end if;
+
+    if v_late > 0 and v_late <= v_flex then
+      fu[m] := v_late; a[m] := a[m] + v_late; l[m] := l[m] + v_late; v_late := 0;
+    end if;
+    if v_late > 0 and v_conflict is null then
+      v_conflict := jsonb_build_object('key', pt[m] ->> 'key', 'late_by', v_late);
+    end if;
+  end loop;
+
+  -- after the last fixed hour: forwards
+  for i in anchors[array_length(anchors, 1)] + 1 .. n loop
+    a[i] := l[i - 1] + tr[i]; l[i] := a[i] + st[i];
+  end loop;
+
+  v_need := v_has_back and v_dest is not null and wo[v_dest]
+            and not exists (select 1 from unnest(fixed_idx) f(x) where f.x > v_dest);
+  for i in 1..n loop
+    v_out := v_out || jsonb_build_object(
+      'key', pt[i] ->> 'key', 'arrive', a[i], 'leave', l[i], 'stay', st[i], 'stay_worked_out', wo[i],
+      'early', early[i], 'flex_used', fu[i], 'shortened_by', sh[i]);
+  end loop;
+  return jsonb_build_object('points', v_out, 'conflict', v_conflict, 'needs_return_hour', v_need);
+end;
+$$;
+
+
+ALTER FUNCTION "public"."_stop_schedule"("p_points" "jsonb", "p_stop_minutes" integer, "p_default_start" bigint, "p_allow_shrink" boolean) OWNER TO "postgres";
+
+
+COMMENT ON FUNCTION "public"."_stop_schedule"("p_points" "jsonb", "p_stop_minutes" integer, "p_default_start" bigint, "p_allow_shrink" boolean) IS 'REQ item 246: the stop-hours timing rule (TS twin src/lib/stopSchedule.ts). Points: [{key, kind start|stop|destArrive|destLeave|end, travel (minutes from the previous point), stay|null, fixed {anchor arrive|leave, at (minute), flex}|null}].';
+
 
 
 CREATE OR REPLACE FUNCTION "public"."_sync_car_owner_id"("p_car" "uuid") RETURNS "void"
@@ -19547,10 +19716,20 @@ CREATE OR REPLACE FUNCTION "public"."replace_request_stops"("p_request_id" "uuid
 declare
   v_item jsonb; v_leg text; v_place_id uuid; v_place_text text;
   v_out_pos smallint := 0; v_return_pos smallint := 0;
+  v_old jsonb;
+  v_prev jsonb;
+  v_sent boolean := false;
+  v_anchor public.time_anchor; v_fixed_at timestamptz; v_flex smallint; v_stay smallint;
+  v_s jsonb;
 begin
   if jsonb_typeof(p_stops) is distinct from 'array' then
     raise exception 'invalid_stops' using errcode = 'P0001';
   end if;
+
+  select coalesce(jsonb_agg(jsonb_build_object('leg', s.leg::text, 'place_id', s.place_id, 'place_text', s.place_text,
+           'fixed_anchor', s.fixed_anchor::text, 'fixed_at', s.fixed_at, 'flex_minutes', s.flex_minutes, 'stay_minutes', s.stay_minutes)
+           order by s.leg, s."position"), '[]'::jsonb)
+    into v_old from public.request_stops s where s.request_id = p_request_id;
 
   delete from public.request_stops where request_id = p_request_id;
 
@@ -19567,18 +19746,49 @@ begin
       where d.id = v_place_id and d.department_id = p_department_id and d.is_approved
     ) then raise exception 'invalid_stops' using errcode = 'P0001'; end if;
 
+    if v_item ? 'fixed_anchor' then
+      v_sent := true;
+      if nullif(v_item ->> 'fixed_anchor', '') is not null and v_item ->> 'fixed_anchor' not in ('arrive', 'leave') then
+        raise exception 'invalid_stops' using errcode = 'P0001';
+      end if;
+      v_anchor := nullif(v_item ->> 'fixed_anchor', '')::public.time_anchor;
+      v_fixed_at := case when v_anchor is null then null else nullif(v_item ->> 'fixed_at', '')::timestamptz end;
+      if v_anchor is not null and v_fixed_at is null then raise exception 'invalid_stops' using errcode = 'P0001'; end if;
+      v_flex := case when v_anchor is null then 0 else coalesce(nullif(v_item ->> 'flex_minutes', '')::smallint, 0) end;
+      v_stay := nullif(v_item ->> 'stay_minutes', '')::smallint;
+    else
+      v_prev := null;
+      select o.value into v_prev from jsonb_array_elements(v_old) o
+       where o.value ->> 'leg' = v_leg
+         and ((v_place_id is not null and (o.value ->> 'place_id')::uuid = v_place_id)
+           or (v_place_id is null and lower(o.value ->> 'place_text') = lower(v_place_text)))
+       limit 1;
+      v_anchor := nullif(v_prev ->> 'fixed_anchor', '')::public.time_anchor;
+      v_fixed_at := nullif(v_prev ->> 'fixed_at', '')::timestamptz;
+      v_flex := coalesce((v_prev ->> 'flex_minutes')::smallint, 0);
+      v_stay := nullif(v_prev ->> 'stay_minutes', '')::smallint;
+    end if;
+
     if v_leg = 'out' then
       v_out_pos := v_out_pos + 1;
       if v_out_pos > 10 then raise exception 'invalid_stops' using errcode = 'P0001'; end if;
-      insert into public.request_stops (request_id, department_id, leg, "position", place_id, place_text)
-      values (p_request_id, p_department_id, 'out', v_out_pos, v_place_id, v_place_text);
+      insert into public.request_stops (request_id, department_id, leg, "position", place_id, place_text, fixed_anchor, fixed_at, flex_minutes, stay_minutes)
+      values (p_request_id, p_department_id, 'out', v_out_pos, v_place_id, v_place_text, v_anchor, v_fixed_at, v_flex, v_stay);
     else
       v_return_pos := v_return_pos + 1;
       if v_return_pos > 10 then raise exception 'invalid_stops' using errcode = 'P0001'; end if;
-      insert into public.request_stops (request_id, department_id, leg, "position", place_id, place_text)
-      values (p_request_id, p_department_id, 'return', v_return_pos, v_place_id, v_place_text);
+      insert into public.request_stops (request_id, department_id, leg, "position", place_id, place_text, fixed_anchor, fixed_at, flex_minutes, stay_minutes)
+      values (p_request_id, p_department_id, 'return', v_return_pos, v_place_id, v_place_text, v_anchor, v_fixed_at, v_flex, v_stay);
     end if;
   end loop;
+
+  if v_sent and exists (select 1 from public.request_stops s where s.request_id = p_request_id and s.fixed_anchor is not null
+                          and (s.leg = 'out' or p_has_return)) then
+    v_s := public.request_schedule(p_request_id);
+    if v_s is not null and jsonb_typeof(v_s -> 'conflict') = 'object' then
+      raise exception 'stop_times_conflict' using errcode = 'P0001', detail = (v_s -> 'conflict')::text;
+    end if;
+  end if;
 end;
 $$;
 
@@ -20313,6 +20523,80 @@ $$;
 ALTER FUNCTION "public"."request_route_label"("p_request_id" "uuid") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."request_schedule"("p_request_id" "uuid") RETURNS "jsonb"
+    LANGUAGE "plpgsql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  q public.requests%rowtype;
+  v_stop_minutes int;
+  v_points jsonb := '[]'::jsonb;
+  v_prev_id uuid; v_prev_text text;
+  s record;
+  v_has_return boolean;
+  v_min bigint;
+begin
+  select * into q from public.requests where id = p_request_id;
+  if q.id is null then return null; end if;
+  select stop_minutes into v_stop_minutes from public.department_settings where department_id = q.department_id;
+  v_stop_minutes := coalesce(v_stop_minutes, 5);
+  v_has_return := q.return_at is not null;
+
+  if q.depart_at is not null then
+    v_points := v_points || jsonb_build_object('key', 'start', 'kind', 'start', 'travel', 0, 'stay', null,
+      'fixed', jsonb_build_object('anchor', 'leave', 'at', floor(extract(epoch from q.depart_at) / 60)::bigint, 'flex', 0));
+    v_prev_id := q.origin_id; v_prev_text := q.origin_text;
+    for s in select * from public.request_stops x where x.request_id = q.id and x.leg = 'out' order by x."position" loop
+      v_points := v_points || jsonb_build_object('key', 'out:' || s."position", 'kind', 'stop',
+        'travel', public._place_minutes(v_prev_id, v_prev_text, s.place_id, s.place_text),
+        'stay', s.stay_minutes,
+        'fixed', case when s.fixed_anchor is null then null else jsonb_build_object('anchor', s.fixed_anchor::text,
+                   'at', floor(extract(epoch from s.fixed_at) / 60)::bigint, 'flex', s.flex_minutes) end);
+      v_prev_id := s.place_id; v_prev_text := s.place_text;
+    end loop;
+    v_points := v_points || jsonb_build_object('key', 'dest', 'kind', case when v_has_return then 'destArrive' else 'end' end,
+      'travel', public._place_minutes(v_prev_id, v_prev_text, q.destination_id, q.destination_text),
+      'stay', null,
+      'fixed', case when q.depart_anchor = 'arrive' and q.arrive_by is not null
+                 then jsonb_build_object('anchor', 'arrive', 'at', floor(extract(epoch from q.arrive_by) / 60)::bigint,
+                        'flex', (extract(epoch from q.flex_depart_late) / 60)::bigint) end);
+  end if;
+  v_prev_id := q.destination_id; v_prev_text := q.destination_text;
+
+  if v_has_return then
+    v_points := v_points || jsonb_build_object('key', 'back',
+      'kind', case when q.depart_at is null then 'start' else 'destLeave' end,
+      'travel', 0, 'stay', null,
+      'fixed', case when q.return_anchor = 'leave' and q.leave_dest_at is not null
+                 then jsonb_build_object('anchor', 'leave', 'at', floor(extract(epoch from q.leave_dest_at) / 60)::bigint,
+                        'flex', (extract(epoch from q.flex_return_late) / 60)::bigint) end);
+    for s in select * from public.request_stops x where x.request_id = q.id and x.leg = 'return' order by x."position" loop
+      v_points := v_points || jsonb_build_object('key', 'return:' || s."position", 'kind', 'stop',
+        'travel', public._place_minutes(v_prev_id, v_prev_text, s.place_id, s.place_text),
+        'stay', s.stay_minutes,
+        'fixed', case when s.fixed_anchor is null then null else jsonb_build_object('anchor', s.fixed_anchor::text,
+                   'at', floor(extract(epoch from s.fixed_at) / 60)::bigint, 'flex', s.flex_minutes) end);
+      v_prev_id := s.place_id; v_prev_text := s.place_text;
+    end loop;
+    v_points := v_points || jsonb_build_object('key', 'end', 'kind', 'end',
+      'travel', public._place_minutes(v_prev_id, v_prev_text, q.origin_id, q.origin_text),
+      'stay', null,
+      'fixed', jsonb_build_object('anchor', 'arrive', 'at', floor(extract(epoch from q.return_at) / 60)::bigint, 'flex', 0));
+  end if;
+
+  v_min := floor(extract(epoch from coalesce(q.depart_at, q.return_at, now())) / 60)::bigint;
+  return public._stop_schedule(v_points, v_stop_minutes, v_min, false);
+end;
+$$;
+
+
+ALTER FUNCTION "public"."request_schedule"("p_request_id" "uuid") OWNER TO "postgres";
+
+
+COMMENT ON FUNCTION "public"."request_schedule"("p_request_id" "uuid") IS 'REQ item 246: {points:[{key, arrive, leave (epoch minutes), stay, stay_worked_out, early, flex_used, shortened_by}], conflict, needs_return_hour} of a request route.';
+
+
+
 CREATE OR REPLACE FUNCTION "public"."request_served_by_public_ride"("_request_id" "uuid") RETURNS boolean
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -20345,48 +20629,22 @@ CREATE OR REPLACE FUNCTION "public"."request_stop_etas"("p_request_id" "uuid") R
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
 declare
-  v_req public.requests%rowtype;
-  v_stop record;
-  v_t timestamptz;
-  v_anchor_id uuid; v_anchor_text text;
-  v_stop_minutes int;
+  v_s jsonb;
+  v_p jsonb;
+  s record;
 begin
-  select * into v_req from public.requests where id = p_request_id;
-  if v_req.id is null then return; end if;
-  select stop_minutes into v_stop_minutes from public.department_settings where department_id = v_req.department_id;
-  v_stop_minutes := coalesce(v_stop_minutes, 5);
-
-  if v_req.depart_at is not null then
-    v_t := v_req.depart_at;
-    v_anchor_id := v_req.origin_id; v_anchor_text := v_req.origin_text;
-    for v_stop in
-      select * from public.request_stops s where s.request_id = p_request_id and s.leg = 'out' order by s."position"
-    loop
-      v_t := v_t + make_interval(mins => greatest(coalesce(
-        case when v_anchor_id is not null and v_stop.place_id is not null
-          then (select travel_minutes from public.place_travel(v_anchor_id, v_stop.place_id)) end, 60), 0));
-      leg := 'out'; "position" := v_stop."position"; place_id := v_stop.place_id; place_text := v_stop.place_text; eta := v_t;
-      return next;
-      v_t := v_t + make_interval(mins => v_stop_minutes);
-      v_anchor_id := v_stop.place_id; v_anchor_text := v_stop.place_text;
-    end loop;
-  end if;
-
-  if v_req.return_at is not null then
-    v_t := v_req.return_at;
-    v_anchor_id := v_req.origin_id; v_anchor_text := v_req.origin_text;  -- final arrival point
-    for v_stop in
-      select * from public.request_stops s where s.request_id = p_request_id and s.leg = 'return' order by s."position" desc
-    loop
-      v_t := v_t - make_interval(mins => greatest(coalesce(
-        case when v_stop.place_id is not null and v_anchor_id is not null
-          then (select travel_minutes from public.place_travel(v_stop.place_id, v_anchor_id)) end, 60), 0));
-      leg := 'return'; "position" := v_stop."position"; place_id := v_stop.place_id; place_text := v_stop.place_text; eta := v_t;
-      return next;
-      v_t := v_t - make_interval(mins => v_stop_minutes);
-      v_anchor_id := v_stop.place_id; v_anchor_text := v_stop.place_text;
-    end loop;
-  end if;
+  v_s := public.request_schedule(p_request_id);
+  if v_s is null then return; end if;
+  for s in select * from public.request_stops x where x.request_id = p_request_id
+           order by case x.leg when 'out' then 0 else 1 end, x."position" loop
+    v_p := null;
+    select e.value into v_p from jsonb_array_elements(v_s -> 'points') e
+      where e.value ->> 'key' = s.leg::text || ':' || s."position";
+    if v_p is null then continue; end if;
+    leg := s.leg; "position" := s."position"; place_id := s.place_id; place_text := s.place_text;
+    eta := 'epoch'::timestamptz + make_interval(mins => (case when s.leg = 'out' then v_p ->> 'arrive' else v_p ->> 'leave' end)::int);
+    return next;
+  end loop;
 end;
 $$;
 
@@ -22649,6 +22907,50 @@ end $$;
 
 
 ALTER FUNCTION "public"."rides_within_week"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."route_hops_preview"("p_department_id" "uuid", "p_points" "jsonb") RETURNS "jsonb"
+    LANGUAGE "plpgsql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  v_stop_minutes int;
+  v_hops jsonb := '[]'::jsonb;
+  v_pt jsonb;
+  v_id uuid; v_text text;
+  v_prev_id uuid; v_prev_text text;
+  v_prev_set boolean := false;
+begin
+  if p_department_id is null or not (public.member_of(p_department_id) or public.is_admin()) then
+    raise exception 'not_authorized' using errcode = 'P0001';
+  end if;
+  if p_points is null or jsonb_typeof(p_points) <> 'array' then
+    raise exception 'invalid_route_points' using errcode = 'P0001';
+  end if;
+  select stop_minutes into v_stop_minutes from public.department_settings where department_id = p_department_id;
+
+  for v_pt in select value from jsonb_array_elements(p_points) loop
+    v_id := nullif(v_pt ->> 'place_id', '')::uuid;
+    v_text := nullif(v_pt ->> 'place_text', '');
+    if v_id is not null and not exists (select 1 from public.destinations d where d.id = v_id and d.department_id = p_department_id) then
+      raise exception 'not_authorized' using errcode = 'P0001';
+    end if;
+    if v_prev_set then
+      v_hops := v_hops || to_jsonb(public._place_minutes(v_prev_id, v_prev_text, v_id, v_text));
+    end if;
+    v_prev_id := v_id; v_prev_text := v_text; v_prev_set := true;
+  end loop;
+
+  return jsonb_build_object('hops', v_hops, 'stop_minutes', coalesce(v_stop_minutes, 5));
+end;
+$$;
+
+
+ALTER FUNCTION "public"."route_hops_preview"("p_department_id" "uuid", "p_points" "jsonb") OWNER TO "postgres";
+
+
+COMMENT ON FUNCTION "public"."route_hops_preview"("p_department_id" "uuid", "p_points" "jsonb") IS 'REQ item 246: {hops: minutes between consecutive points, stop_minutes} of an unsaved route, priced like request_schedule.';
+
 
 
 CREATE OR REPLACE FUNCTION "public"."route_label"("p_department_id" "uuid", "p_origin_id" "uuid", "p_origin_text" "text", "p_destination_id" "uuid", "p_destination_text" "text", "p_stops_text" "text" DEFAULT NULL::"text") RETURNS "text"
@@ -30055,15 +30357,35 @@ CREATE TABLE IF NOT EXISTS "public"."request_stops" (
     "place_text" "text",
     "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
     "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "fixed_anchor" "public"."time_anchor",
+    "fixed_at" timestamp with time zone,
+    "flex_minutes" smallint DEFAULT 0 NOT NULL,
+    "stay_minutes" smallint,
+    CONSTRAINT "request_stops_fixed_grid_ck" CHECK ((("fixed_at" IS NULL) OR (((EXTRACT(epoch FROM "fixed_at"))::bigint % (300)::bigint) = 0))),
+    CONSTRAINT "request_stops_fixed_pair_ck" CHECK ((("fixed_anchor" IS NULL) = ("fixed_at" IS NULL))),
+    CONSTRAINT "request_stops_flex_ck" CHECK ((("flex_minutes" = ANY (ARRAY[0, 10, 15, 30, 60])) AND (("fixed_anchor" IS NOT NULL) OR ("flex_minutes" = 0)))),
     CONSTRAINT "request_stops_leg_ck" CHECK (("leg" = ANY (ARRAY['out'::"public"."ride_leg", 'return'::"public"."ride_leg"]))),
     CONSTRAINT "request_stops_place_ck" CHECK ((("place_id" IS NULL) <> ("place_text" IS NULL))),
-    CONSTRAINT "request_stops_position_ck" CHECK ((("position" >= 1) AND ("position" <= 10)))
+    CONSTRAINT "request_stops_position_ck" CHECK ((("position" >= 1) AND ("position" <= 10))),
+    CONSTRAINT "request_stops_stay_ck" CHECK ((("stay_minutes" IS NULL) OR (("stay_minutes" >= 1) AND ("stay_minutes" <= 1440))))
 );
 
 ALTER TABLE ONLY "public"."request_stops" FORCE ROW LEVEL SECURITY;
 
 
 ALTER TABLE "public"."request_stops" OWNER TO "postgres";
+
+
+COMMENT ON COLUMN "public"."request_stops"."fixed_anchor" IS 'REQ item 246: arrive = arrive by fixed_at (earlier places timed backwards); leave = leave at fixed_at (later places timed forwards); null = worked out.';
+
+
+
+COMMENT ON COLUMN "public"."request_stops"."flex_minutes" IS 'REQ item 246: how many minutes the fixed hour may slip (arrive later / leave later).';
+
+
+
+COMMENT ON COLUMN "public"."request_stops"."stay_minutes" IS 'REQ item 246: minutes there as the member gave them; null = worked out (department stop_minutes for a short stop).';
+
 
 
 CREATE TABLE IF NOT EXISTS "public"."request_templates" (
@@ -36287,6 +36609,11 @@ GRANT ALL ON FUNCTION "public"."_person_busy_rides"("p_profile_id" "uuid", "p_sp
 
 
 
+REVOKE ALL ON FUNCTION "public"."_place_minutes"("p_from_id" "uuid", "p_from_text" "text", "p_to_id" "uuid", "p_to_text" "text") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_place_minutes"("p_from_id" "uuid", "p_from_text" "text", "p_to_id" "uuid", "p_to_text" "text") TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."_place_travel_for_week"("p_department_id" "uuid", "p_week_start" "date") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."_place_travel_for_week"("p_department_id" "uuid", "p_week_start" "date") TO "service_role";
 
@@ -36850,6 +37177,11 @@ GRANT ALL ON FUNCTION "public"."_small_trunk_mode"("p_allow" boolean) TO "servic
 
 REVOKE ALL ON FUNCTION "public"."_small_trunk_probe"("p_request_id" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."_small_trunk_probe"("p_request_id" "uuid") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."_stop_schedule"("p_points" "jsonb", "p_stop_minutes" integer, "p_default_start" bigint, "p_allow_shrink" boolean) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_stop_schedule"("p_points" "jsonb", "p_stop_minutes" integer, "p_default_start" bigint, "p_allow_shrink" boolean) TO "service_role";
 
 
 
@@ -38616,6 +38948,11 @@ GRANT ALL ON FUNCTION "public"."request_route_label"("p_request_id" "uuid") TO "
 
 
 
+REVOKE ALL ON FUNCTION "public"."request_schedule"("p_request_id" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."request_schedule"("p_request_id" "uuid") TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."request_served_by_public_ride"("_request_id" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."request_served_by_public_ride"("_request_id" "uuid") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."request_served_by_public_ride"("_request_id" "uuid") TO "service_role";
@@ -39043,6 +39380,12 @@ GRANT ALL ON FUNCTION "public"."rides_withdraw_proposals"() TO "service_role";
 
 REVOKE ALL ON FUNCTION "public"."rides_within_week"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."rides_within_week"() TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."route_hops_preview"("p_department_id" "uuid", "p_points" "jsonb") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."route_hops_preview"("p_department_id" "uuid", "p_points" "jsonb") TO "service_role";
+GRANT ALL ON FUNCTION "public"."route_hops_preview"("p_department_id" "uuid", "p_points" "jsonb") TO "authenticated";
 
 
 

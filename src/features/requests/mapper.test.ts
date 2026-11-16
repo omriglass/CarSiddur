@@ -159,10 +159,19 @@ describe("stops (REQ §13.93 'Multi-stop rides')", () => {
       }),
     );
     expect(payload.stops).toEqual([
-      { leg: "out", place_id: "binyamina-dest" },
-      { leg: "out", place_text: "עצירה חופשית" },
-      { leg: "return", place_id: "hadera-dest" },
+      { leg: "out", place_id: "binyamina-dest", fixed_anchor: null, fixed_at: null, flex_minutes: 0, stay_minutes: null },
+      { leg: "out", place_text: "עצירה חופשית", fixed_anchor: null, fixed_at: null, flex_minutes: 0, stay_minutes: null },
+      { leg: "return", place_id: "hadera-dest", fixed_anchor: null, fixed_at: null, flex_minutes: 0, stay_minutes: null },
     ]);
+  });
+
+  it("REQ item 246: sends a stop's fixed hour on the request day, its flexibility and stay", () => {
+    const stop = { presetId: "binyamina-dest", name: "בנימינה" };
+    const payload = toSubmitRequestPayload(
+      baseValues({ outStops: [stop], stopHours: { "out|p:binyamina-dest": { anchor: "arrive", time: "08:15", flex: 15, stay: 20 } } }),
+    );
+    expect(payload.stops?.[0]).toMatchObject({ fixed_anchor: "arrive", flex_minutes: 15, stay_minutes: 20 });
+    expect(payload.stops?.[0]?.fixed_at).toBe(toInstant(baseValues({}).day, "08:15", false));
   });
 
   it("still sends the held return stops for a one-way-to leg (REQ §13.97: the server keeps them inactive)", () => {
@@ -174,7 +183,7 @@ describe("stops (REQ §13.93 'Multi-stop rides')", () => {
         returnStops: [{ presetId: "hadera-dest", name: "חדרה" }],
       }),
     );
-    expect(payload.stops).toEqual([{ leg: "return", place_id: "hadera-dest" }]);
+    expect(payload.stops).toEqual([{ leg: "return", place_id: "hadera-dest", fixed_anchor: null, fixed_at: null, flex_minutes: 0, stay_minutes: null }]);
   });
 });
 
@@ -223,8 +232,8 @@ describe("toSubmitRequestPayload stops (REQ §13.97)", () => {
     } as unknown as RequestFormValues;
     const payload = toSubmitRequestPayload(values);
     expect(payload.stops).toEqual([
-      { leg: "out", place_id: "o1" },
-      { leg: "return", place_id: "r1" },
+      { leg: "out", place_id: "o1", fixed_anchor: null, fixed_at: null, flex_minutes: 0, stay_minutes: null },
+      { leg: "return", place_id: "r1", fixed_anchor: null, fixed_at: null, flex_minutes: 0, stay_minutes: null },
     ]);
     expect(payload.return_at).toBeUndefined();
   });

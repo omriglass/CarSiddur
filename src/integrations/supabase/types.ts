@@ -3048,34 +3048,46 @@ export type Database = {
         Row: {
           created_at: string
           department_id: string
+          fixed_anchor: Database["public"]["Enums"]["time_anchor"] | null
+          fixed_at: string | null
+          flex_minutes: number
           id: string
           leg: Database["public"]["Enums"]["ride_leg"]
           place_id: string | null
           place_text: string | null
           position: number
           request_id: string
+          stay_minutes: number | null
           updated_at: string
         }
         Insert: {
           created_at?: string
           department_id: string
+          fixed_anchor?: Database["public"]["Enums"]["time_anchor"] | null
+          fixed_at?: string | null
+          flex_minutes?: number
           id?: string
           leg: Database["public"]["Enums"]["ride_leg"]
           place_id?: string | null
           place_text?: string | null
           position: number
           request_id: string
+          stay_minutes?: number | null
           updated_at?: string
         }
         Update: {
           created_at?: string
           department_id?: string
+          fixed_anchor?: Database["public"]["Enums"]["time_anchor"] | null
+          fixed_at?: string | null
+          flex_minutes?: number
           id?: string
           leg?: Database["public"]["Enums"]["ride_leg"]
           place_id?: string | null
           place_text?: string | null
           position?: number
           request_id?: string
+          stay_minutes?: number | null
           updated_at?: string
         }
         Relationships: [
@@ -6123,6 +6135,15 @@ export type Database = {
           span: unknown
         }[]
       }
+      _place_minutes: {
+        Args: {
+          p_from_id: string
+          p_from_text: string
+          p_to_id: string
+          p_to_text: string
+        }
+        Returns: number
+      }
       _place_travel_for_week: {
         Args: { p_department_id: string; p_week_start: string }
         Returns: {
@@ -6472,6 +6493,15 @@ export type Database = {
       }
       _small_trunk_mode: { Args: { p_allow: boolean }; Returns: undefined }
       _small_trunk_probe: { Args: { p_request_id: string }; Returns: string }
+      _stop_schedule: {
+        Args: {
+          p_allow_shrink?: boolean
+          p_default_start: number
+          p_points: Json
+          p_stop_minutes: number
+        }
+        Returns: Json
+      }
       _sync_car_owner_id: { Args: { p_car: string }; Returns: undefined }
       _sync_draft_hold: { Args: { p_request_id: string }; Returns: undefined }
       _time_change_line: {
@@ -7900,6 +7930,7 @@ export type Database = {
         Returns: string
       }
       request_route_label: { Args: { p_request_id: string }; Returns: string }
+      request_schedule: { Args: { p_request_id: string }; Returns: Json }
       request_served_by_public_ride: {
         Args: { _request_id: string }
         Returns: boolean
@@ -8102,6 +8133,10 @@ export type Database = {
           isOneToOne: false
           isSetofReturn: true
         }
+      }
+      route_hops_preview: {
+        Args: { p_department_id: string; p_points: Json }
+        Returns: Json
       }
       route_label: {
         Args: {

@@ -884,6 +884,7 @@ export const he = {
     noEligibleDriver: "אין בנסיעה הזו מי שיכול/ה לנהוג",
     /** REQ §13.93 "Multi-stop rides": submit_request()'s stops payload failed validation. */
     invalidStops: "פרטי העצירות אינם תקינים",
+    stopTimesConflict: "אי אפשר לעמוד בכל השעות הקבועות של העצירות — יש לשנות אחת מהן",
     /** REQ §13.110 (b): `submit_request` refused the anchor keys (`invalid_anchor`, `anchor_time_mismatch`). */
     invalidAnchor: "אופן ציון השעה אינו תקין — נסה/י לבחור את השעה מחדש",
     invalidAnchorTime: "השעה שצוינה אינה תקינה (יום, רבע שעה או סדר השעות)",
