@@ -19,6 +19,7 @@ declare
   v_payload jsonb;
   v_failed boolean;
   v_detail text;
+  v_round int;
 begin
   insert into public.weeks(department_id, week_start, phase, open_at, close_at, publish_at)
     values (dept, w, 'solving', now() - interval '3 days', now() - interval '2 days', now() - interval '1 day');
@@ -115,6 +116,30 @@ begin
   exception when check_violation then v_failed := true;
   end;
   assert v_failed, 'TEST 8 FAILED: flexibility outside 0/10/15/30/60';
+
+  -----------------------------------------------------------------------
+  -- 9) PF1: the fast path (stops without hours) gives what the timing rule gives — out stops, and return stops
+  --    under both return anchors ("home by" 18:00 and "leave there at" 17:00).
+  -----------------------------------------------------------------------
+  select version into v_version from public.requests where id = req;
+  v_result := public.submit_request(v_payload || jsonb_build_object('request_id', req, 'expected_version', v_version,
+    'stops', jsonb_build_array(
+      jsonb_build_object('leg', 'out', 'place_id', binyamina, 'fixed_anchor', null),
+      jsonb_build_object('leg', 'return', 'place_id', binyamina, 'fixed_anchor', null))));
+  for v_round in 1..2 loop
+    if v_round = 2 then
+      perform set_config('app.request_anchors_explicit', 'on', true);
+      update public.requests set return_anchor = 'leave', leave_dest_at = (w + 1 + time '17:00') at time zone 'Asia/Jerusalem' where id = req;
+      perform set_config('app.request_anchors_explicit', 'off', true);
+    end if;
+    assert not exists (
+      select 1 from public.request_stop_etas(req) e
+      join lateral (select p from jsonb_array_elements(public.request_schedule(req) -> 'points') p
+                     where p ->> 'key' = e.leg::text || ':' || e."position") sp on true
+      where e.eta <> 'epoch'::timestamptz + make_interval(mins => (case when e.leg = 'out' then sp.p ->> 'arrive' else sp.p ->> 'leave' end)::int)
+    ), format('TEST 9 FAILED (round %s): fast-path ETAs differ from the timing rule', v_round);
+    assert (select count(*) from public.request_stop_etas(req)) = 2, 'TEST 9 FAILED: both stops have an ETA';
+  end loop;
 
   raise notice 'stop_hours.sql: all tests passed';
 end $$;

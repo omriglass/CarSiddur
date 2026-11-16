@@ -740,7 +740,9 @@ export function RequestForm({
   }, [anchorSyncActive, isMultiDay, outMinutes, returnMinutes, rushWindows, watchedDepartAnchor, watchedArriveBy, watchedReturnAnchor, watchedLeaveDest, form]);
   // REQ item 246: the route through the one timing rule. A stop's fixed hour may move a worked-out end of the
   // car's window (the departure under "arrive by", the return under "leave there at"), never a typed one.
-  const stopTiming = useStopSchedule(form, needsReturn, !isMultiDay);
+  // PF1: the hop preview is fetched only when a stop has a fixed hour (the stops sheet asks while it is open).
+  const anyStopFixed = Object.values(values.stopHours ?? {}).some((h) => !!h?.anchor);
+  const stopTiming = useStopSchedule(form, needsReturn, !isMultiDay && anyStopFixed);
   const stopSchedule = stopTiming.schedule;
   const stopRoute = stopTiming.values;
   useEffect(() => {
