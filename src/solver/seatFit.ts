@@ -71,3 +71,37 @@ export function chauffeurLoad(served: Passengers): Passengers {
 export function towCountField(towCount: number): { towCount?: number } {
   return towCount > 0 ? { towCount } : {};
 }
+
+/**
+ * A rider on one leg (REQ item 246 h): seats taken from route place `board` up to, not including, `alight`
+ * (undefined/null = the leg's start / end). Twin of SQL `_stretch_loads()`; shared cases in
+ * supabase/tests/fixtures/stretch_load_cases.json.
+ */
+export interface StretchRider extends Passengers {
+  board?: number | null;
+  alight?: number | null;
+}
+
+/**
+ * Seats per stretch of a leg with `points` route places (points - 1 stretches). Out-of-range places are clamped;
+ * a board at or after its alight counts on the whole leg (the safe reading).
+ */
+export function stretchLoads(points: number, riders: readonly StretchRider[]): Passengers[] {
+  const n = Math.max(points - 1, 0);
+  const loads: Passengers[] = Array.from({ length: n }, () => ({ adults: 0, childSeats: 0, boosters: 0 }));
+  for (const r of riders) {
+    let from = Math.min(Math.max(r.board ?? 0, 0), n);
+    let to = Math.min(Math.max(r.alight ?? n, 0), n);
+    if (from >= to) { from = 0; to = n; }
+    for (let s = from; s < to; s++) {
+      const l = loads[s]!;
+      l.adults += r.adults; l.childSeats += r.childSeats; l.boosters += r.boosters;
+    }
+  }
+  return loads;
+}
+
+/** True iff the car takes every stretch (each stretch may use a different seat configuration). */
+export function fitsAlong(car: Car, points: number, riders: readonly StretchRider[]): boolean {
+  return stretchLoads(points, riders).every((l) => fits(car, l));
+}

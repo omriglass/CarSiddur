@@ -175,11 +175,16 @@
         "supabase/tests/stop_hours.sql",
         "supabase/tests/fixtures/stop_schedule_cases.json",
         "scripts/test-stop-schedule-parity.mjs",
+        "supabase/tests/rider_stretches.sql",
+        "supabase/tests/fixtures/stretch_load_cases.json",
+        "scripts/test-stretch-load-parity.mjs",
+        "supabase/migrations/**/*rider_stretches*",
         "supabase/migrations/**/*route_hops*"
       ],
       "vitest": [
         "src/features/requests",
-        "src/lib/stopSchedule.test.ts"
+        "src/lib/stopSchedule.test.ts",
+        "src/solver/__tests__/stretchLoads.test.ts"
       ],
       "sql": [
         "request_templates.sql",
@@ -203,7 +208,8 @@
         "qa_run11_noop_save.sql",
         "one_way_change_asks.sql",
         "one_way_pair_drop.sql",
-        "stop_hours.sql"
+        "stop_hours.sql",
+        "rider_stretches.sql"
       ],
       "playwrightTags": [
         "@request-form"

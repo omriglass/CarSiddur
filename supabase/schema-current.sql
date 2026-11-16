@@ -4806,6 +4806,20 @@ $$;
 ALTER FUNCTION "public"."_request_is_ride_guest"("p_request" "uuid", "p_ride" "uuid") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."_request_riders_json"("p_request_id" "uuid") RETURNS "jsonb"
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  select coalesce(jsonb_agg(jsonb_build_object('rider_key', s.rider_key, 'leg', s.leg::text, 'seat_kind', s.seat_kind, 'rides', s.rides,
+           'board_place_id', s.board_place_id, 'board_place_text', s.board_place_text,
+           'alight_place_id', s.alight_place_id, 'alight_place_text', s.alight_place_text) order by s.rider_key, s.leg::text), '[]'::jsonb)
+    from public.request_rider_stops s where s.request_id = p_request_id;
+$$;
+
+
+ALTER FUNCTION "public"."_request_riders_json"("p_request_id" "uuid") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."_request_save_unchanged"("p_request_id" "uuid", "payload" "jsonb", "p_trip_type" "public"."trip_type", "p_trip_shape" "public"."trip_shape", "p_needs_car" boolean, "p_one_way_mode" "public"."leg_car_mode", "p_origin_id" "uuid", "p_origin_text" "text", "p_depart_at" timestamp with time zone, "p_return_at" timestamp with time zone, "p_placement_only" boolean DEFAULT false) RETURNS boolean
     LANGUAGE "plpgsql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -4939,6 +4953,12 @@ begin
          from (select t.ord, t.item ->> 'leg' as leg, nullif(t.item ->> 'place_id', '')::uuid as place_id, nullif(t.item ->> 'place_text', '') as place_text
                  from jsonb_array_elements(payload -> 'stops') with ordinality t(item, ord)) x)
     ) then return false; end if;
+  end if;
+
+  -- REQ item 246 h: riders (who gets on / off where), when sent - compared in their stored (canonical) form
+  if payload ? 'riders' then
+    if jsonb_typeof(payload -> 'riders') is distinct from 'array' then return false; end if;
+    if public._riders_canon(payload -> 'riders') is distinct from public._request_riders_json(e.id) then return false; end if;
   end if;
 
   -- companions (a set) and named guests (a list), when sent
@@ -5294,6 +5314,155 @@ $$;
 
 
 ALTER FUNCTION "public"."_ride_fp_matches"("p_ride_id" "uuid", "p_stored" "text") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."_ride_has_rider_spans"("p_ride_id" "uuid", "p_with_passengers" boolean DEFAULT false) RETURNS boolean
+    LANGUAGE "plpgsql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+begin
+  -- plpgsql (not sql): its plan is cached across calls (PF1)
+  return exists (select 1 from public.ride_requests rr join public.request_rider_stops s on s.request_id = rr.request_id
+                  where rr.ride_id = p_ride_id)
+      or (p_with_passengers and exists (select 1 from public.ride_passengers rp where rp.ride_id = p_ride_id
+                  and coalesce(rp.board_place_id::text, rp.board_place_text, rp.alight_place_id::text, rp.alight_place_text) is not null));
+end;
+$$;
+
+
+ALTER FUNCTION "public"."_ride_has_rider_spans"("p_ride_id" "uuid", "p_with_passengers" boolean) OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."_ride_leg_fits_along"("p_ride_id" "uuid", "p_leg" "public"."ride_leg", "p_car_id" "uuid", "p_extra" "jsonb", "p_with_passengers" boolean DEFAULT false) RETURNS boolean
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  select coalesce(bool_and(public.car_fits(p_car_id, (l ->> 'adults')::int, (l ->> 'childSeats')::int, (l ->> 'boosters')::int)), true)
+    from (select public._ride_leg_riders(p_ride_id, p_leg, p_with_passengers) as x) r
+    cross join lateral jsonb_array_elements(public._stretch_loads((r.x ->> 'points')::int,
+      (r.x -> 'riders') || coalesce(p_extra, '[]'::jsonb))) l;
+$$;
+
+
+ALTER FUNCTION "public"."_ride_leg_fits_along"("p_ride_id" "uuid", "p_leg" "public"."ride_leg", "p_car_id" "uuid", "p_extra" "jsonb", "p_with_passengers" boolean) OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."_ride_leg_riders"("p_ride_id" "uuid", "p_leg" "public"."ride_leg", "p_with_passengers" boolean DEFAULT false) RETURNS "jsonb"
+    LANGUAGE "plpgsql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  v_route jsonb;
+  v_n int;
+  v_base uuid;
+  v_base_idx int[];
+  v_riders jsonb := '[]'::jsonb;
+  q record; s record; p record;
+  v_b int; v_a int; v_from int; v_to int;
+  v_rows jsonb;
+  v_less_a int; v_less_c int; v_less_b int;
+  v_pts record;
+begin
+  select coalesce(jsonb_agg(jsonb_build_object('place_id', r.place_id, 'place_text', r.place_text, 'request_id', r.request_id, 'kind', r.kind)
+           order by r."position"), '[]'::jsonb)
+    into v_route from public._ride_route(p_ride_id) r where r.leg = p_leg;
+  v_n := jsonb_array_length(v_route);
+  if v_n < 2 then return jsonb_build_object('points', greatest(v_n, 2), 'riders', '[]'::jsonb); end if;
+
+  select rr.request_id into v_base from public.ride_requests rr where rr.ride_id = p_ride_id
+   order by (rr.role = 'driver') desc, rr.created_at, rr.request_id limit 1;
+  -- route index of each of the base request's own points (origin, its stops, destination), in order
+  select array_agg(e.i - 1 order by e.i) into v_base_idx
+    from jsonb_array_elements(v_route) with ordinality e(v, i)
+   where (e.v ->> 'request_id')::uuid = v_base and e.v ->> 'kind' in ('origin', 'stop', 'destination');
+
+  for q in
+    select x.id, x.adults, x.child_seats, x.boosters, x.origin_id, x.origin_text, x.destination_id, x.destination_text,
+           coalesce(cardinality(x.guest_passenger_names), 0) as gn,
+           (select count(*) from public.request_companions rc where rc.request_id = x.id)::int as cn
+      from public.requests x
+     where x.id in (select rr.request_id from public.ride_requests rr where rr.ride_id = p_ride_id
+                     and ((p_leg = 'out' and rr.covers_out) or (p_leg = 'return' and rr.covers_return)))
+     order by x.id
+  loop
+    -- this request's span on the ride route
+    if q.id = v_base then
+      v_from := 0; v_to := v_n - 1;
+    else
+      select min(e.i - 1) into v_b from jsonb_array_elements(v_route) with ordinality e(v, i)
+       where e.i < v_n and (((e.v ->> 'request_id')::uuid = q.id and e.v ->> 'kind' = 'board')
+          or (e.v ->> 'place_id')::uuid = case when p_leg = 'out' then q.origin_id else q.destination_id end);
+      select min(e.i - 1) into v_a from jsonb_array_elements(v_route) with ordinality e(v, i)
+       where e.i - 1 > coalesce(v_b, 0) and (((e.v ->> 'request_id')::uuid = q.id and e.v ->> 'kind' = 'alight')
+          or (e.v ->> 'place_id')::uuid = case when p_leg = 'out' then q.destination_id else q.origin_id end);
+      if v_b is null or v_a is null then v_from := 0; v_to := v_n - 1; else v_from := v_b; v_to := v_a; end if;
+    end if;
+
+    -- the rider rows that still describe someone on this request
+    select coalesce(jsonb_agg(to_jsonb(r) order by r.rider_key), '[]'::jsonb) into v_rows
+      from public.request_rider_stops r
+     where r.request_id = q.id and r.leg = p_leg
+       and ((r.rider_key like 'companion:%' and exists (select 1 from public.request_companions rc
+               where rc.request_id = q.id and rc.profile_id = substr(r.rider_key, 11)::uuid))
+         or (r.rider_key like 'child:%' and exists (select 1 from public.request_children ch
+               where ch.request_id = q.id and ch.child_id = substr(r.rider_key, 7)::uuid))
+         or (r.rider_key like 'guest:%' and substr(r.rider_key, 7)::int <= greatest(q.adults - 1 - q.cn, q.gn, 0)));
+
+    select least(coalesce(sum(case when x ->> 'seat_kind' = 'adult' then 1 else 0 end), 0)::int, q.adults),
+           least(coalesce(sum(case when x ->> 'seat_kind' = 'child_seat' then 1 else 0 end), 0)::int, q.child_seats),
+           least(coalesce(sum(case when x ->> 'seat_kind' = 'booster' then 1 else 0 end), 0)::int, q.boosters)
+      into v_less_a, v_less_c, v_less_b
+      from jsonb_array_elements(v_rows) x;
+    v_riders := v_riders || jsonb_build_array(jsonb_build_object('adults', q.adults - v_less_a, 'childSeats', q.child_seats - v_less_c,
+      'boosters', q.boosters - v_less_b, 'board', v_from, 'alight', v_to));
+
+    for s in select x as r from jsonb_array_elements(v_rows) x where (x ->> 'rides')::boolean loop
+      v_b := v_from; v_a := v_to;
+      if q.id = v_base and v_base_idx is not null then
+        -- positions on the base request's own route of this leg, mapped to the ride route
+        v_b := null; v_a := null;
+        select min(pt."position") into v_b from public.request_leg_route_points(q.id, p_leg) pt
+         where pt."position" < cardinality(v_base_idx) - 1
+           and ((s.r ->> 'board_place_id' is not null and pt.place_id = (s.r ->> 'board_place_id')::uuid)
+             or (s.r ->> 'board_place_text' is not null and lower(pt.place_text) = lower(s.r ->> 'board_place_text')));
+        select min(pt."position") into v_a from public.request_leg_route_points(q.id, p_leg) pt
+         where pt."position" > coalesce(v_b, 0)
+           and ((s.r ->> 'alight_place_id' is not null and pt.place_id = (s.r ->> 'alight_place_id')::uuid)
+             or (s.r ->> 'alight_place_text' is not null and lower(pt.place_text) = lower(s.r ->> 'alight_place_text')));
+        v_b := coalesce(v_base_idx[coalesce(v_b, 0) + 1], 0);
+        v_a := coalesce(v_base_idx[coalesce(v_a, cardinality(v_base_idx) - 1) + 1], v_n - 1);
+      end if;
+      v_riders := v_riders || jsonb_build_array(jsonb_build_object(
+        'adults', case when s.r ->> 'seat_kind' = 'adult' then 1 else 0 end,
+        'childSeats', case when s.r ->> 'seat_kind' = 'child_seat' then 1 else 0 end,
+        'boosters', case when s.r ->> 'seat_kind' = 'booster' then 1 else 0 end,
+        'board', v_b, 'alight', v_a));
+    end loop;
+  end loop;
+
+  if p_with_passengers then
+    for p in select rp.* from public.ride_passengers rp
+              where rp.ride_id = p_ride_id and (rp.leg = 'both' or rp.leg = p_leg) order by rp.id loop
+      select min(e.i - 1) into v_b from jsonb_array_elements(v_route) with ordinality e(v, i)
+       where e.i < v_n and ((p.board_place_id is not null and (e.v ->> 'place_id')::uuid = p.board_place_id)
+          or (p.board_place_text is not null and lower(e.v ->> 'place_text') = lower(p.board_place_text)));
+      select min(e.i - 1) into v_a from jsonb_array_elements(v_route) with ordinality e(v, i)
+       where e.i - 1 > coalesce(v_b, 0) and ((p.alight_place_id is not null and (e.v ->> 'place_id')::uuid = p.alight_place_id)
+          or (p.alight_place_text is not null and lower(e.v ->> 'place_text') = lower(p.alight_place_text)));
+      v_riders := v_riders || jsonb_build_array(jsonb_build_object(
+        'adults', case when p.seat_kind = 'adult' then 1 else 0 end,
+        'childSeats', case when p.seat_kind = 'child_seat' then 1 else 0 end,
+        'boosters', case when p.seat_kind = 'booster' then 1 else 0 end,
+        'board', v_b, 'alight', v_a));
+    end loop;
+  end if;
+
+  return jsonb_build_object('points', v_n, 'riders', v_riders);
+end;
+$$;
+
+
+ALTER FUNCTION "public"."_ride_leg_riders"("p_ride_id" "uuid", "p_leg" "public"."ride_leg", "p_with_passengers" boolean) OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."_ride_moved_by_member"("p_ride_id" "uuid", "p_before" "jsonb", "p_agreed" boolean) RETURNS "void"
@@ -5898,6 +6067,31 @@ $$;
 
 
 ALTER FUNCTION "public"."_ride_task_people"("p_ride_id" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."_riders_canon"("p_riders" "jsonb") RETURNS "jsonb"
+    LANGUAGE "sql" IMMUTABLE
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  select coalesce(jsonb_agg(x.o order by x.o ->> 'rider_key', x.o ->> 'leg'), '[]'::jsonb)
+    from (
+      select jsonb_build_object(
+               'rider_key', i ->> 'rider_key', 'leg', i ->> 'leg',
+               'seat_kind', case when i ->> 'rider_key' like 'child:%' then coalesce(nullif(i ->> 'seat_kind', ''), 'child_seat') else 'adult' end,
+               'rides', coalesce((i ->> 'rides')::boolean, true),
+               'board_place_id', case when coalesce((i ->> 'rides')::boolean, true) then nullif(i ->> 'board_place_id', '') end,
+               'board_place_text', case when coalesce((i ->> 'rides')::boolean, true) and nullif(i ->> 'board_place_id', '') is null then nullif(btrim(i ->> 'board_place_text'), '') end,
+               'alight_place_id', case when coalesce((i ->> 'rides')::boolean, true) then nullif(i ->> 'alight_place_id', '') end,
+               'alight_place_text', case when coalesce((i ->> 'rides')::boolean, true) and nullif(i ->> 'alight_place_id', '') is null then nullif(btrim(i ->> 'alight_place_text'), '') end) as o
+        from jsonb_array_elements(case when jsonb_typeof(p_riders) = 'array' then p_riders else '[]'::jsonb end) i
+       where jsonb_typeof(i) = 'object'
+    ) x
+   where not ((x.o ->> 'rides')::boolean and x.o ->> 'board_place_id' is null and x.o ->> 'board_place_text' is null
+              and x.o ->> 'alight_place_id' is null and x.o ->> 'alight_place_text' is null);
+$$;
+
+
+ALTER FUNCTION "public"."_riders_canon"("p_riders" "jsonb") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."_round5"("_at" timestamp with time zone) RETURNS timestamp with time zone
@@ -6621,6 +6815,33 @@ COMMENT ON FUNCTION "public"."_stop_schedule"("p_points" "jsonb", "p_stop_minute
 
 
 
+CREATE OR REPLACE FUNCTION "public"."_stretch_loads"("p_points" integer, "p_riders" "jsonb") RETURNS "jsonb"
+    LANGUAGE "sql" IMMUTABLE
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  with n as (select greatest(coalesce(p_points, 0) - 1, 0) as n),
+  r as (
+    select coalesce((x ->> 'adults')::int, 0) as a, coalesce((x ->> 'childSeats')::int, 0) as c, coalesce((x ->> 'boosters')::int, 0) as b,
+           least(greatest(coalesce((x ->> 'board')::int, 0), 0), n.n) as f,
+           least(greatest(coalesce((x ->> 'alight')::int, n.n), 0), n.n) as t
+      from jsonb_array_elements(coalesce(p_riders, '[]'::jsonb)) x, n
+  ),
+  rr as (select a, c, b, case when f >= t then 0 else f end as f, case when f >= t then (select n from n) else t end as t from r)
+  select coalesce(jsonb_agg(jsonb_build_object('adults', l.a, 'childSeats', l.c, 'boosters', l.b) order by l.s), '[]'::jsonb)
+    from (select s.s, coalesce(sum(rr.a), 0)::int as a, coalesce(sum(rr.c), 0)::int as c, coalesce(sum(rr.b), 0)::int as b
+            from generate_series(0, (select n from n) - 1) s(s)
+            left join rr on s.s >= rr.f and s.s < rr.t
+           group by s.s) l;
+$$;
+
+
+ALTER FUNCTION "public"."_stretch_loads"("p_points" integer, "p_riders" "jsonb") OWNER TO "postgres";
+
+
+COMMENT ON FUNCTION "public"."_stretch_loads"("p_points" integer, "p_riders" "jsonb") IS 'REQ item 246 h: seats per stretch of a leg with p_points route places; riders [{adults, childSeats, boosters, board, alight}] take seats from board up to (not incl.) alight (null = start / end; clamped; board >= alight = the whole leg). Pure, internal.';
+
+
+
 CREATE OR REPLACE FUNCTION "public"."_sync_car_owner_id"("p_car" "uuid") RETURNS "void"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -6982,7 +7203,7 @@ begin
                        case when ri.id is not null and ri.status <> ''draft'' then 1 else 0 end m
                   from %1$I x left join public.rides ri on ri.id = x.ride_id
                   left join public.requests q on q.id = x.request_id';
-    when 'request_companions', 'request_children', 'request_stops', 'request_alternatives' then
+    when 'request_companions', 'request_children', 'request_stops', 'request_alternatives', 'request_rider_stops' then
       v_tpl := 'select q.department_id d, q.week_start w, v.day d2, 1 m
                   from %1$I x join public.requests q on q.id = x.request_id
                   cross join lateral (values ((q.depart_at at time zone ''Asia/Jerusalem'')::date),
@@ -8787,7 +9008,7 @@ CREATE OR REPLACE FUNCTION "public"."assert_ride_seats_fit"("v_ride" "uuid") RET
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
-declare r record; v_mode text; v_ids uuid[]; v_holder uuid; v_hitch boolean; v_lug_ok boolean; v_private boolean;
+declare r record; v_mode text; v_bonus int; v_ids uuid[]; v_holder uuid; v_hitch boolean; v_lug_ok boolean; v_private boolean;
 begin
   v_mode := coalesce(current_setting('app.small_trunk', true), '');
   for r in
@@ -8803,12 +9024,17 @@ begin
       and ((legs.leg_side = 'out' and rr.covers_out) or (legs.leg_side = 'return' and rr.covers_return))
     group by leg_side, rd.car_id
   loop
+    v_bonus := 0;
     if not exists (select 1 from public.ride_requests x where x.ride_id = v_ride and x.role = 'driver')
       and not exists (select 1 from public.ride_requests x join public.requests q on q.id=x.request_id join public.rides rd on rd.id=x.ride_id
         where x.ride_id=v_ride and q.requester_id=rd.driver_id and ((r.leg_side='out' and x.covers_out) or (r.leg_side='return' and x.covers_return))) then
-      r.a := r.a + 1;   -- chauffeur ride: the volunteer has no request of their own (§5.2)
+      r.a := r.a + 1; v_bonus := 1;   -- chauffeur ride: the volunteer has no request of their own (§5.2)
     end if;
-    if not public.car_fits(r.car_id, r.a::int, r.c::int, r.b::int) then
+    -- REQ item 246 h: the per-leg sum first; only when it does not fit, and someone on the ride gets on / off midway,
+    -- the seats per stretch decide (never more than the sum, so a ride that fits costs nothing extra)
+    if not public.car_fits(r.car_id, r.a::int, r.c::int, r.b::int)
+       and not (public._ride_has_rider_spans(v_ride)
+                and public._ride_leg_fits_along(v_ride, r.leg_side::public.ride_leg, r.car_id, jsonb_build_array(jsonb_build_object('adults', v_bonus)))) then
       raise exception 'seat_config_violation' using detail =
         format('ride %s leg %s needs (%s,%s,%s)', v_ride, r.leg_side, r.a, r.c, r.b);
     end if;
@@ -19709,6 +19935,54 @@ $$;
 ALTER FUNCTION "public"."reopen_week"("p_department_id" "uuid", "p_week_start" "date", "p_phase" "public"."week_phase", "p_expected_fingerprint" "text") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."replace_request_riders"("p_request_id" "uuid", "p_department_id" "uuid", "p_riders" "jsonb") RETURNS "void"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  v_canon jsonb;
+  v_item jsonb;
+begin
+  if jsonb_typeof(p_riders) is distinct from 'array' or jsonb_array_length(p_riders) > 100
+     or exists (select 1 from jsonb_array_elements(p_riders) i where jsonb_typeof(i) <> 'object'
+                  or coalesce(i ->> 'leg', '') not in ('out', 'return')
+                  or (i ? 'rides' and jsonb_typeof(i -> 'rides') <> 'boolean')
+                  or (nullif(i ->> 'seat_kind', '') is not null and i ->> 'seat_kind' not in ('adult', 'child_seat', 'booster'))) then
+    raise exception 'invalid_riders' using errcode = 'P0001';
+  end if;
+  v_canon := public._riders_canon(p_riders);
+  if (select count(*) from jsonb_array_elements(v_canon) c) <> (select count(distinct (c ->> 'rider_key', c ->> 'leg')) from jsonb_array_elements(v_canon) c) then
+    raise exception 'invalid_riders' using errcode = 'P0001';
+  end if;
+  for v_item in select * from jsonb_array_elements(v_canon) loop
+    if exists (select 1 from (values (v_item ->> 'board_place_id'), (v_item ->> 'alight_place_id')) p(id)
+               where p.id is not null and not exists (select 1 from public.destinations d
+                 where d.id = p.id::uuid and d.department_id = p_department_id and d.is_approved)) then
+      raise exception 'invalid_riders' using errcode = 'P0001';
+    end if;
+  end loop;
+
+  delete from public.request_rider_stops where request_id = p_request_id;
+  begin
+    insert into public.request_rider_stops (request_id, department_id, rider_key, seat_kind, leg, rides,
+      board_place_id, board_place_text, alight_place_id, alight_place_text)
+    select p_request_id, p_department_id, c ->> 'rider_key', c ->> 'seat_kind', (c ->> 'leg')::public.ride_leg, (c ->> 'rides')::boolean,
+           (c ->> 'board_place_id')::uuid, c ->> 'board_place_text', (c ->> 'alight_place_id')::uuid, c ->> 'alight_place_text'
+      from jsonb_array_elements(v_canon) c;
+  exception when check_violation or invalid_text_representation then
+    raise exception 'invalid_riders' using errcode = 'P0001';
+  end;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."replace_request_riders"("p_request_id" "uuid", "p_department_id" "uuid", "p_riders" "jsonb") OWNER TO "postgres";
+
+
+COMMENT ON FUNCTION "public"."replace_request_riders"("p_request_id" "uuid", "p_department_id" "uuid", "p_riders" "jsonb") IS 'REQ item 246 h: submit_request `riders` [{rider_key, leg, rides?, seat_kind?, board_place_id|board_place_text?, alight_place_id|alight_place_text?}] is the complete list; rows equal to the whole ride are dropped. Internal.';
+
+
+
 CREATE OR REPLACE FUNCTION "public"."replace_request_stops"("p_request_id" "uuid", "p_department_id" "uuid", "p_has_return" boolean, "p_stops" "jsonb") RETURNS "void"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -22437,8 +22711,19 @@ begin
     group by legs.leg_side, ride.car_id
     order by legs.leg_side
   loop
+    -- REQ item 246 h: as assert_ride_seats_fit - per stretch only when the sum does not fit and someone gets on / off
+    -- midway; the proposed guests (and a volunteer driver) = the leg's count less the ride's own rows, on the whole leg.
+    -- (A nested if: a subquery in the first test would cost every call the full executor.)
     if not public.car_fits(r.car_id, r.a::int, r.c::int, r.b::int) then
-      return 'seat_config_violation';
+      if not public._ride_has_rider_spans(p_ride_id)
+         or not public._ride_leg_fits_along(p_ride_id, r.leg_side::public.ride_leg, r.car_id,
+              (select jsonb_build_array(jsonb_build_object('adults', r.a - coalesce(sum(q.adults), 0),
+                 'childSeats', r.c - coalesce(sum(q.child_seats), 0), 'boosters', r.b - coalesce(sum(q.boosters), 0)))
+               from public.ride_requests rr join public.requests q on q.id = rr.request_id
+              where rr.ride_id = p_ride_id
+                and ((r.leg_side = 'out' and rr.covers_out) or (r.leg_side = 'return' and rr.covers_return)))) then
+        return 'seat_config_violation';
+      end if;
     end if;
     if not public.car_meets_needs(r.car_id, r.lug::int, r.tow::int) then
       if v_mode = 'allow' then
@@ -26364,6 +26649,12 @@ begin
   -- order per leg; absent key = leave existing stops untouched (same convention as `notes`).
   if payload ? 'stops' then
     perform public.replace_request_stops(v_request_id, v_department_id, v_return_at is not null, payload -> 'stops');
+  end if;
+
+  -- REQ item 246 h: `riders` = who of this request gets on / off where per direction, the complete list (absent = untouched;
+  -- rows equal to the whole ride are not stored).
+  if payload ? 'riders' then
+    perform public.replace_request_riders(v_request_id, v_department_id, payload -> 'riders');
   end if;
 
   -- REQ §13.112 (a)/(b): plan B / "אסתדר" (validated against the row just written; keys absent = keep, moved with the day).
@@ -30400,6 +30691,43 @@ ALTER TABLE ONLY "public"."request_companions" FORCE ROW LEVEL SECURITY;
 ALTER TABLE "public"."request_companions" OWNER TO "postgres";
 
 
+CREATE TABLE IF NOT EXISTS "public"."request_rider_stops" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "request_id" "uuid" NOT NULL,
+    "department_id" "uuid" NOT NULL,
+    "rider_key" "text" NOT NULL,
+    "seat_kind" "text" DEFAULT 'adult'::"text" NOT NULL,
+    "leg" "public"."ride_leg" NOT NULL,
+    "rides" boolean DEFAULT true NOT NULL,
+    "board_place_id" "uuid",
+    "board_place_text" "text",
+    "alight_place_id" "uuid",
+    "alight_place_text" "text",
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    CONSTRAINT "request_rider_stops_alight_ck" CHECK ((("alight_place_id" IS NULL) OR ("alight_place_text" IS NULL))),
+    CONSTRAINT "request_rider_stops_board_ck" CHECK ((("board_place_id" IS NULL) OR ("board_place_text" IS NULL))),
+    CONSTRAINT "request_rider_stops_key_ck" CHECK ((("rider_key" ~ '^(companion|child):[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'::"text") OR ("rider_key" ~ '^guest:([1-9]|1[0-9]|20)$'::"text"))),
+    CONSTRAINT "request_rider_stops_leg_ck" CHECK (("leg" = ANY (ARRAY['out'::"public"."ride_leg", 'return'::"public"."ride_leg"]))),
+    CONSTRAINT "request_rider_stops_seat_ck" CHECK (("seat_kind" = ANY (ARRAY['adult'::"text", 'child_seat'::"text", 'booster'::"text"]))),
+    CONSTRAINT "request_rider_stops_shape_ck" CHECK (
+CASE
+    WHEN "rides" THEN (COALESCE(("board_place_id")::"text", "board_place_text", ("alight_place_id")::"text", "alight_place_text") IS NOT NULL)
+    ELSE (COALESCE(("board_place_id")::"text", "board_place_text", ("alight_place_id")::"text", "alight_place_text") IS NULL)
+END),
+    CONSTRAINT "request_rider_stops_text_ck" CHECK ((((COALESCE("length"("board_place_text"), 1) >= 1) AND (COALESCE("length"("board_place_text"), 1) <= 200)) AND ((COALESCE("length"("alight_place_text"), 1) >= 1) AND (COALESCE("length"("alight_place_text"), 1) <= 200))))
+);
+
+ALTER TABLE ONLY "public"."request_rider_stops" FORCE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."request_rider_stops" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."request_rider_stops" IS 'REQ item 246 h: one row per person of a request (rider_key companion:<profile> | child:<child> | guest:<n>) and direction that differs from the whole ride - not riding it (rides = false), or getting on / off at a route place (null = where the leg starts / ends). No rows = everyone rides the whole ride. Written only by submit_request (`riders`).';
+
+
+
 CREATE TABLE IF NOT EXISTS "public"."request_stops" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "request_id" "uuid" NOT NULL,
@@ -30610,8 +30938,15 @@ CREATE TABLE IF NOT EXISTS "public"."ride_passengers" (
     "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
     "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
     "leg" "public"."ride_leg" DEFAULT 'both'::"public"."ride_leg" NOT NULL,
+    "board_place_id" "uuid",
+    "board_place_text" "text",
+    "alight_place_id" "uuid",
+    "alight_place_text" "text",
+    CONSTRAINT "ride_passengers_alight_ck" CHECK ((("alight_place_id" IS NULL) OR ("alight_place_text" IS NULL))),
+    CONSTRAINT "ride_passengers_board_ck" CHECK ((("board_place_id" IS NULL) OR ("board_place_text" IS NULL))),
     CONSTRAINT "ride_passengers_display_name_check" CHECK ((("length"(TRIM(BOTH FROM "display_name")) >= 1) AND ("length"(TRIM(BOTH FROM "display_name")) <= 100))),
     CONSTRAINT "ride_passengers_one_link_ck" CHECK ((("person_id" IS NULL) OR ("child_id" IS NULL))),
+    CONSTRAINT "ride_passengers_place_text_ck" CHECK ((((COALESCE("length"("board_place_text"), 1) >= 1) AND (COALESCE("length"("board_place_text"), 1) <= 200)) AND ((COALESCE("length"("alight_place_text"), 1) >= 1) AND (COALESCE("length"("alight_place_text"), 1) <= 200)))),
     CONSTRAINT "ride_passengers_seat_kind_check" CHECK (("seat_kind" = ANY (ARRAY['adult'::"text", 'child_seat'::"text", 'booster'::"text"])))
 );
 
@@ -32050,6 +32385,16 @@ ALTER TABLE ONLY "public"."request_companions"
 
 
 
+ALTER TABLE ONLY "public"."request_rider_stops"
+    ADD CONSTRAINT "request_rider_stops_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."request_rider_stops"
+    ADD CONSTRAINT "request_rider_stops_unique" UNIQUE ("request_id", "rider_key", "leg");
+
+
+
 ALTER TABLE ONLY "public"."request_stops"
     ADD CONSTRAINT "request_stops_pkey" PRIMARY KEY ("id");
 
@@ -32406,6 +32751,10 @@ CREATE INDEX "push_outbox_notification_id_idx" ON "public"."push_outbox" USING "
 
 
 CREATE INDEX "push_outbox_subscription_id_idx" ON "public"."push_outbox" USING "btree" ("subscription_id");
+
+
+
+CREATE INDEX "request_rider_stops_request_id_idx" ON "public"."request_rider_stops" USING "btree" ("request_id");
 
 
 
@@ -33750,6 +34099,10 @@ CREATE OR REPLACE TRIGGER "set_updated_at" BEFORE UPDATE ON "public"."request_al
 
 
 
+CREATE OR REPLACE TRIGGER "set_updated_at" BEFORE UPDATE ON "public"."request_rider_stops" FOR EACH ROW EXECUTE FUNCTION "public"."set_updated_at"();
+
+
+
 CREATE OR REPLACE TRIGGER "set_updated_at" BEFORE UPDATE ON "public"."request_stops" FOR EACH ROW EXECUTE FUNCTION "public"."set_updated_at"();
 
 
@@ -33898,6 +34251,10 @@ CREATE OR REPLACE TRIGGER "wcs_del" AFTER DELETE ON "public"."request_companions
 
 
 
+CREATE OR REPLACE TRIGGER "wcs_del" AFTER DELETE ON "public"."request_rider_stops" REFERENCING OLD TABLE AS "old_rows" FOR EACH STATEMENT EXECUTE FUNCTION "public"."_wcs_capture"();
+
+
+
 CREATE OR REPLACE TRIGGER "wcs_del" AFTER DELETE ON "public"."request_stops" REFERENCING OLD TABLE AS "old_rows" FOR EACH STATEMENT EXECUTE FUNCTION "public"."_wcs_capture"();
 
 
@@ -33990,6 +34347,10 @@ CREATE OR REPLACE TRIGGER "wcs_ins" AFTER INSERT ON "public"."request_companions
 
 
 
+CREATE OR REPLACE TRIGGER "wcs_ins" AFTER INSERT ON "public"."request_rider_stops" REFERENCING NEW TABLE AS "new_rows" FOR EACH STATEMENT EXECUTE FUNCTION "public"."_wcs_capture"();
+
+
+
 CREATE OR REPLACE TRIGGER "wcs_ins" AFTER INSERT ON "public"."request_stops" REFERENCING NEW TABLE AS "new_rows" FOR EACH STATEMENT EXECUTE FUNCTION "public"."_wcs_capture"();
 
 
@@ -34079,6 +34440,10 @@ CREATE OR REPLACE TRIGGER "wcs_upd" AFTER UPDATE ON "public"."request_children" 
 
 
 CREATE OR REPLACE TRIGGER "wcs_upd" AFTER UPDATE ON "public"."request_companions" REFERENCING OLD TABLE AS "old_rows" NEW TABLE AS "new_rows" FOR EACH STATEMENT EXECUTE FUNCTION "public"."_wcs_capture"();
+
+
+
+CREATE OR REPLACE TRIGGER "wcs_upd" AFTER UPDATE ON "public"."request_rider_stops" REFERENCING OLD TABLE AS "old_rows" NEW TABLE AS "new_rows" FOR EACH STATEMENT EXECUTE FUNCTION "public"."_wcs_capture"();
 
 
 
@@ -34745,6 +35110,26 @@ ALTER TABLE ONLY "public"."request_companions"
 
 
 
+ALTER TABLE ONLY "public"."request_rider_stops"
+    ADD CONSTRAINT "request_rider_stops_alight_place_fkey" FOREIGN KEY ("department_id", "alight_place_id") REFERENCES "public"."destinations"("department_id", "id");
+
+
+
+ALTER TABLE ONLY "public"."request_rider_stops"
+    ADD CONSTRAINT "request_rider_stops_board_place_fkey" FOREIGN KEY ("department_id", "board_place_id") REFERENCES "public"."destinations"("department_id", "id");
+
+
+
+ALTER TABLE ONLY "public"."request_rider_stops"
+    ADD CONSTRAINT "request_rider_stops_department_id_fkey" FOREIGN KEY ("department_id") REFERENCES "public"."departments"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."request_rider_stops"
+    ADD CONSTRAINT "request_rider_stops_request_id_fkey" FOREIGN KEY ("request_id") REFERENCES "public"."requests"("id") ON DELETE CASCADE;
+
+
+
 ALTER TABLE ONLY "public"."request_stops"
     ADD CONSTRAINT "request_stops_department_id_fkey" FOREIGN KEY ("department_id") REFERENCES "public"."departments"("id") ON DELETE CASCADE;
 
@@ -34912,6 +35297,16 @@ ALTER TABLE ONLY "public"."ride_editors"
 
 ALTER TABLE ONLY "public"."ride_passengers"
     ADD CONSTRAINT "ride_passengers_added_by_fkey" FOREIGN KEY ("added_by") REFERENCES "public"."profiles"("id");
+
+
+
+ALTER TABLE ONLY "public"."ride_passengers"
+    ADD CONSTRAINT "ride_passengers_alight_place_fkey" FOREIGN KEY ("department_id", "alight_place_id") REFERENCES "public"."destinations"("department_id", "id");
+
+
+
+ALTER TABLE ONLY "public"."ride_passengers"
+    ADD CONSTRAINT "ride_passengers_board_place_fkey" FOREIGN KEY ("department_id", "board_place_id") REFERENCES "public"."destinations"("department_id", "id");
 
 
 
@@ -35885,6 +36280,19 @@ CREATE POLICY "request_companions_select_ride_editor" ON "public"."request_compa
 
 
 
+ALTER TABLE "public"."request_rider_stops" ENABLE ROW LEVEL SECURITY;
+
+
+CREATE POLICY "request_rider_stops_select" ON "public"."request_rider_stops" FOR SELECT TO "authenticated" USING ((EXISTS ( SELECT 1
+   FROM "public"."requests" "q"
+  WHERE (("q"."id" = "request_rider_stops"."request_id") AND (("q"."requester_id" = ( SELECT "auth"."uid"() AS "uid")) OR ("q"."filed_by" = ( SELECT "auth"."uid"() AS "uid")) OR ("q"."id" IN ( SELECT "r"."r"
+           FROM "public"."my_companion_request_ids"() "r"("r"))) OR ("q"."department_id" IN ( SELECT "d"."d"
+           FROM "public"."my_sadran_department_ids"() "d"("d"))) OR (("q"."department_id", "q"."week_start") IN ( SELECT "w"."department_id",
+            "w"."week_start"
+           FROM "public"."my_sadran_weeks"() "w"("department_id", "week_start"))) OR ( SELECT "public"."is_admin"() AS "is_admin") OR (( SELECT "public"."is_approved"() AS "is_approved") AND "public"."is_week_public"("q"."department_id", "q"."week_start") AND "public"."request_served_by_public_ride"("q"."id")))))));
+
+
+
 ALTER TABLE "public"."request_stops" ENABLE ROW LEVEL SECURITY;
 
 
@@ -36743,6 +37151,11 @@ GRANT ALL ON FUNCTION "public"."_request_is_ride_guest"("p_request" "uuid", "p_r
 
 
 
+REVOKE ALL ON FUNCTION "public"."_request_riders_json"("p_request_id" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_request_riders_json"("p_request_id" "uuid") TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."_request_save_unchanged"("p_request_id" "uuid", "payload" "jsonb", "p_trip_type" "public"."trip_type", "p_trip_shape" "public"."trip_shape", "p_needs_car" boolean, "p_one_way_mode" "public"."leg_car_mode", "p_origin_id" "uuid", "p_origin_text" "text", "p_depart_at" timestamp with time zone, "p_return_at" timestamp with time zone, "p_placement_only" boolean) FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."_request_save_unchanged"("p_request_id" "uuid", "payload" "jsonb", "p_trip_type" "public"."trip_type", "p_trip_shape" "public"."trip_shape", "p_needs_car" boolean, "p_one_way_mode" "public"."leg_car_mode", "p_origin_id" "uuid", "p_origin_text" "text", "p_depart_at" timestamp with time zone, "p_return_at" timestamp with time zone, "p_placement_only" boolean) TO "service_role";
 
@@ -36807,6 +37220,21 @@ GRANT ALL ON FUNCTION "public"."_ride_fp_legacy"("p_ride_id" "uuid", "p_status" 
 
 REVOKE ALL ON FUNCTION "public"."_ride_fp_matches"("p_ride_id" "uuid", "p_stored" "text") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."_ride_fp_matches"("p_ride_id" "uuid", "p_stored" "text") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."_ride_has_rider_spans"("p_ride_id" "uuid", "p_with_passengers" boolean) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_ride_has_rider_spans"("p_ride_id" "uuid", "p_with_passengers" boolean) TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."_ride_leg_fits_along"("p_ride_id" "uuid", "p_leg" "public"."ride_leg", "p_car_id" "uuid", "p_extra" "jsonb", "p_with_passengers" boolean) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_ride_leg_fits_along"("p_ride_id" "uuid", "p_leg" "public"."ride_leg", "p_car_id" "uuid", "p_extra" "jsonb", "p_with_passengers" boolean) TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."_ride_leg_riders"("p_ride_id" "uuid", "p_leg" "public"."ride_leg", "p_with_passengers" boolean) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_ride_leg_riders"("p_ride_id" "uuid", "p_leg" "public"."ride_leg", "p_with_passengers" boolean) TO "service_role";
 
 
 
@@ -37133,6 +37561,11 @@ GRANT ALL ON FUNCTION "public"."_ride_task_people"("p_ride_id" "uuid") TO "servi
 
 
 
+REVOKE ALL ON FUNCTION "public"."_riders_canon"("p_riders" "jsonb") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_riders_canon"("p_riders" "jsonb") TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."_round5"("_at" timestamp with time zone) FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."_round5"("_at" timestamp with time zone) TO "service_role";
 
@@ -37235,6 +37668,11 @@ GRANT ALL ON FUNCTION "public"."_small_trunk_probe"("p_request_id" "uuid") TO "s
 
 REVOKE ALL ON FUNCTION "public"."_stop_schedule"("p_points" "jsonb", "p_stop_minutes" integer, "p_default_start" bigint, "p_allow_shrink" boolean) FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."_stop_schedule"("p_points" "jsonb", "p_stop_minutes" integer, "p_default_start" bigint, "p_allow_shrink" boolean) TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."_stretch_loads"("p_points" integer, "p_riders" "jsonb") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_stretch_loads"("p_points" integer, "p_riders" "jsonb") TO "service_role";
 
 
 
@@ -38862,6 +39300,11 @@ GRANT ALL ON FUNCTION "public"."reopen_week"("p_department_id" "uuid", "p_week_s
 
 
 
+REVOKE ALL ON FUNCTION "public"."replace_request_riders"("p_request_id" "uuid", "p_department_id" "uuid", "p_riders" "jsonb") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."replace_request_riders"("p_request_id" "uuid", "p_department_id" "uuid", "p_riders" "jsonb") TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."replace_request_stops"("p_request_id" "uuid", "p_department_id" "uuid", "p_has_return" boolean, "p_stops" "jsonb") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."replace_request_stops"("p_request_id" "uuid", "p_department_id" "uuid", "p_has_return" boolean, "p_stops" "jsonb") TO "service_role";
 
@@ -40309,6 +40752,11 @@ GRANT ALL ON TABLE "public"."request_companions" TO "service_role";
 
 
 
+GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE "public"."request_rider_stops" TO "authenticated";
+GRANT ALL ON TABLE "public"."request_rider_stops" TO "service_role";
+
+
+
 GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE "public"."request_stops" TO "authenticated";
 GRANT ALL ON TABLE "public"."request_stops" TO "service_role";
 
@@ -40331,6 +40779,22 @@ GRANT ALL ON TABLE "public"."ride_editors" TO "service_role";
 
 GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE "public"."ride_passengers" TO "authenticated";
 GRANT ALL ON TABLE "public"."ride_passengers" TO "service_role";
+
+
+
+GRANT SELECT("board_place_id") ON TABLE "public"."ride_passengers" TO "authenticated";
+
+
+
+GRANT SELECT("board_place_text") ON TABLE "public"."ride_passengers" TO "authenticated";
+
+
+
+GRANT SELECT("alight_place_id") ON TABLE "public"."ride_passengers" TO "authenticated";
+
+
+
+GRANT SELECT("alight_place_text") ON TABLE "public"."ride_passengers" TO "authenticated";
 
 
 

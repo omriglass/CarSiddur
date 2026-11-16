@@ -3044,6 +3044,90 @@ export type Database = {
           },
         ]
       }
+      request_rider_stops: {
+        Row: {
+          alight_place_id: string | null
+          alight_place_text: string | null
+          board_place_id: string | null
+          board_place_text: string | null
+          created_at: string
+          department_id: string
+          id: string
+          leg: Database["public"]["Enums"]["ride_leg"]
+          request_id: string
+          rider_key: string
+          rides: boolean
+          seat_kind: string
+          updated_at: string
+        }
+        Insert: {
+          alight_place_id?: string | null
+          alight_place_text?: string | null
+          board_place_id?: string | null
+          board_place_text?: string | null
+          created_at?: string
+          department_id: string
+          id?: string
+          leg: Database["public"]["Enums"]["ride_leg"]
+          request_id: string
+          rider_key: string
+          rides?: boolean
+          seat_kind?: string
+          updated_at?: string
+        }
+        Update: {
+          alight_place_id?: string | null
+          alight_place_text?: string | null
+          board_place_id?: string | null
+          board_place_text?: string | null
+          created_at?: string
+          department_id?: string
+          id?: string
+          leg?: Database["public"]["Enums"]["ride_leg"]
+          request_id?: string
+          rider_key?: string
+          rides?: boolean
+          seat_kind?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "request_rider_stops_alight_place_fkey"
+            columns: ["department_id", "alight_place_id"]
+            isOneToOne: false
+            referencedRelation: "destinations"
+            referencedColumns: ["department_id", "id"]
+          },
+          {
+            foreignKeyName: "request_rider_stops_board_place_fkey"
+            columns: ["department_id", "board_place_id"]
+            isOneToOne: false
+            referencedRelation: "destinations"
+            referencedColumns: ["department_id", "id"]
+          },
+          {
+            foreignKeyName: "request_rider_stops_department_id_fkey"
+            columns: ["department_id"]
+            isOneToOne: false
+            referencedRelation: "departments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "request_rider_stops_request_id_fkey"
+            columns: ["request_id"]
+            isOneToOne: false
+            referencedRelation: "requests"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "request_rider_stops_request_id_fkey"
+            columns: ["request_id"]
+            isOneToOne: false
+            referencedRelation: "v_my_requests"
+            referencedColumns: ["request_id"]
+          },
+        ]
+      }
       request_stops: {
         Row: {
           created_at: string
@@ -3985,6 +4069,10 @@ export type Database = {
       ride_passengers: {
         Row: {
           added_by: string
+          alight_place_id: string | null
+          alight_place_text: string | null
+          board_place_id: string | null
+          board_place_text: string | null
           child_id: string | null
           created_at: string
           department_id: string
@@ -3999,6 +4087,10 @@ export type Database = {
         }
         Insert: {
           added_by: string
+          alight_place_id?: string | null
+          alight_place_text?: string | null
+          board_place_id?: string | null
+          board_place_text?: string | null
           child_id?: string | null
           created_at?: string
           department_id: string
@@ -4013,6 +4105,10 @@ export type Database = {
         }
         Update: {
           added_by?: string
+          alight_place_id?: string | null
+          alight_place_text?: string | null
+          board_place_id?: string | null
+          board_place_text?: string | null
           child_id?: string | null
           created_at?: string
           department_id?: string
@@ -4032,6 +4128,20 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ride_passengers_alight_place_fkey"
+            columns: ["department_id", "alight_place_id"]
+            isOneToOne: false
+            referencedRelation: "destinations"
+            referencedColumns: ["department_id", "id"]
+          },
+          {
+            foreignKeyName: "ride_passengers_board_place_fkey"
+            columns: ["department_id", "board_place_id"]
+            isOneToOne: false
+            referencedRelation: "destinations"
+            referencedColumns: ["department_id", "id"]
           },
           {
             foreignKeyName: "ride_passengers_child_id_fkey"
@@ -6206,6 +6316,7 @@ export type Database = {
         Args: { p_request: string; p_ride: string }
         Returns: boolean
       }
+      _request_riders_json: { Args: { p_request_id: string }; Returns: Json }
       _request_save_unchanged: {
         Args: {
           p_depart_at: string
@@ -6242,6 +6353,28 @@ export type Database = {
       _ride_fp_matches: {
         Args: { p_ride_id: string; p_stored: string }
         Returns: boolean
+      }
+      _ride_has_rider_spans: {
+        Args: { p_ride_id: string; p_with_passengers?: boolean }
+        Returns: boolean
+      }
+      _ride_leg_fits_along: {
+        Args: {
+          p_car_id: string
+          p_extra: Json
+          p_leg: Database["public"]["Enums"]["ride_leg"]
+          p_ride_id: string
+          p_with_passengers?: boolean
+        }
+        Returns: boolean
+      }
+      _ride_leg_riders: {
+        Args: {
+          p_leg: Database["public"]["Enums"]["ride_leg"]
+          p_ride_id: string
+          p_with_passengers?: boolean
+        }
+        Returns: Json
       }
       _ride_moved_by_member: {
         Args: { p_agreed: boolean; p_before: Json; p_ride_id: string }
@@ -6406,6 +6539,7 @@ export type Database = {
         Returns: undefined
       }
       _ride_task_people: { Args: { p_ride_id: string }; Returns: string[] }
+      _riders_canon: { Args: { p_riders: Json }; Returns: Json }
       _round_up_ride_end: {
         Args: { p_end: string; p_start: string }
         Returns: string
@@ -6500,6 +6634,10 @@ export type Database = {
           p_points: Json
           p_stop_minutes: number
         }
+        Returns: Json
+      }
+      _stretch_loads: {
+        Args: { p_points: number; p_riders: Json }
         Returns: Json
       }
       _sync_car_owner_id: { Args: { p_car: string }; Returns: undefined }
@@ -7800,6 +7938,10 @@ export type Database = {
           p_phase: Database["public"]["Enums"]["week_phase"]
           p_week_start: string
         }
+        Returns: undefined
+      }
+      replace_request_riders: {
+        Args: { p_department_id: string; p_request_id: string; p_riders: Json }
         Returns: undefined
       }
       replace_request_stops: {

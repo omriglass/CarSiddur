@@ -1,0 +1,80 @@
+{
+  "_comment": "REQ item 246 h (LT1 phase 2a): shared cases of seats per stretch. A leg has `points` route places (0 = where it starts, points-1 = where it ends) and points-1 stretches between them; a rider takes seats on the stretches from `board` up to (not including) `alight` (null = the leg's start / end; out of range is clamped; board >= alight = the whole leg, the safe reading). Run by src/solver/__tests__/stretchLoads.test.ts (TS stretchLoads/fitsAlong) and scripts/test-stretch-load-parity.mjs (SQL public._stretch_loads). `loads` = [adults, childSeats, boosters] per stretch; `fits` = some configuration of `configs` takes every stretch.",
+  "cases": [
+    {
+      "name": "no riders: every stretch is empty",
+      "points": 3, "riders": [],
+      "configs": [[4, 0, 0]],
+      "loads": [[0, 0, 0], [0, 0, 0]], "fits": true
+    },
+    {
+      "name": "whole-leg riders only = the plain per-leg sum on every stretch",
+      "points": 3,
+      "riders": [{ "adults": 2, "childSeats": 1, "boosters": 0 }, { "adults": 1, "childSeats": 0, "boosters": 1, "board": null, "alight": null }],
+      "configs": [[3, 1, 1]],
+      "loads": [[3, 1, 1], [3, 1, 1]], "fits": true
+    },
+    {
+      "name": "kids get off at school, a passenger boards after: 5 seats carry 7 people",
+      "points": 4,
+      "riders": [
+        { "adults": 2, "childSeats": 0, "boosters": 0 },
+        { "adults": 3, "childSeats": 0, "boosters": 0, "alight": 1 },
+        { "adults": 2, "childSeats": 0, "boosters": 0, "board": 1 }
+      ],
+      "configs": [[5, 0, 0]],
+      "loads": [[5, 0, 0], [4, 0, 0], [4, 0, 0]], "fits": true
+    },
+    {
+      "name": "the busiest stretch decides: one stretch over the car refuses",
+      "points": 4,
+      "riders": [
+        { "adults": 3, "childSeats": 0, "boosters": 0 },
+        { "adults": 1, "childSeats": 0, "boosters": 0, "board": 0, "alight": 2 },
+        { "adults": 1, "childSeats": 0, "boosters": 0, "board": 1, "alight": 3 }
+      ],
+      "configs": [[4, 0, 0]],
+      "loads": [[4, 0, 0], [5, 0, 0], [4, 0, 0]], "fits": false
+    },
+    {
+      "name": "alighting where another boards frees the seat (half-open stretches)",
+      "points": 3,
+      "riders": [
+        { "adults": 3, "childSeats": 0, "boosters": 0 },
+        { "adults": 1, "childSeats": 0, "boosters": 0, "alight": 1 },
+        { "adults": 1, "childSeats": 0, "boosters": 0, "board": 1 }
+      ],
+      "configs": [[4, 0, 0]],
+      "loads": [[4, 0, 0], [4, 0, 0]], "fits": true
+    },
+    {
+      "name": "each stretch may use a different seat configuration",
+      "points": 3,
+      "riders": [
+        { "adults": 2, "childSeats": 0, "boosters": 0 },
+        { "adults": 0, "childSeats": 2, "boosters": 0, "alight": 1 },
+        { "adults": 2, "childSeats": 0, "boosters": 0, "board": 1 }
+      ],
+      "configs": [[2, 2, 0], [4, 0, 0]],
+      "loads": [[2, 2, 0], [4, 0, 0]], "fits": true
+    },
+    {
+      "name": "board at or after alight, or out of range: the whole leg (safe)",
+      "points": 3,
+      "riders": [
+        { "adults": 1, "childSeats": 0, "boosters": 0, "board": 2, "alight": 1 },
+        { "adults": 1, "childSeats": 0, "boosters": 0, "board": -3, "alight": 9 },
+        { "adults": 1, "childSeats": 0, "boosters": 0, "board": 1, "alight": 1 }
+      ],
+      "configs": [[3, 0, 0]],
+      "loads": [[3, 0, 0], [3, 0, 0]], "fits": true
+    },
+    {
+      "name": "a two-point leg has one stretch",
+      "points": 2,
+      "riders": [{ "adults": 1, "childSeats": 0, "boosters": 1, "board": 0, "alight": 1 }],
+      "configs": [[1, 0, 0]],
+      "loads": [[1, 0, 1]], "fits": false
+    }
+  ]
+}
