@@ -715,6 +715,8 @@ export const heMember = {
     freeMany: "{{n}} מקומות פנויים בהמשך",
     freeOne: "מקום אחד פנוי בהמשך",
     full: "מלא בהמשך",
+    /** LT1 phase 2e: a stated hour (it does not move). */
+    fixed: "שעה קבועה",
     whereOn: "↑ {{name}}",
     whereOnAt: "↑ {{name}} ({{time}})",
     whereOff: "↓ {{name}}",

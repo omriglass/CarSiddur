@@ -195,6 +195,19 @@ begin
   assert not exists (select 1 from public.notifications where recipient_id = m1 and data ->> 'variant' = 'rider_part_changed'),
     'TEST 9 FAILED: not the one who made the change';
 
+  -----------------------------------------------------------------------
+  -- 10) The stops view's stated hours (LT1 phase 2e): the stop's own fixed hour at its route position, worked-out
+  --     places null; "leave home at" (the default anchor) at the start, "leave there at" on the way back's first place.
+  -----------------------------------------------------------------------
+  update public.request_stops set fixed_anchor = 'arrive', fixed_at = d0 + interval '30 minutes', flex_minutes = 0
+   where request_id = qA and leg = 'out';
+  update public.requests set return_anchor = 'leave', leave_dest_at = d0 + interval '5 hours' where id = qA;
+  v_x := public.ride_stretches(rA);
+  assert v_x #> '{out,fixed}' = jsonb_build_array(jsonb_build_object('at', d0, 'anchor', 'leave'),   -- "leave home at" (the default)
+                                                  jsonb_build_object('at', d0 + interval '30 minutes', 'anchor', 'arrive'), null)
+     and v_x #> '{return,fixed,0}' = jsonb_build_object('at', d0 + interval '5 hours', 'anchor', 'leave'),
+    format('TEST 10 FAILED: stated hours (%s)', v_x);
+
   raise notice 'ride_people_parts.sql: all assertions passed';
 end $$;
 

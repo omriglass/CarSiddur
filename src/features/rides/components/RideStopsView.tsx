@@ -2,12 +2,14 @@
 // with its time, who gets off (↓) and on (↑) there, and the free seats on the next stretch. Read on demand
 // (`ride_stretches`) only for a ride with places in the middle; anything else (and while it loads) shows
 // `RideRoute` as before.
+import { Lock } from "lucide-react";
+
 import { he, tv } from "@/i18n/he";
 import { parseRideRoute, routeHasIntermediates } from "@/lib/rideRoute";
 import { formatTime } from "@/lib/time";
 
 import { useRideStretchesQuery } from "../hooks";
-import { stopRows } from "../rideStretches";
+import { stopRows, withStatedHours } from "../rideStretches";
 import type { RidePerson } from "../ridePeople";
 import type { ServedEntry } from "../servedOf";
 import { RideRoute } from "./RideRoute";
@@ -30,7 +32,9 @@ export function RideStopsView({ rideId, version, route, people, served }: RideSt
   const hasMiddle = routeHasIntermediates(points);
   const query = useRideStretchesQuery(rideId, version, hasMiddle);
   if (!hasMiddle || !query.data) return <RideRoute route={route} served={served} />;
-  const rows = stopRows(points, people, query.data);
+  // LT1 phase 2e: a stated hour as stated (bold, a lock), a worked-out one with "~"
+  const stated = withStatedHours(points, query.data);
+  const rows = stopRows(stated.points, people, query.data);
   if (!rows.length) return <RideRoute route={route} served={served} />;
 
   return (
@@ -46,7 +50,14 @@ export function RideStopsView({ rideId, version, route, people, served }: RideSt
             ) : null}
             <div className="flex items-baseline justify-between gap-2">
               <span className="font-medium">{row.point.name}</span>
-              {row.point.eta ? <span dir="ltr" className="text-xs tabular-nums text-muted-foreground">{formatTime(new Date(row.point.eta))}</span> : null}
+              {row.point.eta ? (
+                stated.fixed.has(`${row.leg}:${row.point.position}`) ? (
+                  <span className="inline-flex items-center gap-1 text-xs font-semibold text-primary" data-testid="ride-stop-fixed">
+                    <Lock className="size-3" aria-label={he.rideStops.fixed} />
+                    <span dir="ltr" className="tabular-nums">{formatTime(new Date(row.point.eta))}</span>
+                  </span>
+                ) : <span dir="ltr" className="text-xs tabular-nums text-muted-foreground">~{formatTime(new Date(row.point.eta))}</span>
+              ) : null}
             </div>
             {row.off.length ? <p className="text-xs" data-testid="ride-stop-off">{tv("rideStops.off", { names: row.off.join(", ") })}</p> : null}
             {row.on.length ? <p className="text-xs" data-testid="ride-stop-on">{tv("rideStops.on", { names: row.on.join(", ") })}</p> : null}

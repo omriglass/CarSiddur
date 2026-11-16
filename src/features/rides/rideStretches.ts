@@ -17,12 +17,29 @@ const legStretchesSchema = z.object({
   spans: z.record(z.string(), z.tuple([z.number(), z.number()])),
   absent: z.array(z.string()),
   free: z.array(z.number().nullable()),
+  /** LT1 phase 2e: per route position, the stated hour of the main request's place (null = worked out). */
+  fixed: z.array(z.object({ at: z.string(), anchor: z.enum(["arrive", "leave"]) }).nullable()).optional(),
 });
 export const rideStretchesSchema = z.object({ out: legStretchesSchema.optional(), return: legStretchesSchema.optional() }).nullable();
 export type LegStretches = z.infer<typeof legStretchesSchema>;
 export type RideStretches = z.infer<typeof rideStretchesSchema>;
 
 export const LEGS: readonly RouteLeg[] = ["out", "return"];
+
+/**
+ * LT1 phase 2e: the route with each stated hour as stated (its eta replaced by the hour) - the stops view and the people
+ * summary quote those; `fixed` says which positions they are ("leg:position").
+ */
+export function withStatedHours(points: readonly RoutePoint[], stretches: RideStretches | undefined): { points: RoutePoint[]; fixed: Set<string> } {
+  const fixed = new Set<string>();
+  const out = points.map((point) => {
+    const stated = stretches?.[point.leg]?.fixed?.[point.position];
+    if (!stated) return point;
+    fixed.add(`${point.leg}:${point.position}`);
+    return { ...point, eta: stated.at };
+  });
+  return { points: out, fixed };
+}
 
 /** Route points of one leg, in order (positions of `v_board_rides.route`). */
 export function legPoints(points: readonly RoutePoint[], leg: RouteLeg): RoutePoint[] {

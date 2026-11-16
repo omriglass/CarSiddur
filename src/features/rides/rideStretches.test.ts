@@ -4,7 +4,7 @@ import type { RoutePoint } from "@/lib/rideRoute";
 
 import type { RidePerson } from "./ridePeople";
 import {
-  addPayload, baseRequestId, currentParts, partsFor, partsPayload, personDialogSetup, personSpan, personWhere, roomFor, stopRows,
+  addPayload, baseRequestId, currentParts, partsFor, partsPayload, personDialogSetup, personSpan, personWhere, roomFor, stopRows, withStatedHours,
   type RideStretches, type SummaryWords,
 } from "./rideStretches";
 
@@ -94,5 +94,13 @@ describe("rideStretches", () => {
       { ...stretches, return: { ...stretches!.return!, spans: { ...stretches!.return!.spans, "req:q2": [1, 2] } } });
     expect(guest).toMatchObject({ legs: ["return"], middle: false, wholeLegsOnly: true, initial: { choice: "whole", out: null, return: [0, 2] } });
     expect(personDialogSetup(ron, points, undefined).initial).toEqual({ choice: "return", out: null, return: [0, 2] });
+  });
+
+  it("stated hours replace the estimates where the main request states them", () => {
+    const withFixed: RideStretches = { ...stretches, out: { ...stretches!.out!, fixed: [null, { at: "2026-11-19T06:15:00Z", anchor: "arrive" }, null] } };
+    const { points: stated, fixed } = withStatedHours(points, withFixed);
+    expect(stated.find((p) => p.leg === "out" && p.position === 1)?.eta).toBe("2026-11-19T06:15:00Z");
+    expect([...fixed]).toEqual(["out:1"]);
+    expect(personWhere(noa, stated, withFixed, words, time)).toBe("↓ עין שמר (06:15) · ↑ עין שמר (14:30)");
   });
 });
