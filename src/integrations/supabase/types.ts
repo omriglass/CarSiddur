@@ -5909,6 +5909,10 @@ export type Database = {
           window_starts_at: string
         }[]
       }
+      _clear_riders_off_route: {
+        Args: { p_list: Json; p_request_id: string }
+        Returns: undefined
+      }
       _close_request: { Args: { p_request_id: string }; Returns: string[] }
       _complete_car_tasks: {
         Args: {
@@ -6586,6 +6590,7 @@ export type Database = {
         Returns: boolean
       }
       _riders_canon: { Args: { p_riders: Json }; Returns: Json }
+      _riders_off_route: { Args: { p_request_id: string }; Returns: Json }
       _round_up_ride_end: {
         Args: { p_end: string; p_start: string }
         Returns: string
