@@ -181,9 +181,6 @@ export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = 
   ].filter(Boolean).join(", ");
   const moveCar = moveToCarOptions.find((option) => option.id === moveCarId);
   const rideOwnerName = ride ? (ride.driver_name ?? served.find((entry) => entry.requester)?.requester ?? "") : "";
-  // REQ §13.171: a ride I can edit is a read-only summary; "עריכה" opens the form, where everything is edited at once.
-  const summary = editRequestLinks.length > 0;
-  const viewerRides = !!ride && !!viewerId && peopleOf(ride).some((person) => person.person_id === viewerId);
   // R17U3: removing the requester withdraws their request — it reads as cancelling the ride, not "remove me".
   const removingMyRequest = !!ride && !!viewerId && peopleOf(ride).some((person) => person.person_id === viewerId && person.source === "requester");
   // REQ §13.176: on a ride someone else drives, "remove me" is leaving their ride - it goes on without me.
@@ -195,35 +192,38 @@ export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = 
       <PortalSheetContent side="bottom" className="max-h-[85dvh] overflow-y-auto">
         {ride ? (
           <>
-            <SheetHeader>
+            {/* Owner 2026-11-17: no visible "פרטי הנסיעה" - the tabs say it; kept for screen readers. */}
+            <SheetHeader className="sr-only">
               <SheetTitle>{t("rideDetail.title")}</SheetTitle>
             </SheetHeader>
-            <div className="space-y-4 py-4 text-sm">
-              <div className="flex items-center justify-between gap-2">
-                <span dir="ltr" className="font-medium tabular-nums">
-                  {formatTime(new Date(ride.starts_at ?? ""))}
-                  {ride.ends_at ? `–${formatTime(new Date(ride.ends_at))}` : " →"}
-                </span>
-                {locationBadge ? (
-                  <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-                    {tv("rideDetail.locationBadge", { location: locationBadge })}
-                  </span>
-                ) : null}
-              </div>
-
-              <RideCarHandover ride={ride} />
-              {/* REQ item 150 b: this ride's car tasks for me, inside its window only (member surfaces; the board has its own sheet). */}
-              {ride.id ? <MyCarTasksCard rideId={ride.id} /> : null}
+            <div className="space-y-4 pb-4 text-sm">
 
               {/* Owner 2026-11-16: three tabs - the summary (who goes where in words, notes, car, the people), the details (each
                   place, who gets on and off, what each request asked) and my request's history. */}
               <Tabs key={ride.id ?? ""} defaultValue="summary">
-                <TabsList className={cn("grid h-auto w-full", historyRequestId ? "grid-cols-3" : "grid-cols-2")} aria-label={he.rideSummary.tabsLabel}>
+                {/* Owner 2026-11-17: the tabs share the close (×) row - it sits at their end. */}
+                <TabsList className={cn("-mt-5 me-5 grid h-auto w-[calc(100%-1.25rem)]", historyRequestId ? "grid-cols-3" : "grid-cols-2")} aria-label={he.rideSummary.tabsLabel}>
                   {(["summary", "details", ...(historyRequestId ? ["history" as const] : [])] as const).map((id) => (
                     <TabsTrigger key={id} value={id} className="min-h-11" data-testid={`ride-detail-tab-${id}`}>{he.rideSummary.tabs[id]}</TabsTrigger>
                   ))}
                 </TabsList>
                 <TabsContent value="summary" className="space-y-4">
+                  {/* Owner 2026-11-17: the hours under the tabs, on the summary only. */}
+                  <div className="flex items-center justify-between gap-2" data-testid="ride-detail-hours">
+                    <span dir="ltr" className="font-medium tabular-nums">
+                      {formatTime(new Date(ride.starts_at ?? ""))}
+                      {ride.ends_at ? `–${formatTime(new Date(ride.ends_at))}` : " →"}
+                    </span>
+                    {locationBadge ? (
+                      <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+                        {tv("rideDetail.locationBadge", { location: locationBadge })}
+                      </span>
+                    ) : null}
+                  </div>
+
+                  <RideCarHandover ride={ride} />
+                  {/* REQ item 150 b: this ride's car tasks for me, inside its window only (member surfaces; the board has its own sheet). */}
+                  {ride.id ? <MyCarTasksCard rideId={ride.id} /> : null}
                   <RideSummaryLine rideId={ride.id} version={ride.version} route={ride.route} people={peopleOf(ride)} lead={headerLabel(ride, served, homeDestinationId, weekRides)} />
 
                   {ride.series_count && ride.series_count > 1 ? (
@@ -233,18 +233,6 @@ export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = 
                   ) : null}
 
                   {carModeLabel(ride, viewerId) ? <p className="text-muted-foreground">{carModeLabel(ride, viewerId)}</p> : null}
-                  {/* REQ item 246 h: "+ נוסע/ת" sits high on the ride, above the stops. */}
-                  {showAddPassengers && !(summary && viewerRides) && ride.id && ride.version != null ? (
-                    <AddPassengersDialog
-                      key={`${ride.id}:${ride.version}:add-passengers`}
-                      rideId={ride.id}
-                      expectedVersion={ride.version}
-                      departmentId={ride.department_id ?? ""}
-                      weekStart={ride.week_start ?? ""}
-                      people={peopleOf(ride)}
-                      route={ride.route}
-                    />
-                  ) : null}
                   {/* Owner 2026-11-16: the notes for everyone open their editor when tapped (also on a ride edited with "עריכה"). */}
                   {canEditPublicNotes && ride.id && ride.version != null ? (
                     <EditableRideNotes key={`${ride.id}:${ride.version}:notes`} rideId={ride.id} expectedVersion={ride.version} notes={ride.notes} departmentId={ride.department_id ?? ""} weekStart={ride.week_start ?? ""} />
@@ -274,7 +262,7 @@ export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = 
                     expectedVersion={ride.version}
                     people={peopleOf(ride)}
                     served={served}
-                    canManagePeople={showAddPassengers && !summary}
+                    canManagePeople={showAddPassengers}
                     rideCancelled={ride.status === "cancelled"}
                     departmentId={ride.department_id}
                     weekStart={ride.week_start}
@@ -302,6 +290,20 @@ export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = 
                         onConfirm={() => { if (moveCar) { setMoveCarId(null); onMoveToCar(moveCar.id); } }}
                       />
                     </>
+                  ) : null}
+
+                  {/* Owner 2026-11-17: "+ נוסע/ת" right above "עריכה". */}
+                  {/* Owner 2026-11-17: everyone adds people, also on a ride they edit with "עריכה" (their own). */}
+                  {showAddPassengers && ride.id && ride.version != null ? (
+                    <AddPassengersDialog
+                      key={`${ride.id}:${ride.version}:add-passengers`}
+                      rideId={ride.id}
+                      expectedVersion={ride.version}
+                      departmentId={ride.department_id ?? ""}
+                      weekStart={ride.week_start ?? ""}
+                      people={peopleOf(ride)}
+                      route={ride.route}
+                    />
                   ) : null}
 
                   {editRequestLinks.map((link) => (
