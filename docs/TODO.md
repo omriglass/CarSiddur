@@ -1883,3 +1883,12 @@ Owner's notes (Hebrew as given):
 ## A ride whose hours passed is still editable the same day (owner 2026-11-17, ED1) — not built yet
 
 Owner: a ride that already started (its time passed) but is still today cannot be edited. It should stay editable for the whole day, whatever the hours. Example: a round trip (הלוך-חזור) must become one-way when plans changed mid-day and the person cannot bring the car back, so someone else returns it. Check where the "past" cut-off sits (form / ride sheet "עריכה" / `submit_request` and related guards) and move it to the end of the ride's day (Asia/Jerusalem); **Owner answer 2026-11-17: every edit, also on a day that is part of a multi-day ride.** Guiding principle (owner): "I'd rather be able to edit too much than too little" — when unsure whether to block an edit of a same-day ride, allow it.
+
+## HIGH PRIORITY (low-hanging fruit) — ask when a ride looks like a round trip with only one way placed (owner 2026-11-17, RT1) — not built yet
+
+Production case 2026-11-18 (טוסיה, 09:00): a member asked for a round trip; the Sadran placed only the way out and lengthened that ride to cover the return hours, but never placed the way back. The ride therefore had one way only, and an added passenger could not choose "רק הלוך" (the part picker offers "כל הנסיעה" only on a one-way ride, `RidePartsPicker` / `rideLegs`). The health check showed it as `request_leg_not_covered`.
+
+- **When to ask (agreed 2026-11-17):** based on the resulting state, not the action. A board edit (lengthen, drag/drop, merge) leaves a ride that ends where it started, the ride covers the return hour of a request on it, and that request's way back is placed nowhere. Ask the Sadran once.
+- **Answers apply the change:** "כן, גם החזור" places the request's way back on the same ride. The ride then has a way back, and its passengers can pick רק הלוך / רק חזור. "לא, רק הלוך ארוך" changes nothing and does not ask again for that ride.
+- **הקפצה variant:** the same check on a drop-off leg whose pickup is unplaced offers to attach the pickup to the ride (`connect_drop_off_legs` exists).
+- **Wording proposed, not yet approved:** title "נראה שזו נסיעה הלוך-חזור"; body "הנסיעה עכשיו עד {{end}} וחוזרת ל{{origin}}, אבל {{name}} משובץ/ת בה רק להלוך. לשבץ בה גם את החזור?"; buttons "כן, גם החזור" / "לא, רק הלוך ארוך". Get the owner's approval before building. A REQUIREMENTS item goes in first.
