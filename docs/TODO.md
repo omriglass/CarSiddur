@@ -1879,3 +1879,7 @@ Owner's notes (Hebrew as given):
 - **Tidy the car screen:** separate the static details from the reports (issues, care log); tidy the seat configurations ("תצורות מושבים").
 - **Open issues before a ride:** remind a member of the car's open issues ahead of starting a ride with it (maybe on `/my`). When reporting an issue, list the known open issues first so the same thing is not reported twice.
 - **Plate numbers formatted:** 8 digits as `xxx-xx-xxx`, 7 digits as `xx-xxx-xx`, everywhere a car number is shown.
+
+## A ride whose hours passed is still editable the same day (owner 2026-11-17, ED1) — not built yet
+
+Owner: a ride that already started (its time passed) but is still today cannot be edited. It should stay editable for the whole day, whatever the hours. Example: a round trip (הלוך-חזור) must become one-way when plans changed mid-day and the person cannot bring the car back, so someone else returns it. Check where the "past" cut-off sits (form / ride sheet "עריכה" / `submit_request` and related guards) and move it to the end of the ride's day (Asia/Jerusalem); decide with the owner whether that covers every edit or only some (trip type, hours, people).
