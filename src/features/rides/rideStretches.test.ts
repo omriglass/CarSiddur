@@ -4,7 +4,7 @@ import type { RoutePoint } from "@/lib/rideRoute";
 
 import type { RidePerson } from "./ridePeople";
 import {
-  addPayload, baseRequestId, currentParts, partsFor, partsPayload, personDialogSetup, personSpan, personWhere, roomFor, stopRows, withStatedHours,
+  addPayload, baseRequestId, currentParts, partsFor, partsPayload, personDialogSetup, personSpan, personWhere, personWhereParts, roomFor, stopRows, withStatedHours,
   type RideStretches, type SummaryWords,
 } from "./rideStretches";
 
@@ -62,6 +62,9 @@ describe("rideStretches", () => {
     expect(personWhere(maya, points, stretches, words, time)).toBe("רק הלוך");
     expect(personWhere(ron, points, stretches, words, time)).toBe("רק חזור");
     expect(personWhere(noa, points, stretches, words, time)).toBe("↓ עין שמר (06:15) · ↑ עין שמר (14:30)");
+    // owner 2026-11-17: getting off / on are told apart, so the riders list can tint them
+    expect(personWhereParts(noa, points, stretches, words, time).map((part) => part.kind)).toEqual(["off", "on"]);
+    expect(personWhereParts(maya, points, stretches, words, time)).toEqual([{ text: "רק הלוך", kind: "plain" }]);
   });
 
   it("the dialog opens on the simplest choice that describes how someone rides", () => {

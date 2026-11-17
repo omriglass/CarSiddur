@@ -921,6 +921,7 @@
         "src/lib/rideCoordinatorNotes.ts",
         "src/lib/rideCoordinatorNotes.test.ts",
         "src/components/RichLines.tsx",
+        "src/features/rides/rideGridLabel.ts",
         "src/features/rides/ridePeople.ts",
         "src/features/rides/ridePeople.test.ts",
         "src/features/rides/addPassengers.ts",

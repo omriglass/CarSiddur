@@ -96,11 +96,11 @@ import { SiddurDisplayMenu } from "@/features/siddur/components/SiddurDisplayMen
 import { EditModeButton } from "@/features/rides/components/EditModeButton";
 import { useDragHint, useEditMode } from "@/features/rides/editMode";
 import type { Week, BoardRide } from "@/features/siddur/api";
-import { representativeRideTypeCode, rideViaNames, servedOf } from "@/features/rides/servedOf";
-import { viaLabel } from "@/lib/routeLabel";
+import { representativeRideTypeCode, servedOf } from "@/features/rides/servedOf";
+import { rideGridLabel } from "@/features/rides/rideGridLabel";
 import { isRideDayEditable } from "@/features/rides/rideDayEditable";
 import { addedPeopleNames, myRidePersonKey } from "@/features/rides/ridePeople";
-import { rideBlockLabel, resolveRideRealDestination } from "@/lib/rideLabel";
+import { resolveRideRealDestination } from "@/lib/rideLabel";
 import { he, t, tv } from "@/i18n/he";
 import { fromZonedTime } from "date-fns-tz";
 
@@ -502,30 +502,7 @@ export function SiddurPage() {
       endMinutes: minutesSinceMidnight(r.starts_at as string) + (Date.parse(r.ends_at as string) - Date.parse(r.starts_at as string)) / 60_000,
       // REQUIREMENTS §13.93 "Multi-stop rides" Display: "· N עצירות" appended only when the
       // ride actually serves a request with stops (same marker as the Sadran board).
-      label: (() => {
-        const viaNames = rideViaNames(r);
-        const labelled = !(!servedOf(r).length && r.notes) && !!(homeDestinationId && r.origin_id && r.destination_id);
-        const base = (!servedOf(r).length && r.notes) || (homeDestinationId && r.origin_id && r.destination_id
-          ? rideBlockLabel({
-              via: viaNames,
-              originId: r.origin_id,
-              destinationId: r.destination_id,
-              originName: r.origin_name ?? "",
-              destinationName: r.destination_name ?? "",
-              homeDestinationId,
-              served: servedOf(r),
-              driverName: r.driver_name,
-              isChauffeur: !!r.is_chauffeur,
-              needsDriver: !!r.needs_driver,
-              autoRelocation: !!r.auto_relocation,
-              carMove: r.pin_reason === "CAR_MOVE",
-              startsAt: r.starts_at ?? undefined,
-            })
-          : (r.destination_name ?? ""));
-        // Owner 2026-11-16: a labelled ride says its places inside the label ("חבר ל-זכרון יעקב, בנימינה. חזור: …").
-        const via = labelled ? "" : viaLabel(viaNames);
-        return via ? `${base} · ${via}` : base;
-      })(),
+      label: rideGridLabel(r, homeDestinationId),
       rideTypeCode: representativeRideTypeCode(servedOf(r)),
       ...rideDescriptionFields(servedOf(r).length ? r.notes : null, servedOf(r), { includeCompanions: !isSadran, addedNames: addedNamesOf(r) }),
       passengerSummary: isSadran ? ridePassengerSummary(servedOf(r), r.needs_driver ? null : r.driver_name, { addedNames: addedNamesOf(r) }) : undefined,

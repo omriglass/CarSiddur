@@ -9,7 +9,7 @@ import { parseRideRoute, routeHasIntermediates } from "@/lib/rideRoute";
 import { formatTime } from "@/lib/time";
 
 import { canRemoveRidePerson, legMarkedName, type RidePerson } from "../ridePeople";
-import { baseRequestId, personDialogSetup, personWhere, rideLegs, type SummaryWords } from "../rideStretches";
+import { baseRequestId, personDialogSetup, personWhereParts, rideLegs, type SummaryWords } from "../rideStretches";
 import type { ServedEntry } from "../servedOf";
 import { useLeaveRideAsGuestMutation, useRemoveRidePassengerMutation, useRideStretchesQuery } from "../hooks";
 import { RidePersonDialog } from "./RidePersonDialog";
@@ -37,6 +37,8 @@ interface RidePassengersListProps {
   /** REQ item 246 h (phase 2d): the signed-in member - their own row as a guest on someone else's ride says "לצאת מהנסיעה". */
   viewerId?: string | null;
 }
+
+const WHERE_TINT = { on: "text-emerald-800 dark:text-emerald-300", off: "text-rose-800 dark:text-rose-300", plain: "" } as const;
 
 const WORDS: SummaryWords = {
   outOnly: he.addPassengers.part.out,
@@ -87,13 +89,23 @@ export function RidePassengersList({ rideId, expectedVersion, people, served, ca
             && person.request_id !== mainRequest && rideId != null && expectedVersion != null && !rideCancelled;
           const removable = !editable && !ownGuestRow && rideId != null && expectedVersion != null &&
             canRemoveRidePerson(person, { canManagePeople, rideCancelled }) && !locked;
-          const where = stretches ? personWhere(person, points, stretches, WORDS, time) : "";
+          const where = stretches ? personWhereParts(person, points, stretches, WORDS, time) : [];
           const name = stretches ? person.display_name.trim() : legMarkedName(person, served);
           const label = (
             <span className="min-w-0">
               {name}
               {person.source === "driver" ? ` · ${he.ride.driver}` : ""}
-              {where ? <span className="ms-1.5 text-xs text-muted-foreground" data-testid="ride-person-where">{where}</span> : null}
+              {where.length ? (
+                <span className="ms-1.5 text-xs text-muted-foreground" data-testid="ride-person-where">
+                  {/* Owner 2026-11-17: the same light tint as the stops view - getting on green, getting off reddish. */}
+                  {where.map((part, index) => (
+                    <span key={index}>
+                      {index ? " · " : null}
+                      <span className={WHERE_TINT[part.kind]}>{part.text}</span>
+                    </span>
+                  ))}
+                </span>
+              ) : null}
             </span>
           );
           return (

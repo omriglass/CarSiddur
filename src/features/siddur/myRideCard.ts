@@ -6,6 +6,7 @@ import { tv } from "@/i18n/he";
 import { carHandoverNotes, type CarNeighbours } from "@/features/rides/carHandover";
 import { servedOf } from "@/features/rides/servedOf";
 import { addedPeopleNames } from "@/features/rides/ridePeople";
+import { rideGridLabel } from "@/features/rides/rideGridLabel";
 import type { BoardRide } from "./api";
 
 export function myRideCard(
@@ -14,6 +15,8 @@ export function myRideCard(
   rideTypes: readonly { code: string; name_he: string }[],
   /** REQ §13.108 f: the signed-in member and this ride's neighbours on its car — enables the "be back on time" note. */
   handover?: { viewerId: string | undefined; neighbours: CarNeighbours | undefined; tight?: boolean; relatedLabel?: string },
+  /** Owner 2026-11-17: with the department's home known, the card says what the siddur says - whose ride, where. */
+  homeDestinationId?: string | null,
 ): RideCardData | null {
   if (!ride.id || !ride.starts_at) return null;
   const served = servedOf(ride);
@@ -47,14 +50,16 @@ export function myRideCard(
     // REQ §13.176: on someone else's ride the card shows my own part of it (e.g. from my pickup on the way back)
     id: ride.id, startsAt: ride.my_part?.starts_at ?? ride.starts_at, endsAt: ride.my_part?.ends_at ?? ride.ends_at,
     originName: ride.origin_name ?? "", destinationName: destination,
-    label: chauffeur ? chauffeurRideLabel(ride.needs_driver ? null : ride.driver_name, passengers, ride.starts_at, ride.origin_id ?? undefined,
+    // Owner 2026-11-17: the same line as the siddur (the driver and the places, everyone on it), then the notes, then
+    // the other riders; the joining lines are inside it.
+    label: homeDestinationId ? rideGridLabel(ride, homeDestinationId, { notesAsLabel: false }) : chauffeur ? chauffeurRideLabel(ride.needs_driver ? null : ride.driver_name, passengers, ride.starts_at, ride.origin_id ?? undefined,
       { from: ride.origin_name ?? "", to: ride.destination_name ?? "" })
       : tv(ownEntry?.leg === "return" ? "home.rideFrom" : "home.rideTo", { destination }),
     showDay: true,
     purpose: ownRequest?.rideTypeName || purposes.join(" / ") || rideTypes.find((type) => type.code === "other")?.name_he,
-    joining,
+    joining: homeDestinationId ? undefined : joining,
     ...rideDescriptionFields(ride.notes, served, { addedNames: addedPeopleNames(ride, served) }),
-    driverName: ride.driver_name, carName: ride.car_name, carId: ride.car_id, carType: ride.car_type ?? undefined,
+    driverName: ride.driver_name, carName: ride.car_name, carOnTop: true, carId: ride.car_id, carType: ride.car_type ?? undefined,
     isChauffeur: chauffeur, needsDriver: !!ride.needs_driver, isMine: !handover?.relatedLabel,
     rideTypeCode: ownRequest?.rideTypeCode ?? served[0]?.ride_type,
     seriesIndex: ride.series_index, seriesCount: ride.series_count,

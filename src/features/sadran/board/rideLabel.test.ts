@@ -254,3 +254,11 @@ describe("rideBlockLabel with places in the middle (owner 2026-11-16)", () => {
     expect(rideBlockLabel({ ...base, served, via: { out: [], return: [] } })).toBe("עומרי לבנימינה");
   });
 });
+
+describe("rideBlockLabel - a ride with no request behind it", () => {
+  it("names its driver (owner 2026-11-17: whose ride and where), nobody when it waits for a driver", () => {
+    const input = { originId: HOME, destinationId: TLV, originName: "נבו", destinationName: "תל אביב", homeDestinationId: HOME, served: [], driverName: "חבר ראשון", isChauffeur: true };
+    expect(rideBlockLabel(input)).toBe("חבר לתל אביב");
+    expect(rideBlockLabel({ ...input, needsDriver: true })).not.toContain("חבר");
+  });
+});

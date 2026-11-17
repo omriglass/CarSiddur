@@ -248,8 +248,9 @@ function rideLabelParts(input: RideLabelInput, toPlace: (place: string) => strin
       return folded ? `${name} ${folded}` : tv(s.leg === "return" ? "rideCoordination.passengerFrom" : "rideCoordination.passengerTo", { name, destination: s.leg === "return" ? from : (s.destination ?? "") });
     });
   }
-  const names = [driver, ...passengers]
-    .map((s) => (s?.requester ? firstName(s.requester) : null))
+  // Owner 2026-11-17: a ride with no request behind it (a time hold) still says whose it is - its driver.
+  const names = (input.served.length ? [driver, ...passengers].map((s) => (s?.requester ? firstName(s.requester) : null))
+    : [input.needsDriver ? null : input.driverName?.trim() ? firstName(input.driverName) : null])
     .filter((n): n is string => !!n);
   const who = hebrewList(names);
 

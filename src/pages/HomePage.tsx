@@ -373,7 +373,7 @@ export function HomePage() {
       neighbours: ride.id ? neighboursByRide?.get(ride.id) : undefined,
       tight: !!ride.id && tightRideIds.has(ride.id),
       relatedLabel: related?.length ? tv("myWeek.kidRideOf", { name: related.map((entry) => entry.name).join(", ") }) : undefined,
-    });
+    }, ride.department_id ? homeDestinationIds[ride.department_id] : undefined);
   };
   const rideCardsOf = (rides: readonly (typeof upcomingRides)[number][] | undefined) =>
     (rides ?? []).flatMap((ride) => { const data = rideCardOf(ride); return data ? [data] : []; });
@@ -791,6 +791,7 @@ export function HomePage() {
         weekRides={selectedRideWeekQuery.data}
         car={selectedMyRide ? (carsQuery.data ?? []).find((car) => car.id === selectedMyRide.car_id) ?? null : null}
         locationBadge={null}
+        homeDestinationId={selectedMyRide?.department_id ? homeDestinationIds[selectedMyRide.department_id] : null}
         onOpenChange={(open) => !open && setSelectedMyRide(null)}
         // "+ נוסעים" (REQ §13.85): `fetchMyUpcomingRides` only returns non-cancelled,
         // still-upcoming rides — in practice always in a published/live week (rides exist

@@ -108,21 +108,25 @@ export interface SummaryWords {
 }
 
 /** The people summary's text for one person: "" for the whole ride, "רק הלוך" / "רק חזור", else the differences. */
-export function personWhere(person: RidePerson, points: readonly RoutePoint[], stretches: RideStretches, words: SummaryWords, time: (iso: string) => string): string {
+/** One piece of `personWhere`: getting on / off somewhere (owner 2026-11-17: tinted green / reddish), or plain words. */
+export interface WherePart { text: string; kind: "on" | "off" | "plain" }
+
+export function personWhereParts(person: RidePerson, points: readonly RoutePoint[], stretches: RideStretches, words: SummaryWords, time: (iso: string) => string): WherePart[] {
   const legs = LEGS.filter((leg) => stretches?.[leg] && legPoints(points, leg).length >= 2);
-  if (!legs.length) return "";
+  if (!legs.length) return [];
   const spans = Object.fromEntries(legs.map((leg) => [leg, personSpan(person, stretches?.[leg])])) as Record<RouteLeg, [number, number] | null>;
   const whole = (leg: RouteLeg) => {
     const span = spans[leg];
     return !!span && span[0] === 0 && span[1] === legPoints(points, leg).length - 1;
   };
-  if (legs.every(whole)) return "";
-  const parts: string[] = [];
+  if (legs.every(whole)) return [];
+  const plain = (text: string): WherePart => ({ text, kind: "plain" });
+  const parts: WherePart[] = [];
   if (legs.length === 2) {
-    if (whole("out") && !spans.return) return words.outOnly;
-    if (whole("return") && !spans.out) return words.returnOnly;
-    if (!spans.out) parts.push(words.returnOnly);
-    if (!spans.return) parts.push(words.outOnly);
+    if (whole("out") && !spans.return) return [plain(words.outOnly)];
+    if (whole("return") && !spans.out) return [plain(words.returnOnly)];
+    if (!spans.out) parts.push(plain(words.returnOnly));
+    if (!spans.return) parts.push(plain(words.outOnly));
   }
   for (const leg of legs) {
     const span = spans[leg];
@@ -130,10 +134,14 @@ export function personWhere(person: RidePerson, points: readonly RoutePoint[], s
     const pts = legPoints(points, leg);
     const board = pts[span[0]];
     const alight = pts[span[1]];
-    if (span[0] !== 0 && board) parts.push(words.on(board.name, board.eta ? time(board.eta) : null));
-    if (span[1] !== pts.length - 1 && alight) parts.push(words.off(alight.name, alight.eta ? time(alight.eta) : null));
+    if (span[0] !== 0 && board) parts.push({ text: words.on(board.name, board.eta ? time(board.eta) : null), kind: "on" });
+    if (span[1] !== pts.length - 1 && alight) parts.push({ text: words.off(alight.name, alight.eta ? time(alight.eta) : null), kind: "off" });
   }
-  return parts.join(" · ");
+  return parts;
+}
+
+export function personWhere(person: RidePerson, points: readonly RoutePoint[], stretches: RideStretches, words: SummaryWords, time: (iso: string) => string): string {
+  return personWhereParts(person, points, stretches, words, time).map((part) => part.text).join(" · ");
 }
 
 /** How someone rides, as the dialog edits it: per leg null (not riding) or [board, alight] positions. */

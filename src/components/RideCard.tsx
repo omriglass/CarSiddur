@@ -49,6 +49,8 @@ export interface RideCardData {
   highlighted?: boolean;
   tightSchedule?: boolean;
   carName: string | null;
+  /** Owner 2026-11-17: "my rides" shows the car at the top, beside the day (a member looks for which car first). */
+  carOnTop?: boolean;
   /**
    * Enables the "דיווח על רכב" icon next to `carName` (`CarNameWithReport`,
    * REQUIREMENTS §6.6). Omitted by the Sadran board's `BoardListMode` (which
@@ -82,6 +84,9 @@ export function RideCard({ ride, onClick }: RideCardProps) {
   const typeColors = rideTypeColorClasses(ride.rideTypeCode);
   const dayLabel = (date: Date) => formatDayDate(date);
   const endsOnAnotherDay = end && dateKey(start) !== dateKey(end);
+  const carNameNode = ride.carName
+    ? ride.carId ? <CarNameWithReport carId={ride.carId} carName={ride.carName} /> : <span>{ride.carName}</span>
+    : null;
 
   return (
     <Card
@@ -107,7 +112,12 @@ export function RideCard({ ride, onClick }: RideCardProps) {
           <CarFront className="size-5" aria-hidden="true" />
         </span>
         <div className="min-w-0 flex-1 space-y-1.5">
-          {ride.showDay ? <p className="font-bold">{dayLabel(start)}</p> : null}
+          {ride.showDay || (ride.carOnTop && ride.carName) ? (
+            <div className="flex flex-wrap items-center justify-between gap-x-2">
+              {ride.showDay ? <p className="font-bold">{dayLabel(start)}</p> : null}
+              {ride.carOnTop && ride.carName ? <span className="font-medium" data-testid="ride-card-car">{carNameNode}</span> : null}
+            </div>
+          ) : null}
           <div className="flex items-center justify-between gap-2">
             <span dir="ltr" className={cn("tabular-nums", ride.isMine ? "font-bold" : "font-medium")}>
               {spanKind === "all_day" ? <span dir="rtl">{he.flex.anyTime}</span>
@@ -164,13 +174,7 @@ export function RideCard({ ride, onClick }: RideCardProps) {
             {ride.needsDriver ? <span className="font-semibold text-destructive">{he.rideCoordination.missingDriver}</span> : null}
             {ride.conflict ? <span className="font-semibold text-destructive">{he.board.conflicts}</span> : null}
             {ride.tightSchedule ? <span role="img" aria-label={he.rideCoordination.tightSchedule} title={he.rideCoordination.tightSchedule}>⏱</span> : null}
-            {ride.carName ? (
-              ride.carId ? (
-                <CarNameWithReport carId={ride.carId} carName={ride.carName} />
-              ) : (
-                <span>{ride.carName}</span>
-              )
-            ) : null}
+            {ride.carName && !ride.carOnTop ? carNameNode : null}
             {ride.driverName ? (
               <span>
                 {ride.isChauffeur ? he.ride.chauffeur : he.ride.driver}: {ride.driverName}

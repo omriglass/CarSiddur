@@ -55,6 +55,7 @@ export function MyArchivePage() {
         weekRides={weekRidesQuery.data}
         car={selected ? (carsQuery.data ?? []).find((car) => car.id === selected.car_id) ?? null : null}
         locationBadge={null}
+        homeDestinationId={homeDestinationId}
         onOpenChange={(open) => !open && setSelected(null)}
       />
     </div>
