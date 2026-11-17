@@ -150,6 +150,13 @@ export const heMember = {
     /** OW1 (REQ §13.210): a change to one way leaves the booked car at the destination — ask instead of refusing. */
     // R20 Q2 redo (owner-approved 2026-11-14): a host's edit no longer fits a guest on the shared ride.
     hostGuestTitle: "לשנות את הנסיעה המשותפת?",
+    /** REQ item 248 (owner-approved 2026-11-17): the edit takes off the route a place where someone gets on / off. */
+    ridersOffRouteTitle: "יש נוסעים בעצירה שהסרת",
+    ridersOffRouteOn: "{{name}} עולה ב{{place}}",
+    ridersOffRouteOff: "{{name}} יורד/ת ב{{place}}",
+    ridersOffRouteBody: "אחרי השמירה הם ייסעו מתחילת הדרך או עד סופה, ונשלח להם עדכון.",
+    ridersOffRouteSave: "שמירה",
+    ridersOffRouteBack: "חזרה",
     hostGuestFarBody: "השעות החדשות רחוקות מהבקשה של {{name}} ({{name}} ביקש/ה לצאת ב־{{wanted}}, הנסיעה תצא ב־{{ride}}).",
     hostGuestFarBodyReturn: "השעות החדשות רחוקות מהבקשה של {{name}} ({{name}} ביקש/ה לחזור ב־{{wanted}}, הנסיעה תחזור ב־{{ride}}).",
     hostGuestKeep: "להשאיר את {{name}} בנסיעה",
@@ -734,6 +741,10 @@ export const heMember = {
     fixed: "שעה קבועה",
     /** Owner 2026-11-16: hours that cannot all be kept are a warning, never a refusal - in few words. */
     tight: "לו״ז צפוף",
+    /** REQ item 248 (owner-approved 2026-11-17): a member's edit left more people on the ride than its seats. */
+    seatsShortMany: "חסרים {{n}} מקומות",
+    seatsShortOne: "חסר מקום אחד",
+    seatsShortWhere: "בדרך מ{{from}} ל{{to}}",
     whereOn: "↑ {{name}}",
     whereOnAt: "↑ {{name}} ({{time}})",
     whereOff: "↓ {{name}}",

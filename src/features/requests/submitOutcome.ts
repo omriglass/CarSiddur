@@ -4,7 +4,7 @@ import { t, tv } from "@/i18n/he";
 import type { TripType } from "@/lib/enums";
 
 import { overlapRefusalMessage } from "./overlapNames";
-import type { HostGuestQuestion, SeriesBlocker, SubmitRequestResult, SubmitSeriesRequestResult } from "./api";
+import type { HostGuestQuestion, RiderOffRoute, SeriesBlocker, SubmitRequestResult, SubmitSeriesRequestResult } from "./api";
 
 export interface SubmitOutcomeContext {
   /** Resolves a `cars.id` to its display name (both variants already have `carsQuery.data`). */
@@ -159,6 +159,12 @@ export function attachToBlocker(departAt: string, returnAt: string | null, block
 export function hostGuestsConfirmation(result: SubmitRequestResult | null | undefined): HostGuestQuestion[] | null {
   if (result?.needs_confirmation !== "host_guests") return null;
   return result.host_guests?.length ? result.host_guests : null;
+}
+
+/** REQ item 248: the edit takes off the route a place where someone gets on / off — who and where, for the question. */
+export function ridersOffRouteConfirmation(result: SubmitRequestResult | null | undefined): RiderOffRoute[] | null {
+  if (result?.needs_confirmation !== "riders_off_route") return null;
+  return result.riders_off_route ?? [];
 }
 
 /** REQ §13.158: a refused edit (nothing changed, the booking kept) — the reason and the discussion holding the car. */

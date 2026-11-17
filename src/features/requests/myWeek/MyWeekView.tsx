@@ -55,6 +55,7 @@ import { isFiledForOther, ownRequestIds } from "../filedForOther";
 import { MyWeekDisplayMenu } from "./MyWeekDisplayMenu";
 import { EditModeButton } from "@/features/rides/components/EditModeButton";
 import { useDragHint, useEditMode } from "@/features/rides/editMode";
+import { seatsShortText, useSeatShortfalls } from "@/features/rides/useSeatShortfalls";
 import { RequestDeadlineNote } from "../components/RequestDeadlineNote";
 import { MyWeekSwitcher } from "./MyWeekSwitcher";
 
@@ -141,6 +142,7 @@ export function MyWeekView({ departmentId, homeDestinationId, profileId, request
   }, [profileId, requests, ridesQuery.data]);
   const serverNeighbours = useCarNeighboursQuery(myHandoverRideIds).data;
 
+  const seatShortfalls = useSeatShortfalls(ridesQuery.data ?? [], departmentId);
   const entries = useMemo(() => {
     // REQ §13.177 (c): a ride is mine through my own trips only; what I filed for others is drawn muted and named.
     const myRequestIds = ownRequestIds(requests, profileId);
@@ -177,7 +179,8 @@ export function MyWeekView({ departmentId, homeDestinationId, profileId, request
       const lines = carHandoverLines(carHandoverNotes(neighbours, profileId, profileId ? [profileId] : []), { startsAt: ride.starts_at, endsAt: ride.ends_at });
       if (lines.length) handoverLines.set(ride.id, lines.map((line) => `${line.before}${line.day ? `${line.day} ` : ""}${line.time}${line.after}`));
     }
-    const blocks = rideBlocks(mine, dayKeys, (ride) => rideWithCarLabel(ride.car_id ? carNameById.get(ride.car_id) ?? "" : "", rideRouteLabel(ride, homeDestinationId)), myRequestsById, { tightIds, related, filedFor, handoverLines });
+    const blocks = rideBlocks(mine, dayKeys, (ride) => rideWithCarLabel(ride.car_id ? carNameById.get(ride.car_id) ?? "" : "", rideRouteLabel(ride, homeDestinationId)), myRequestsById, { tightIds, related, filedFor, handoverLines,
+      seatsShort: new Map([...seatShortfalls].flatMap(([id, short]) => { const text = seatsShortText(short); return text ? [[id, text] as const] : []; })) });
     if (!isPast) {
       const sameDepartment = requests.filter((row) => row.departmentId === departmentId && row.weekStart === weekStart);
       const servedRequestIds = new Set(mine.flatMap((ride) => servedOf(ride).flatMap((entry) => (entry.request_id ? [entry.request_id] : []))));
@@ -186,7 +189,7 @@ export function MyWeekView({ departmentId, homeDestinationId, profileId, request
       blocks.push(...suggestionBlocks(suggestions, dayKeys, homeDestinationId));
     }
     return withLanes(blocks);
-  }, [carsQuery.data, childIds, dayKeys, guardianIds, departmentId, homeDestinationId, isPast, profileId, requests, ridesQuery.data, showKidsRides, showCoParentRides, serverNeighbours, settingsQuery.data, suggestionsQuery.data, week, weekStart]);
+  }, [carsQuery.data, childIds, dayKeys, guardianIds, departmentId, homeDestinationId, isPast, profileId, requests, ridesQuery.data, showKidsRides, showCoParentRides, serverNeighbours, settingsQuery.data, suggestionsQuery.data, week, weekStart, seatShortfalls]);
 
   const targetById = useMemo(() => new Map(entries.map((entry) => [entry.block.id, entry.target])), [entries]);
   // Owner 2026-10-26: in a partly published week, a day not published yet carries a stamp over its column (a week

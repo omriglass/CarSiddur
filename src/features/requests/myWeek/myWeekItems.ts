@@ -106,6 +106,8 @@ export function rideBlocks(
     filedFor?: ReadonlyMap<string, string>;
     /** Owner 2026-10-16: the "!" be-back-on-time lines per ride id (already worded). */
     handoverLines?: ReadonlyMap<string, readonly string[]>;
+    /** REQ item 248: rides with more people than seats (already worded). */
+    seatsShort?: ReadonlyMap<string, string>;
   } = {},
 ): MyWeekBlock[] {
   const out: MyWeekBlock[] = [];
@@ -148,6 +150,7 @@ export function rideBlocks(
           tightSchedule: !notMine && !!extras.tightIds?.has(ride.id!),
           needsDriver: !!ride.needs_driver,
           handoverLines: !notMine ? extras.handoverLines?.get(ride.id!) : undefined,
+          seatsShortWarning: extras.seatsShort?.get(ride.id!),
           rideTypeCode: representativeRideTypeCode(servedOf(ride)),
           seriesIndex: ride.series_index,
           seriesCount: ride.series_count,

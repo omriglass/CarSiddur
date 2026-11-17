@@ -2,6 +2,7 @@ import { withFreedCarChoice } from "@/lib/appSurface";
 import { carOwnerIds, isCarOwner } from "@/lib/carOwners";
 import { cancelRidePreview, removeMePreview } from "@/features/rides/freedCarRequests";
 import { FreedCarConfirmDialog } from "@/features/rides/FreedCarConfirmDialog";
+import { seatsShortText, useSeatShortfalls } from "@/features/rides/useSeatShortfalls";
 import { useMaintenanceGridEditing } from "@/features/fleet/useMaintenanceGridEditing";
 import { DayCarsStrip } from "@/components/DayCarsStrip";
 import { CarGlance } from "@/features/cars/components/CarGlance";
@@ -220,6 +221,8 @@ export function SiddurPage() {
   const homeDestinationId = (departmentsQuery.data ?? []).find((d) => d.id === departmentId)?.home_destination_id ?? null;
 
   const rides = boardRidesQuery.data ?? [];
+  // REQ item 248: more people than seats after a member's edit - a warning on the ride until someone fixes it
+  const seatShortfalls = useSeatShortfalls(rides, departmentId);
   const editableOwnRequest = selectedRideId
     ? (myRequestsQuery.data ?? []).find((request) => request.ride?.id === selectedRideId && canEditRequest(request))
     : undefined;
@@ -511,6 +514,7 @@ export function SiddurPage() {
       needsDriver: !!r.needs_driver,
       isMine: isMyRideToPaint(r),
       tightSchedule: tightRideIds.has(r.id as string),
+      seatsShortWarning: seatsShortText(seatShortfalls.get(r.id as string)),
       seriesIndex: r.series_index,
       seriesCount: r.series_count,
     }));
@@ -729,6 +733,7 @@ export function SiddurPage() {
                     needsDriver: !!r.needs_driver,
                     isMine: isMyRideToPaint(r),
                     tightSchedule: tightRideIds.has(r.id as string),
+                    seatsShort: seatsShortText(seatShortfalls.get(r.id as string)),
                     carName: siddurCarName(carsQuery.data?.find((c) => c.id === r.car_id)) || null,
                     carId: r.car_id,
                     carType: (carsQuery.data ?? []).find((c) => c.id === r.car_id)?.type,

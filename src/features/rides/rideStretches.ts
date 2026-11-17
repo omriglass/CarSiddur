@@ -17,6 +17,8 @@ const legStretchesSchema = z.object({
   spans: z.record(z.string(), z.tuple([z.number(), z.number()])),
   absent: z.array(z.string()),
   free: z.array(z.number().nullable()),
+  /** REQ item 248: the seats missing on each stretch (0 = everyone fits); absent from an older server. */
+  short: z.array(z.number()).optional(),
   /** LT1 phase 2e: per route position, the stated hour of the main request's place (null = worked out). */
   fixed: z.array(z.object({ at: z.string(), anchor: z.enum(["arrive", "leave"]), flex: z.number().nullish() }).nullable()).optional(),
 });

@@ -931,6 +931,14 @@ export type HostGuestDecision = "keep" | "release";
 export type HostGuestWarning = "far" | "detour" | "luggage";
 
 /** R20 Q2 redo (owner 2026-11-14): a guest of the shared ride an edit no longer fits. */
+/** REQ item 248: someone on the ride whose place to get on (`on`) or off (`off`) the edit takes off the route. */
+export interface RiderOffRoute {
+  name: string | null;
+  place: string | null;
+  side: "on" | "off";
+  leg: "out" | "return";
+}
+
 export interface HostGuestQuestion {
   request_id: string;
   name: string;
@@ -1009,7 +1017,7 @@ export interface SubmitRequestResult {
    * REQ §13.101 f: a car takes the new hours, but the member drives others who would be left without a driver —
    * nothing was changed; resubmit with `confirm_release: true` to go ahead.
    */
-  needs_confirmation?: "release_to_waitlist" | "car_stays_away" | "host_guests" | "car_taken_choice";
+  needs_confirmation?: "release_to_waitlist" | "car_stays_away" | "host_guests" | "car_taken_choice" | "riders_off_route";
   /**
    * PR3 (owner 2026-11-15), with `car_taken_choice`: the edit's booked car is taken at the new hours by this ride —
    * nothing was changed. `other_car` = a shared car free at those hours (resubmit with `allow_other_car`), `my_ride` =
@@ -1020,6 +1028,8 @@ export interface SubmitRequestResult {
   my_ride?: { id: string; version: number; car_id: string } | null;
   /** R20 Q2 redo, with `host_guests`: the guests the new hours no longer fit — nothing was changed until each is answered. */
   host_guests?: HostGuestQuestion[];
+  /** REQ item 248, with `riders_off_route`: people who get on / off at a place the edit takes off the route — nothing was changed. */
+  riders_off_route?: RiderOffRoute[];
   /** OW1 (REQ §13.210), with `car_stays_away`: the booked car, and whether a later ride of it is the reason (else the week's end). */
   car_name?: string;
   next_ride?: boolean;
@@ -1108,6 +1118,13 @@ export async function submitRequest(payload: SubmitRequestPayload): Promise<Json
       try { guests = (JSON.parse(error.detail ?? "{}") as { guests?: HostGuestQuestion[] }).guests ?? []; } catch { /* asked with no list */ }
       if (guests.length === 0) throw error;
       return tagged({ ok: false, needs_confirmation: "host_guests", unchanged: false, host_guests: guests });
+    }
+    // REQ item 248: someone gets on / off at a place the edit takes off the route - nothing changed; the form asks and
+    // sends again with `riders_off_route_ok`.
+    if (error instanceof AppError && error.code === "riders_off_route") {
+      let riders: RiderOffRoute[] = [];
+      try { riders = (JSON.parse(error.detail ?? "{}") as { riders?: RiderOffRoute[] }).riders ?? []; } catch { /* asked with no list */ }
+      return tagged({ ok: false, needs_confirmation: "riders_off_route", unchanged: false, riders_off_route: riders });
     }
     if (!(error instanceof AppError) || error.code !== "car_stays_away") throw error;
     let detail: { car_name?: string; next_ride?: boolean } = {};

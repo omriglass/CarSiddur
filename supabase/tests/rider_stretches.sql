@@ -53,7 +53,8 @@ begin
   assert coalesce((v_result ->> 'unchanged')::boolean, false), format('TEST 1 FAILED: same riders = unchanged (%s)', v_result);
 
   v_result := public.submit_request(v_payload || jsonb_build_object('request_id', req, 'expected_version', v_version, 'riders',
-    jsonb_build_array(jsonb_build_object('rider_key', 'guest:1', 'leg', 'out', 'alight_place_id', zich))));
+    -- another place on the route (REQ item 248: a place off the route asks first - riders_off_route.sql)
+    jsonb_build_array(jsonb_build_object('rider_key', 'guest:1', 'leg', 'out', 'board_place_id', bin))));
   assert not coalesce((v_result ->> 'unchanged')::boolean, false), 'TEST 1 FAILED: another place is a change';
   assert (select count(*) from public.request_rider_stops where request_id = req) = 1, 'TEST 1 FAILED: the list replaces the rows';
 

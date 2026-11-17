@@ -1,4 +1,5 @@
 import { carModeLabel } from "../carModeLine";
+import { seatsShortText, seatsShortWhere, useSeatShortfalls } from "@/features/rides/useSeatShortfalls";
 import { useSession } from "@/features/auth/useSession";
 import { Car as CarIcon } from "lucide-react";
 import { useState, type ReactNode } from "react";
@@ -136,6 +137,8 @@ interface RideDetailSheetProps {
  */
 export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = null, onOpenChange, editor, coordinatorNotes, canEditPublicNotes, onRemoveOwnRide, removingOwnRide = false, onCancelSeriesDay, onRemoveMe, removingMe = false, freedPreview, editRequestLinks = [], showAddPassengers = false, weekRides, moveToCarOptions = [], onMoveToCar, movingToCar = false, handOverOptions = [], onHandOver, onLeaveNoDriver, leaveNoDriverDialog, handingOver = false }: RideDetailSheetProps) {
   const [confirmCancel, setConfirmCancel] = useState(false);
+  // REQ item 248: more people than seats (a member's edit saves and warns) - which part of the ride is short
+  const seatShort = useSeatShortfalls(ride ? [ride] : [], ride?.department_id).get(ride?.id ?? "");
   // The viewer's own request on this ride (theirs, filed by them, or one they may edit) — its history is theirs to read.
   const myRequestIds = new Set((useMyRequests().data ?? []).map((request) => request.id));
   const historyRequestId = ride ? servedOf(ride).map((entry) => entry.request_id).find((id) => !!id && myRequestIds.has(id)) ?? null : null;
@@ -221,6 +224,11 @@ export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = 
                     ) : null}
                   </div>
 
+                  {seatShort ? (
+                    <p className="rounded bg-amber-100 px-2 py-1 text-sm font-medium text-amber-950 dark:bg-amber-900/40 dark:text-amber-100" data-testid="ride-detail-seats-short">
+                      {[seatsShortText(seatShort), seatsShortWhere(seatShort)].filter(Boolean).join(" · ")}
+                    </p>
+                  ) : null}
                   <RideCarHandover ride={ride} />
                   {/* REQ item 150 b: this ride's car tasks for me, inside its window only (member surfaces; the board has its own sheet). */}
                   {ride.id ? <MyCarTasksCard rideId={ride.id} /> : null}

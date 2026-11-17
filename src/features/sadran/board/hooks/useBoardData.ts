@@ -20,6 +20,7 @@ import { buildWeek } from "@/features/solverBridge/buildSolverInput";
 import { useCarLocations, useDepartments } from "@/features/siddur/hooks";
 import { useRideChanges } from "@/features/rides/hooks";
 import { isReservation } from "@/features/rides/servedOf";
+import { seatsShortText, useSeatShortfalls } from "@/features/rides/useSeatShortfalls";
 import { useMyDepartments } from "@/features/auth/useMyDepartments";
 import { useProfile } from "@/features/auth/useProfile";
 import { rideCoordinatorNoteFields } from "@/lib/rideCoordinatorNotes";
@@ -524,6 +525,8 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
   // REQ §13.108 D1: the week's override of turnaround / chauffeur dwell, same source as SQL `required_turnaround_minutes()`.
   const weekSettings = effectiveWeekSettings(daySettings, weekRowQuery.data);
   const rides = ridesQuery.data ?? [];
+  // REQ item 248: a member's edit may leave more people than seats - shown until someone fixes it
+  const seatShortfalls = useSeatShortfalls(rides, departmentId);
   const awaitingDriverRequestIds = new Set(rides.filter((ride) => ride.needs_driver).flatMap((ride) => servedOf(ride).map((entry) => entry.request_id)));
 
   // REQ §13.94: route data for the merged-ride twin (`src/lib/rideRoute.ts`) and for the one-way
@@ -826,6 +829,7 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
       seriesIndex: r.series_index,
       seriesCount: r.series_count,
       driverOverlapWarning: r.id && driverOverlapIds.has(r.id) ? t("sadranBoard.driverOverlapWarning") : undefined,
+      seatsShortWarning: r.id ? seatsShortText(seatShortfalls.get(r.id)) : undefined,
       chainBrokenWarning: r.id && chainBreakByRideId.has(r.id)
         ? tv("sadranBoard.carNotHereWarning", {
           // R5U6: name the ride (time + who) so the warning is readable away from its block (list mode, tooltips, screen readers).

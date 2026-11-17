@@ -1,8 +1,10 @@
 import { expect, test, type Page } from "@playwright/test";
 
 import { he, tv } from "../src/i18n/he";
+import { paths } from "../src/app/routes";
 import { NEVO_DEPARTMENT_ID, newSignedInPage, SEEDED_USERS, serviceRoleClient } from "./helpers";
 import { publishedFixtureWeek } from "./published-week";
+import { saveEditedRequest } from "./request-form";
 
 /**
  * REQ item 246 h (LT1 phase 2b–2e), the owner's mock boards 4–5: member1 drives home -> זכרון יעקב (school, arrive by
@@ -160,6 +162,55 @@ test("'+ נוסע/ת' getting on in the middle; a one-way guest leaves with one 
   } finally {
     await admin.context.close().catch(() => undefined);
     await member2.context.close().catch(() => undefined);
+    await cleanup(WEEK);
+  }
+});
+
+// REQ item 248 (owner 2026-11-17): removing a stop someone gets on / off at asks first (never drops them silently);
+// more people than seats saves and the ride warns.
+test("a removed stop with a rider on it asks first; more people than seats warns", { tag: ["@ride-passengers", "@request-form"] }, async ({ browser }) => {
+  test.slow();
+  const WEEK = "2041-05-19";
+  const { service, request } = await fixture(WEEK);
+  const member1 = await newSignedInPage(browser, SEEDED_USERS.member1);
+  try {
+    const page = member1.page;
+    await page.setViewportSize({ width: 430, height: 1600 });
+    await page.goto(paths.requests.edit(request.id));
+    // the stops editor - from either form layout (a member's profile may keep the classic one)
+    await page.getByTestId("chip-out-stop").or(page.getByTestId("add-stop")).first().click();
+    // the stop on the way there and on the way back
+    await page.getByTestId("stop-remove").first().click();
+    await page.getByTestId("stop-remove").first().click();
+    await expect(page.getByTestId("stop-remove")).toHaveCount(0);
+    await page.keyboard.press("Escape");
+    await saveEditedRequest(page);
+
+    const question = page.getByRole("dialog").filter({ hasText: he.request.ridersOffRouteTitle });
+    await expect(question.getByTestId("riders-off-route")).toContainText(tv("request.ridersOffRouteOff", { name: "גל", place: "זכרון יעקב" }));
+    await expect(question.getByTestId("riders-off-route")).toContainText(tv("request.ridersOffRouteOn", { name: "גל", place: "זכרון יעקב" }));
+    // nothing saved before the answer
+    expect((await service.from("request_stops").select("leg").eq("request_id", request.id)).data).toHaveLength(2);
+    await question.getByRole("button", { name: he.request.ridersOffRouteSave, exact: true }).click();
+    await expect.poll(async () => (await service.from("request_stops").select("leg").eq("request_id", request.id)).data?.length).toBe(0);
+    await expect.poll(async () => (await service.from("request_rider_stops").select("rider_key").eq("request_id", request.id)).data?.length).toBe(0);
+
+    // more people on the ride than the van seats (added on the ride): the sheet and the card say so
+    // the edit placed the request again: its ride now
+    const { data: link } = await service.from("ride_requests").select("ride_id").eq("request_id", request.id).single();
+    const rideId = link!.ride_id as string;
+    const { data: placed } = await service.from("rides").select("car_id").eq("id", rideId).single();
+    const { data: configs } = await service.from("car_seat_configs").select("adults").eq("car_id", placed!.car_id as string);
+    const seats = Math.max(...(configs ?? []).map((c) => c.adults as number));
+    const extra = seats - 3 + 1;   // the request is 3 people
+    const { error } = await service.from("ride_passengers").insert(Array.from({ length: extra }, (_, i) => ({
+      ride_id: rideId, department_id: NEVO_DEPARTMENT_ID, week_start: WEEK, display_name: `אורח ${i + 1}`, seat_kind: "adult", added_by: MEMBER1, leg: "both",
+    })));
+    if (error) throw error;
+    await openRide(page, WEEK, rideId);
+    await expect(page.getByTestId("ride-detail-seats-short")).toHaveText(he.rideStops.seatsShortOne);
+  } finally {
+    await member1.context.close().catch(() => undefined);
     await cleanup(WEEK);
   }
 });

@@ -2,6 +2,7 @@ import { carOwnerIds } from "@/lib/carOwners";
 import { cancelRidePreview, editRidePreview, removeMePreview } from "@/features/rides/freedCarRequests";
 import { useFreedCarGate, useFreedCarLine } from "@/features/rides/useFreedCar";
 import { FreedCarConfirmDialog, KeepOutButton } from "@/features/rides/FreedCarConfirmDialog";
+import { seatsShortText, useSeatShortfalls } from "@/features/rides/useSeatShortfalls";
 import { useActiveDepartment } from "@/features/auth/useActiveDepartment";
 import { useWeekChangeWatch } from "@/features/liveSync/useWeekChangeWatch";
 import { ChevronDown, Inbox, MessageCircleQuestion } from "lucide-react";
@@ -147,6 +148,8 @@ export function HomePage() {
   // A manager reads draft rides that never move the public counter: no return-to-tab gating for them (lib/counterGate.ts).
   const sadranAnywhere = useIsSadranAnywhere();
   const upcomingRidesQuery = useMyUpcomingRides();
+  // REQ item 248: more people than seats after a member's edit - a warning on the card until someone fixes it
+  const seatShortfalls = useSeatShortfalls(upcomingRidesQuery.data ?? [], active.departmentId);
   const rideTypesQuery = useRideTypes();
   const myCarsQuery = useMyResponsibleCarsQuery();
   // REQ item 150 (d): cars I became responsible for and have not yet completed a checklist for.
@@ -368,12 +371,15 @@ export function HomePage() {
   const unservedRides = ridesByRequestRow(unserved, upcomingRides, rideRequestIds);
   const rideCardOf = (ride: (typeof upcomingRides)[number]) => {
     const related = ride.id ? relatedByRide.get(ride.id) : undefined;
-    return myRideCard(ride, requests, rideTypesQuery.data ?? [], {
+    const card = myRideCard(ride, requests, rideTypesQuery.data ?? [], {
       viewerId,
       neighbours: ride.id ? neighboursByRide?.get(ride.id) : undefined,
       tight: !!ride.id && tightRideIds.has(ride.id),
       relatedLabel: related?.length ? tv("myWeek.kidRideOf", { name: related.map((entry) => entry.name).join(", ") }) : undefined,
     }, ride.department_id ? homeDestinationIds[ride.department_id] : undefined);
+    // REQ item 248: more people than seats after a member's edit
+    const seatsShort = ride.id ? seatsShortText(seatShortfalls.get(ride.id)) : undefined;
+    return card && seatsShort ? { ...card, seatsShort } : card;
   };
   const rideCardsOf = (rides: readonly (typeof upcomingRides)[number][] | undefined) =>
     (rides ?? []).flatMap((ride) => { const data = rideCardOf(ride); return data ? [data] : []; });

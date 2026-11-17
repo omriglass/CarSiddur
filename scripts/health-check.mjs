@@ -217,6 +217,18 @@ export function buildChecks(opts) {
       order by l.starts_at, l.ride_id`,
     },
     {
+      id: "ride_people_over_seats",
+      level: "warn",
+      title: "a ride carries more people than seats on some stretch, people added on the ride and where each gets on / off included (_ride_people_fit) - a member's edit may save it, the ride warns until someone fixes it (REQ item 248)",
+      sql: `select rd.id::text, format('car %s, %s', c.name, to_char(rd.starts_at at time zone 'Asia/Jerusalem', 'DD.MM HH24:MI')), 1
+      from public.rides rd
+      ${inScope("rd")}
+      join public.cars c on c.id = rd.car_id
+      where rd.status <> 'cancelled' and exists (select 1 from public.ride_requests rr where rr.ride_id = rd.id)
+        and not public._ride_people_fit(rd.id)
+      order by rd.starts_at, rd.id`,
+    },
+    {
       id: "ride_luggage_capacity",
       level: "error",
       title: "a ride leg carries a large-luggage request on a car without a large trunk (car_takes_luggage, yes/no; a request whose requirement was waived by hand is not counted, REQ §13.111 a)",

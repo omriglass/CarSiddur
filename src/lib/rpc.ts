@@ -106,6 +106,7 @@ export type ErrorCode =
   | "car_next_ride_elsewhere"
   | "car_stays_away"
   | "host_edit_guests"
+  | "riders_off_route"
   | "undo_stale"
   | "undo_not_possible"
   | "undo_already_notified"
@@ -286,6 +287,7 @@ const MESSAGE_TO_CODE: Record<string, ErrorCode> = {
   car_next_ride_elsewhere: "car_next_ride_elsewhere",
   car_stays_away: "car_stays_away",
   host_edit_guests: "host_edit_guests",
+  riders_off_route: "riders_off_route",
   undo_stale: "undo_stale",
   undo_not_possible: "undo_not_possible",
   undo_already_notified: "undo_already_notified",
@@ -470,6 +472,7 @@ const CODE_TO_MESSAGE: Record<ErrorCode, string> = {
   car_next_ride_elsewhere: he.errors.carNextRideElsewhere,
   car_stays_away: he.errors.carNextRideElsewhere,
   host_edit_guests: he.request.hostGuestTitle,
+  riders_off_route: he.request.ridersOffRouteTitle,
   undo_stale: he.errors.undoStale,
   undo_not_possible: he.errors.undoNotPossible,
   undo_already_notified: he.errors.undoAlreadyNotified,
@@ -733,7 +736,7 @@ export function toAppError(error: unknown): AppError {
     const description = pgError?.details || pgError?.hint || bareCode || undefined;
     return new AppError(code, message, description ?? undefined);
   }
-  return new AppError(code, message, undefined, code === "needs_large_trunk" || code === "person_busy" || code === "ride_move_needs_agreement" || code === "car_stays_away" || code === "host_edit_guests" ? (pgError?.details ?? undefined) : undefined);
+  return new AppError(code, message, undefined, code === "needs_large_trunk" || code === "person_busy" || code === "ride_move_needs_agreement" || code === "car_stays_away" || code === "host_edit_guests" || code === "riders_off_route" ? (pgError?.details ?? undefined) : undefined);
 }
 
 /** Maps the error and shows a Hebrew toast (mutations' `onError`, CLAUDE.md "Data"). */

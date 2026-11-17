@@ -181,6 +181,8 @@
         "supabase/migrations/**/*rider_stretches*",
         "supabase/tests/ride_people_parts.sql",
         "supabase/migrations/**/*ride_people_parts*",
+        "supabase/tests/riders_off_route.sql",
+        "supabase/migrations/**/*riders_off_route*",
         "supabase/tests/merge_fixed_hours.sql",
         "supabase/migrations/**/*merge_fixed_hours*",
         "supabase/tests/leave_ride_as_guest.sql",
@@ -218,6 +220,7 @@
         "stop_hours.sql",
         "rider_stretches.sql",
         "ride_people_parts.sql",
+        "riders_off_route.sql",
         "merge_fixed_hours.sql",
         "leave_ride_as_guest.sql"
       ],
@@ -924,6 +927,9 @@
         "src/features/rides/rideGridLabel.ts",
         "src/features/rides/ridePeople.ts",
         "src/features/rides/ridePeople.test.ts",
+        "src/features/rides/seatShortfall.ts",
+        "src/features/rides/seatShortfall.test.ts",
+        "src/features/rides/useSeatShortfalls.ts",
         "src/features/rides/addPassengers.ts",
         "src/features/rides/addPassengers.test.ts",
         "src/features/rides/components/AddPassengersDialog.tsx",
@@ -989,6 +995,7 @@
         "qa20_low_bugs.sql",
         "ride_passengers.sql",
         "ride_people_parts.sql",
+        "riders_off_route.sql",
         "split_ride_companion.sql"
       ],
       "playwrightTags": [

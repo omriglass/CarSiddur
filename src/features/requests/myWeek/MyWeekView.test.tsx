@@ -11,7 +11,7 @@ import { MyWeekView } from "./MyWeekView";
 vi.mock("@/features/siddur/hooks", () => ({
   useBoardRides: () => ({ data: [ride], isError: false }),
 }));
-vi.mock("@/features/fleet/hooks", () => ({ useCars: () => ({ data: [{ id: "car1", name: "קורולה" }] }) }));
+vi.mock("@/features/fleet/hooks", () => ({ useCars: () => ({ data: [{ id: "car1", name: "קורולה" }] }), useCarSeatConfigs: () => ({ data: [] }) }));
 vi.mock("@/features/sadran/hooks", () => ({ useDepartmentSettings: () => ({ data: { board_start_time: "06:00:00" } }) }));
 vi.mock("../hooks", () => ({ useTemplateSuggestionsQuery: () => ({ data: [] }), useMoveRequestMutation: () => ({ mutate: vi.fn(), isPending: false }) }));
 vi.mock("@/features/rides/useMemberRideMoves", () => ({

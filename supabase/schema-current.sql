@@ -1496,6 +1496,59 @@ $$;
 ALTER FUNCTION "public"."_car_tasks_for_profile"("p_profile_id" "uuid", "p_now" timestamp with time zone) OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."_clear_riders_off_route"("p_request_id" "uuid", "p_list" "jsonb") RETURNS "void"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  e jsonb; s public.request_rider_stops%rowtype; v_on boolean; v_map jsonb;
+begin
+  for e in select x from jsonb_array_elements(p_list) x loop
+    v_on := e ->> 'side' = 'on';
+    if e ->> 'src' = 'rider' then
+      select * into s from public.request_rider_stops
+       where request_id = p_request_id and rider_key = e ->> 'key' and leg = (e ->> 'leg')::public.ride_leg;
+      if s.request_id is null then continue; end if;
+      if (v_on or (s.board_place_id is null and s.board_place_text is null))
+         and (not v_on or (s.alight_place_id is null and s.alight_place_text is null)) then
+        delete from public.request_rider_stops
+         where request_id = p_request_id and rider_key = s.rider_key and leg = s.leg;
+      else
+        update public.request_rider_stops set
+          board_place_id = case when v_on then null else board_place_id end,
+          board_place_text = case when v_on then null else board_place_text end,
+          alight_place_id = case when v_on then alight_place_id end,
+          alight_place_text = case when v_on then alight_place_text end
+         where request_id = p_request_id and rider_key = s.rider_key and leg = s.leg;
+      end if;
+    else
+      update public.ride_passengers rp set
+        board_place_id = case when v_on and not (e ->> 'leg' = 'return' and rp.leg = 'both') then null else board_place_id end,
+        board_place_text = case when v_on and not (e ->> 'leg' = 'return' and rp.leg = 'both') then null else board_place_text end,
+        alight_place_id = case when not v_on and not (e ->> 'leg' = 'return' and rp.leg = 'both') then null else alight_place_id end,
+        alight_place_text = case when not v_on and not (e ->> 'leg' = 'return' and rp.leg = 'both') then null else alight_place_text end,
+        return_board_place_id = case when v_on and e ->> 'leg' = 'return' and rp.leg = 'both' then null else return_board_place_id end,
+        return_board_place_text = case when v_on and e ->> 'leg' = 'return' and rp.leg = 'both' then null else return_board_place_text end,
+        return_alight_place_id = case when not v_on and e ->> 'leg' = 'return' and rp.leg = 'both' then null else return_alight_place_id end,
+        return_alight_place_text = case when not v_on and e ->> 'leg' = 'return' and rp.leg = 'both' then null else return_alight_place_text end
+       where rp.id = (e ->> 'key')::uuid;
+    end if;
+  end loop;
+
+  -- the ride's change notice (REQ §13.169 c) names them; only when the form's save tells the riders
+  v_map := coalesce(nullif(current_setting('app.ride_edit_before', true), ''), '{}')::jsonb;
+  if v_map ? p_request_id::text then
+    v_map := jsonb_set(v_map, array[p_request_id::text, 'places_cleared'], jsonb_build_object(
+      'names', (select coalesce(jsonb_agg(distinct x ->> 'name'), '[]'::jsonb) from jsonb_array_elements(p_list) x where x ->> 'name' is not null),
+      'places', (select coalesce(jsonb_agg(distinct x ->> 'place'), '[]'::jsonb) from jsonb_array_elements(p_list) x where x ->> 'place' is not null)));
+    perform set_config('app.ride_edit_before', v_map::text, true);
+  end if;
+end $$;
+
+
+ALTER FUNCTION "public"."_clear_riders_off_route"("p_request_id" "uuid", "p_list" "jsonb") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."_close_request"("p_request_id" "uuid") RETURNS "uuid"[]
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -5246,6 +5299,12 @@ begin
   if (b ->> 'description') is distinct from (a ->> 'description') and coalesce(a ->> 'description', '') <> '' then
     v_lines := v_lines || public._frag('ride_edit.description', jsonb_build_object('text', a ->> 'description'));
   end if;
+  -- REQ item 248: people whose place the edit took off the route now ride from the start / to the end
+  if jsonb_array_length(coalesce(b -> 'places_cleared' -> 'names', '[]'::jsonb)) > 0 then
+    v_lines := v_lines || public._frag('ride_edit.places_cleared', jsonb_build_object(
+      'names', public._and_list(array(select jsonb_array_elements_text(b -> 'places_cleared' -> 'names'))),
+      'places', public._and_list(array(select jsonb_array_elements_text(b -> 'places_cleared' -> 'places')))));
+  end if;
   return v_lines;
 end $$;
 
@@ -6266,6 +6325,66 @@ $$;
 
 
 ALTER FUNCTION "public"."_riders_canon"("p_riders" "jsonb") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."_riders_off_route"("p_request_id" "uuid") RETURNS "jsonb"
+    LANGUAGE "plpgsql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  q public.requests%rowtype;
+  v_out jsonb := '[]'::jsonb;
+begin
+  select * into q from public.requests where id = p_request_id;
+  if q.id is null then return v_out; end if;
+
+  -- the request's own people (companions, children, named guests): its own route of that way
+  select coalesce(jsonb_agg(x order by x ->> 'leg', x ->> 'key', x ->> 'side'), '[]'::jsonb) into v_out
+  from (
+    select jsonb_build_object('src', 'rider', 'key', s.rider_key, 'leg', s.leg::text, 'side', side.side,
+             'name', case split_part(s.rider_key, ':', 1)
+                       when 'companion' then (select p.full_name from public.profiles p where p.id = split_part(s.rider_key, ':', 2)::uuid)
+                       when 'child' then (select c.full_name from public.children c where c.id = split_part(s.rider_key, ':', 2)::uuid)
+                       else q.guest_passenger_names[split_part(s.rider_key, ':', 2)::int] end,
+             'place', coalesce((select d.name from public.destinations d where d.id = side.pid), side.ptext)) as x
+    from public.request_rider_stops s
+    cross join lateral (values ('on', s.board_place_id, s.board_place_text), ('off', s.alight_place_id, s.alight_place_text)) side(side, pid, ptext)
+    where s.request_id = p_request_id and s.rides and (side.pid is not null or side.ptext is not null)
+      and (s.leg = 'out' or q.return_at is not null)
+      and not exists (
+        select 1 from public.request_leg_route_points(p_request_id, s.leg) pt
+        where (side.pid is not null and pt.place_id = side.pid)
+           or (side.pid is null and lower(pt.place_text) = lower(side.ptext)))
+  ) r;
+
+  -- the people added to a ride this request leads (its route is the ride's route)
+  select v_out || coalesce(jsonb_agg(x order by x ->> 'leg', x ->> 'key', x ->> 'side'), '[]'::jsonb) into v_out
+  from (
+    select jsonb_build_object('src', 'added', 'key', rp.id::text, 'leg', l.leg::text, 'side', side.side, 'name', rp.display_name,
+             'place', coalesce((select d.name from public.destinations d where d.id = side.pid), side.ptext)) as x
+    from public.rides r
+    join public.ride_passengers rp on rp.ride_id = r.id
+    cross join lateral (values ('out'::public.ride_leg), ('return'::public.ride_leg)) l(leg)
+    cross join lateral (values
+        ('on',  case when l.leg = 'return' and rp.leg = 'both' then rp.return_board_place_id else rp.board_place_id end,
+                case when l.leg = 'return' and rp.leg = 'both' then rp.return_board_place_text else rp.board_place_text end),
+        ('off', case when l.leg = 'return' and rp.leg = 'both' then rp.return_alight_place_id else rp.alight_place_id end,
+                case when l.leg = 'return' and rp.leg = 'both' then rp.return_alight_place_text else rp.alight_place_text end)) side(side, pid, ptext)
+    where r.status <> 'cancelled' and (rp.leg = 'both' or rp.leg = l.leg) and (side.pid is not null or side.ptext is not null)
+      and (select rr.request_id from public.ride_requests rr where rr.ride_id = r.id
+           order by (rr.role = 'driver') desc, rr.created_at, rr.request_id limit 1) = p_request_id
+      and exists (select 1 from public.ride_requests rr where rr.ride_id = r.id
+                  and ((l.leg = 'out' and rr.covers_out) or (l.leg = 'return' and rr.covers_return)))
+      and not exists (
+        select 1 from public._ride_route(r.id) pt
+        where pt.leg = l.leg and ((side.pid is not null and pt.place_id = side.pid)
+           or (side.pid is null and lower(pt.place_text) = lower(side.ptext))))
+  ) a;
+  return v_out;
+end $$;
+
+
+ALTER FUNCTION "public"."_riders_off_route"("p_request_id" "uuid") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."_round5"("_at" timestamp with time zone) RETURNS timestamp with time zone
@@ -23143,7 +23262,7 @@ declare
   v_ride public.rides%rowtype;
   v_out jsonb := '{}'::jsonb;
   v_leg public.ride_leg;
-  v_x jsonb; v_n int; v_spans jsonb; v_absent jsonb; v_free jsonb; v_bonus int;
+  v_x jsonb; v_n int; v_spans jsonb; v_absent jsonb; v_free jsonb; v_short jsonb; v_bonus int;
   v_route jsonb; v_base uuid; q public.requests%rowtype; v_fixed jsonb;
 begin
   if not public._ride_route_visible(p_ride_id) then return null; end if;
@@ -23179,11 +23298,16 @@ begin
       v_spans := v_spans || jsonb_build_object('driver:' || v_ride.driver_id, jsonb_build_array(0, v_n - 1));
     end if;
     -- free adult seats after each place: the best seat configuration that takes the stretch's child seats / boosters
+    -- REQ item 248: and the seats missing on it (0 = everyone fits): the configuration that misses the fewest
     select coalesce(jsonb_agg((select greatest(max(c.adults - (l ->> 'adults')::int), 0)
                                  from public.car_seat_configs c
                                 where c.car_id = v_ride.car_id and c.child_seats >= (l ->> 'childSeats')::int
                                   and c.boosters >= (l ->> 'boosters')::int) order by k), '[]'::jsonb)
-      into v_free
+,
+           coalesce(jsonb_agg(coalesce((select min(greatest((l ->> 'adults')::int - c.adults, 0) + greatest((l ->> 'childSeats')::int - c.child_seats, 0)
+                                           + greatest((l ->> 'boosters')::int - c.boosters, 0))
+                                  from public.car_seat_configs c where c.car_id = v_ride.car_id), 0) order by k), '[]'::jsonb)
+      into v_free, v_short
       from jsonb_array_elements(public._stretch_loads(v_n, (v_x -> 'riders') || jsonb_build_array(jsonb_build_object('adults', v_bonus))))
            with ordinality s(l, k);
     -- per route position: the stated hour of the main request's own place, else null
@@ -23209,7 +23333,7 @@ begin
                    count(*) filter (where (e ->> 'request_id')::uuid = v_base and e ->> 'kind' in ('origin', 'stop', 'destination'))
                      over () as n
               from jsonb_array_elements(v_route) e where e ->> 'leg' = v_leg::text) x;
-    v_out := v_out || jsonb_build_object(v_leg::text, jsonb_build_object('spans', v_spans, 'absent', v_absent, 'free', v_free, 'fixed', v_fixed));
+    v_out := v_out || jsonb_build_object(v_leg::text, jsonb_build_object('spans', v_spans, 'absent', v_absent, 'free', v_free, 'short', v_short, 'fixed', v_fixed));
   end loop;
   return v_out;
 end;
@@ -26590,6 +26714,7 @@ declare
   v_host_guests jsonb := '[]'::jsonb;
   v_guest_return_at timestamptz;
   v_guest_stays boolean := false;   -- R20B8: a guest's new hours still fit the ride they ride in
+  v_off_route jsonb;   -- REQ item 248: people whose place is no longer on the route
   v_host_keeps boolean;   -- R20 Q2 redo: the probe of a host's edit, whether the host stays on the car   -- R20 Q2: the guests riding on the draft ride this request hosts
 begin
   -- REQ §13.190: the browser asks before a short turnaround (`short_turnaround_ask`: try_auto_approve names the car's
@@ -26792,7 +26917,7 @@ begin
       begin
         -- R21B4: the trial answers "yes" to the overlap question too (asked by the real save) - left unanswered it
         -- stopped the trial, and the form warned "you will lose the car" about an edit that keeps one.
-        perform public.submit_request((payload - 'probe_only') || jsonb_build_object('overlap_confirmed', true, 'host_guests', (
+        perform public.submit_request((payload - 'probe_only') || jsonb_build_object('overlap_confirmed', true, 'riders_off_route_ok', true, 'host_guests', (
           select jsonb_object_agg(g.request_id::text, 'release')
           from public.ride_requests h join public.ride_requests g on g.ride_id = h.ride_id and g.request_id <> v_request_id
           where h.request_id = v_request_id)));
@@ -27216,6 +27341,19 @@ begin
   -- rows equal to the whole ride are not stored).
   if payload ? 'riders' then
     perform public.replace_request_riders(v_request_id, v_department_id, payload -> 'riders');
+  end if;
+
+  -- REQ item 248 (owner 2026-11-17): someone on the ride gets on or off at a place the edit took off the route (a removed
+  -- stop): never dropped silently. Nothing is saved until the editor said yes (`riders_off_route_ok`); then they ride from
+  -- the start / to the end of that way and the change notice says so.
+  if v_request_id is not null then
+    v_off_route := public._riders_off_route(v_request_id);
+    if jsonb_array_length(v_off_route) > 0 then
+      if not coalesce((payload ->> 'riders_off_route_ok')::boolean, false) then
+        raise exception 'riders_off_route' using errcode = 'P0001', detail = jsonb_build_object('riders', v_off_route)::text;
+      end if;
+      perform public._clear_riders_off_route(v_request_id, v_off_route);
+    end if;
   end if;
 
   -- REQ §13.112 (a)/(b): plan B / "אסתדר" (validated against the row just written; keys absent = keep, moved with the day).
@@ -37228,6 +37366,11 @@ GRANT ALL ON FUNCTION "public"."_car_tasks_for_profile"("p_profile_id" "uuid", "
 
 
 
+REVOKE ALL ON FUNCTION "public"."_clear_riders_off_route"("p_request_id" "uuid", "p_list" "jsonb") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_clear_riders_off_route"("p_request_id" "uuid", "p_list" "jsonb") TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."_close_request"("p_request_id" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."_close_request"("p_request_id" "uuid") TO "service_role";
 
@@ -38111,6 +38254,11 @@ GRANT ALL ON FUNCTION "public"."_rider_place_ok"("p_department_id" "uuid", "p_id
 
 REVOKE ALL ON FUNCTION "public"."_riders_canon"("p_riders" "jsonb") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."_riders_canon"("p_riders" "jsonb") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."_riders_off_route"("p_request_id" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_riders_off_route"("p_request_id" "uuid") TO "service_role";
 
 
 

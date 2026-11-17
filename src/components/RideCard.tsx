@@ -67,6 +67,8 @@ export interface RideCardData {
   seriesCount?: number | null;
   /** REQ §13.108 f: "be back on time" note (only on the member's own ride, only when the gap is tight). */
   handover?: CarHandoverNotes;
+  /** REQ item 248: more people than seats (already worded, `seatsShortLabel`) - a warning until someone fixes it. */
+  seatsShort?: string;
 }
 
 interface RideCardProps {
@@ -173,6 +175,11 @@ export function RideCard({ ride, onClick }: RideCardProps) {
           <div className="flex flex-wrap items-center gap-x-2 text-muted-foreground">
             {ride.needsDriver ? <span className="font-semibold text-destructive">{he.rideCoordination.missingDriver}</span> : null}
             {ride.conflict ? <span className="font-semibold text-destructive">{he.board.conflicts}</span> : null}
+            {ride.seatsShort ? (
+              <span className="rounded bg-amber-100 px-1 font-medium text-amber-950 dark:bg-amber-900/40 dark:text-amber-100" data-testid="ride-seats-short">
+                {ride.seatsShort}
+              </span>
+            ) : null}
             {ride.tightSchedule ? <span role="img" aria-label={he.rideCoordination.tightSchedule} title={he.rideCoordination.tightSchedule}>⏱</span> : null}
             {ride.carName && !ride.carOnTop ? carNameNode : null}
             {ride.driverName ? (

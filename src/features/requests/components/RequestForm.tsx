@@ -50,7 +50,7 @@ import type { DestinationValue } from "@/components/DestinationCombobox";
 
 import { invalidateSubmittedRequest } from "../submitInvalidation";
 import { fetchChildRequestOverlaps, fetchChildren, fetchRequestVersion, probeSubmitRequest } from "../api";
-import type { ChildOverlapRow, HostGuestDecision, HostGuestQuestion, JoinableRideRow, RequestEditRow, SubmitRequestResult, SubmitSeriesRequestResult, TemplateSuggestion } from "../api";
+import type { ChildOverlapRow, HostGuestDecision, HostGuestQuestion, JoinableRideRow, RiderOffRoute, RequestEditRow, SubmitRequestResult, SubmitSeriesRequestResult, TemplateSuggestion } from "../api";
 import { dayLabel } from "../dayLabel";
 import { CAR_NOW_DEFAULT_HOURS } from "../carNow";
 import { findOverlappingRequest } from "../duplicate";
@@ -94,7 +94,7 @@ import { overlapNames } from "../overlapNames";
 import { childOverlapMessage } from "../childOverlap";
 import { HostGuestsDialog } from "./HostGuestsDialog";
 import { SeriesCarTakenDialog, type SeriesCarTakenQuestion } from "./SeriesCarTakenDialog";
-import { affectedNames, attachToBlocker, carTakenChoice, editRefusal, seriesCarTaken, carStaysAwayConfirmation, hostGuestsConfirmation, releaseConfirmation, shouldOfferJoinableRides, toastSeriesSubmitOutcome, toastSubmitOutcome , type CarTakenChoice } from "../submitOutcome";
+import { affectedNames, attachToBlocker, carTakenChoice, editRefusal, ridersOffRouteConfirmation, seriesCarTaken, carStaysAwayConfirmation, hostGuestsConfirmation, releaseConfirmation, shouldOfferJoinableRides, toastSeriesSubmitOutcome, toastSubmitOutcome , type CarTakenChoice } from "../submitOutcome";
 import { shouldSuggestChildcare } from "../childcareType";
 import { suggestionToFormValues } from "../templatePrefill";
 import { canSwapPlaces, swapRequestPlaces } from "../dropOffMode";
@@ -138,6 +138,8 @@ interface SubmitOptions {
   keepLaterEnd?: boolean;
   /** R21U3: a guest stays on the ride and comes back with it (the return they typed stays a wish). */
   rideReturn?: boolean;
+  /** REQ item 248: yes to "people get on / off at the stop you removed" (they ride from the start / to the end). */
+  ridersOffRouteOk?: boolean;
 }
 
 export interface QuickRequestCarOption {
@@ -909,6 +911,7 @@ export function RequestForm({
   // R2B20 / REQ §102 f: an open-week edit the probe says would lose the member's current car.
   const [pendingLose, setPendingLose] = useState<{ values: RequestFormValues; names: string[] } | null>(null);
   const [pendingRelease, setPendingRelease] = useState<{ values: RequestFormValues; names: string[] } | null>(null);
+  const [pendingOffRoute, setPendingOffRoute] = useState<{ values: RequestFormValues; riders: RiderOffRoute[] } | null>(null);
   // OW1 (REQ §13.210): a change to one way would leave the booked car at the destination — ask, then resubmit.
   const [pendingCarAway, setPendingCarAway] = useState<{ values: RequestFormValues; carName: string; nextRide: boolean } | null>(null);
   const [pendingCarChoice, setPendingCarChoice] = useState<(CarTakenChoice & { values: RequestFormValues; departAt: string; returnAt: string | null }) | null>(null);
@@ -967,7 +970,7 @@ export function RequestForm({
     saveSignatureRef.current = signature;
     const previous = saveOptionsRef.current;
     saveOptionsRef.current = sameValues
-      ? { confirmLose: previous.confirmLose, confirmRelease: previous.confirmRelease, ignoreChildOverlap: previous.ignoreChildOverlap }
+      ? { confirmLose: previous.confirmLose, confirmRelease: previous.confirmRelease, ignoreChildOverlap: previous.ignoreChildOverlap, ridersOffRouteOk: previous.ridersOffRouteOk }
       : {};
     if (!sameValues) overlapConfirmedRef.current = false;
     freedAskedRef.current = false;
@@ -1051,6 +1054,7 @@ export function RequestForm({
       ...(options.allowCarAway ? { allow_car_away: true } : {}),
       ...(options.allowOtherCar ? { allow_other_car: true } : {}),
       ...(options.rideReturn ? { guest_ride_return: true } : {}),
+      ...(options.ridersOffRouteOk ? { riders_off_route_ok: true } : {}),
       // PR3 "attach": the hours cut to the ride in the way, with the short gap the member just chose
       ...(options.attach ? { ...(options.attach.departAt ? { depart_at: options.attach.departAt } : {}), ...(options.attach.returnAt ? { return_at: options.attach.returnAt } : {}), allow_short_turnaround: true } : {}),
       ...(options.hostGuests ? { host_guests: options.hostGuests } : {}),
@@ -1261,6 +1265,12 @@ export function RequestForm({
       const refusal = editRefusal(result);
       if (refusal) {
         setEditRefused({ ...refusal, values: formValues, options });
+        return;
+      }
+      // REQ item 248 (owner 2026-11-17): people get on / off at a stop the edit removed - never dropped silently.
+      const offRoute = ridersOffRouteConfirmation(result);
+      if (offRoute) {
+        setPendingOffRoute({ values: formValues, riders: offRoute });
         return;
       }
       // R20 Q2 redo (owner 2026-11-14): the new hours no longer fit a guest of the shared ride - ask about each guest.
@@ -1980,6 +1990,28 @@ export function RequestForm({
         if (pending) void performSubmit(pending.values, { ...pending.options, ignoreChildOverlap: true, hostGuests: decisions });
       }}
     />
+    <ConfirmDialog
+      open={!!pendingOffRoute}
+      onOpenChange={(open) => { if (!open) setPendingOffRoute(null); }}
+      title={t("request.ridersOffRouteTitle")}
+      description={t("request.ridersOffRouteBody")}
+      confirmLabel={t("request.ridersOffRouteSave")}
+      cancelLabel={t("request.ridersOffRouteBack")}
+      loading={submitMutation.isPending}
+      onConfirm={() => {
+        const pending = pendingOffRoute;
+        setPendingOffRoute(null);
+        if (pending) void performSubmit(pending.values, { ridersOffRouteOk: true });
+      }}
+    >
+      {pendingOffRoute?.riders.length ? (
+        <ul className="space-y-1 text-sm" data-testid="riders-off-route">
+          {pendingOffRoute.riders.map((rider, i) => (
+            <li key={i}>{tv(rider.side === "on" ? "request.ridersOffRouteOn" : "request.ridersOffRouteOff", { name: rider.name ?? "", place: rider.place ?? "" })}</li>
+          ))}
+        </ul>
+      ) : null}
+    </ConfirmDialog>
     <ConfirmDialog
       open={!!pendingRelease}
       onOpenChange={(open) => { if (!open) setPendingRelease(null); }}
