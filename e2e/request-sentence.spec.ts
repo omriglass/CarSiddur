@@ -107,6 +107,46 @@ test.describe("request sentence layout", { tag: ["@request-form"] }, () => {
     await expect(page.getByTestId("request-entered-times").filter({ hasText: tv("requestSentence.enteredArriveBy", { time: "09:30" }) }).first()).toBeVisible();
   });
 
+  test("the hours at the route's ends are edited from the stops sheet too (REQ item 249 a)", async ({ page }) => {
+    await signIn(page, SEEDED_USERS.member2);
+    await page.goto("/requests/new");
+    await dismissGuide(page);
+    const sentence = page.getByTestId("request-sentence");
+    await sentence.getByTestId("chip-destination").click();
+    await page.getByPlaceholder(he.requestSentence.placeSearch).fill("חיפה");
+    await page.getByRole("option").filter({ hasText: "חיפה" }).first().click();
+
+    // a stop on the way there, so the sheet prices the route and shows the ends' hours
+    await page.getByTestId("add-stop").click();
+    const stops = page.getByTestId("stops-sheet");
+    await stops.getByTestId("add-stop-here").click();
+    await stops.getByPlaceholder(he.request.stopPlaceholder).fill("בנימינה");
+    await stops.getByRole("option").filter({ hasText: "בנימינה" }).first().click();
+    await stops.getByTestId("stop-option-add").first().click();
+    await expect(stops.getByTestId("stop-block")).toContainText("בנימינה");
+
+    // tap "at the destination by": the way there's own time editor opens here, with its second hour
+    await stops.getByTestId("end-hour-dest").click();
+    const editor = stops.getByTestId("stops-end-hours-out");
+    const depart = editor.getByLabel(he.field.depart);
+    await depart.fill("08:00");
+    await depart.blur();
+    await editor.getByTestId("second-hour-add-out").click();
+    const arrive = editor.getByTestId("second-hour-out").getByLabel(he.requestSentence.anchor.outArrive);
+    await arrive.fill("10:00");
+    await arrive.blur();
+    await stops.getByRole("button", { name: he.request.stopBackToList }).click();
+    await expect(stops.getByTestId("end-hour-dest")).toContainText("10:00");
+    await expect(stops.getByTestId("end-hour-start")).toContainText("08:00");
+
+    // the way back from "leave there at"
+    await stops.getByTestId("end-hour-back").click();
+    await expect(stops.getByTestId("stops-end-hours-return")).toBeVisible();
+    await stops.getByRole("button", { name: he.request.stopBackToList }).click();
+    await page.keyboard.press("Escape");
+    await expect(sentence.getByTestId("chip-out")).toContainText("10:00");
+  });
+
   test("a הקפצה is 'רק הקפצה' / 'רק איסוף' / 'הקפצה ואיסוף'; a pickup swaps the places and files from there home (REQ §13.181)", async ({ page }) => {
     const service = serviceRoleClient();
     const { data: me } = await service.from("profiles").select("id").eq("email", SEEDED_USERS.member2.email).single();

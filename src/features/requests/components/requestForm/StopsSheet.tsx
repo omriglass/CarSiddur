@@ -6,7 +6,7 @@
 // into the other leg, "+ הוספת עצירה" between blocks adds one there. The position decides the leg
 // (pure logic: stopsModel.ts). The picker is the inline `PlacePicker` — no second floating layer.
 import { GripVertical, X } from "lucide-react";
-import { Fragment, useRef, useState } from "react";
+import { Fragment, useRef, useState, type ReactNode } from "react";
 import { useWatch, type UseFormReturn } from "react-hook-form";
 
 import type { DestinationValue } from "@/components/DestinationCombobox";
@@ -33,9 +33,15 @@ interface StopsSheetProps {
   hasReturn: boolean;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /**
+   * REQ item 249 (owner 2026-11-17): the way's own time editor (the sentence form's time sheet), so the hours at the
+   * route's ends - leave home, at the destination by, leave it at, home by - are edited from here too. Absent = the
+   * end hours are shown only (the classic form).
+   */
+  renderEndHours?: (end: "out" | "return") => ReactNode;
 }
 
-export function StopsSheet({ form, places, hasReturn, open, onOpenChange }: StopsSheetProps) {
+export function StopsSheet({ form, places, hasReturn, open, onOpenChange, renderEndHours }: StopsSheetProps) {
   const [origin, destination, outStops, returnStops] = useWatch({
     control: form.control,
     name: ["origin", "destination", "outStops", "returnStops"],
@@ -46,6 +52,7 @@ export function StopsSheet({ form, places, hasReturn, open, onOpenChange }: Stop
   // REQ item 246: the stop whose hours are being edited, and a picked place waiting for "where on the route?".
   const [editingHours, setEditingHours] = useState<number | null>(null);
   const [addingPlace, setAddingPlace] = useState<DestinationValue | null>(null);
+  const [editingEnd, setEditingEnd] = useState<"out" | "return" | null>(null);
   const stopHours = useWatch({ control: form.control, name: "stopHours" }) as StopHoursRecord | undefined;
   const timing = useStopSchedule(form, hasReturn, open);
   const [drag, setDrag] = useState<{ from: number; at: number } | null>(null);
@@ -63,7 +70,7 @@ export function StopsSheet({ form, places, hasReturn, open, onOpenChange }: Stop
   }
 
   function close(next: boolean) {
-    if (!next) { setPicking(null); setDrag(null); setEditingHours(null); setAddingPlace(null); }
+    if (!next) { setPicking(null); setDrag(null); setEditingHours(null); setAddingPlace(null); setEditingEnd(null); }
     onOpenChange(next);
   }
 
@@ -126,6 +133,7 @@ export function StopsSheet({ form, places, hasReturn, open, onOpenChange }: Stop
       />
     );
   }
+  const editEnd = (end: "out" | "return") => (renderEndHours ? () => setEditingEnd(end) : undefined);
   function applyPicked(picked: PickedOption) {
     if (!addingPlace) return;
     const blockIndex = picked.leg === "out" ? picked.beforeIndex : picked.beforeIndex - 1;
@@ -162,6 +170,13 @@ export function StopsSheet({ form, places, hasReturn, open, onOpenChange }: Stop
             onPick={applyPicked}
           />
           <button type="button" className="text-sm text-muted-foreground underline-offset-2 hover:underline" onClick={() => setAddingPlace(null)}>
+            {he.request.stopBackToList}
+          </button>
+        </div>
+      ) : editingEnd && renderEndHours ? (
+        <div className="space-y-2" data-testid={`stops-end-hours-${editingEnd}`}>
+          {renderEndHours(editingEnd)}
+          <button type="button" className="text-sm text-muted-foreground underline-offset-2 hover:underline" onClick={() => setEditingEnd(null)}>
             {he.request.stopBackToList}
           </button>
         </div>
@@ -267,13 +282,14 @@ export function StopsSheet({ form, places, hasReturn, open, onOpenChange }: Stop
                       >
                         {block.kind === "destination" ? destinationName || he.field.destination : originName}
                       </button>
-                      {/* REQ item 246: the ends' hours come from the form's own times (edited there). */}
-                      {block.kind === "origin" ? chipFor("start", "leave", "end-hour-start")
-                        : block.kind === "originEnd" ? chipFor("end", "arrive", "end-hour-end")
+                      {/* REQ item 246: the ends' hours are the form's own times; REQ item 249: tapping one opens that
+                          way's time editor here (sentence form). */}
+                      {block.kind === "origin" ? chipFor("start", "leave", "end-hour-start", editEnd("out"))
+                        : block.kind === "originEnd" ? chipFor("end", "arrive", "end-hour-end", editEnd("return"))
                         : (
                           <>
-                            {chipFor("dest", "arrive", "end-hour-dest")}
-                            {hasReturn ? chipFor("back", "leave", "end-hour-back") : null}
+                            {chipFor("dest", "arrive", "end-hour-dest", editEnd("out"))}
+                            {hasReturn ? chipFor("back", "leave", "end-hour-back", editEnd("return")) : null}
                           </>
                         )}
                       </div>

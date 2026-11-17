@@ -744,7 +744,23 @@ export function SentenceFields(props: SentenceFieldsProps) {
         />
       </FieldSheet>
 
-      {variant !== "carNow" ? <StopsSheet form={form} places={placeOptions} hasReturn={hasReturn} open={stopsOpen} onOpenChange={setStopsOpen} /> : null}
+      {variant !== "carNow" ? (
+        <StopsSheet
+          form={form} places={placeOptions} hasReturn={hasReturn} open={stopsOpen} onOpenChange={setStopsOpen}
+          renderEndHours={(end) => (
+            <TimeAnchorSheet
+              form={form}
+              end={end}
+              isPickup={end === "out" ? pickupOnlyOn : isPickup}
+              routeMinutes={end === "out" ? routeMinutes.out : routeMinutes.return}
+              rush={rush}
+              anchorsEnabled={anchorsEnabled}
+              flexEnabled={flexEnabled}
+              timeError={end === "out" ? errors.departTime?.message : errors.returnTime?.message}
+            />
+          )}
+        />
+      ) : null}
 
       <FieldSheet open={sheet === "day"} onOpenChange={(open) => !open && closeSheet()} onDone={() => advanceGuide("day")} title={he.requestSentence.sheet.day}>
         <DayAndTripShapeFields
