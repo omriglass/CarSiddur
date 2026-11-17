@@ -69,7 +69,7 @@ export interface RideLabelInput {
    *  relay pair's leave/wait label names the partner and the time instead of just the place. */
   relayPartner?: { ride_id: string; name: string; at: string } | null;
   /** The places the ride passes on each way, by name (`rideViaNames`). Owner 2026-11-16: folded into the label -
-   *  "חבר ל-זכרון יעקב, בנימינה. חזור: זכרון יעקב. אדמין מגבעת חביבה" - instead of a separate "דרך: … · חזרה דרך: …". */
+   *  "חבר ל- זכרון יעקב, בנימינה. חזור: זכרון יעקב. אדמין מגבעת חביבה" - instead of a separate "דרך: … · חזרה דרך: …". */
   via?: { out: readonly string[]; return: readonly string[] };
 }
 
@@ -264,7 +264,7 @@ function rideLabelParts(input: RideLabelInput, toPlace: (place: string) => strin
  * "<driver> ו<passenger1>… ל<destination>" (round trip / one-way-to), or "…מ<origin>" for a one-way-from leg (the leg's
  * meaningful place is where it started, since it *ends* at home). With places in the middle (`via`), owner 2026-11-16:
  * the way there is folded into the first destination and the way back follows it -
- * "חבר ל-זכרון יעקב, בנימינה. חזור: זכרון יעקב. אדמין מגבעת חביבה".
+ * "חבר ל- זכרון יעקב, בנימינה. חזור: זכרון יעקב. אדמין מגבעת חביבה".
  */
 export function rideBlockLabel(input: RideLabelInput): string {
   const out = input.via?.out ?? [];

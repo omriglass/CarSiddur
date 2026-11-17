@@ -6,7 +6,7 @@ import { rideViaNames, servedOf } from "./servedOf";
 
 /**
  * The one line that says whose ride it is and where it goes - the siddur's grid block and list card, and (owner
- * 2026-11-17) the "my rides" card. Places in the middle are folded in ("חבר ל-זכרון יעקב, בנימינה. חזור: …").
+ * 2026-11-17) the "my rides" card. Places in the middle are folded in ("חבר ל- זכרון יעקב, בנימינה. חזור: …").
  * `notesAsLabel`: the siddur names a time hold (no request behind it) by its notes; "my rides" always says the
  * driver and the place and shows the notes under it.
  */

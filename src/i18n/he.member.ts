@@ -17,8 +17,8 @@ export const heMember = {
     to: "ל",
     /** Direction prefix for a leg that starts at the named place (one-way-from). */
     from: "מ",
-    /** Owner 2026-11-16: a way there with places in the middle, in order - "חבר ל-זכרון יעקב, בנימינה". */
-    toMany: "ל-{{places}}",
+    /** Owner 2026-11-16: a way there with places in the middle, in order - "חבר ל- זכרון יעקב, בנימינה". */
+    toMany: "ל- {{places}}",
     /** Owner 2026-11-16: the places on the way back, after the first part - "חזור: זכרון יעקב". */
     back: "חזור: {{stops}}",
   },
