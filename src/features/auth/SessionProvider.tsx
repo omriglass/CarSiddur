@@ -1,4 +1,5 @@
 import { setCatalogOwner } from "@/lib/catalogPersist";
+import { setSessionOwner } from "@/lib/sessionPersist";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import type { Session } from "@supabase/supabase-js";
 
@@ -23,6 +24,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     supabase.auth.getSession().then(({ data }) => {
       if (!isMounted) return;
       setCatalogOwner(data.session?.user.id ?? null);
+      setSessionOwner(data.session?.user.id ?? null);
       setSession(data.session);
       setIsLoading(false);
     });
@@ -33,6 +35,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       if (!isMounted) return;
       if (!nextSession) resetEnsuredWeeks();
       setCatalogOwner(nextSession?.user.id ?? null);
+      setSessionOwner(nextSession?.user.id ?? null);
       setSession(nextSession);
       setIsLoading(false);
     });

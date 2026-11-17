@@ -20,6 +20,8 @@ import { captureInstallPrompt } from "@/lib/installPrompt";
 import { installKeyboardInset } from "@/lib/keyboardInset";
 import { installReduceMotion } from "@/features/member/useReduceMotion";
 import { initCatalogPersistence } from "@/lib/catalogPersist";
+import { initSessionPersistence } from "@/lib/sessionPersist";
+import { SyncToast } from "@/components/SyncToast";
 import { createQueryClient } from "@/lib/queryPolicy";
 import { AppError, showErrorToast } from "@/lib/rpc";
 import { installAppearance } from "@/themes/apply";
@@ -100,6 +102,7 @@ window.addEventListener("error", (event) => {
 
 const queryClient = createQueryClient();
 initCatalogPersistence(queryClient, typeof __APP_VERSION__ === "string" ? __APP_VERSION__ : "unknown");
+initSessionPersistence(queryClient, typeof __APP_VERSION__ === "string" ? __APP_VERSION__ : "unknown");
 
 const rootElement = document.getElementById("root");
 if (!rootElement) {
@@ -121,6 +124,7 @@ createRoot(rootElement).render(
         <SessionProvider>
           <RouterProvider router={router} />
           <Toaster position="top-center" />
+          <SyncToast />
           <ThemeBackdrop />
           <SmallTrunkHost />
           <ShortTurnaroundHost />

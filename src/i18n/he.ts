@@ -1060,6 +1060,8 @@ export const he = {
     ] as readonly string[],
   },
   common: {
+    /** Owner 2026-11-17: the saved copy is on screen while the fresh data arrives. */
+    syncing: "מסנכרן…",
     cancel: "ביטול",
     confirm: "אישור",
     save: "שמירה",

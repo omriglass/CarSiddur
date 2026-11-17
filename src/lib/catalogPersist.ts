@@ -7,8 +7,8 @@
 //   - older (up to MAX_AGE_MS): shown at once and re-read `REVALIDATE_AFTER_MS` later, after the screen's own
 //     calls, so nothing stays out of date for longer than that;
 //   - a different member, a different app version or an unreadable entry: discarded.
-// Only catalog-tier keys are saved - never rides, requests, members or permissions. RLS still decides what the
-// re-read returns; sign-out clears the saved copy.
+// Only catalog-tier keys are saved here; the member screens' rides, requests and the like are saved by
+// `sessionPersist.ts` (REQ item 247, owner 2026-11-17). RLS still decides what the re-read returns; sign-out clears the saved copy.
 import type { QueryClient, QueryKey } from "@tanstack/react-query";
 
 import { CATALOG_STALE_MS, queryTier } from "./queryPolicy";
