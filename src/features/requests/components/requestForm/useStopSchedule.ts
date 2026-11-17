@@ -6,11 +6,14 @@ import { useWatch, type UseFormReturn } from "react-hook-form";
 import type { DestinationValue } from "@/components/DestinationCombobox";
 import type { StopAnchor } from "@/lib/stopSchedule";
 
+import { useDepartmentSettings } from "@/features/sadran/hooks";
+
 import { timeToMinutes } from "../../duration";
 import { useRouteHopsQuery } from "../../routeHopsQuery";
 import type { FlexValue } from "../../mapper";
 import type { RequestFormValues } from "../../schema";
-import { scheduleOfRoute, stopRoutePoints, type StopHoursRecord, type StopRouteValues } from "../../stopHours";
+import { rushWindowsForDay, travelMarginOf } from "../../rushHours";
+import { formDriveRule, scheduleOfRoute, stopRoutePoints, type StopHoursRecord, type StopRouteValues } from "../../stopHours";
 
 const hasPlace = (v: DestinationValue | null | undefined): v is DestinationValue =>
   !!v && ("presetId" in v ? !!v.presetId : v.freeText.trim() !== "");
@@ -18,12 +21,12 @@ const hasPlace = (v: DestinationValue | null | undefined): v is DestinationValue
 export function useStopSchedule(form: UseFormReturn<RequestFormValues>, hasReturn: boolean, enabled = true) {
   const watched = useWatch({
     control: form.control,
-    name: ["departmentId", "origin", "destination", "outStops", "returnStops", "stopHours", "departAnchor", "departTime",
+    name: ["departmentId", "day", "origin", "destination", "outStops", "returnStops", "stopHours", "departAnchor", "departTime",
       "arriveByTime", "flexDepartLate", "returnAnchor", "returnTime", "leaveDestTime", "flexReturnLate"],
   });
-  const [departmentId, origin, destination, outStops, returnStops, stopHours, departAnchor, departTime,
+  const [departmentId, day, origin, destination, outStops, returnStops, stopHours, departAnchor, departTime,
     arriveByTime, flexDepartLate, returnAnchor, returnTime, leaveDestTime, flexReturnLate] = watched as [
-    string, DestinationValue | null, DestinationValue | null, DestinationValue[] | undefined, DestinationValue[] | undefined,
+    string, string | undefined, DestinationValue | null, DestinationValue | null, DestinationValue[] | undefined, DestinationValue[] | undefined,
     StopHoursRecord | undefined, StopAnchor | undefined, string | undefined, string | undefined, FlexValue | undefined,
     StopAnchor | undefined, string | undefined, string | undefined, FlexValue | undefined];
 
@@ -46,9 +49,12 @@ export function useStopSchedule(form: UseFormReturn<RequestFormValues>, hasRetur
   const hopsQuery = useRouteHopsQuery(departmentId, route?.preview ?? [], enabled && !!route);
   const hops = hopsQuery.data && route && hopsQuery.data.hops.length === route.points.length - 1 ? hopsQuery.data : null;
   const defaultStart = departTime ? timeToMinutes(departTime) : 8 * 60;
+  // REQ item 249 (b)/(c): every drive counts the department's margin and the day's rush hours.
+  const settings = useDepartmentSettings(departmentId).data;
+  const drive = useMemo(() => formDriveRule(rushWindowsForDay(settings, day), travelMarginOf(settings)), [settings, day]);
   const schedule = useMemo(
-    () => (route && hops ? scheduleOfRoute(route.points, hops, defaultStart) : null),
-    [route, hops, defaultStart],
+    () => (route && hops ? scheduleOfRoute(route.points, hops, defaultStart, drive) : null),
+    [route, hops, defaultStart, drive],
   );
-  return { departmentId, values, points: route?.points ?? [], hops, schedule };
+  return { departmentId, values, points: route?.points ?? [], hops, schedule, drive };
 }

@@ -1445,6 +1445,7 @@ export type Database = {
           rush_morning_start: string
           send_all_reminder_minutes: number
           stop_minutes: number
+          travel_margin_percent: number
           turnaround_minutes: number
           updated_at: string | null
           updated_by: string | null
@@ -1483,6 +1484,7 @@ export type Database = {
           rush_morning_start?: string
           send_all_reminder_minutes?: number
           stop_minutes?: number
+          travel_margin_percent?: number
           turnaround_minutes?: number
           updated_at?: string | null
           updated_by?: string | null
@@ -1521,6 +1523,7 @@ export type Database = {
           rush_morning_start?: string
           send_all_reminder_minutes?: number
           stop_minutes?: number
+          travel_margin_percent?: number
           turnaround_minutes?: number
           updated_at?: string | null
           updated_by?: string | null
@@ -6038,6 +6041,72 @@ export type Database = {
         }
         Returns: boolean
       }
+      _drive_from: {
+        Args: { p_base: number; p_start: number; p_win: Json }
+        Returns: number
+      }
+      _drive_from_arr: {
+        Args: {
+          p_base: number
+          p_start: number
+          we: number[]
+          wp: number[]
+          ws: number[]
+        }
+        Returns: number
+      }
+      _drive_mins_from_arr: {
+        Args: {
+          p_base: number
+          p_f: number
+          p_start: number
+          we: number[]
+          wp: number[]
+          ws: number[]
+        }
+        Returns: number
+      }
+      _drive_mins_until_arr: {
+        Args: {
+          p_base: number
+          p_end: number
+          p_f: number
+          we: number[]
+          wp: number[]
+          ws: number[]
+        }
+        Returns: number
+      }
+      _drive_minutes_from: {
+        Args: { p_base: number; p_margin: number; p_start: number; p_win: Json }
+        Returns: number
+      }
+      _drive_minutes_until: {
+        Args: { p_base: number; p_end: number; p_margin: number; p_win: Json }
+        Returns: number
+      }
+      _drive_until: {
+        Args: { p_base: number; p_end: number; p_win: Json }
+        Returns: number
+      }
+      _drive_until_arr: {
+        Args: {
+          p_base: number
+          p_end: number
+          we: number[]
+          wp: number[]
+          ws: number[]
+        }
+        Returns: number
+      }
+      _drive_win_arrays: {
+        Args: { p_win: Json }
+        Returns: Record<string, unknown>
+      }
+      _drive_windows: {
+        Args: { p_department_id: string; p_from: string; p_to: string }
+        Returns: Json
+      }
       _dt_label: { Args: { p_at: string }; Returns: string }
       _duration_lock_shape_ok: {
         Args: {
@@ -6607,6 +6676,28 @@ export type Database = {
         }
         Returns: Record<string, unknown>
       }
+      _route_eta_retimed: {
+        Args: { p_margin: number; p_route: Json; p_stop: number; p_win: Json }
+        Returns: Json
+      }
+      _route_eta_shown: {
+        Args: {
+          p_department_id: string
+          p_ends: string
+          p_route: Json
+          p_starts: string
+        }
+        Returns: Json
+      }
+      _route_eta_shown_if_middle: {
+        Args: {
+          p_department_id: string
+          p_ends: string
+          p_route: Json
+          p_starts: string
+        }
+        Returns: Json
+      }
       _route_hop_minutes: {
         Args: { p_from: string; p_to: string }
         Returns: number
@@ -6682,8 +6773,10 @@ export type Database = {
         Args: {
           p_allow_shrink?: boolean
           p_default_start: number
+          p_margin?: number
           p_points: Json
           p_stop_minutes: number
+          p_win?: Json
         }
         Returns: Json
       }

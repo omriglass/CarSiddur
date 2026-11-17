@@ -78,11 +78,14 @@ export function requestSentenceText(row: RequestSentenceInput): string {
       clauses.push(row.depart_anchor === "arrive" && row.arrive_by
         ? labelThen(he.requestSentence.anchor.outArrive, time(row.arrive_by))
         : labelThen(he.requestSentence.anchor.outLeave, time(row.depart_at)));
+      // REQ item 249 (a): both hours of the way there
+      if (row.depart_anchor !== "arrive" && row.arrive_by) clauses.push(labelThen(he.requestSentence.anchor.outArrive, time(row.arrive_by)));
     }
     if (row.return_at) {
       if (row.return_anchor === "leave" && row.leave_dest_at) {
         clauses.push(labelThen(isPickup ? he.requestSentence.anchor.pickupLeave : he.requestSentence.anchor.returnLeave, time(row.leave_dest_at)));
       } else {
+        if (row.leave_dest_at && !isPickup) clauses.push(labelThen(he.requestSentence.anchor.returnLeave, time(row.leave_dest_at)));
         clauses.push(labelThen(isPickup ? he.requestSentence.anchor.pickupArrive : he.requestSentence.anchor.returnArrive, time(row.return_at)));
       }
     }

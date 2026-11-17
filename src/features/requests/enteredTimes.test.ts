@@ -33,3 +33,14 @@ describe("enteredTimeLabels", () => {
     expect(enteredTimeLabels({ departAnchor: "arrive", arriveBy: null, destinationName: "X" }).out).toBeNull();
   });
 });
+
+describe("both hours of a way (REQ item 249 a)", () => {
+  it("shows the arrive-by beside a stated departure and the leave-there beside a stated home-by", () => {
+    const labels = enteredTimeLabels({
+      departAnchor: "leave", arriveBy: toInstant(DAY, "09:30", false),
+      returnAnchor: "arrive", leaveDestAt: toInstant(DAY, "13:00", false), destinationName: "Haifa",
+    });
+    expect(labels.out).toContain("09:30");
+    expect(labels.return).toContain("13:00");
+  });
+});

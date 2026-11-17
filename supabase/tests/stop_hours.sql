@@ -23,6 +23,10 @@ declare
 begin
   insert into public.weeks(department_id, week_start, phase, open_at, close_at, publish_at)
     values (dept, w, 'solving', now() - interval '3 days', now() - interval '2 days', now() - interval '1 day');
+  -- The timing rule with plain minutes: rush hours and the travel margin (REQ item 249) have their own cases
+  -- (stop_schedule_cases.json, multi_stop.sql, travel_times.sql).
+  update public.department_settings set rush_morning_percent = 0, rush_afternoon_percent = 0, travel_margin_percent = 0
+   where department_id = dept;
   perform set_config('request.jwt.claims', jsonb_build_object('sub', manager, 'role', 'authenticated')::text, true);
   v_depart := (w + 1 + time '08:00') at time zone 'Asia/Jerusalem';
   v_return := (w + 1 + time '18:00') at time zone 'Asia/Jerusalem';

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { dayOfWeekOfKey, isRushDay, rushWindowsForDay, stretchedMinutesFrom, stretchedMinutesUntil, type RushSettings } from "./rushHours";
+import { dayOfWeekOfKey, driveMinutesFrom, driveMinutesUntil, isRushDay, rushWindowsForDay, stretchedMinutesFrom, stretchedMinutesUntil, travelMarginOf, withMargin, type RushSettings } from "./rushHours";
 
 const SETTINGS: RushSettings = {
   rush_morning_start: "07:00:00",
@@ -93,5 +93,27 @@ describe("stretchedMinutesFrom (drive starts at a given minute)", () => {
   it("no windows leaves any drive plain", () => {
     expect(stretchedMinutesFrom(h(8), 45, [])).toBe(45);
     expect(stretchedMinutesUntil(h(8), 45, [])).toBe(45);
+  });
+});
+
+describe("drive minutes with the margin, then rush hours (REQ item 249 b/c; SQL _drive_minutes_from / _until)", () => {
+  const morning = [{ startMinutes: 7 * 60, endMinutes: 9 * 60 + 30, percent: 30 }, { startMinutes: 15 * 60 + 30, endMinutes: 18 * 60 + 30, percent: 20 }];
+  it("matches the SQL twin's figures", () => {
+    expect(driveMinutesFrom(8 * 60, 37, morning)).toBe(48);
+    expect(driveMinutesFrom(8 * 60, 37, morning, 25)).toBe(60);
+    expect(driveMinutesFrom(9 * 60 + 15, 37, morning)).toBe(40);
+    expect(driveMinutesUntil(9 * 60, 37, morning)).toBe(48);
+  });
+  it("no windows and no margin = exactly the plain minutes", () => {
+    expect(driveMinutesFrom(8 * 60, 37, [])).toBe(37);
+    expect(driveMinutesUntil(8 * 60, 37, [], 0)).toBe(37);
+    expect(driveMinutesFrom(12 * 60, 37, [], 20)).toBe(44);
+  });
+  it("the margin setting: absent, 0 or negative is none", () => {
+    expect(travelMarginOf(undefined)).toBe(0);
+    expect(travelMarginOf({ travel_margin_percent: null })).toBe(0);
+    expect(travelMarginOf({ travel_margin_percent: 25 })).toBe(25);
+    expect(withMargin(40, 25)).toBe(50);
+    expect(withMargin(40, 0)).toBe(40);
   });
 });

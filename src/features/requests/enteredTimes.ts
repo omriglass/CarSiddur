@@ -25,10 +25,11 @@ export interface EnteredTimeLabels {
 }
 
 export function enteredTimeLabels(source: EnteredTimesSource): EnteredTimeLabels {
-  const out = source.departAnchor === "arrive" && source.arriveBy
+  // REQ item 249 (a): shown whenever given - as the way's own hour or beside a stated departure / "home by"
+  const out = source.arriveBy
     ? tv("requestSentence.enteredArriveBy", { time: formatTime(new Date(source.arriveBy)) })
     : null;
-  const ret = source.returnAnchor === "leave" && source.leaveDestAt
+  const ret = source.leaveDestAt
     ? tv(source.isPickup ? "requestSentence.enteredPickupFrom" : "requestSentence.enteredLeaveFrom", {
         place: source.destinationName,
         time: formatTime(new Date(source.leaveDestAt)),

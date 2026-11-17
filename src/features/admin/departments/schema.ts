@@ -43,6 +43,8 @@ export const departmentSettingsSchema = z.object({
   rush_afternoon_start: z.string(),
   rush_afternoon_end: z.string(),
   rush_afternoon_percent: z.number().int().min(0).max(100),
+  /** REQ item 249 (c): extra percent on every drive estimate, at all hours (before rush hours). */
+  travel_margin_percent: z.number().int().min(0).max(200),
 }).superRefine((v, ctx) => {
   const m = (t: string) => t.slice(0, 5);
   if (m(v.rush_morning_start) >= m(v.rush_morning_end)) ctx.addIssue({ code: "custom", path: ["rush_morning_end"], message: "rushWindow" });

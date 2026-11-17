@@ -1,7 +1,8 @@
-// REQ §13.113 / UX_FLOWS §3.4a "Rush hours in the derived line": form-side only. A drive that falls
-// (partly) inside a department rush-hour window takes `percent` % longer there. The solver, ride
-// lengths and `route_minutes_preview` never use this; only the two conversions in `timeAnchors.ts`
-// ("arrive by" -> departure, "leave there at" -> return) and plan B's "leave at" -> arrive-by do.
+// REQ §13.113 / item 249 (b)/(c): a drive that falls (partly) inside a department rush-hour window
+// takes `percent` % longer there, after the department's travel margin made every drive longer.
+// Every time the app shows or works out from a drive uses this (the form's conversions, the stop
+// timing, the route ~hours); the solver, merges and joins never do (owner 2026-11-17). SQL twins:
+// `_drive_from` / `_drive_until` / `_drive_minutes_from` / `_drive_minutes_until` (20261118090200).
 //
 // Exact overlap rule (no stepping): inside a window of p % one minute of clock time covers only
 // 1/(1+p/100) of a base driving minute; outside every window 1:1. A drive is walked window by
@@ -29,6 +30,8 @@ export interface RushSettings {
   rush_afternoon_start: string;
   rush_afternoon_end: string;
   rush_afternoon_percent: number;
+  /** REQ item 249 (c): extra percent on every drive estimate; absent (older server) = 0. */
+  travel_margin_percent?: number | null;
 }
 
 /** Sunday = 0 ... Saturday = 6 of a "YYYY-MM-DD" key (a calendar date has no zone). */
@@ -96,4 +99,30 @@ export function stretchedMinutesUntil(endMinute: number, baseMinutes: number, wi
     }
   }
   return endMinute - t;
+}
+
+/** REQ item 249 (c): the department's travel margin in percent (0 when unset). */
+export function travelMarginOf(settings: Pick<RushSettings, "travel_margin_percent"> | null | undefined): number {
+  const margin = settings?.travel_margin_percent;
+  return typeof margin === "number" && Number.isFinite(margin) && margin > 0 ? margin : 0;
+}
+
+/** Base drive minutes made longer by the margin (fractional; the conversions round on the 15-minute grid). */
+export function withMargin(baseMinutes: number, marginPercent: number): number {
+  return marginPercent > 0 ? (baseMinutes * (100 + marginPercent)) / 100 : baseMinutes;
+}
+
+/**
+ * Whole drive minutes leaving at `startMinute`: the margin first, then rush hours; rounded to the nearest minute.
+ * No windows and no margin = exactly `baseMinutes`. Twin of SQL `_drive_minutes_from`.
+ */
+export function driveMinutesFrom(startMinute: number, baseMinutes: number, windows: RushWindows, marginPercent = 0): number {
+  if (marginPercent <= 0 && windows.length === 0) return baseMinutes;
+  return Math.round(stretchedMinutesFrom(startMinute, withMargin(baseMinutes, marginPercent), windows));
+}
+
+/** Whole drive minutes arriving at `endMinute` (twin of SQL `_drive_minutes_until`). */
+export function driveMinutesUntil(endMinute: number, baseMinutes: number, windows: RushWindows, marginPercent = 0): number {
+  if (marginPercent <= 0 && windows.length === 0) return baseMinutes;
+  return Math.round(stretchedMinutesUntil(endMinute, withMargin(baseMinutes, marginPercent), windows));
 }

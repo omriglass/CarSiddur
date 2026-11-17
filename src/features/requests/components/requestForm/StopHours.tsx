@@ -8,7 +8,7 @@ import { useMemo, useState } from "react";
 import type { DestinationValue } from "@/components/DestinationCombobox";
 import { Button } from "@/components/ui/button";
 import { he, tv } from "@/i18n/he";
-import { insertOptions, type InsertOption, type SchedulePoint, type StopAnchor } from "@/lib/stopSchedule";
+import { type DriveRule, insertOptions, type InsertOption, type SchedulePoint, type StopAnchor } from "@/lib/stopSchedule";
 import { cn } from "@/lib/utils";
 
 import { useRouteHopsQuery } from "../../routeHopsQuery";
@@ -144,12 +144,14 @@ interface AddStopOptionsProps {
   /** Name of the place at a point key. */
   nameOf: (key: string) => string;
   defaultStart: number;
+  /** REQ item 249: margin + rush hours (the form's schedule uses the same). */
+  drive?: DriveRule;
   onPick: (picked: PickedOption) => void;
 }
 
 const NEW_KEY = "new";
 
-export function AddStopOptions({ departmentId, values, points, hops, place, placeName, nameOf, defaultStart, onPick }: AddStopOptionsProps) {
+export function AddStopOptions({ departmentId, values, points, hops, place, placeName, nameOf, defaultStart, drive, onPick }: AddStopOptionsProps) {
   const newPlace = schedulePlace(place);
   // One priced zig-zag (p0, new, p1, new, …) holds every hop an insertion needs.
   const zigzag = useMemo(() => {
@@ -169,13 +171,13 @@ export function AddStopOptions({ departmentId, values, points, hops, place, plac
     if (!hopsQuery.data) return null;
     const travel = pairTravel(hopPairs(points.map((p) => p.place), hops.hops), hopPairs(zigzagPlaces, hopsQuery.data.hops));
     const added: SchedulePoint = { key: NEW_KEY, place: newPlace, kind: "stop", stay: null, fixed: null };
-    const opts = { travel, stopMinutes: hops.stopMinutes, defaultStart };
+    const opts = { travel, stopMinutes: hops.stopMinutes, defaultStart, drive };
     const tag = (leg: "out" | "return") => (o: InsertOption) => ({ leg, o });
     return [
       ...insertOptions(points, "out", added, opts).map(tag("out")),
       ...(values.hasReturn ? insertOptions(points, "return", added, opts).map(tag("return")) : []),
     ].sort((x, y) => x.o.cost - y.o.cost || (x.leg === y.leg ? x.o.beforeIndex - y.o.beforeIndex : x.leg === "out" ? -1 : 1));
-  }, [hopsQuery.data, points, hops, zigzagPlaces, newPlace, defaultStart, values.hasReturn]);
+  }, [hopsQuery.data, points, hops, zigzagPlaces, newPlace, defaultStart, drive, values.hasReturn]);
 
   if (!options) return <p className="text-sm text-muted-foreground">{he.request.stopOptionsLoading}</p>;
   const bestIndex = options.findIndex((x) => x.o.ok);

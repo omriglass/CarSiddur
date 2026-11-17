@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 
 import { he, tv } from "../src/i18n/he";
 import { paths } from "../src/app/routes";
+import { formatTime } from "../src/lib/time";
 import { SEEDED_USERS, serviceRoleClient, signIn, submitRequestForm } from "./helpers";
 import { dismissGuide } from "./request-form";
 
@@ -47,6 +48,62 @@ test.describe("request sentence layout", { tag: ["@request-form"] }, () => {
 
     await submitRequestForm(page);
     await expect(page).toHaveURL(/\/my$/);
+    await expect(page.getByTestId("request-entered-times").filter({ hasText: tv("requestSentence.enteredArriveBy", { time: "09:30" }) }).first()).toBeVisible();
+  });
+
+  test("both hours of each way are kept as given (REQ item 249 a)", async ({ page }) => {
+    await signIn(page, SEEDED_USERS.member2);
+    await page.goto("/requests/new");
+    await dismissGuide(page);
+    const sentence = page.getByTestId("request-sentence");
+    await expect(sentence).toBeVisible();
+    await sentence.getByTestId("chip-destination").click();
+    await page.getByPlaceholder(he.requestSentence.placeSearch).fill("טבריה");
+    await page.getByText(tv("requestSentence.placeFreeText", { text: "טבריה" })).click();
+
+    // The way there: "לצאת ב־ 08:00" + "וגם" "להגיע עד 09:30".
+    await sentence.getByTestId("chip-out").click();
+    let sheet = page.getByRole("dialog");
+    const depart = sheet.getByLabel(he.field.depart);
+    await depart.fill("08:00");
+    await depart.blur();
+    await sheet.getByTestId("second-hour-add-out").click();
+    const secondOut = sheet.getByTestId("second-hour-out");
+    await expect(secondOut).toBeVisible();
+    const arrive = secondOut.getByLabel(he.requestSentence.anchor.outArrive);
+    await arrive.fill("09:30");
+    await arrive.blur();
+    await expect(sheet.getByTestId("second-hour-drive-out")).toContainText("90");
+    await sheet.getByRole("button", { name: he.requestSentence.sheetDone }).click();
+    await expect(sentence.getByTestId("chip-out")).toContainText("09:30");
+
+    // The way back: "להיות בבית עד 17:00" + "וגם" "לצאת משם ב־ 15:00".
+    await sentence.getByTestId("chip-return").click();
+    sheet = page.getByRole("dialog");
+    const home = sheet.getByLabel(he.field.return);
+    await home.fill("17:00");
+    await home.blur();
+    await sheet.getByTestId("second-hour-add-return").click();
+    const secondBack = sheet.getByTestId("second-hour-return");
+    const leave = secondBack.getByLabel(he.requestSentence.anchor.returnLeave);
+    await leave.fill("15:00");
+    await leave.blur();
+    await expect(sheet.getByTestId("second-hour-drive-return")).toContainText("120");
+    await sheet.getByRole("button", { name: he.requestSentence.sheetDone }).click();
+    await expect(sentence.getByTestId("chip-return")).toContainText("15:00");
+
+    await submitRequestForm(page);
+    await expect(page).toHaveURL(/\/my$/);
+    const service = serviceRoleClient();
+    const me = await service.from("profiles").select("id").eq("email", SEEDED_USERS.member2.email).single();
+    if (me.error) throw me.error;
+    const { data, error } = await service.from("requests")
+      .select("depart_at, arrive_by, depart_anchor, return_at, leave_dest_at, return_anchor")
+      .eq("requester_id", me.data.id).eq("destination_text", "טבריה").order("created_at", { ascending: false }).limit(1).single();
+    if (error) throw error;
+    const hhmm = (iso: string | null) => (iso ? formatTime(new Date(iso)) : null);
+    expect({ depart: hhmm(data.depart_at), arrive: hhmm(data.arrive_by), da: data.depart_anchor, home: hhmm(data.return_at), leave: hhmm(data.leave_dest_at), ra: data.return_anchor })
+      .toEqual({ depart: "08:00", arrive: "09:30", da: "leave", home: "17:00", leave: "15:00", ra: "arrive" });
     await expect(page.getByTestId("request-entered-times").filter({ hasText: tv("requestSentence.enteredArriveBy", { time: "09:30" }) }).first()).toBeVisible();
   });
 

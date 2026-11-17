@@ -2260,6 +2260,193 @@ $$;
 ALTER FUNCTION "public"."_draft_hold_conflict"("p_car" "uuid", "p_from" timestamp with time zone, "p_until" timestamp with time zone, "p_exempt" "uuid"[]) OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."_drive_from"("p_start" numeric, "p_base" numeric, "p_win" "jsonb") RETURNS numeric
+    LANGUAGE "sql" IMMUTABLE
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  select public._drive_from_arr(p_start, p_base, a.ws, a.we, a.wp) from public._drive_win_arrays(p_win) a;
+$$;
+
+
+ALTER FUNCTION "public"."_drive_from"("p_start" numeric, "p_base" numeric, "p_win" "jsonb") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."_drive_from_arr"("p_start" numeric, "p_base" numeric, "ws" numeric[], "we" numeric[], "wp" numeric[]) RETURNS numeric
+    LANGUAGE "plpgsql" IMMUTABLE
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  t numeric := p_start; v_rem numeric := p_base; n int := coalesce(array_length(ws, 1), 0);
+  i int; v_in int; v_next int; v_factor numeric; v_cap numeric; g int := 0;
+begin
+  if n = 0 then return p_base; end if;
+  while v_rem > 1e-9 and g < 64 loop
+    g := g + 1;
+    v_in := null; v_next := null;
+    for i in 1 .. n loop
+      if v_in is null and t >= ws[i] and t < we[i] then v_in := i; end if;
+      if v_next is null and ws[i] > t then v_next := i; end if;
+    end loop;
+    if v_in is not null then
+      v_factor := 1 + wp[v_in] / 100;
+      v_cap := (we[v_in] - t) / v_factor;
+      if v_rem <= v_cap then return t + v_rem * v_factor - p_start; end if;
+      v_rem := v_rem - v_cap; t := we[v_in];
+    else
+      if v_next is null or v_rem <= ws[v_next] - t then return t + v_rem - p_start; end if;
+      v_rem := v_rem - (ws[v_next] - t); t := ws[v_next];
+    end if;
+  end loop;
+  return t - p_start;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."_drive_from_arr"("p_start" numeric, "p_base" numeric, "ws" numeric[], "we" numeric[], "wp" numeric[]) OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."_drive_mins_from_arr"("p_start" bigint, "p_base" bigint, "ws" numeric[], "we" numeric[], "wp" numeric[], "p_f" numeric) RETURNS bigint
+    LANGUAGE "sql" IMMUTABLE
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  select case when p_f = 1 and coalesce(array_length(ws, 1), 0) = 0 then p_base
+              else round(public._drive_from_arr(p_start, p_base * p_f, ws, we, wp))::bigint end;
+$$;
+
+
+ALTER FUNCTION "public"."_drive_mins_from_arr"("p_start" bigint, "p_base" bigint, "ws" numeric[], "we" numeric[], "wp" numeric[], "p_f" numeric) OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."_drive_mins_until_arr"("p_end" bigint, "p_base" bigint, "ws" numeric[], "we" numeric[], "wp" numeric[], "p_f" numeric) RETURNS bigint
+    LANGUAGE "sql" IMMUTABLE
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  select case when p_f = 1 and coalesce(array_length(ws, 1), 0) = 0 then p_base
+              else round(public._drive_until_arr(p_end, p_base * p_f, ws, we, wp))::bigint end;
+$$;
+
+
+ALTER FUNCTION "public"."_drive_mins_until_arr"("p_end" bigint, "p_base" bigint, "ws" numeric[], "we" numeric[], "wp" numeric[], "p_f" numeric) OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."_drive_minutes_from"("p_start" bigint, "p_base" bigint, "p_win" "jsonb", "p_margin" integer) RETURNS bigint
+    LANGUAGE "sql" IMMUTABLE
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  select case when coalesce(p_margin, 0) = 0 and (p_win is null or jsonb_array_length(p_win) = 0) then p_base
+              else round(public._drive_from(p_start, p_base * (100 + coalesce(p_margin, 0)) / 100.0, p_win))::bigint end;
+$$;
+
+
+ALTER FUNCTION "public"."_drive_minutes_from"("p_start" bigint, "p_base" bigint, "p_win" "jsonb", "p_margin" integer) OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."_drive_minutes_until"("p_end" bigint, "p_base" bigint, "p_win" "jsonb", "p_margin" integer) RETURNS bigint
+    LANGUAGE "sql" IMMUTABLE
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  select case when coalesce(p_margin, 0) = 0 and (p_win is null or jsonb_array_length(p_win) = 0) then p_base
+              else round(public._drive_until(p_end, p_base * (100 + coalesce(p_margin, 0)) / 100.0, p_win))::bigint end;
+$$;
+
+
+ALTER FUNCTION "public"."_drive_minutes_until"("p_end" bigint, "p_base" bigint, "p_win" "jsonb", "p_margin" integer) OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."_drive_until"("p_end" numeric, "p_base" numeric, "p_win" "jsonb") RETURNS numeric
+    LANGUAGE "sql" IMMUTABLE
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  select public._drive_until_arr(p_end, p_base, a.ws, a.we, a.wp) from public._drive_win_arrays(p_win) a;
+$$;
+
+
+ALTER FUNCTION "public"."_drive_until"("p_end" numeric, "p_base" numeric, "p_win" "jsonb") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."_drive_until_arr"("p_end" numeric, "p_base" numeric, "ws" numeric[], "we" numeric[], "wp" numeric[]) RETURNS numeric
+    LANGUAGE "plpgsql" IMMUTABLE
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  t numeric := p_end; v_rem numeric := p_base; n int := coalesce(array_length(ws, 1), 0);
+  i int; v_in int; v_prev int; v_factor numeric; v_cap numeric; g int := 0;
+begin
+  if n = 0 then return p_base; end if;
+  while v_rem > 1e-9 and g < 64 loop
+    g := g + 1;
+    v_in := null; v_prev := null;
+    for i in 1 .. n loop
+      if v_in is null and t > ws[i] and t <= we[i] then v_in := i; end if;
+      if we[i] <= t then v_prev := i; end if;  -- the last window ending at or before t
+    end loop;
+    if v_in is not null then
+      v_factor := 1 + wp[v_in] / 100;
+      v_cap := (t - ws[v_in]) / v_factor;
+      if v_rem <= v_cap then return p_end - (t - v_rem * v_factor); end if;
+      v_rem := v_rem - v_cap; t := ws[v_in];
+    else
+      if v_prev is null or v_rem <= t - we[v_prev] then return p_end - (t - v_rem); end if;
+      v_rem := v_rem - (t - we[v_prev]); t := we[v_prev];
+    end if;
+  end loop;
+  return p_end - t;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."_drive_until_arr"("p_end" numeric, "p_base" numeric, "ws" numeric[], "we" numeric[], "wp" numeric[]) OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."_drive_win_arrays"("p_win" "jsonb", OUT "ws" numeric[], OUT "we" numeric[], OUT "wp" numeric[]) RETURNS "record"
+    LANGUAGE "sql" IMMUTABLE
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  select coalesce(array_agg((w ->> 's')::numeric order by (w ->> 's')::numeric), '{}'),
+         coalesce(array_agg((w ->> 'e')::numeric order by (w ->> 's')::numeric), '{}'),
+         coalesce(array_agg((w ->> 'p')::numeric order by (w ->> 's')::numeric), '{}')
+  from jsonb_array_elements(coalesce(p_win, '[]'::jsonb)) w;
+$$;
+
+
+ALTER FUNCTION "public"."_drive_win_arrays"("p_win" "jsonb", OUT "ws" numeric[], OUT "we" numeric[], OUT "wp" numeric[]) OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."_drive_windows"("p_department_id" "uuid", "p_from" "date", "p_to" "date") RETURNS "jsonb"
+    LANGUAGE "plpgsql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  ds record; v_out jsonb := '[]'::jsonb; d date; v_s bigint; v_e bigint;
+begin
+  -- plpgsql (not SQL): the per-ride / per-request callers reuse its plan
+  select rush_morning_start, rush_morning_end, rush_morning_percent, rush_afternoon_start, rush_afternoon_end, rush_afternoon_percent
+    into ds from public.department_settings where department_id = p_department_id;
+  if not found or p_from is null then return v_out; end if;
+  d := p_from;
+  while d <= least(coalesce(p_to, p_from), p_from + 6) loop
+    if extract(dow from d) <= 4 then
+      if ds.rush_morning_percent > 0 and ds.rush_morning_end > ds.rush_morning_start then
+        v_s := floor(extract(epoch from ((d + ds.rush_morning_start) at time zone 'Asia/Jerusalem')) / 60)::bigint;
+        v_e := floor(extract(epoch from ((d + ds.rush_morning_end) at time zone 'Asia/Jerusalem')) / 60)::bigint;
+        v_out := v_out || jsonb_build_object('s', v_s, 'e', v_e, 'p', ds.rush_morning_percent);
+      end if;
+      if ds.rush_afternoon_percent > 0 and ds.rush_afternoon_end > ds.rush_afternoon_start then
+        v_s := floor(extract(epoch from ((d + ds.rush_afternoon_start) at time zone 'Asia/Jerusalem')) / 60)::bigint;
+        v_e := floor(extract(epoch from ((d + ds.rush_afternoon_end) at time zone 'Asia/Jerusalem')) / 60)::bigint;
+        v_out := v_out || jsonb_build_object('s', v_s, 'e', v_e, 'p', ds.rush_afternoon_percent);
+      end if;
+    end if;
+    d := d + 1;
+  end loop;
+  return v_out;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."_drive_windows"("p_department_id" "uuid", "p_from" "date", "p_to" "date") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."_dt_label"("p_at" timestamp with time zone) RETURNS "text"
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -6136,7 +6323,6 @@ CREATE TABLE IF NOT EXISTS "public"."requests" (
     "reserved_at" timestamp with time zone,
     "needs_tow_hitch" boolean DEFAULT false NOT NULL,
     CONSTRAINT "requests_adults_ck" CHECK (("adults" >= 1)),
-    CONSTRAINT "requests_arrive_by_anchor_ck" CHECK ((("arrive_by" IS NULL) OR ("depart_anchor" = 'arrive'::"public"."time_anchor"))),
     CONSTRAINT "requests_arrive_by_qh_ck" CHECK ("public"."is_quarter_hour"("arrive_by")),
     CONSTRAINT "requests_boosters_ck" CHECK (("boosters" >= 0)),
     CONSTRAINT "requests_child_seats_ck" CHECK (("child_seats" >= 0)),
@@ -6148,7 +6334,6 @@ CREATE TABLE IF NOT EXISTS "public"."requests" (
     CONSTRAINT "requests_flex_return_early_ck" CHECK (("flex_return_early" = ANY (ARRAY['00:00:00'::interval, '00:15:00'::interval, '00:30:00'::interval, '01:00:00'::interval, '02:00:00'::interval, '1 day'::interval]))),
     CONSTRAINT "requests_flex_return_late_ck" CHECK ((("flex_return_late" = ANY (ARRAY['00:00:00'::interval, '00:15:00'::interval, '00:30:00'::interval, '01:00:00'::interval, '02:00:00'::interval, '1 day'::interval])) OR ("duration_locked" AND ("flex_return_late" > '00:00:00'::interval) AND ("flex_return_late" <= '1 day'::interval) AND (((EXTRACT(epoch FROM "flex_return_late"))::bigint % (900)::bigint) = 0)))),
     CONSTRAINT "requests_keep_car_at_destination_ck" CHECK (((NOT "keep_car_at_destination") OR (("trip_type" = 'drop_off'::"public"."trip_type") AND ("trip_shape" = 'round_trip'::"public"."trip_shape")))),
-    CONSTRAINT "requests_leave_dest_anchor_ck" CHECK ((("leave_dest_at" IS NULL) OR ("return_anchor" = 'leave'::"public"."time_anchor"))),
     CONSTRAINT "requests_leave_dest_qh_ck" CHECK ("public"."is_quarter_hour"("leave_dest_at")),
     CONSTRAINT "requests_luggage_waiver_ck" CHECK ((("luggage_waived_at" IS NULL) OR "has_luggage" OR "needs_tow_hitch")),
     CONSTRAINT "requests_manual_boost_ck" CHECK ((("manual_boost" = (0)::numeric) OR ("manual_boost_reason" IS NOT NULL))),
@@ -6453,6 +6638,100 @@ $$;
 
 
 ALTER FUNCTION "public"."_route_add_place"("p_route" "jsonb", "p_place_id" "uuid", "p_place_text" "text", "p_request" "uuid", "p_kind" "text", "p_after" integer, OUT "o_idx" integer, OUT "o_route" "jsonb") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."_route_eta_retimed"("p_route" "jsonb", "p_win" "jsonb", "p_margin" integer, "p_stop" integer) RETURNS "jsonb"
+    LANGUAGE "plpgsql" IMMUTABLE
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $_$
+declare
+  v_out jsonb[] := '{}'; v_ret jsonb[] := '{}'; e jsonb;
+  n int; k int; v_t bigint; v_prev bigint; v_cur bigint; v_hop bigint; v_stay bigint; v_dep bigint; v_arr bigint;
+  v_res jsonb := '[]'::jsonb;
+  ws numeric[]; we numeric[]; wp numeric[]; v_f numeric := 1;
+begin
+  if p_route is null or jsonb_array_length(p_route) = 0 then return p_route; end if;
+  if coalesce(p_margin, 0) = 0 and (p_win is null or jsonb_array_length(p_win) = 0) then return p_route; end if;
+  -- only a route with places in the middle (the stops view, routeHasIntermediates): a plain A -> B ride shows no
+  -- hour between its car times, and a time hold / car move (no request behind it) is not a drive
+  if not jsonb_path_exists(p_route, '$[*] ? (@.kind == "stop" || @.kind == "board" || @.kind == "alight")') then return p_route; end if;
+  select a.ws, a.we, a.wp into ws, we, wp from public._drive_win_arrays(p_win) a;
+  v_f := (100 + coalesce(p_margin, 0)) / 100.0;
+  for e in select value from jsonb_array_elements(p_route) order by value ->> 'leg', (value ->> 'position')::int loop
+    if e ->> 'eta' is null then return p_route; end if;
+    if e ->> 'leg' = 'out' then v_out := v_out || e; else v_ret := v_ret || e; end if;
+  end loop;
+
+  -- out: forwards; between two places the plain gap is the stop at the earlier one (not the first) + the drive
+  n := coalesce(array_length(v_out, 1), 0);
+  if n > 0 then
+    v_t := floor(extract(epoch from (v_out[1] ->> 'eta')::timestamptz) / 60)::bigint;
+    v_prev := v_t;
+    v_res := v_res || v_out[1];
+    for k in 2 .. n loop
+      v_cur := floor(extract(epoch from (v_out[k] ->> 'eta')::timestamptz) / 60)::bigint;
+      v_stay := case when k > 2 then p_stop else 0 end;
+      v_hop := greatest(v_cur - v_prev - v_stay, 0);
+      v_dep := v_t + v_stay;
+      v_t := v_dep + public._drive_mins_from_arr(v_dep, v_hop, ws, we, wp, v_f);
+      v_res := v_res || jsonb_set(v_out[k], '{eta}', to_jsonb(to_timestamp(v_t * 60)));
+      v_prev := v_cur;
+    end loop;
+  end if;
+
+  -- back: backwards from the end; the plain gap is the drive + the stop at the later place (not the last)
+  n := coalesce(array_length(v_ret, 1), 0);
+  if n > 0 then
+    v_t := floor(extract(epoch from (v_ret[n] ->> 'eta')::timestamptz) / 60)::bigint;
+    v_prev := v_t;
+    for k in reverse n - 1 .. 1 loop
+      v_cur := floor(extract(epoch from (v_ret[k] ->> 'eta')::timestamptz) / 60)::bigint;
+      v_stay := case when k + 1 < n then p_stop else 0 end;
+      v_hop := greatest(v_prev - v_cur - v_stay, 0);
+      v_arr := v_t - v_stay;
+      v_t := v_arr - public._drive_mins_until_arr(v_arr, v_hop, ws, we, wp, v_f);
+      v_ret[k] := jsonb_set(v_ret[k], '{eta}', to_jsonb(to_timestamp(v_t * 60)));
+      v_prev := v_cur;
+    end loop;
+    for k in 1 .. n loop v_res := v_res || v_ret[k]; end loop;
+  end if;
+  return v_res;
+end;
+$_$;
+
+
+ALTER FUNCTION "public"."_route_eta_retimed"("p_route" "jsonb", "p_win" "jsonb", "p_margin" integer, "p_stop" integer) OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."_route_eta_shown"("p_route" "jsonb", "p_department_id" "uuid", "p_starts" timestamp with time zone, "p_ends" timestamp with time zone) RETURNS "jsonb"
+    LANGUAGE "plpgsql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  v_margin int; v_stop int;
+begin
+  if p_route is null or jsonb_array_length(p_route) = 0 or p_department_id is null then return p_route; end if;
+  select travel_margin_percent, stop_minutes into v_margin, v_stop from public.department_settings where department_id = p_department_id;
+  return public._route_eta_retimed(p_route,
+    public._drive_windows(p_department_id, (p_starts at time zone 'Asia/Jerusalem')::date, (p_ends at time zone 'Asia/Jerusalem')::date),
+    coalesce(v_margin, 0), coalesce(v_stop, 5));
+end;
+$$;
+
+
+ALTER FUNCTION "public"."_route_eta_shown"("p_route" "jsonb", "p_department_id" "uuid", "p_starts" timestamp with time zone, "p_ends" timestamp with time zone) OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."_route_eta_shown_if_middle"("p_route" "jsonb", "p_department_id" "uuid", "p_starts" timestamp with time zone, "p_ends" timestamp with time zone) RETURNS "jsonb"
+    LANGUAGE "sql" STABLE
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $_$
+  select case when jsonb_path_exists(coalesce(p_route, '[]'::jsonb), '$[*] ? (@.kind == "stop" || @.kind == "board" || @.kind == "alight")')
+              then public._route_eta_shown(p_route, p_department_id, p_starts, p_ends) else p_route end;
+$_$;
+
+
+ALTER FUNCTION "public"."_route_eta_shown_if_middle"("p_route" "jsonb", "p_department_id" "uuid", "p_starts" timestamp with time zone, "p_ends" timestamp with time zone) OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."_route_hop_minutes"("p_from" "uuid", "p_to" "uuid") RETURNS integer
@@ -6980,24 +7259,27 @@ end $$;
 ALTER FUNCTION "public"."_small_trunk_probe"("p_request_id" "uuid") OWNER TO "postgres";
 
 
-CREATE OR REPLACE FUNCTION "public"."_stop_schedule"("p_points" "jsonb", "p_stop_minutes" integer, "p_default_start" bigint, "p_allow_shrink" boolean DEFAULT false) RETURNS "jsonb"
+CREATE OR REPLACE FUNCTION "public"."_stop_schedule"("p_points" "jsonb", "p_stop_minutes" integer, "p_default_start" bigint, "p_allow_shrink" boolean DEFAULT false, "p_win" "jsonb" DEFAULT '[]'::"jsonb", "p_margin" integer DEFAULT 0) RETURNS "jsonb"
     LANGUAGE "plpgsql" IMMUTABLE
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
 declare
   n int := coalesce(jsonb_array_length(p_points), 0);
-  pt jsonb[]; kind text[]; tr bigint[]; st bigint[]; wo boolean[];
+  pt jsonb[]; kind text[]; tr bigint[]; st bigint[]; wo boolean[]; dr bigint[]; ad bigint[];
   a bigint[]; l bigint[]; early bigint[]; fu bigint[]; sh bigint[]; done boolean[];
   fixed_idx int[] := '{}'; anchors int[];
   i int; j int; m int; q int; k int; v_best int;
   v_due bigint; v_late bigint; v_tgt int; v_take bigint; v_flex bigint; v_at bigint;
+  v_total bigint; v_cum bigint; v_given bigint; v_share bigint;
   v_conflict jsonb := null;
   v_dest int; v_has_back boolean := false; v_need boolean := false;
   v_out jsonb := '[]'::jsonb;
+  ws numeric[]; we numeric[]; wp numeric[]; v_f numeric := (100 + coalesce(p_margin, 0)) / 100.0;
 begin
   if n = 0 then
     return jsonb_build_object('points', '[]'::jsonb, 'conflict', null, 'needs_return_hour', false);
   end if;
+  select a.ws, a.we, a.wp into ws, we, wp from public._drive_win_arrays(p_win) a;
   for i in 1..n loop
     pt[i] := p_points -> (i - 1);
     kind[i] := pt[i] ->> 'kind';
@@ -7008,7 +7290,7 @@ begin
     else
       wo[i] := false; st[i] := 0;
     end if;
-    a[i] := 0; l[i] := 0; early[i] := 0; fu[i] := 0; sh[i] := 0; done[i] := false;
+    a[i] := 0; l[i] := 0; early[i] := 0; fu[i] := 0; sh[i] := 0; done[i] := false; dr[i] := 0; ad[i] := 0;
     if jsonb_typeof(pt[i] -> 'fixed') = 'object' then fixed_idx := fixed_idx || i; end if;
     if kind[i] = 'destLeave' then v_has_back := true; end if;
     if kind[i] = 'destArrive' and v_dest is null then v_dest := i; end if;
@@ -7025,9 +7307,10 @@ begin
     end loop;
   end if;
 
-  -- before the first fixed hour: backwards
+  -- before the first fixed hour: backwards (each drive ends where the next place is reached)
   for i in reverse anchors[1] - 1 .. 1 loop
-    l[i] := a[i + 1] - tr[i + 1]; a[i] := l[i] - st[i];
+    dr[i + 1] := public._drive_mins_until_arr(a[i + 1], tr[i + 1], ws, we, wp, v_f);
+    l[i] := a[i + 1] - dr[i + 1]; a[i] := l[i] - st[i];
   end loop;
 
   for q in 2 .. array_length(anchors, 1) loop
@@ -7035,10 +7318,14 @@ begin
     v_at := (pt[m] -> 'fixed' ->> 'at')::bigint;
     v_due := case when pt[m] -> 'fixed' ->> 'anchor' = 'arrive' then v_at else v_at - st[m] end;
     v_flex := coalesce((pt[m] -> 'fixed' ->> 'flex')::bigint, 0);
-    -- run j -> m
+    -- run j -> m (forwards)
     if pt[j] -> 'fixed' ->> 'anchor' = 'arrive' then l[j] := a[j] + st[j]; end if;
-    for k in j + 1 .. m - 1 loop a[k] := l[k - 1] + tr[k]; l[k] := a[k] + st[k]; end loop;
-    v_late := l[m - 1] + tr[m] - v_due;
+    for k in j + 1 .. m - 1 loop
+      dr[k] := public._drive_mins_from_arr(l[k - 1], tr[k], ws, we, wp, v_f);
+      a[k] := l[k - 1] + dr[k]; l[k] := a[k] + st[k];
+    end loop;
+    dr[m] := public._drive_mins_from_arr(l[m - 1], tr[m], ws, we, wp, v_f);
+    v_late := l[m - 1] + dr[m] - v_due;
 
     if v_late < 0 then
       v_tgt := null;
@@ -7047,10 +7334,26 @@ begin
           v_tgt := k; exit;
         end if;
       end loop;
+      v_total := 0;
+      for k in j + 1 .. m loop v_total := v_total + dr[k]; end loop;
       if v_tgt is not null then
         st[v_tgt] := st[v_tgt] - v_late;
         if pt[j] -> 'fixed' ->> 'anchor' = 'arrive' then l[j] := a[j] + st[j]; end if;
-        for k in j + 1 .. m - 1 loop a[k] := l[k - 1] + tr[k]; l[k] := a[k] + st[k]; end loop;
+        for k in j + 1 .. m - 1 loop
+          dr[k] := public._drive_mins_from_arr(l[k - 1], tr[k], ws, we, wp, v_f);
+          a[k] := l[k - 1] + dr[k]; l[k] := a[k] + st[k];
+        end loop;
+        v_late := 0;
+      elsif coalesce((pt[j] -> 'fixed' ->> 'stated')::boolean, true)
+            and coalesce((pt[m] -> 'fixed' ->> 'stated')::boolean, true) and m - j > 1 and v_total > 0 then
+        -- both hours were given by the member: the spare minutes go to the drives, in proportion to them
+        v_given := -v_late; v_cum := 0; v_share := 0;
+        for k in j + 1 .. m loop
+          v_cum := v_cum + dr[k];
+          ad[k] := floor(v_given * v_cum / v_total::numeric)::bigint - v_share;
+          v_share := v_share + ad[k];
+        end loop;
+        for k in j + 1 .. m - 1 loop a[k] := l[k - 1] + dr[k] + ad[k]; l[k] := a[k] + st[k]; end loop;
         v_late := 0;
       else
         early[m] := -v_late;
@@ -7072,8 +7375,12 @@ begin
         st[v_best] := st[v_best] - v_take; sh[v_best] := sh[v_best] + v_take; v_late := v_late - v_take;
       end loop;
       if pt[j] -> 'fixed' ->> 'anchor' = 'arrive' then l[j] := a[j] + st[j]; end if;
-      for k in j + 1 .. m - 1 loop a[k] := l[k - 1] + tr[k]; l[k] := a[k] + st[k]; end loop;
-      v_late := l[m - 1] + tr[m] - v_due;
+      for k in j + 1 .. m - 1 loop
+        dr[k] := public._drive_mins_from_arr(l[k - 1], tr[k], ws, we, wp, v_f);
+        a[k] := l[k - 1] + dr[k]; l[k] := a[k] + st[k];
+      end loop;
+      dr[m] := public._drive_mins_from_arr(l[m - 1], tr[m], ws, we, wp, v_f);
+      v_late := l[m - 1] + dr[m] - v_due;
     end if;
 
     if v_late > 0 and v_late <= v_flex then
@@ -7086,7 +7393,7 @@ begin
 
   -- after the last fixed hour: forwards
   for i in anchors[array_length(anchors, 1)] + 1 .. n loop
-    a[i] := l[i - 1] + tr[i]; l[i] := a[i] + st[i];
+    a[i] := l[i - 1] + public._drive_mins_from_arr(l[i - 1], tr[i], ws, we, wp, v_f); l[i] := a[i] + st[i];
   end loop;
 
   v_need := v_has_back and v_dest is not null and wo[v_dest]
@@ -7101,11 +7408,7 @@ end;
 $$;
 
 
-ALTER FUNCTION "public"."_stop_schedule"("p_points" "jsonb", "p_stop_minutes" integer, "p_default_start" bigint, "p_allow_shrink" boolean) OWNER TO "postgres";
-
-
-COMMENT ON FUNCTION "public"."_stop_schedule"("p_points" "jsonb", "p_stop_minutes" integer, "p_default_start" bigint, "p_allow_shrink" boolean) IS 'REQ item 246: the stop-hours timing rule (TS twin src/lib/stopSchedule.ts). Points: [{key, kind start|stop|destArrive|destLeave|end, travel (minutes from the previous point), stay|null, fixed {anchor arrive|leave, at (minute), flex}|null}].';
-
+ALTER FUNCTION "public"."_stop_schedule"("p_points" "jsonb", "p_stop_minutes" integer, "p_default_start" bigint, "p_allow_shrink" boolean, "p_win" "jsonb", "p_margin" integer) OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."_stretch_loads"("p_points" integer, "p_riders" "jsonb") RETURNS "jsonb"
@@ -21235,6 +21538,8 @@ CREATE OR REPLACE FUNCTION "public"."request_schedule"("p_request_id" "uuid") RE
 declare
   q public.requests%rowtype;
   v_stop_minutes int;
+  v_margin int;
+  v_win jsonb;
   v_points jsonb := '[]'::jsonb;
   v_prev_id uuid; v_prev_text text;
   s record;
@@ -21243,28 +21548,33 @@ declare
 begin
   select * into q from public.requests where id = p_request_id;
   if q.id is null then return null; end if;
-  select stop_minutes into v_stop_minutes from public.department_settings where department_id = q.department_id;
+  select stop_minutes, travel_margin_percent into v_stop_minutes, v_margin
+    from public.department_settings where department_id = q.department_id;
   v_stop_minutes := coalesce(v_stop_minutes, 5);
+  v_win := public._drive_windows(q.department_id,
+    (coalesce(q.depart_at, q.return_at) at time zone 'Asia/Jerusalem')::date,
+    (coalesce(q.return_at, q.depart_at) at time zone 'Asia/Jerusalem')::date);
   v_has_return := q.return_at is not null;
 
   if q.depart_at is not null then
     v_points := v_points || jsonb_build_object('key', 'start', 'kind', 'start', 'travel', 0, 'stay', null,
-      'fixed', jsonb_build_object('anchor', 'leave', 'at', floor(extract(epoch from q.depart_at) / 60)::bigint, 'flex', 0));
+      'fixed', jsonb_build_object('anchor', 'leave', 'at', floor(extract(epoch from q.depart_at) / 60)::bigint, 'flex', 0,
+                 'stated', q.depart_anchor = 'leave'));
     v_prev_id := q.origin_id; v_prev_text := q.origin_text;
     for s in select * from public.request_stops x where x.request_id = q.id and x.leg = 'out' order by x."position" loop
       v_points := v_points || jsonb_build_object('key', 'out:' || s."position", 'kind', 'stop',
         'travel', public._place_minutes(v_prev_id, v_prev_text, s.place_id, s.place_text),
         'stay', s.stay_minutes,
         'fixed', case when s.fixed_anchor is null then null else jsonb_build_object('anchor', s.fixed_anchor::text,
-                   'at', floor(extract(epoch from s.fixed_at) / 60)::bigint, 'flex', s.flex_minutes) end);
+                   'at', floor(extract(epoch from s.fixed_at) / 60)::bigint, 'flex', s.flex_minutes, 'stated', true) end);
       v_prev_id := s.place_id; v_prev_text := s.place_text;
     end loop;
     v_points := v_points || jsonb_build_object('key', 'dest', 'kind', case when v_has_return then 'destArrive' else 'end' end,
       'travel', public._place_minutes(v_prev_id, v_prev_text, q.destination_id, q.destination_text),
       'stay', null,
-      'fixed', case when q.depart_anchor = 'arrive' and q.arrive_by is not null
+      'fixed', case when q.arrive_by is not null
                  then jsonb_build_object('anchor', 'arrive', 'at', floor(extract(epoch from q.arrive_by) / 60)::bigint,
-                        'flex', (extract(epoch from q.flex_depart_late) / 60)::bigint) end);
+                        'flex', (extract(epoch from q.flex_depart_late) / 60)::bigint, 'stated', true) end);
   end if;
   v_prev_id := q.destination_id; v_prev_text := q.destination_text;
 
@@ -21272,25 +21582,26 @@ begin
     v_points := v_points || jsonb_build_object('key', 'back',
       'kind', case when q.depart_at is null then 'start' else 'destLeave' end,
       'travel', 0, 'stay', null,
-      'fixed', case when q.return_anchor = 'leave' and q.leave_dest_at is not null
+      'fixed', case when q.leave_dest_at is not null
                  then jsonb_build_object('anchor', 'leave', 'at', floor(extract(epoch from q.leave_dest_at) / 60)::bigint,
-                        'flex', (extract(epoch from q.flex_return_late) / 60)::bigint) end);
+                        'flex', (extract(epoch from q.flex_return_late) / 60)::bigint, 'stated', true) end);
     for s in select * from public.request_stops x where x.request_id = q.id and x.leg = 'return' order by x."position" loop
       v_points := v_points || jsonb_build_object('key', 'return:' || s."position", 'kind', 'stop',
         'travel', public._place_minutes(v_prev_id, v_prev_text, s.place_id, s.place_text),
         'stay', s.stay_minutes,
         'fixed', case when s.fixed_anchor is null then null else jsonb_build_object('anchor', s.fixed_anchor::text,
-                   'at', floor(extract(epoch from s.fixed_at) / 60)::bigint, 'flex', s.flex_minutes) end);
+                   'at', floor(extract(epoch from s.fixed_at) / 60)::bigint, 'flex', s.flex_minutes, 'stated', true) end);
       v_prev_id := s.place_id; v_prev_text := s.place_text;
     end loop;
     v_points := v_points || jsonb_build_object('key', 'end', 'kind', 'end',
       'travel', public._place_minutes(v_prev_id, v_prev_text, q.origin_id, q.origin_text),
       'stay', null,
-      'fixed', jsonb_build_object('anchor', 'arrive', 'at', floor(extract(epoch from q.return_at) / 60)::bigint, 'flex', 0));
+      'fixed', jsonb_build_object('anchor', 'arrive', 'at', floor(extract(epoch from q.return_at) / 60)::bigint, 'flex', 0,
+                 'stated', q.return_anchor = 'arrive'));
   end if;
 
   v_min := floor(extract(epoch from coalesce(q.depart_at, q.return_at, now())) / 60)::bigint;
-  return public._stop_schedule(v_points, v_stop_minutes, v_min, false);
+  return public._stop_schedule(v_points, v_stop_minutes, v_min, false, v_win, coalesce(v_margin, 0));
 end;
 $$;
 
@@ -21339,13 +21650,22 @@ declare
   v_p jsonb;
   s record;
   v_t timestamptz;
+  v_m bigint;
   v_prev_id uuid; v_prev_text text;
   v_stop_minutes int;
+  v_margin int;
+  v_win jsonb;
+  ws numeric[]; we numeric[]; wp numeric[]; v_f numeric;
   v_timed boolean;
 begin
   if not exists (select 1 from public.request_stops x where x.request_id = p_request_id) then return; end if;
-  select exists (select 1 from public.request_stops x where x.request_id = p_request_id
-                   and (x.fixed_anchor is not null or x.stay_minutes is not null)) into v_timed;
+  select * into v_req from public.requests where id = p_request_id;
+  if v_req.id is null then return; end if;
+  -- the timing rule when a stop has an hour or a stay, or a way carries both of its hours (REQ item 249 a)
+  v_timed := exists (select 1 from public.request_stops x where x.request_id = p_request_id
+                       and (x.fixed_anchor is not null or x.stay_minutes is not null))
+             or (v_req.depart_anchor = 'leave' and v_req.arrive_by is not null)
+             or (v_req.return_at is not null and v_req.return_anchor = 'arrive' and v_req.leave_dest_at is not null);
 
   if v_timed then
     v_s := public.request_schedule(p_request_id);
@@ -21363,16 +21683,23 @@ begin
     return;
   end if;
 
-  select * into v_req from public.requests where id = p_request_id;
-  if v_req.id is null then return; end if;
-  select stop_minutes into v_stop_minutes from public.department_settings where department_id = v_req.department_id;
+  select stop_minutes, travel_margin_percent into v_stop_minutes, v_margin
+    from public.department_settings where department_id = v_req.department_id;
   v_stop_minutes := coalesce(v_stop_minutes, 5);
+  v_margin := coalesce(v_margin, 0);
+  v_win := public._drive_windows(v_req.department_id,
+    (coalesce(v_req.depart_at, v_req.return_at) at time zone 'Asia/Jerusalem')::date,
+    (coalesce(v_req.return_at, v_req.depart_at) at time zone 'Asia/Jerusalem')::date);
+  select a.ws, a.we, a.wp into ws, we, wp from public._drive_win_arrays(v_win) a;
+  v_f := (100 + v_margin) / 100.0;
 
   if v_req.depart_at is not null then
     v_t := v_req.depart_at;
     v_prev_id := v_req.origin_id; v_prev_text := v_req.origin_text;
     for s in select * from public.request_stops x where x.request_id = p_request_id and x.leg = 'out' order by x."position" loop
-      v_t := v_t + make_interval(mins => public._place_minutes(v_prev_id, v_prev_text, s.place_id, s.place_text));
+      v_m := floor(extract(epoch from v_t) / 60)::bigint;
+      v_t := v_t + make_interval(mins => public._drive_mins_from_arr(v_m,
+        public._place_minutes(v_prev_id, v_prev_text, s.place_id, s.place_text), ws, we, wp, v_f)::int);
       leg := 'out'; "position" := s."position"; place_id := s.place_id; place_text := s.place_text; eta := v_t;
       return next;
       v_t := v_t + make_interval(mins => v_stop_minutes);
@@ -21386,7 +21713,9 @@ begin
       v_t := v_req.leave_dest_at;
       v_prev_id := v_req.destination_id; v_prev_text := v_req.destination_text;
       for s in select * from public.request_stops x where x.request_id = p_request_id and x.leg = 'return' order by x."position" loop
-        v_t := v_t + make_interval(mins => public._place_minutes(v_prev_id, v_prev_text, s.place_id, s.place_text) + v_stop_minutes);
+        v_m := floor(extract(epoch from v_t) / 60)::bigint;
+        v_t := v_t + make_interval(mins => public._drive_mins_from_arr(v_m,
+          public._place_minutes(v_prev_id, v_prev_text, s.place_id, s.place_text), ws, we, wp, v_f)::int + v_stop_minutes);
         leg := 'return'; "position" := s."position"; place_id := s.place_id; place_text := s.place_text; eta := v_t;
         return next;
         v_prev_id := s.place_id; v_prev_text := s.place_text;
@@ -21395,7 +21724,9 @@ begin
       v_t := v_req.return_at;
       v_prev_id := v_req.origin_id; v_prev_text := v_req.origin_text;
       for s in select * from public.request_stops x where x.request_id = p_request_id and x.leg = 'return' order by x."position" desc loop
-        v_t := v_t - make_interval(mins => public._place_minutes(s.place_id, s.place_text, v_prev_id, v_prev_text));
+        v_m := floor(extract(epoch from v_t) / 60)::bigint;
+        v_t := v_t - make_interval(mins => public._drive_mins_until_arr(v_m,
+          public._place_minutes(s.place_id, s.place_text, v_prev_id, v_prev_text), ws, we, wp, v_f)::int);
         leg := 'return'; "position" := s."position"; place_id := s.place_id; place_text := s.place_text; eta := v_t;
         return next;
         v_t := v_t - make_interval(mins => v_stop_minutes);
@@ -22903,12 +23234,16 @@ CREATE OR REPLACE FUNCTION "public"."ride_route_json"("p_ride_id" "uuid") RETURN
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
+  -- REQ item 249 (b)/(c): the route's ~hours count the margin and rush hours (display only)
   select case when public._ride_route_visible(p_ride_id) then
-    coalesce((select jsonb_agg(jsonb_build_object('leg', r.leg, 'position', r."position", 'place_id', r.place_id,
-        'place_text', r.place_text, 'name', d.name, 'request_id', r.request_id, 'kind', r.kind, 'eta', r.eta)
-        order by r.leg::text, r."position")
-      from public._ride_route(p_ride_id) r left join public.destinations d on d.id = r.place_id), '[]'::jsonb)
-    else '[]'::jsonb end;
+    public._route_eta_shown_if_middle(
+      coalesce((select jsonb_agg(jsonb_build_object('leg', r.leg, 'position', r."position", 'place_id', r.place_id,
+          'place_text', r.place_text, 'name', d.name, 'request_id', r.request_id, 'kind', r.kind, 'eta', r.eta)
+          order by r.leg::text, r."position")
+        from public._ride_route(p_ride_id) r left join public.destinations d on d.id = r.place_id), '[]'::jsonb),
+      x.department_id, x.starts_at, x.ends_at)
+    else '[]'::jsonb end
+  from public.rides x where x.id = p_ride_id;
 $$;
 
 
@@ -23061,13 +23396,15 @@ CREATE OR REPLACE FUNCTION "public"."ride_routes_json"("p_ride_ids" "uuid"[]) RE
      group by sr.ride_id
   )
   select r.id,
-         case when v.id is null then '[]'::jsonb
+         -- REQ item 249 (b)/(c): the route's ~hours count the margin and rush hours (display only); only a route with
+         -- places in the middle is re-timed (PF1: the others skip the department lookup)
+         public._route_eta_shown_if_middle(case when v.id is null then '[]'::jsonb
               when g.ride_id is not null then
                 coalesce((select jsonb_agg(jsonb_build_object('leg', rt.leg, 'position', rt."position", 'place_id', rt.place_id,
                     'place_text', rt.place_text, 'name', d.name, 'request_id', rt.request_id, 'kind', rt.kind, 'eta', rt.eta)
                     order by rt.leg::text, rt."position")
                   from public._ride_route(r.id) rt left join public.destinations d on d.id = rt.place_id), '[]'::jsonb)
-              else coalesce(sj.route, '[]'::jsonb) end
+              else coalesce(sj.route, '[]'::jsonb) end, v.department_id, v.starts_at, v.ends_at)
     from r
     left join vis v on v.id = r.id
     left join guested g on g.ride_id = r.id
@@ -23317,10 +23654,10 @@ begin
                -- the ride's own two hours (leave home, home by) are the ride's times, shown in its header - not here
                when (x.k = 1 and v_leg = 'out') or (x.k = x.n and v_leg = 'return') then null
                when x.k = x.n and v_leg = 'out' then
-                 case when q.depart_anchor = 'arrive' and q.arrive_by is not null then jsonb_build_object('at', q.arrive_by, 'anchor', 'arrive',
+                 case when q.arrive_by is not null then jsonb_build_object('at', q.arrive_by, 'anchor', 'arrive',
                    'flex', (extract(epoch from q.flex_depart_late) / 60)::int) end
                when x.k = 1 and v_leg = 'return' then
-                 case when q.return_anchor = 'leave' and q.leave_dest_at is not null then jsonb_build_object('at', q.leave_dest_at, 'anchor', 'leave',
+                 case when q.leave_dest_at is not null then jsonb_build_object('at', q.leave_dest_at, 'anchor', 'leave',
                    'flex', (extract(epoch from q.flex_return_late) / 60)::int) end
                else (select case when s.fixed_anchor is not null then jsonb_build_object('at', s.fixed_at, 'anchor', s.fixed_anchor, 'flex', s.flex_minutes) end
                        from public.request_stops s where s.request_id = v_base and s.leg = v_leg
@@ -27135,14 +27472,21 @@ begin
     v_anchors_explicit := true;
   end if;
   if v_anchors_explicit then
-    if (v_depart_anchor = 'arrive') <> (v_arrive_by is not null) then
+    -- An end entered by its other hour needs that hour. REQ item 249 (a): a way may also carry BOTH of its hours -
+    -- "להגיע עד" beside a stated "לצאת ב־" (after it), "לצאת משם ב־" beside a stated "בבית עד" (before it).
+    if v_depart_anchor = 'arrive' and v_arrive_by is null then
       raise exception 'anchor_time_mismatch' using errcode = 'P0001';
+    end if;
+    if v_depart_anchor = 'leave' and v_arrive_by is not null and v_depart_at is not null and v_arrive_by <= v_depart_at then
+      raise exception 'invalid_anchor_time' using errcode = 'P0001';
     end if;
     -- A one-way request keeps its (inactive) leave-there time (REQ §13.97), so only a request with a
     -- return needs the return end to be consistent.
-    if (v_return_at is not null and (v_return_anchor = 'leave') <> (v_leave_dest_at is not null))
-       or (v_return_anchor <> 'leave' and v_leave_dest_at is not null) then
+    if v_return_at is not null and v_return_anchor = 'leave' and v_leave_dest_at is null then
       raise exception 'anchor_time_mismatch' using errcode = 'P0001';
+    end if;
+    if v_return_at is not null and v_return_anchor = 'arrive' and v_leave_dest_at is not null and v_leave_dest_at >= v_return_at then
+      raise exception 'invalid_anchor_time' using errcode = 'P0001';
     end if;
     if v_arrive_by is not null and (
          not public.is_quarter_hour(v_arrive_by) or v_depart_at is null
@@ -30030,6 +30374,7 @@ CREATE TABLE IF NOT EXISTS "public"."department_settings" (
     "planning_week_cost_pct" smallint DEFAULT 10 NOT NULL,
     "planning_car_multiplier" numeric(3,2) DEFAULT 1.20 NOT NULL,
     "anyone_edits_rides" boolean DEFAULT false NOT NULL,
+    "travel_margin_percent" smallint DEFAULT 0 NOT NULL,
     CONSTRAINT "department_settings_close_dow_ck" CHECK ((("close_dow" >= 0) AND ("close_dow" <= 6))),
     CONSTRAINT "department_settings_expiry_mode_ck" CHECK (("proposal_expiry_mode" = ANY (ARRAY['at_publish'::"text", 'fixed_hours'::"text"]))),
     CONSTRAINT "department_settings_join_radius_km_ck" CHECK ((("join_radius_km" >= (0)::numeric) AND ("join_radius_km" <= (100)::numeric))),
@@ -30045,6 +30390,7 @@ CREATE TABLE IF NOT EXISTS "public"."department_settings" (
     CONSTRAINT "department_settings_rush_percent_ck" CHECK (((("rush_morning_percent" >= 0) AND ("rush_morning_percent" <= 100)) AND (("rush_afternoon_percent" >= 0) AND ("rush_afternoon_percent" <= 100)))),
     CONSTRAINT "department_settings_send_all_reminder_minutes_check" CHECK ((("send_all_reminder_minutes" >= 5) AND ("send_all_reminder_minutes" <= 1440))),
     CONSTRAINT "department_settings_stop_minutes_ck" CHECK ((("stop_minutes" >= 0) AND ("stop_minutes" <= 60))),
+    CONSTRAINT "department_settings_travel_margin_ck" CHECK ((("travel_margin_percent" >= 0) AND ("travel_margin_percent" <= 200))),
     CONSTRAINT "department_settings_turnaround_ck" CHECK (((("turnaround_minutes" % 15) = 0) AND (("turnaround_minutes" >= 0) AND ("turnaround_minutes" <= 120))))
 );
 
@@ -30059,6 +30405,10 @@ COMMENT ON COLUMN "public"."department_settings"."proposals_offline" IS 'Depreca
 
 
 COMMENT ON COLUMN "public"."department_settings"."send_all_reminder_minutes" IS 'REQ §13.138 (h): minutes an unsent board draft / held change may wait before its Sadran is reminded once.';
+
+
+
+COMMENT ON COLUMN "public"."department_settings"."travel_margin_percent" IS 'REQ item 249 (c): extra percent on every drive estimate shown or worked out (before rush hours); 0 = none.';
 
 
 
@@ -31471,7 +31821,6 @@ CREATE TABLE IF NOT EXISTS "public"."request_templates" (
     "repeat_anchor_week" "date",
     "needs_tow_hitch" boolean DEFAULT false NOT NULL,
     CONSTRAINT "request_templates_adults_ck" CHECK (("adults" >= 1)),
-    CONSTRAINT "request_templates_arrive_by_anchor_ck" CHECK ((("arrive_by_time" IS NULL) OR ("depart_anchor" = 'arrive'::"public"."time_anchor"))),
     CONSTRAINT "request_templates_arrive_by_qh_ck" CHECK ((("arrive_by_time" IS NULL) OR (((EXTRACT(minute FROM "arrive_by_time"))::integer % 15) = 0))),
     CONSTRAINT "request_templates_boosters_ck" CHECK (("boosters" >= 0)),
     CONSTRAINT "request_templates_child_seats_ck" CHECK (("child_seats" >= 0)),
@@ -31483,7 +31832,6 @@ CREATE TABLE IF NOT EXISTS "public"."request_templates" (
     CONSTRAINT "request_templates_flex_return_early_ck" CHECK (("flex_return_early" = ANY (ARRAY['00:00:00'::interval, '00:15:00'::interval, '00:30:00'::interval, '01:00:00'::interval, '02:00:00'::interval, '1 day'::interval]))),
     CONSTRAINT "request_templates_flex_return_late_ck" CHECK ((("flex_return_late" = ANY (ARRAY['00:00:00'::interval, '00:15:00'::interval, '00:30:00'::interval, '01:00:00'::interval, '02:00:00'::interval, '1 day'::interval])) OR ("duration_locked" AND ("flex_return_late" > '00:00:00'::interval) AND ("flex_return_late" <= '1 day'::interval) AND (((EXTRACT(epoch FROM "flex_return_late"))::bigint % (900)::bigint) = 0)))),
     CONSTRAINT "request_templates_keep_car_at_destination_ck" CHECK (((NOT "keep_car_at_destination") OR (("trip_type" = 'drop_off'::"public"."trip_type") AND ("trip_shape" = 'round_trip'::"public"."trip_shape")))),
-    CONSTRAINT "request_templates_leave_dest_anchor_ck" CHECK ((("leave_dest_time" IS NULL) OR ("return_anchor" = 'leave'::"public"."time_anchor"))),
     CONSTRAINT "request_templates_leave_dest_qh_ck" CHECK ((("leave_dest_time" IS NULL) OR (((EXTRACT(minute FROM "leave_dest_time"))::integer % 15) = 0))),
     CONSTRAINT "request_templates_one_way_mode_ck" CHECK (((("one_way_car_mode" IS NULL) = ("trip_shape" = 'round_trip'::"public"."trip_shape")) AND (("one_way_car_mode" IS NULL) OR ("one_way_car_mode" = ANY (ARRAY['relay'::"public"."leg_car_mode", 'passenger'::"public"."leg_car_mode"]))))),
     CONSTRAINT "request_templates_origin_ck" CHECK ((("origin_id" IS NOT NULL) OR ("origin_text" IS NOT NULL))),
@@ -37481,6 +37829,56 @@ GRANT ALL ON FUNCTION "public"."_draft_hold_conflict"("p_car" "uuid", "p_from" t
 
 
 
+REVOKE ALL ON FUNCTION "public"."_drive_from"("p_start" numeric, "p_base" numeric, "p_win" "jsonb") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_drive_from"("p_start" numeric, "p_base" numeric, "p_win" "jsonb") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."_drive_from_arr"("p_start" numeric, "p_base" numeric, "ws" numeric[], "we" numeric[], "wp" numeric[]) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_drive_from_arr"("p_start" numeric, "p_base" numeric, "ws" numeric[], "we" numeric[], "wp" numeric[]) TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."_drive_mins_from_arr"("p_start" bigint, "p_base" bigint, "ws" numeric[], "we" numeric[], "wp" numeric[], "p_f" numeric) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_drive_mins_from_arr"("p_start" bigint, "p_base" bigint, "ws" numeric[], "we" numeric[], "wp" numeric[], "p_f" numeric) TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."_drive_mins_until_arr"("p_end" bigint, "p_base" bigint, "ws" numeric[], "we" numeric[], "wp" numeric[], "p_f" numeric) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_drive_mins_until_arr"("p_end" bigint, "p_base" bigint, "ws" numeric[], "we" numeric[], "wp" numeric[], "p_f" numeric) TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."_drive_minutes_from"("p_start" bigint, "p_base" bigint, "p_win" "jsonb", "p_margin" integer) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_drive_minutes_from"("p_start" bigint, "p_base" bigint, "p_win" "jsonb", "p_margin" integer) TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."_drive_minutes_until"("p_end" bigint, "p_base" bigint, "p_win" "jsonb", "p_margin" integer) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_drive_minutes_until"("p_end" bigint, "p_base" bigint, "p_win" "jsonb", "p_margin" integer) TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."_drive_until"("p_end" numeric, "p_base" numeric, "p_win" "jsonb") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_drive_until"("p_end" numeric, "p_base" numeric, "p_win" "jsonb") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."_drive_until_arr"("p_end" numeric, "p_base" numeric, "ws" numeric[], "we" numeric[], "wp" numeric[]) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_drive_until_arr"("p_end" numeric, "p_base" numeric, "ws" numeric[], "we" numeric[], "wp" numeric[]) TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."_drive_win_arrays"("p_win" "jsonb", OUT "ws" numeric[], OUT "we" numeric[], OUT "wp" numeric[]) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_drive_win_arrays"("p_win" "jsonb", OUT "ws" numeric[], OUT "we" numeric[], OUT "wp" numeric[]) TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."_drive_windows"("p_department_id" "uuid", "p_from" "date", "p_to" "date") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_drive_windows"("p_department_id" "uuid", "p_from" "date", "p_to" "date") TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."_dt_label"("p_at" timestamp with time zone) FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."_dt_label"("p_at" timestamp with time zone) TO "service_role";
 
@@ -38277,6 +38675,21 @@ GRANT ALL ON FUNCTION "public"."_route_add_place"("p_route" "jsonb", "p_place_id
 
 
 
+REVOKE ALL ON FUNCTION "public"."_route_eta_retimed"("p_route" "jsonb", "p_win" "jsonb", "p_margin" integer, "p_stop" integer) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_route_eta_retimed"("p_route" "jsonb", "p_win" "jsonb", "p_margin" integer, "p_stop" integer) TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."_route_eta_shown"("p_route" "jsonb", "p_department_id" "uuid", "p_starts" timestamp with time zone, "p_ends" timestamp with time zone) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_route_eta_shown"("p_route" "jsonb", "p_department_id" "uuid", "p_starts" timestamp with time zone, "p_ends" timestamp with time zone) TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."_route_eta_shown_if_middle"("p_route" "jsonb", "p_department_id" "uuid", "p_starts" timestamp with time zone, "p_ends" timestamp with time zone) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_route_eta_shown_if_middle"("p_route" "jsonb", "p_department_id" "uuid", "p_starts" timestamp with time zone, "p_ends" timestamp with time zone) TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."_route_hop_minutes"("p_from" "uuid", "p_to" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."_route_hop_minutes"("p_from" "uuid", "p_to" "uuid") TO "service_role";
 
@@ -38362,8 +38775,8 @@ GRANT ALL ON FUNCTION "public"."_small_trunk_probe"("p_request_id" "uuid") TO "s
 
 
 
-REVOKE ALL ON FUNCTION "public"."_stop_schedule"("p_points" "jsonb", "p_stop_minutes" integer, "p_default_start" bigint, "p_allow_shrink" boolean) FROM PUBLIC;
-GRANT ALL ON FUNCTION "public"."_stop_schedule"("p_points" "jsonb", "p_stop_minutes" integer, "p_default_start" bigint, "p_allow_shrink" boolean) TO "service_role";
+REVOKE ALL ON FUNCTION "public"."_stop_schedule"("p_points" "jsonb", "p_stop_minutes" integer, "p_default_start" bigint, "p_allow_shrink" boolean, "p_win" "jsonb", "p_margin" integer) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_stop_schedule"("p_points" "jsonb", "p_stop_minutes" integer, "p_default_start" bigint, "p_allow_shrink" boolean, "p_win" "jsonb", "p_margin" integer) TO "service_role";
 
 
 

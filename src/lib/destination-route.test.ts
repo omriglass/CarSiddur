@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { handleDestinationRoute, type RouteDependencies } from '../../supabase/functions/destination-route/handler';
+import { handleDestinationRoute, quietWeekdayDeparture, type RouteDependencies } from '../../supabase/functions/destination-route/handler';
 
 const department = '00000000-0000-0000-0000-000000000001';
 const destination = '00000000-0000-0000-0000-000000000201';
@@ -25,8 +25,13 @@ describe('Google route estimates', () => {
     expect(url).toBe('https://routes.googleapis.com/directions/v2:computeRoutes');
     expect(JSON.parse(init!.body as string)).toMatchObject({
       origin: { location: { latLng: { latitude: 32, longitude: 35 } } }, destination: { address: 'Destination' },
-      regionCode: 'IL', travelMode: 'DRIVE', routingPreference: 'TRAFFIC_UNAWARE',
+      regionCode: 'IL', travelMode: 'DRIVE', routingPreference: 'TRAFFIC_AWARE',
     });
+    // REQ item 249 (d): typical traffic at a quiet weekday hour, in the future
+    const departure = new Date(JSON.parse(init!.body as string).departureTime as string);
+    expect(departure.getUTCHours()).toBe(9);
+    expect(departure.getUTCDay()).toBeLessThanOrEqual(4);
+    expect(departure.getTime()).toBeGreaterThan(Date.now());
     expect(init!.headers).toMatchObject({ 'X-Goog-FieldMask': 'routes.distanceMeters,routes.duration' });
   });
   it.each(['', 'Basic token'])('rejects missing/invalid bearer before catalog access: %s', async (token) => {
@@ -109,5 +114,14 @@ describe('locating places (REQ §13.175 e)', () => {
     expect((await handleDestinationRoute(locate(['x']), deps)).status).toBe(400);
     expect((await handleDestinationRoute(locate(Array.from({ length: 11 }, () => destination)), deps)).status).toBe(400);
     expect(deps.fetch).not.toHaveBeenCalled();
+  });
+});
+
+describe('quietWeekdayDeparture (REQ item 249 d)', () => {
+  it('is the next Sunday-Thursday at 09:00 UTC', () => {
+    // Thursday 2026-11-19 -> Sunday 2026-11-22 (Friday and Saturday skipped)
+    expect(quietWeekdayDeparture(new Date('2026-11-19T15:00:00Z'))).toBe('2026-11-22T09:00:00.000Z');
+    // Sunday -> Monday
+    expect(quietWeekdayDeparture(new Date('2026-11-22T05:00:00Z'))).toBe('2026-11-23T09:00:00.000Z');
   });
 });
