@@ -29,9 +29,11 @@ for (const c of fixture.cases) {
     kind: p.kind,
     travel: i === 0 ? 0 : minutes(c.points[i - 1].place, p.place),
     stay: p.stay ?? null,
-    fixed: p.fixed ? { anchor: p.fixed.anchor, at: hm(p.fixed.at), flex: p.fixed.flex } : null,
+    fixed: p.fixed ? { anchor: p.fixed.anchor, at: hm(p.fixed.at), flex: p.fixed.flex, ...(p.fixed.stated === false ? { stated: false } : {}) } : null,
   }));
-  const sql = `select public._stop_schedule('${JSON.stringify(points).replace(/'/g, "''")}'::jsonb, ${fixture.stopMinutes}, ${hm('08:00')}, false)`;
+  // REQ item 249: the case's rush windows (minutes of the day) and travel margin
+  const win = (c.rush ?? []).map((w) => ({ s: hm(w.start), e: hm(w.end), p: w.percent }));
+  const sql = `select public._stop_schedule('${JSON.stringify(points).replace(/'/g, "''")}'::jsonb, ${fixture.stopMinutes}, ${hm('08:00')}, false, '${JSON.stringify(win)}'::jsonb, ${Number(c.margin ?? 0)})`;
   const res = spawnSync('docker', ['exec', '-i', container, 'psql', '-U', 'postgres', '-At', '-v', 'ON_ERROR_STOP=1', '-c', sql], { encoding: 'utf8' });
   if (res.status !== 0) { console.error(`FAIL ${c.name}\n${res.stderr}`); failed++; continue; }
   const out = JSON.parse(res.stdout.trim());

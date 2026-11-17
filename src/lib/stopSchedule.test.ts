@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import cases from "../../supabase/tests/fixtures/stop_schedule_cases.json";
 
+import { driveMinutesFrom, driveMinutesUntil } from "@/features/requests/rushHours";
+
 import { carWindow, insertOptions, schedule, type InsertOption, type SchedulePoint, type ScheduleOptions } from "./stopSchedule";
 
 const hm = (s: string) => Number(s.slice(0, 2)) * 60 + Number(s.slice(3, 5));
@@ -9,16 +11,23 @@ const travelMap = new Map<string, number>();
 for (const [a, b, m] of cases.travel as [string, string, number][]) { travelMap.set(`${a}|${b}`, m); travelMap.set(`${b}|${a}`, m); }
 const options: ScheduleOptions = { travel: (a, b) => travelMap.get(`${a}|${b}`) ?? 60, stopMinutes: cases.stopMinutes, defaultStart: hm("08:00") };
 
-type CasePoint = { key: string; place: string; kind: string; stay?: number; fixed?: { anchor: string; at: string; flex: number } };
+type CasePoint = { key: string; place: string; kind: string; stay?: number; fixed?: { anchor: string; at: string; flex: number; stated?: boolean } };
 const toPoints = (ps: CasePoint[]): SchedulePoint[] => ps.map((p) => ({
   key: p.key, place: p.place, kind: p.kind as SchedulePoint["kind"], stay: p.stay ?? null,
-  fixed: p.fixed ? { anchor: p.fixed.anchor as "arrive" | "leave", at: hm(p.fixed.at), flex: p.fixed.flex } : null,
+  fixed: p.fixed ? { anchor: p.fixed.anchor as "arrive" | "leave", at: hm(p.fixed.at), flex: p.fixed.flex, ...(p.fixed.stated === false ? { stated: false } : {}) } : null,
 }));
+type CaseRush = { start: string; end: string; percent: number }[];
+// REQ item 249: a case's rush windows and margin, through the form's drive rule
+const optionsOf = (rush: CaseRush | undefined, margin: number | undefined): ScheduleOptions => {
+  const windows = (rush ?? []).map((w) => ({ startMinutes: hm(w.start), endMinutes: hm(w.end), percent: w.percent }));
+  if (!windows.length && !margin) return options;
+  return { ...options, drive: { from: (s, b) => driveMinutesFrom(s, b, windows, margin ?? 0), until: (e, b) => driveMinutesUntil(e, b, windows, margin ?? 0) } };
+};
 
 describe("stopSchedule — shared cases (SQL twin: request_schedule)", () => {
-  for (const c of cases.cases as { name: string; points: CasePoint[]; expect: Record<string, unknown> }[]) {
+  for (const c of cases.cases as { name: string; points: CasePoint[]; rush?: CaseRush; margin?: number; expect: Record<string, unknown> }[]) {
     it(c.name, () => {
-      const s = schedule(toPoints(c.points), options);
+      const s = schedule(toPoints(c.points), optionsOf(c.rush, c.margin));
       const byKey = new Map(s.points.map((p) => [p.key, p]));
       const e = c.expect as { times?: Record<string, [string, string]>; stays?: Record<string, number>; early?: Record<string, number>; flexUsed?: Record<string, number>; conflict?: unknown; needsReturnHour?: boolean };
       for (const [k, [arr, lv]] of Object.entries(e.times ?? {})) {

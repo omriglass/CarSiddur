@@ -80,7 +80,7 @@ import { editRowToFormValues } from "../editRowValues";
 import { toInstantMs, toSubmitRequestPayload } from "../mapper";
 import { editSignature, isUnchangedEdit } from "../unchanged";
 import { requestFormSchema, type RequestFormValues } from "../schema";
-import { rushWindowsForDay } from "../rushHours";
+import { rushWindowsForDay, travelMarginOf, withMargin } from "../rushHours";
 import { ceilToQuarter, clampedTime, floorToQuarter, resolveCarTimes, switchOutAnchor, switchReturnAnchor } from "../timeAnchors";
 import { hasFixedStopHours } from "../stopHours";
 import { useStopSchedule } from "./requestForm/useStopSchedule";
@@ -704,10 +704,13 @@ export function RequestForm({
   // REQ §13.113: the request day's rush-hour windows stretch the "arrive by" / "leave there at" conversions.
   const rushSettings = settingsQuery.data;
   const rushWindows = useMemo(() => rushWindowsForDay(rushSettings, day), [rushSettings, day]);
-  // Unknown travel = 60 minutes (REQ §13.109), also when the preview call failed.
-  const outMinutes = outRouteQuery.data ?? (outRouteQuery.isError ? DEFAULT_HOP_MINUTES : null);
-  const returnMinutes = returnRouteQuery.data ?? (returnRouteQuery.isError ? DEFAULT_HOP_MINUTES : null);
-  const planBMinutes = planBRouteQuery.data ?? (planBRouteQuery.isError ? DEFAULT_HOP_MINUTES : null);
+  // Unknown travel = 60 minutes (REQ §13.109), also when the preview call failed. REQ item 249 (c): every drive
+  // estimate is longer by the department's travel margin (then rush hours stretch it).
+  const travelMargin = travelMarginOf(rushSettings);
+  const marginOf = (minutes: number | null) => (minutes == null ? null : withMargin(minutes, travelMargin));
+  const outMinutes = marginOf(outRouteQuery.data ?? (outRouteQuery.isError ? DEFAULT_HOP_MINUTES : null));
+  const returnMinutes = marginOf(returnRouteQuery.data ?? (returnRouteQuery.isError ? DEFAULT_HOP_MINUTES : null));
+  const planBMinutes = marginOf(planBRouteQuery.data ?? (planBRouteQuery.isError ? DEFAULT_HOP_MINUTES : null));
   // Only a known drive warns (a failed preview's 60-minute guess does not).
   const tooShortDrive = durationCheckWanted
     ? roundTripTooShort({ tripType, departTime: values.departTime, returnTime: values.returnTime, outMinutes: outRouteQuery.data ?? null, returnMinutes: returnRouteQuery.data ?? null })

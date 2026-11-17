@@ -1,95 +1,763 @@
 {
-  "_comment": "REQ item 246 (LT1): shared cases of the stop-hours timing rule. Run by src/lib/stopSchedule.test.ts (TS) and supabase/tests/stop_schedule.sql (SQL request_schedule()). Times are HH:MM on the request day; expect.times = [arrive, leave] per point key.",
+  "_comment": "REQ item 246 (LT1): shared cases of the stop-hours timing rule. Run by src/lib/stopSchedule.test.ts (TS) and supabase/tests/stop_schedule.sql (SQL request_schedule()). Times are HH:MM on the request day; expect.times = [arrive, leave] per point key. REQ item 249: a case may carry `rush` ([{start, end, percent}] windows on the day) and `margin` (percent): every drive counts the margin first, then rush hours (forwards from a departure, backwards to an arrival); a fixed hour may say `stated: false` (a car time the app worked out) - spare time between two STATED hours with places between them is spread over the drives in proportion, else it is waiting at the later one.",
   "stopMinutes": 5,
-  "travel": [["נבו","מצר",20],["מצר","בנימינה",25],["נבו","בנימינה",40],["בנימינה","גבעת חביבה",20],["גבעת חביבה","מצר",10],["גבעת חביבה","נבו",20],["בנימינה","עין שמר",15],["עין שמר","מצר",15],["עין שמר","נבו",20],["בנימינה","פרדס חנה",10],["פרדס חנה","מצר",25],["פרדס חנה","נבו",35]],
+  "travel": [
+    [
+      "נבו",
+      "מצר",
+      20
+    ],
+    [
+      "מצר",
+      "בנימינה",
+      25
+    ],
+    [
+      "נבו",
+      "בנימינה",
+      40
+    ],
+    [
+      "בנימינה",
+      "גבעת חביבה",
+      20
+    ],
+    [
+      "גבעת חביבה",
+      "מצר",
+      10
+    ],
+    [
+      "גבעת חביבה",
+      "נבו",
+      20
+    ],
+    [
+      "בנימינה",
+      "עין שמר",
+      15
+    ],
+    [
+      "עין שמר",
+      "מצר",
+      15
+    ],
+    [
+      "עין שמר",
+      "נבו",
+      20
+    ],
+    [
+      "בנימינה",
+      "פרדס חנה",
+      10
+    ],
+    [
+      "פרדס חנה",
+      "מצר",
+      25
+    ],
+    [
+      "פרדס חנה",
+      "נבו",
+      35
+    ]
+  ],
   "cases": [
     {
       "name": "simple form: be there by 08:00, home by 18:00 — the rest worked out",
       "points": [
-        {"key":"home","place":"נבו","kind":"start"},
-        {"key":"dest","place":"בנימינה","kind":"destArrive","fixed":{"anchor":"arrive","at":"08:00","flex":0}},
-        {"key":"back","place":"בנימינה","kind":"destLeave"},
-        {"key":"homeEnd","place":"נבו","kind":"end","fixed":{"anchor":"arrive","at":"18:00","flex":0}}
+        {
+          "key": "home",
+          "place": "נבו",
+          "kind": "start"
+        },
+        {
+          "key": "dest",
+          "place": "בנימינה",
+          "kind": "destArrive",
+          "fixed": {
+            "anchor": "arrive",
+            "at": "08:00",
+            "flex": 0
+          }
+        },
+        {
+          "key": "back",
+          "place": "בנימינה",
+          "kind": "destLeave"
+        },
+        {
+          "key": "homeEnd",
+          "place": "נבו",
+          "kind": "end",
+          "fixed": {
+            "anchor": "arrive",
+            "at": "18:00",
+            "flex": 0
+          }
+        }
       ],
-      "expect": {"times":{"home":["07:20","07:20"],"dest":["08:00","17:20"],"back":["17:20","17:20"],"homeEnd":["18:00","18:00"]},"stays":{"dest":560},"conflict":null,"needsReturnHour":false}
+      "expect": {
+        "times": {
+          "home": [
+            "07:20",
+            "07:20"
+          ],
+          "dest": [
+            "08:00",
+            "17:20"
+          ],
+          "back": [
+            "17:20",
+            "17:20"
+          ],
+          "homeEnd": [
+            "18:00",
+            "18:00"
+          ]
+        },
+        "stays": {
+          "dest": 560
+        },
+        "conflict": null,
+        "needsReturnHour": false
+      }
     },
     {
       "name": "example B: work by 10:00, leave work 16:00, school by 16:30 ±15 — waiting 5 minutes at school",
       "points": [
-        {"key":"home","place":"נבו","kind":"start"},
-        {"key":"school1","place":"מצר","kind":"stop"},
-        {"key":"dest","place":"בנימינה","kind":"destArrive","fixed":{"anchor":"arrive","at":"10:00","flex":0}},
-        {"key":"back","place":"בנימינה","kind":"destLeave","fixed":{"anchor":"leave","at":"16:00","flex":0}},
-        {"key":"school2","place":"מצר","kind":"stop","fixed":{"anchor":"arrive","at":"16:30","flex":15}},
-        {"key":"homeEnd","place":"נבו","kind":"end"}
+        {
+          "key": "home",
+          "place": "נבו",
+          "kind": "start"
+        },
+        {
+          "key": "school1",
+          "place": "מצר",
+          "kind": "stop"
+        },
+        {
+          "key": "dest",
+          "place": "בנימינה",
+          "kind": "destArrive",
+          "fixed": {
+            "anchor": "arrive",
+            "at": "10:00",
+            "flex": 0
+          }
+        },
+        {
+          "key": "back",
+          "place": "בנימינה",
+          "kind": "destLeave",
+          "fixed": {
+            "anchor": "leave",
+            "at": "16:00",
+            "flex": 0
+          }
+        },
+        {
+          "key": "school2",
+          "place": "מצר",
+          "kind": "stop",
+          "fixed": {
+            "anchor": "arrive",
+            "at": "16:30",
+            "flex": 15
+          }
+        },
+        {
+          "key": "homeEnd",
+          "place": "נבו",
+          "kind": "end"
+        }
       ],
-      "expect": {"times":{"home":["09:10","09:10"],"school1":["09:30","09:35"],"dest":["10:00","16:00"],"back":["16:00","16:00"],"school2":["16:30","16:35"],"homeEnd":["16:55","16:55"]},"early":{"school2":5},"conflict":null,"needsReturnHour":false}
+      "expect": {
+        "times": {
+          "home": [
+            "09:10",
+            "09:10"
+          ],
+          "school1": [
+            "09:30",
+            "09:35"
+          ],
+          "dest": [
+            "10:00",
+            "16:00"
+          ],
+          "back": [
+            "16:00",
+            "16:00"
+          ],
+          "school2": [
+            "16:30",
+            "16:35"
+          ],
+          "homeEnd": [
+            "16:55",
+            "16:55"
+          ]
+        },
+        "early": {
+          "school2": 5
+        },
+        "conflict": null,
+        "needsReturnHour": false
+      }
     },
     {
       "name": "example A: no fixed leave from work — the time at work is worked out up to school 16:30",
       "points": [
-        {"key":"home","place":"נבו","kind":"start"},
-        {"key":"school1","place":"מצר","kind":"stop"},
-        {"key":"dest","place":"בנימינה","kind":"destArrive","fixed":{"anchor":"arrive","at":"10:00","flex":0}},
-        {"key":"back","place":"בנימינה","kind":"destLeave"},
-        {"key":"school2","place":"מצר","kind":"stop","fixed":{"anchor":"arrive","at":"16:30","flex":0}},
-        {"key":"homeEnd","place":"נבו","kind":"end"}
+        {
+          "key": "home",
+          "place": "נבו",
+          "kind": "start"
+        },
+        {
+          "key": "school1",
+          "place": "מצר",
+          "kind": "stop"
+        },
+        {
+          "key": "dest",
+          "place": "בנימינה",
+          "kind": "destArrive",
+          "fixed": {
+            "anchor": "arrive",
+            "at": "10:00",
+            "flex": 0
+          }
+        },
+        {
+          "key": "back",
+          "place": "בנימינה",
+          "kind": "destLeave"
+        },
+        {
+          "key": "school2",
+          "place": "מצר",
+          "kind": "stop",
+          "fixed": {
+            "anchor": "arrive",
+            "at": "16:30",
+            "flex": 0
+          }
+        },
+        {
+          "key": "homeEnd",
+          "place": "נבו",
+          "kind": "end"
+        }
       ],
-      "expect": {"times":{"home":["09:10","09:10"],"dest":["10:00","16:05"],"back":["16:05","16:05"],"school2":["16:30","16:35"],"homeEnd":["16:55","16:55"]},"stays":{"dest":365},"conflict":null,"needsReturnHour":false}
+      "expect": {
+        "times": {
+          "home": [
+            "09:10",
+            "09:10"
+          ],
+          "dest": [
+            "10:00",
+            "16:05"
+          ],
+          "back": [
+            "16:05",
+            "16:05"
+          ],
+          "school2": [
+            "16:30",
+            "16:35"
+          ],
+          "homeEnd": [
+            "16:55",
+            "16:55"
+          ]
+        },
+        "stays": {
+          "dest": 365
+        },
+        "conflict": null,
+        "needsReturnHour": false
+      }
     },
     {
       "name": "a drop-off before school with school fixed exactly: 5 minutes short",
       "points": [
-        {"key":"home","place":"נבו","kind":"start"},
-        {"key":"dest","place":"בנימינה","kind":"destArrive","fixed":{"anchor":"arrive","at":"10:00","flex":0}},
-        {"key":"back","place":"בנימינה","kind":"destLeave","fixed":{"anchor":"leave","at":"16:00","flex":0}},
-        {"key":"gh","place":"גבעת חביבה","kind":"stop"},
-        {"key":"school2","place":"מצר","kind":"stop","fixed":{"anchor":"arrive","at":"16:30","flex":0}},
-        {"key":"homeEnd","place":"נבו","kind":"end"}
+        {
+          "key": "home",
+          "place": "נבו",
+          "kind": "start"
+        },
+        {
+          "key": "dest",
+          "place": "בנימינה",
+          "kind": "destArrive",
+          "fixed": {
+            "anchor": "arrive",
+            "at": "10:00",
+            "flex": 0
+          }
+        },
+        {
+          "key": "back",
+          "place": "בנימינה",
+          "kind": "destLeave",
+          "fixed": {
+            "anchor": "leave",
+            "at": "16:00",
+            "flex": 0
+          }
+        },
+        {
+          "key": "gh",
+          "place": "גבעת חביבה",
+          "kind": "stop"
+        },
+        {
+          "key": "school2",
+          "place": "מצר",
+          "kind": "stop",
+          "fixed": {
+            "anchor": "arrive",
+            "at": "16:30",
+            "flex": 0
+          }
+        },
+        {
+          "key": "homeEnd",
+          "place": "נבו",
+          "kind": "end"
+        }
       ],
-      "expect": {"conflict":{"key":"school2","lateBy":5}}
+      "expect": {
+        "conflict": {
+          "key": "school2",
+          "lateBy": 5
+        }
+      }
     },
     {
       "name": "the same drop-off within school's ±15: arrives 16:35, flexibility used 5",
       "points": [
-        {"key":"home","place":"נבו","kind":"start"},
-        {"key":"dest","place":"בנימינה","kind":"destArrive","fixed":{"anchor":"arrive","at":"10:00","flex":0}},
-        {"key":"back","place":"בנימינה","kind":"destLeave","fixed":{"anchor":"leave","at":"16:00","flex":0}},
-        {"key":"gh","place":"גבעת חביבה","kind":"stop"},
-        {"key":"school2","place":"מצר","kind":"stop","fixed":{"anchor":"arrive","at":"16:30","flex":15}},
-        {"key":"homeEnd","place":"נבו","kind":"end"}
+        {
+          "key": "home",
+          "place": "נבו",
+          "kind": "start"
+        },
+        {
+          "key": "dest",
+          "place": "בנימינה",
+          "kind": "destArrive",
+          "fixed": {
+            "anchor": "arrive",
+            "at": "10:00",
+            "flex": 0
+          }
+        },
+        {
+          "key": "back",
+          "place": "בנימינה",
+          "kind": "destLeave",
+          "fixed": {
+            "anchor": "leave",
+            "at": "16:00",
+            "flex": 0
+          }
+        },
+        {
+          "key": "gh",
+          "place": "גבעת חביבה",
+          "kind": "stop"
+        },
+        {
+          "key": "school2",
+          "place": "מצר",
+          "kind": "stop",
+          "fixed": {
+            "anchor": "arrive",
+            "at": "16:30",
+            "flex": 15
+          }
+        },
+        {
+          "key": "homeEnd",
+          "place": "נבו",
+          "kind": "end"
+        }
       ],
-      "expect": {"times":{"gh":["16:20","16:25"],"school2":["16:35","16:40"],"homeEnd":["17:00","17:00"]},"flexUsed":{"school2":5},"conflict":null}
+      "expect": {
+        "times": {
+          "gh": [
+            "16:20",
+            "16:25"
+          ],
+          "school2": [
+            "16:35",
+            "16:40"
+          ],
+          "homeEnd": [
+            "17:00",
+            "17:00"
+          ]
+        },
+        "flexUsed": {
+          "school2": 5
+        },
+        "conflict": null
+      }
     },
     {
       "name": "a leave-at stop times the next ones forwards",
       "points": [
-        {"key":"home","place":"נבו","kind":"start"},
-        {"key":"dest","place":"בנימינה","kind":"destArrive","fixed":{"anchor":"arrive","at":"09:00","flex":0}},
-        {"key":"back","place":"בנימינה","kind":"destLeave"},
-        {"key":"school2","place":"מצר","kind":"stop","fixed":{"anchor":"leave","at":"15:00","flex":0}},
-        {"key":"homeEnd","place":"נבו","kind":"end"}
+        {
+          "key": "home",
+          "place": "נבו",
+          "kind": "start"
+        },
+        {
+          "key": "dest",
+          "place": "בנימינה",
+          "kind": "destArrive",
+          "fixed": {
+            "anchor": "arrive",
+            "at": "09:00",
+            "flex": 0
+          }
+        },
+        {
+          "key": "back",
+          "place": "בנימינה",
+          "kind": "destLeave"
+        },
+        {
+          "key": "school2",
+          "place": "מצר",
+          "kind": "stop",
+          "fixed": {
+            "anchor": "leave",
+            "at": "15:00",
+            "flex": 0
+          }
+        },
+        {
+          "key": "homeEnd",
+          "place": "נבו",
+          "kind": "end"
+        }
       ],
-      "expect": {"times":{"school2":["14:55","15:00"],"homeEnd":["15:20","15:20"],"dest":["09:00","14:30"]},"conflict":null}
+      "expect": {
+        "times": {
+          "school2": [
+            "14:55",
+            "15:00"
+          ],
+          "homeEnd": [
+            "15:20",
+            "15:20"
+          ],
+          "dest": [
+            "09:00",
+            "14:30"
+          ]
+        },
+        "conflict": null
+      }
     },
     {
       "name": "nothing fixed after the destination and no stay: the way back has no hour",
       "points": [
-        {"key":"home","place":"נבו","kind":"start","fixed":{"anchor":"leave","at":"08:00","flex":0}},
-        {"key":"dest","place":"בנימינה","kind":"destArrive"},
-        {"key":"back","place":"בנימינה","kind":"destLeave"},
-        {"key":"homeEnd","place":"נבו","kind":"end"}
+        {
+          "key": "home",
+          "place": "נבו",
+          "kind": "start",
+          "fixed": {
+            "anchor": "leave",
+            "at": "08:00",
+            "flex": 0
+          }
+        },
+        {
+          "key": "dest",
+          "place": "בנימינה",
+          "kind": "destArrive"
+        },
+        {
+          "key": "back",
+          "place": "בנימינה",
+          "kind": "destLeave"
+        },
+        {
+          "key": "homeEnd",
+          "place": "נבו",
+          "kind": "end"
+        }
       ],
-      "expect": {"times":{"dest":["08:40","08:45"]},"needsReturnHour":true}
+      "expect": {
+        "times": {
+          "dest": [
+            "08:40",
+            "08:45"
+          ]
+        },
+        "needsReturnHour": true
+      }
     },
     {
       "name": "a one-way ride: home -> stop -> destination arrive by 10:00",
       "points": [
-        {"key":"home","place":"נבו","kind":"start"},
-        {"key":"es","place":"עין שמר","kind":"stop","stay":15},
-        {"key":"dest","place":"בנימינה","kind":"end","fixed":{"anchor":"arrive","at":"10:00","flex":0}}
+        {
+          "key": "home",
+          "place": "נבו",
+          "kind": "start"
+        },
+        {
+          "key": "es",
+          "place": "עין שמר",
+          "kind": "stop",
+          "stay": 15
+        },
+        {
+          "key": "dest",
+          "place": "בנימינה",
+          "kind": "end",
+          "fixed": {
+            "anchor": "arrive",
+            "at": "10:00",
+            "flex": 0
+          }
+        }
       ],
-      "expect": {"times":{"home":["09:10","09:10"],"es":["09:30","09:45"],"dest":["10:00","10:00"]},"conflict":null,"needsReturnHour":false}
+      "expect": {
+        "times": {
+          "home": [
+            "09:10",
+            "09:10"
+          ],
+          "es": [
+            "09:30",
+            "09:45"
+          ],
+          "dest": [
+            "10:00",
+            "10:00"
+          ]
+        },
+        "conflict": null,
+        "needsReturnHour": false
+      }
+    },
+    {
+      "name": "rush hours: leave 08:00, a 40-minute drive inside the morning window arrives 08:52",
+      "rush": [
+        {
+          "start": "07:00",
+          "end": "09:30",
+          "percent": 30
+        }
+      ],
+      "points": [
+        {
+          "key": "home",
+          "place": "נבו",
+          "kind": "start",
+          "fixed": {
+            "anchor": "leave",
+            "at": "08:00",
+            "flex": 0
+          }
+        },
+        {
+          "key": "dest",
+          "place": "בנימינה",
+          "kind": "end"
+        }
+      ],
+      "expect": {
+        "times": {
+          "home": [
+            "08:00",
+            "08:00"
+          ],
+          "dest": [
+            "08:52",
+            "08:52"
+          ]
+        },
+        "conflict": null
+      }
+    },
+    {
+      "name": "margin 25% then rush hours: be there by 09:00 - leave 07:55",
+      "rush": [
+        {
+          "start": "07:00",
+          "end": "09:30",
+          "percent": 30
+        }
+      ],
+      "margin": 25,
+      "points": [
+        {
+          "key": "home",
+          "place": "נבו",
+          "kind": "start"
+        },
+        {
+          "key": "dest",
+          "place": "בנימינה",
+          "kind": "end",
+          "fixed": {
+            "anchor": "arrive",
+            "at": "09:00",
+            "flex": 0
+          }
+        }
+      ],
+      "expect": {
+        "times": {
+          "home": [
+            "07:55",
+            "07:55"
+          ],
+          "dest": [
+            "09:00",
+            "09:00"
+          ]
+        },
+        "conflict": null
+      }
+    },
+    {
+      "name": "both hours of the way back with a stop between: leave 14:00, home by 15:15 - the 75 minutes spread over the drives",
+      "points": [
+        {
+          "key": "home",
+          "place": "נבו",
+          "kind": "start",
+          "fixed": {
+            "anchor": "leave",
+            "at": "08:00",
+            "flex": 0
+          }
+        },
+        {
+          "key": "dest",
+          "place": "בנימינה",
+          "kind": "destArrive"
+        },
+        {
+          "key": "back",
+          "place": "בנימינה",
+          "kind": "destLeave",
+          "fixed": {
+            "anchor": "leave",
+            "at": "14:00",
+            "flex": 0
+          }
+        },
+        {
+          "key": "metzer",
+          "place": "מצר",
+          "kind": "stop"
+        },
+        {
+          "key": "homeEnd",
+          "place": "נבו",
+          "kind": "end",
+          "fixed": {
+            "anchor": "arrive",
+            "at": "15:15",
+            "flex": 0
+          }
+        }
+      ],
+      "expect": {
+        "times": {
+          "back": [
+            "14:00",
+            "14:00"
+          ],
+          "metzer": [
+            "14:38",
+            "14:43"
+          ],
+          "homeEnd": [
+            "15:15",
+            "15:15"
+          ]
+        },
+        "early": {
+          "homeEnd": 0
+        },
+        "conflict": null
+      }
+    },
+    {
+      "name": "the same way back when 'home' is a car time the app worked out: no spreading, waiting at the end",
+      "points": [
+        {
+          "key": "home",
+          "place": "נבו",
+          "kind": "start",
+          "fixed": {
+            "anchor": "leave",
+            "at": "08:00",
+            "flex": 0
+          }
+        },
+        {
+          "key": "dest",
+          "place": "בנימינה",
+          "kind": "destArrive"
+        },
+        {
+          "key": "back",
+          "place": "בנימינה",
+          "kind": "destLeave",
+          "fixed": {
+            "anchor": "leave",
+            "at": "14:00",
+            "flex": 0
+          }
+        },
+        {
+          "key": "metzer",
+          "place": "מצר",
+          "kind": "stop"
+        },
+        {
+          "key": "homeEnd",
+          "place": "נבו",
+          "kind": "end",
+          "fixed": {
+            "anchor": "arrive",
+            "at": "15:15",
+            "flex": 0,
+            "stated": false
+          }
+        }
+      ],
+      "expect": {
+        "times": {
+          "back": [
+            "14:00",
+            "14:00"
+          ],
+          "metzer": [
+            "14:25",
+            "14:30"
+          ],
+          "homeEnd": [
+            "15:15",
+            "15:15"
+          ]
+        },
+        "early": {
+          "homeEnd": 25
+        },
+        "conflict": null
+      }
     }
   ]
 }

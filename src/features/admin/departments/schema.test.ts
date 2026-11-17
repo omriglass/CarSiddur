@@ -8,6 +8,7 @@ const VALID = {
   closing_reminder_hours: [24, 2], auto_apply_accepted_proposals: true, anyone_edits_rides: false, board_start_time: "06:00", join_radius_km: 10, stop_minutes: 5, send_all_reminder_minutes: 30,
   rush_morning_start: "07:00", rush_morning_end: "09:30", rush_morning_percent: 30,
   rush_afternoon_start: "15:30", rush_afternoon_end: "18:30", rush_afternoon_percent: 20,
+  travel_margin_percent: 0,
 };
 
 describe("departmentSettingsSchema rush hours (REQ §13.113)", () => {
@@ -27,5 +28,9 @@ describe("departmentSettingsSchema rush hours (REQ §13.113)", () => {
     expect(departmentSettingsSchema.safeParse({ ...VALID, rush_morning_percent: 101 }).success).toBe(false);
     expect(departmentSettingsSchema.safeParse({ ...VALID, rush_afternoon_percent: -1 }).success).toBe(false);
     expect(departmentSettingsSchema.safeParse({ ...VALID, rush_afternoon_percent: 0 }).success).toBe(true);
+    // REQ item 249 (c): the travel margin, 0-200 %
+    expect(departmentSettingsSchema.safeParse({ ...VALID, travel_margin_percent: 25 }).success).toBe(true);
+    expect(departmentSettingsSchema.safeParse({ ...VALID, travel_margin_percent: -5 }).success).toBe(false);
+    expect(departmentSettingsSchema.safeParse({ ...VALID, travel_margin_percent: 201 }).success).toBe(false);
   });
 });

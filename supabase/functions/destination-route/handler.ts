@@ -10,6 +10,21 @@ export interface RouteDependencies {
   }>;
   apiKey: string;
   fetch: typeof fetch;
+  /** The clock (tests pin it); default the real one. */
+  now?: () => Date;
+}
+
+/**
+ * REQ item 249 (d) (owner 2026-11-17): a place's drive is asked with typical traffic for a quiet weekday hour - the
+ * next Sunday-Thursday at 09:00 UTC (11:00 Israel in winter, 12:00 in summer), never an empty road. Rush hours are
+ * added on top by the app, so they are not counted twice.
+ */
+export function quietWeekdayDeparture(now: Date): string {
+  for (let days = 1; days <= 7; days += 1) {
+    const day = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + days, 9, 0, 0));
+    if (day.getUTCDay() <= 4) return day.toISOString();
+  }
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1, 9, 0, 0)).toISOString();
 }
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 function response(body: unknown, status = 200) {
@@ -83,7 +98,8 @@ export async function handleDestinationRoute(req: Request, deps: RouteDependenci
       headers: { 'Content-Type': 'application/json', 'X-Goog-Api-Key': deps.apiKey,
         'X-Goog-FieldMask': 'routes.distanceMeters,routes.duration' },
       body: JSON.stringify({ origin: waypoint(origin), destination: waypoint(destination),
-        travelMode: 'DRIVE', routingPreference: 'TRAFFIC_UNAWARE', regionCode: 'IL', units: 'METRIC' }),
+        travelMode: 'DRIVE', routingPreference: 'TRAFFIC_AWARE', departureTime: quietWeekdayDeparture((deps.now ?? (() => new Date()))()),
+        regionCode: 'IL', units: 'METRIC' }),
       signal: AbortSignal.timeout(15000),
     });
     if (!googleResponse.ok) return failure('maps_request_failed', 502);

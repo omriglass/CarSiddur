@@ -108,16 +108,13 @@ begin
   -----------------------------------------------------------------------
   -- 4) Check constraints and submit_request validation refuse bad combinations.
   -----------------------------------------------------------------------
-  v_ok := false;
-  begin
-    update public.requests set arrive_by = v_arrive, depart_anchor = 'leave' where id = req;
-  exception when check_violation then v_ok := true; end;
-  assert v_ok, 'TEST 4 FAILED: arrive_by with depart_anchor leave must violate the check';
-  v_ok := false;
-  begin
-    update public.requests set return_anchor = 'arrive' where id = req;  -- leave_dest_at still set
-  exception when check_violation then v_ok := true; end;
-  assert v_ok, 'TEST 4 FAILED: leave_dest_at with return_anchor arrive must violate the check';
+  -- REQ item 249 (a): both hours of a way are allowed - "להגיע עד" beside a stated departure, "לצאת משם ב־" beside
+  -- a stated "home by" (no check ties an hour to its anchor any more; submit_request checks their order).
+  update public.requests set arrive_by = v_arrive, depart_anchor = 'leave' where id = req;
+  update public.requests set return_anchor = 'arrive' where id = req;  -- leave_dest_at still set
+  assert (select arrive_by is not null and leave_dest_at is not null from public.requests where id = req),
+    'TEST 4 FAILED: both hours of each way are stored';
+  update public.requests set depart_anchor = 'arrive', return_anchor = 'leave' where id = req;
   v_ok := false;
   begin
     update public.requests set arrive_by = v_arrive + interval '1 minute', depart_anchor = 'arrive' where id = req;
@@ -135,12 +132,25 @@ begin
     perform public.submit_request(base || jsonb_build_object('depart_at', v_depart, 'return_at', v_return, 'depart_anchor', 'arrive'));
   exception when others then v_ok := sqlerrm = 'anchor_time_mismatch'; end;
   assert v_ok, 'TEST 4 FAILED: anchor arrive without arrive_by must raise anchor_time_mismatch';
+  -- REQ item 249 (a): "להגיע עד" beside "לצאת ב־" must be after the departure; "לצאת משם ב־" beside "בבית עד" before it
   v_ok := false;
   begin
     perform public.submit_request(base || jsonb_build_object('depart_at', v_depart, 'return_at', v_return,
-      'depart_anchor', 'leave', 'arrive_by', v_arrive));
-  exception when others then v_ok := sqlerrm = 'anchor_time_mismatch'; end;
-  assert v_ok, 'TEST 4 FAILED: arrive_by with anchor leave must raise anchor_time_mismatch';
+      'depart_anchor', 'leave', 'arrive_by', v_depart));
+  exception when others then v_ok := sqlerrm = 'invalid_anchor_time'; end;
+  assert v_ok, 'TEST 4 FAILED: arrive_by not after a stated departure must raise invalid_anchor_time';
+  v_ok := false;
+  begin
+    perform public.submit_request(base || jsonb_build_object('depart_at', v_depart, 'return_at', v_return,
+      'return_anchor', 'arrive', 'leave_dest_at', v_return));
+  exception when others then v_ok := sqlerrm = 'invalid_anchor_time'; end;
+  assert v_ok, 'TEST 4 FAILED: leave_dest_at not before a stated home-by must raise invalid_anchor_time';
+  v_result := public.submit_request(base || jsonb_build_object('depart_at', v_depart, 'return_at', v_return,
+    'depart_anchor', 'leave', 'arrive_by', v_arrive, 'return_anchor', 'arrive', 'leave_dest_at', v_return - interval '1 hour'));
+  select * into v_row from public.requests where id = (v_result ->> 'request_id')::uuid;
+  assert v_row.depart_at = v_depart and v_row.arrive_by = v_arrive and v_row.depart_anchor = 'leave'
+     and v_row.return_at = v_return and v_row.leave_dest_at = v_return - interval '1 hour' and v_row.return_anchor = 'arrive',
+    format('TEST 4 FAILED: both hours of each way are kept as given (%s)', v_result);
   v_ok := false;
   begin
     perform public.submit_request(base || jsonb_build_object('depart_at', v_depart, 'return_at', v_return,

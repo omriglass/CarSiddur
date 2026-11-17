@@ -93,7 +93,10 @@ export const heAdmin = {
     fieldSendAllReminder: "תזכורת לסדרן/ית על שינויים שלא נשלחו (דקות)",
     /** REQUIREMENTS §13.113: `department_settings.rush_*` — the request form stretches the drive inside these windows (Sunday-Thursday). */
     rushTitle: "שעות עומס (ראשון עד חמישי)",
-    rushHelp: "נסיעה שחלקה בתוך חלון עומס נמשכת יותר באחוז שמוגדר כאן. משפיע רק על חישוב שעת היציאה בבקשה כשחברים בוחרים \"להגיע עד\" או \"לצאת משם ב־\".",
+    rushHelp: "נסיעה שחלקה בתוך חלון עומס נמשכת יותר באחוז שמוגדר כאן. משפיע על כל השעות המשוערות שהאפליקציה מראה ומחשבת (לא על השיבוץ האוטומטי).",
+    /** REQ item 249 (c): `department_settings.travel_margin_percent`. */
+    travelMargin: "תוספת זמן לכל נסיעה (%)",
+    travelMarginHelp: "כל הערכת זמן נסיעה ארוכה יותר באחוז הזה, בכל שעות היום (שעות העומס מתווספות עליה). 0 = בלי תוספת.",
     rushMorning: "עומס בבוקר",
     rushAfternoon: "עומס אחה״צ",
     rushStart: "מתחיל",

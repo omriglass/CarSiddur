@@ -100,12 +100,14 @@ export interface SubmitPayloadOptions {
 export function anchorPayload(values: RequestFormValues): Pick<SubmitRequestPayload, "depart_anchor" | "arrive_by" | "return_anchor" | "leave_dest_at"> {
   const needsDepart = values.tripShape !== "one_way_from";
   const needsReturn = values.tripShape !== "one_way_to";
-  const arriveBy = needsDepart && values.departAnchor === "arrive" && values.arriveByTime ? values.arriveByTime : null;
-  const leaveDest = needsReturn && values.returnAnchor === "leave" && values.leaveDestTime ? values.leaveDestTime : null;
+  // REQ item 249 (a): an "arrive by" beside a stated departure (both hours of the way there) is sent too, and a
+  // "leave there at" beside a stated "home by"; the anchor still says which hour the car time comes from.
+  const arriveBy = needsDepart && values.arriveByTime ? values.arriveByTime : null;
+  const leaveDest = needsReturn && values.leaveDestTime ? values.leaveDestTime : null;
   return {
-    depart_anchor: arriveBy ? "arrive" : "leave",
+    depart_anchor: arriveBy && values.departAnchor === "arrive" ? "arrive" : "leave",
     arrive_by: arriveBy ? toInstant(values.day, arriveBy, false) : null,
-    return_anchor: needsReturn ? (leaveDest ? "leave" : "arrive") : values.returnAnchor,
+    return_anchor: needsReturn ? (leaveDest && values.returnAnchor === "leave" ? "leave" : "arrive") : values.returnAnchor,
     leave_dest_at: leaveDest ? toInstant(values.returnDay || values.day, leaveDest, false) : null,
   };
 }

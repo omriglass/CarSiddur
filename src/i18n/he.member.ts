@@ -1314,6 +1314,16 @@ export const heMember = {
     tripPickupOnly: "איסוף",
     /** Outbound time sheet: the return moved with the departure. */
     returnMoved: "גם החזרה זזה ל־{{time}}",
+    /** REQ item 249 (a): the second hour of a way (owner 2026-11-17). */
+    secondHour: {
+      outAddArrive: "+ וגם שעה להגעה",
+      outAddLeave: "+ וגם שעת יציאה",
+      returnAddLeave: "+ וגם שעת יציאה משם",
+      returnAddArrive: "+ וגם שעה להגעה הביתה",
+      remove: "בלי השעה השנייה",
+      drive: "נסיעה של {{given}} דק׳ (הערכה: {{estimate}})",
+      tight: "לו״ז צפוף",
+    },
     /** Stage-2 recap: anchored times carry their meaning. */
     recapLeave: "יציאה {{time}}",
     recapArriveBy: "להגיע עד {{time}}",

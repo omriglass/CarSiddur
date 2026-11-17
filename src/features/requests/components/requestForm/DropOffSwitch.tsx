@@ -27,7 +27,7 @@ import {
   type PlanBDetails,
 } from "../../planB";
 import { destinationValueToPoint } from "../../routePoints";
-import { rushWindowsForDay } from "../../rushHours";
+import { rushWindowsForDay, travelMarginOf, withMargin } from "../../rushHours";
 import type { RequestFormValues } from "../../schema";
 import { DropOffSwitchDialog } from "./DropOffSwitchDialog";
 
@@ -80,7 +80,10 @@ export function useDropOffSwitch({ form, variant, departmentId, destinations, an
       fetchMinutes([origin, plan.place].map(destinationValueToPoint)),
       plan.pickup ? fetchMinutes([plan.place, origin].map(destinationValueToPoint)) : Promise.resolve(0),
     ]);
-    const times = dropOffCarTimes(plan, { outMinutes, returnMinutes }, rushWindowsForDay(settingsQuery.data, current.day));
+    // REQ item 249 (c): the department's travel margin first, then rush hours.
+    const margin = travelMarginOf(settingsQuery.data);
+    const times = dropOffCarTimes(plan, { outMinutes: withMargin(outMinutes, margin), returnMinutes: withMargin(returnMinutes, margin) },
+      rushWindowsForDay(settingsQuery.data, current.day));
     form.setValue("departTime", times.departTime, { shouldDirty: true, shouldValidate: true });
     if (times.returnTime) form.setValue("returnTime", times.returnTime, { shouldDirty: true, shouldValidate: true });
   }

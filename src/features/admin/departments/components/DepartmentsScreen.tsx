@@ -81,6 +81,7 @@ export function DepartmentForm({ department, onSaved, settingsOnly = false }: { 
           rush_afternoon_start: settingsQuery.data.rush_afternoon_start,
           rush_afternoon_end: settingsQuery.data.rush_afternoon_end,
           rush_afternoon_percent: settingsQuery.data.rush_afternoon_percent,
+          travel_margin_percent: settingsQuery.data.travel_margin_percent ?? 0,
         }
       : undefined,
   });
@@ -514,6 +515,21 @@ export function DepartmentForm({ department, onSaved, settingsOnly = false }: { 
                     </div>
                   );
                 })}
+                {/* REQ item 249 (c): every drive estimate, at all hours */}
+                <FormField
+                  control={settingsForm.control}
+                  name="travel_margin_percent"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{he.adminDepartments.travelMargin}</FormLabel>
+                      <p className="text-sm text-muted-foreground">{he.adminDepartments.travelMarginHelp}</p>
+                      <FormControl>
+                        <Input type="number" min={0} max={200} step={5} value={field.value} onChange={(e) => field.onChange(Number(e.target.value))} data-testid="travel-margin-percent" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
               </div>
               <FormField
                 control={settingsForm.control}

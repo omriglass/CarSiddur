@@ -171,12 +171,21 @@ begin
   assert public.request_leg_route_minutes(req4, 'out') = v_home_haifa_min,
     'TEST 4 FAILED: with no stops, route minutes must equal the plain place_travel() figure';
 
+  -- REQ item 249 (b): the drive counts the department's rush hours (seeded Sunday-Thursday windows), forwards from a
+  -- departure and backwards to an arrival; with them off the ETA is the plain hop.
   select eta into v_eta from public.request_stop_etas(req1) where leg = 'out' and "position" = 1;
-  assert v_eta = v_depart + make_interval(mins => v_home_binyamina_min),
+  assert v_eta = v_depart + make_interval(mins => public._drive_minutes_from(floor(extract(epoch from v_depart) / 60)::bigint,
+      v_home_binyamina_min, public._drive_windows(dept, (v_depart at time zone 'Asia/Jerusalem')::date, (v_depart at time zone 'Asia/Jerusalem')::date), 0)::int),
     'TEST 4 FAILED: out-leg stop ETA must count forward from depart_at';
   select eta into v_eta from public.request_stop_etas(req1) where leg = 'return' and "position" = 1;
-  assert v_eta = v_return - make_interval(mins => v_home_zichron_min),
+  assert v_eta = v_return - make_interval(mins => public._drive_minutes_until(floor(extract(epoch from v_return) / 60)::bigint,
+      v_home_zichron_min, public._drive_windows(dept, (v_return at time zone 'Asia/Jerusalem')::date, (v_return at time zone 'Asia/Jerusalem')::date), 0)::int),
     'TEST 4 FAILED: return-leg stop ETA must count backward from return_at (symmetric home-preset hop)';
+  update public.department_settings set rush_morning_percent = 0, rush_afternoon_percent = 0 where department_id = dept;
+  select eta into v_eta from public.request_stop_etas(req1) where leg = 'out' and "position" = 1;
+  assert v_eta = v_depart + make_interval(mins => v_home_binyamina_min),
+    'TEST 4 FAILED: without rush hours the out-leg stop ETA is the plain hop from depart_at';
+  update public.department_settings set rush_morning_percent = 30, rush_afternoon_percent = 20 where department_id = dept;
 
   -----------------------------------------------------------------------
   -- 5) RLS: an uninvolved approved member cannot read req1's stops before it is served by a

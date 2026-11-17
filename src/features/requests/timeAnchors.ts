@@ -174,10 +174,21 @@ export function anchorFormFields(
   const leave = row.returnAnchor === "leave" && row.leaveDestAt;
   return {
     departAnchor: arrive ? "arrive" : "leave",
-    arriveByTime: arrive ? timeOf(row.arriveBy as string) : undefined,
+    // REQ item 249 (a): a stored "arrive by" beside a stated departure is the way's second hour - kept
+    arriveByTime: row.arriveBy ? timeOf(row.arriveBy) : undefined,
     returnAnchor: leave ? "leave" : "arrive",
-    leaveDestTime: leave ? timeOf(row.leaveDestAt as string) : undefined,
+    leaveDestTime: row.leaveDestAt ? timeOf(row.leaveDestAt) : undefined,
   };
+}
+
+/** REQ item 249 (a): the way there carries both hours ("לצאת ב־" and "להגיע עד"). */
+export function bothOutHours(values: Pick<AnchorFormTimes, "departAnchor" | "arriveByTime">): boolean {
+  return values.departAnchor === "leave" && !!values.arriveByTime;
+}
+
+/** REQ item 249 (a): the way back carries both hours ("לצאת משם ב־" and "בבית עד"). */
+export function bothReturnHours(values: Pick<AnchorFormTimes, "returnAnchor" | "leaveDestTime">): boolean {
+  return values.returnAnchor === "arrive" && !!values.leaveDestTime;
 }
 
 /** R12B8: less time than this at the destination (a quarter hour) is flagged — a drive back that starts as the drive there ends. */

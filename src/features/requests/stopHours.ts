@@ -4,11 +4,12 @@
 // (`stopHoursKey`), so every writer of `outStops`/`returnStops` keeps them attached to their place.
 // Pure.
 import type { DestinationValue } from "@/components/DestinationCombobox";
-import { schedule, type Schedule, type SchedulePoint, type StopAnchor } from "@/lib/stopSchedule";
+import { type DriveRule, schedule, type Schedule, type SchedulePoint, type StopAnchor } from "@/lib/stopSchedule";
 
 import type { RoutePreviewPoint } from "./api";
 import { timeToMinutes } from "./duration";
 import type { FlexValue } from "./mapper";
+import { driveMinutesFrom, driveMinutesUntil, type RushWindows } from "./rushHours";
 
 /** Owner 2026-11-16: 15, 30 or 60 minutes (0 = exact). */
 export const STOP_FLEX_MINUTES = [0, 15, 30, 60] as const;
@@ -116,10 +117,11 @@ export function stopRoutePoints(values: StopRouteValues): { points: SchedulePoin
     fixed: values.departAnchor === "leave" ? fixedAt(values.departTime, "leave", 0) : null }, values.origin);
   values.outStops.forEach((v, i) => stopPoint("out", v, i));
   add({ key: pointKey.dest, place: placeOf(values.destination), kind: values.hasReturn ? "destArrive" : "end", stay: null,
-    fixed: values.departAnchor === "arrive" ? fixedAt(values.arriveByTime, "arrive", flexMinutes(values.flexDepartLate)) : null }, values.destination);
+    // REQ item 249 (a): "להגיע עד" is fixed whenever given - as the way's own hour or beside a stated "לצאת ב־"
+    fixed: fixedAt(values.arriveByTime, "arrive", flexMinutes(values.flexDepartLate)) }, values.destination);
   if (values.hasReturn) {
     add({ key: pointKey.back, place: placeOf(values.destination), kind: "destLeave", stay: null,
-      fixed: values.returnAnchor === "leave" ? fixedAt(values.leaveDestTime, "leave", flexMinutes(values.flexReturnLate)) : null }, values.destination);
+      fixed: fixedAt(values.leaveDestTime, "leave", flexMinutes(values.flexReturnLate)) }, values.destination);
     values.returnStops.forEach((v, i) => stopPoint("return", v, i));
     add({ key: pointKey.end, place: placeOf(values.origin), kind: "end", stay: null,
       fixed: values.returnAnchor === "arrive" ? fixedAt(values.returnTime, "arrive", flexMinutes(values.flexReturnLate)) : null }, values.origin);
@@ -156,6 +158,15 @@ export function hopTravel(points: readonly SchedulePoint[], hops: HopMinutes): (
 /** The place key the schedule uses for a form place. */
 export const schedulePlace = (v: DestinationValue) => placeOf(v);
 
-export function scheduleOfRoute(points: readonly SchedulePoint[], hops: HopMinutes, defaultStart: number): Schedule {
-  return schedule(points, { travel: hopTravel(points, hops), stopMinutes: hops.stopMinutes, defaultStart });
+export function scheduleOfRoute(points: readonly SchedulePoint[], hops: HopMinutes, defaultStart: number, drive?: DriveRule): Schedule {
+  return schedule(points, { travel: hopTravel(points, hops), stopMinutes: hops.stopMinutes, defaultStart, drive });
+}
+
+/** REQ item 249 (b)/(c): the form's drive rule - the department's margin, then the day's rush hours. */
+export function formDriveRule(windows: RushWindows, marginPercent: number): DriveRule | undefined {
+  if (!windows.length && marginPercent <= 0) return undefined;
+  return {
+    from: (start, base) => driveMinutesFrom(start, base, windows, marginPercent),
+    until: (end, base) => driveMinutesUntil(end, base, windows, marginPercent),
+  };
 }

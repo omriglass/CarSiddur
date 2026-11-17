@@ -27,7 +27,7 @@ import { whoText } from "../../../whoLabel";
 import type { RequestFormValues } from "../../../schema";
 import type { RushWindows } from "../../../rushHours";
 import { canSwapPlaces, dropOffMode, swapRequestPlaces } from "../../../dropOffMode";
-import { anchorLabelKey, endEstimate, enteredOutTime, enteredReturnTime, minutesAtDestination, tooLittleTimeAtDestination } from "../../../timeAnchors";
+import { anchorLabelKey, bothOutHours, bothReturnHours, endEstimate, enteredOutTime, enteredReturnTime, minutesAtDestination, tooLittleTimeAtDestination } from "../../../timeAnchors";
 import {
   WINDOW_EARLIEST_START,
   WINDOW_LATEST_END,
@@ -292,6 +292,10 @@ export function SentenceFields(props: SentenceFieldsProps) {
   const whoLabel = whoText(travellers, extraAdults, unnamedChildren);
   const needsVerb = travellers.length > 1 || extraAdults > 0 || unnamedChildren > 0 ? he.requestSentence.needsPlural : he.requestSentence.needs;
 
+  const bothOut = !pickupOnlyOn && bothOutHours({ departAnchor, arriveByTime: values.arriveByTime });
+  const bothReturn = !isPickup && bothReturnHours({ returnAnchor, leaveDestTime: values.leaveDestTime });
+  const secondOf = (end: "out" | "return") => (end === "out" ? (bothOut ? values.arriveByTime : undefined) : (bothReturn ? values.leaveDestTime : undefined));
+
   function timeChip(end: "out" | "return") {
     const anchor = end === "out" ? departAnchor : returnAnchor;
     const entered = end === "out" ? outTime : returnTime;
@@ -308,6 +312,10 @@ export function SentenceFields(props: SentenceFieldsProps) {
       >
         <span className="me-1">{he.requestSentence.anchor[anchorLabelKey(end, anchor, end === "out" ? pickupOnlyOn : isPickup)]}</span>
         <span dir="ltr">{entered}</span>
+        {/* REQ item 249 (a): the way's second hour */}
+        {secondOf(end) ? (
+          <span className="ms-1">· {he.requestSentence.anchor[end === "out" ? "outArrive" : "returnLeave"]} <span dir="ltr">{secondOf(end)}</span></span>
+        ) : null}
         {briefText ? <span className="ms-1">· {briefText}</span> : null}
       </SentenceChip>
     );
@@ -369,10 +377,12 @@ export function SentenceFields(props: SentenceFieldsProps) {
 
   if (isWeekly && stage === 2) {
     // R9M2: an end entered as an anchor ("arrive by" / "leave there at") is labelled in the recap.
-    const anchored = departAnchor === "arrive" || returnAnchor === "leave";
+    const anchored = departAnchor === "arrive" || returnAnchor === "leave" || bothOut || bothReturn;
     const recapPieces: string[] = [];
     if (anchored) {
       if (hasOut) recapPieces.push(tv(departAnchor === "arrive" ? "requestSentence.recapArriveBy" : "requestSentence.recapLeave", { time: outTime }));
+      if (hasOut && bothOut && values.arriveByTime) recapPieces.push(tv("requestSentence.recapArriveBy", { time: values.arriveByTime }));
+      if (hasReturn && bothReturn && values.leaveDestTime) recapPieces.push(tv("requestSentence.recapLeaveThere", { time: values.leaveDestTime }));
       if (hasReturn) {
         const key = returnAnchor === "leave"
           ? isPickup ? "requestSentence.recapPickupLeave" : "requestSentence.recapLeaveThere"

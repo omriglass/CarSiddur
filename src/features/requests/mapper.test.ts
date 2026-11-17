@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { editReturnInstant, flexIntervalToSend, flexValueToInterval, intervalToFlexValue, toInstant, toInstantMs, toSubmitRequestPayload } from "./mapper";
+import { anchorPayload, editReturnInstant, flexIntervalToSend, flexValueToInterval, intervalToFlexValue, toInstant, toInstantMs, toSubmitRequestPayload } from "./mapper";
 import { REQUEST_FORM_DEFAULTS, type RequestFormValues } from "./schema";
 
 // What Postgres echoes back (`select '15 min'::interval` etc.) for each literal
@@ -385,5 +385,24 @@ describe("toSubmitRequestPayload riders", () => {
     const payload = toSubmitRequestPayload(baseValues({ companions: ["a"], riders: rows }), { guestPassengerNames: ["גל"] });
     expect((payload as { riders?: unknown[] }).riders).toEqual([rows[0], rows[2]]);
     expect("riders" in toSubmitRequestPayload(baseValues({ companions: ["a"], riders: rows }), { isSeries: true })).toBe(false);
+  });
+});
+
+describe("anchorPayload - both hours of a way (REQ item 249 a)", () => {
+  it("sends the arrive-by beside a stated departure and the leave-there beside a stated home-by", () => {
+    const values = baseValues({ tripType: "round_trip", departAnchor: "leave", departTime: "08:00", arriveByTime: "09:15",
+      returnAnchor: "arrive", returnTime: "15:15", leaveDestTime: "14:00" });
+    const payload = anchorPayload(values);
+    expect(payload.depart_anchor).toBe("leave");
+    expect(payload.arrive_by).toBe(toInstant(values.day, "09:15", false));
+    expect(payload.return_anchor).toBe("arrive");
+    expect(payload.leave_dest_at).toBe(toInstant(values.day, "14:00", false));
+  });
+  it("a single hour per way is unchanged", () => {
+    const payload = anchorPayload(baseValues({ tripType: "round_trip", departAnchor: "arrive", arriveByTime: "09:15", returnAnchor: "leave", leaveDestTime: "14:00" }));
+    expect(payload.depart_anchor).toBe("arrive");
+    expect(payload.return_anchor).toBe("leave");
+    const plain = anchorPayload(baseValues({ tripType: "round_trip" }));
+    expect(plain).toMatchObject({ depart_anchor: "leave", arrive_by: null, return_anchor: "arrive", leave_dest_at: null });
   });
 });

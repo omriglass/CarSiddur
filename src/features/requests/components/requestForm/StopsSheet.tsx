@@ -158,6 +158,7 @@ export function StopsSheet({ form, places, hasReturn, open, onOpenChange }: Stop
             placeName={placeName(addingPlace, places)}
             nameOf={nameOf}
             defaultStart={timing.values.departTime ? timeToMinutes(timing.values.departTime) : 8 * 60}
+            drive={timing.drive}
             onPick={applyPicked}
           />
           <button type="button" className="text-sm text-muted-foreground underline-offset-2 hover:underline" onClick={() => setAddingPlace(null)}>

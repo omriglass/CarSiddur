@@ -196,3 +196,20 @@ describe("R12B8 time at the destination", () => {
     expect(tooLittleTimeAtDestination(120)).toBe(false);
   });
 });
+
+import { anchorFormFields, bothOutHours, bothReturnHours } from "./timeAnchors";
+
+describe("both hours of a way (REQ item 249 a)", () => {
+  const timeOf = (instant: string) => instant.slice(11, 16);
+  it("an edit keeps the second hour beside a stated departure / home-by", () => {
+    const fields = anchorFormFields({ departAnchor: "leave", arriveBy: "2026-11-22T09:15:00", returnAnchor: "arrive", leaveDestAt: "2026-11-22T14:00:00" }, timeOf);
+    expect(fields).toEqual({ departAnchor: "leave", arriveByTime: "09:15", returnAnchor: "arrive", leaveDestTime: "14:00" });
+    expect(bothOutHours(fields)).toBe(true);
+    expect(bothReturnHours(fields)).toBe(true);
+  });
+  it("a single hour per way is not both", () => {
+    expect(bothOutHours({ departAnchor: "arrive", arriveByTime: "09:15" })).toBe(false);
+    expect(bothOutHours({ departAnchor: "leave", arriveByTime: undefined })).toBe(false);
+    expect(bothReturnHours({ returnAnchor: "leave", leaveDestTime: "14:00" })).toBe(false);
+  });
+});

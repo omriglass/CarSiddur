@@ -1,20 +1,27 @@
 // UX_FLOWS §3.4a "Time sheet": the anchor toggle (out: לצאת ב־ / להגיע עד, return: להיות בבית
 // עד / לצאת משם ב־, a הקפצה pickup: איסוף משם ב־), the 15-minute time field, the derived
 // estimate line and the flexibility row. Rendered inside a `FieldSheet`.
+import { X } from "lucide-react";
 import { useState } from "react";
 import { useWatch, type UseFormReturn } from "react-hook-form";
 
+import { TimeField15 } from "@/components/TimeField15";
 import { he, tv } from "@/i18n/he";
 import type { TimeAnchor } from "@/lib/enums";
 
-import { returnFollowsDeparture, shiftReturnByDepartureDelta } from "../../../duration";
-import type { RushWindows } from "../../../rushHours";
+import { returnFollowsDeparture, shiftReturnByDepartureDelta, timeToMinutes } from "../../../duration";
+import { driveMinutesFrom, type RushWindows } from "../../../rushHours";
 import type { RequestFormValues } from "../../../schema";
 import {
   anchorLabelKey,
+  bothOutHours,
+  bothReturnHours,
+  ceilToQuarter,
+  clampedTime,
   endEstimate,
   enteredOutTime,
   enteredReturnTime,
+  floorToQuarter,
   switchOutAnchor,
   switchReturnAnchor,
 } from "../../../timeAnchors";
@@ -59,6 +66,11 @@ export function TimeAnchorSheet({
     : enteredReturnTime({ returnAnchor, leaveDestTime: values.leaveDestTime, returnTime: values.returnTime })) ?? (end === "out" ? "08:00" : "12:00");
 
   function setOutAnchor(next: TimeAnchor) {
+    // Both hours given: the toggle keeps "להגיע עד" and drops the departure (it is worked out again).
+    if (next === "arrive" && bothOutHours({ departAnchor, arriveByTime: values.arriveByTime })) {
+      form.setValue("departAnchor", "arrive", { shouldDirty: true });
+      return;
+    }
     const patch = switchOutAnchor({ departAnchor, arriveByTime: values.arriveByTime, departTime: values.departTime }, next);
     form.setValue("departAnchor", patch.departAnchor, { shouldDirty: true });
     form.setValue("arriveByTime", patch.arriveByTime, { shouldDirty: true, shouldValidate: true });
@@ -66,6 +78,10 @@ export function TimeAnchorSheet({
   }
 
   function setReturnAnchor(next: TimeAnchor) {
+    if (next === "leave" && bothReturnHours({ returnAnchor, leaveDestTime: values.leaveDestTime })) {
+      form.setValue("returnAnchor", "leave", { shouldDirty: true });
+      return;
+    }
     const patch = switchReturnAnchor({ returnAnchor, leaveDestTime: values.leaveDestTime, returnTime: values.returnTime }, next);
     form.setValue("returnAnchor", patch.returnAnchor, { shouldDirty: true });
     form.setValue("leaveDestTime", patch.leaveDestTime, { shouldDirty: true, shouldValidate: true });
@@ -94,7 +110,52 @@ export function TimeAnchorSheet({
   }
 
   const options: TimeAnchor[] = end === "out" ? ["leave", "arrive"] : ["arrive", "leave"];
-  const estimate = anchorsEnabled && routeMinutes != null ? endEstimate(end, anchor, entered, routeMinutes, rush) : null;
+  // REQ item 249 (a): the way's second hour - "להגיע עד" beside "לצאת ב־", "לצאת משם ב־" beside "בבית עד".
+  const secondEnabled = anchorsEnabled && !isPickup;
+  const both = end === "out"
+    ? bothOutHours({ departAnchor, arriveByTime: values.arriveByTime })
+    : bothReturnHours({ returnAnchor, leaveDestTime: values.leaveDestTime });
+  const second = end === "out" ? values.arriveByTime : values.leaveDestTime;
+  const estimate = anchorsEnabled && routeMinutes != null && !both ? endEstimate(end, anchor, entered, routeMinutes, rush) : null;
+  // The drive between the two hours: the member's minutes and the app's estimate (margin + rush hours).
+  const bothLine = both && second && routeMinutes != null ? (() => {
+    const from = end === "out" ? entered : second;
+    const to = end === "out" ? second : entered;
+    const given = timeToMinutes(to) - timeToMinutes(from);
+    const estimated = driveMinutesFrom(timeToMinutes(from), routeMinutes, rush);
+    return { text: tv("requestSentence.secondHour.drive", { given: String(given), estimate: String(estimated) }), tight: given < estimated };
+  })() : null;
+
+  function addSecond() {
+    if (end === "out") {
+      if (departAnchor === "arrive") { form.setValue("departAnchor", "leave", { shouldDirty: true }); return; }
+      const leave = timeToMinutes(entered);
+      const drive = routeMinutes != null ? driveMinutesFrom(leave, routeMinutes, rush) : 60;
+      form.setValue("arriveByTime", clampedTime(ceilToQuarter(leave + drive)), { shouldDirty: true, shouldValidate: true });
+      return;
+    }
+    if (returnAnchor === "leave") { form.setValue("returnAnchor", "arrive", { shouldDirty: true }); return; }
+    const home = timeToMinutes(entered);
+    const drive = routeMinutes ?? 60;
+    form.setValue("leaveDestTime", clampedTime(floorToQuarter(home - drive)), { shouldDirty: true, shouldValidate: true });
+  }
+
+  function removeSecond() {
+    form.setValue(end === "out" ? "arriveByTime" : "leaveDestTime", undefined, { shouldDirty: true, shouldValidate: true });
+  }
+
+  function changeSecond(next: string) {
+    form.setValue(end === "out" ? "arriveByTime" : "leaveDestTime", next, { shouldDirty: true, shouldValidate: true });
+  }
+
+  const addLabel = end === "out"
+    ? (departAnchor === "arrive" ? he.requestSentence.secondHour.outAddLeave : he.requestSentence.secondHour.outAddArrive)
+    : (returnAnchor === "leave" ? he.requestSentence.secondHour.returnAddArrive : he.requestSentence.secondHour.returnAddLeave);
+  const secondLabel = he.requestSentence.anchor[end === "out" ? "outArrive" : "returnLeave"];
+  // Never on the wrong side of the first hour.
+  const enteredMinutes = timeToMinutes(entered);
+  const secondMin = end === "out" ? clampedTime(enteredMinutes + 15) : "06:00";
+  const secondMax = end === "out" ? undefined : clampedTime(enteredMinutes - 15);
   const ariaLabel = end === "out" ? he.field.depart : he.field.return;
 
   return (
@@ -122,6 +183,36 @@ export function TimeAnchorSheet({
           </p>
         ) : null}
       />
+
+      {secondEnabled ? (
+        both && second ? (
+          <div className="space-y-1" data-testid={`second-hour-${end}`}>
+            <div className="flex items-center justify-center gap-2">
+              <span className="text-sm font-medium">{secondLabel}</span>
+              <div data-field={end === "out" ? "arriveByTime" : "leaveDestTime"}>
+                <TimeField15 min={secondMin} max={secondMax} value={second} onChange={changeSecond} aria-label={secondLabel} />
+              </div>
+              <button type="button" className="rounded-full p-1 text-muted-foreground hover:bg-muted" onClick={removeSecond}
+                aria-label={he.requestSentence.secondHour.remove} data-testid={`second-hour-remove-${end}`}>
+                <X className="h-4 w-4" aria-hidden />
+              </button>
+            </div>
+            {bothLine ? (
+              <p className="text-center text-sm text-muted-foreground" data-testid={`second-hour-drive-${end}`}>
+                {bothLine.tight ? <span className="font-medium text-amber-700 dark:text-amber-400">{he.requestSentence.secondHour.tight} · </span> : null}
+                <LtrText text={bothLine.text} />
+              </p>
+            ) : null}
+          </div>
+        ) : (
+          <div className="text-center">
+            <button type="button" className="text-sm text-primary underline-offset-2 hover:underline" onClick={addSecond}
+              data-testid={`second-hour-add-${end}`}>
+              {addLabel}
+            </button>
+          </div>
+        )
+      ) : null}
 
       {flexEnabled ? (
         end === "out" ? (

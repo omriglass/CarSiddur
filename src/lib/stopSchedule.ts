@@ -5,7 +5,10 @@
 // to the destination's unset stay, else it is waiting at the later one ("early"); missing time
 // is taken, in order, from a stay the member gave (only when `allowShrink`, i.e. when an option
 // for adding a stop is priced), then from the later fixed hour's flexibility; past that it is a
-// conflict. SQL twin: `public.request_schedule()` — keep the two identical (shared cases in
+// conflict. REQ item 249 (owner 2026-11-17): every drive counts the department's margin and rush
+// hours (`options.drive`), and spare time between two hours the MEMBER gave on one way (`stated`) is
+// spread over the drives between them, in proportion to them, instead of waiting at the later one.
+// SQL twin: `public.request_schedule()` — keep the two identical (shared cases in
 // `supabase/tests/fixtures/stop_schedule_cases.json`). Pure: minutes of the day in, minutes out.
 
 export type StopAnchor = "arrive" | "leave";
@@ -16,6 +19,14 @@ export interface FixedHour {
   at: number;
   /** Minutes the hour may slip (an arrive-by: arrive up to `flex` later; a leave-at: leave up to `flex` later). */
   flex: number;
+  /** The member gave this hour (absent = true); false for a car time the app worked out from another hour. */
+  stated?: boolean;
+}
+
+/** Clock minutes of a drive by its base minutes: leaving at `start` / arriving at `end` (margin + rush hours). */
+export interface DriveRule {
+  from: (start: number, base: number) => number;
+  until: (end: number, base: number) => number;
 }
 
 export type PointKind = "start" | "stop" | "destArrive" | "destLeave" | "end";
@@ -39,6 +50,8 @@ export interface ScheduleOptions {
   defaultStart: number;
   /** Price an added stop: a stay the member gave may be shortened. */
   allowShrink?: boolean;
+  /** REQ item 249: margin and rush hours; absent = the plain minutes. */
+  drive?: DriveRule;
 }
 
 export interface ScheduledPoint {
@@ -86,7 +99,12 @@ export function schedule(points: readonly SchedulePoint[], options: ScheduleOpti
   const at = (arr: number[], i: number): number => arr[i]!;
   let conflict: ScheduleConflict | null = null;
   const T = (i: number, j: number) => (P(i).place === P(j).place ? 0 : travel(P(i).place, P(j).place));
+  // The drive into point k leaving point k-1 at `start` / reaching point k at `end`.
+  const dr = new Array<number>(n).fill(0);
+  const fromAt = (k: number, start: number) => (options.drive ? options.drive.from(start, T(k - 1, k)) : T(k - 1, k));
+  const untilAt = (k: number, end: number) => (options.drive ? options.drive.until(end, T(k - 1, k)) : T(k - 1, k));
   const anchorOf = (i: number) => P(i).fixed?.anchor;
+  const stated = (i: number) => P(i).fixed?.stated !== false;
 
   const fixedIdx = points.flatMap((p, i) => (p.fixed ? [i] : []));
   let anchors = fixedIdx;
@@ -103,13 +121,14 @@ export function schedule(points: readonly SchedulePoint[], options: ScheduleOpti
   const first = anchors[0]!;
   const last = anchors[anchors.length - 1]!;
   // Before the first fixed hour: backwards.
-  for (let i = first - 1; i >= 0; i--) { l[i] = at(a, i + 1) - T(i, i + 1); a[i] = at(l, i) - at(st, i); }
+  for (let i = first - 1; i >= 0; i--) { dr[i + 1] = untilAt(i + 1, at(a, i + 1)); l[i] = at(a, i + 1) - at(dr, i + 1); a[i] = at(l, i) - at(st, i); }
 
   const run = (j: number, m: number): number => {
     if (anchorOf(j) === "arrive") l[j] = at(a, j) + at(st, j);
     let lp = at(l, j);
-    for (let k = j + 1; k < m; k++) { a[k] = lp + T(k - 1, k); l[k] = at(a, k) + at(st, k); lp = at(l, k); }
-    return lp + T(m - 1, m);
+    for (let k = j + 1; k < m; k++) { dr[k] = fromAt(k, lp); a[k] = lp + at(dr, k); l[k] = at(a, k) + at(st, k); lp = at(l, k); }
+    dr[m] = fromAt(m, lp);
+    return lp + at(dr, m);
   };
 
   for (let q = 1; q < anchors.length; q++) {
@@ -120,7 +139,22 @@ export function schedule(points: readonly SchedulePoint[], options: ScheduleOpti
     let late = run(j, m) - due;
     if (late < 0) {
       const target = rangeOf(j, m).find((k) => k > 0 && workedOut[k] && P(k).kind === "destArrive" && !(k === j && anchorOf(j) === "leave"));
-      if (target !== undefined) { st[target] = at(st, target) - late; run(j, m); late = 0; } else early[m] = -late;
+      const total = rangeOf(j + 1, m + 1).reduce((t, k) => t + at(dr, k), 0);
+      if (target !== undefined) { st[target] = at(st, target) - late; run(j, m); late = 0; }
+      else if (stated(j) && stated(m) && m - j > 1 && total > 0) {
+        // Both hours were given by the member: the spare minutes go to the drives, in proportion to them.
+        const given = -late;
+        let cum = 0;
+        let share = 0;
+        const add = new Array<number>(n).fill(0);
+        for (let k = j + 1; k <= m; k++) {
+          cum += at(dr, k);
+          add[k] = Math.floor((given * cum) / total) - share;
+          share += at(add, k);
+        }
+        for (let k = j + 1; k < m; k++) { a[k] = at(l, k - 1) + at(dr, k) + at(add, k); l[k] = at(a, k) + at(st, k); }
+        late = 0;
+      } else early[m] = -late;
     } else if (late > 0 && options.allowShrink) {
       const given = rangeOf(j, m)
         .filter((k) => k > 0 && hasStay(P(k), k, n) && !workedOut[k] && !(k === j && anchorOf(j) === "leave") && at(st, k) > stopMinutes)
@@ -136,7 +170,7 @@ export function schedule(points: readonly SchedulePoint[], options: ScheduleOpti
     if (late > 0 && !conflict) conflict = { key: P(m).key, lateBy: late };
   }
   // After the last fixed hour: forwards.
-  for (let i = last + 1; i < n; i++) { a[i] = at(l, i - 1) + T(i - 1, i); l[i] = at(a, i) + at(st, i); }
+  for (let i = last + 1; i < n; i++) { a[i] = at(l, i - 1) + fromAt(i, at(l, i - 1)); l[i] = at(a, i) + at(st, i); }
 
   const dest = points.findIndex((p) => p.kind === "destArrive");
   const hasWayBack = points.some((p) => p.kind === "destLeave");
@@ -152,7 +186,7 @@ export function schedule(points: readonly SchedulePoint[], options: ScheduleOpti
 }
 
 function rangeOf(from: number, to: number): number[] {
-  return Array.from({ length: to - from }, (_, i) => from + i);
+  return Array.from({ length: Math.max(to - from, 0) }, (_, i) => from + i);
 }
 
 /** The car's window: the first departure and the last arrival. */
