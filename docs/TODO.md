@@ -1912,3 +1912,11 @@ Context: קטיה (non-driver, `profiles.does_not_drive`) could not find "הקפ
 - **Defaults:** "be there by" = the form's start hour, pickup = the form's end hour, mode "הקפצה ואיסוף". If the two hours are **an hour or less apart**, start with one leg: **"רק הקפצה" when the start is before 13:00, "רק איסוף" from 13:00 on.**
 - **Owner answers 2026-11-18:** the **quick and car-now** variants open it too (same behaviour everywhere — consistency). Closing the dialog with **✕ returns to the regular request form** (the sentence form, nothing lost). Principle: assume a non-driver almost always needs a הקפצה, but **keep it flexible** — when they file for someone else (REQ §13.127, "אני" out) or add a driving companion, the other trip types become available as today (`canUseDrivingTripTypes`) and the dialog does not force anything.
 - **Still to settle:** which hours count as "start/end" when the form opens from a slot / `?day=` vs the default 08:00 (and with no end hour yet). A REQUIREMENTS item goes in first; any new wording needs the owner's approval.
+
+## File a new ride in someone else's name from every "new ride" entry (owner 2026-11-18, OB1) — not built yet
+
+Owner: when creating a ride I should be able to remove myself and add someone else instead, so the ride is filed in their name.
+
+- **Today (REQ §13.127 a):** this works only on a **new weekly request in the sentence form** — taking "אני" out of the who chip files it for the first named member who drives (else the first named), the filer stays `filed_by` (`onBehalf.ts`, `allowOnBehalf` in `RequestForm.tsx`: `mode === "new" && variant === "weekly" && !isReservation`). It is missing in the **quick** (live-week slot / siddur) and **car-now** variants, and in the **classic** (field-by-field) form.
+- **Build:** the same "אני" toggle + named member as requester in every new-ride entry point, same server path (`submit_request` `requester_id`, the confirmation shown to everyone). Check the quick/car-now specifics (auto-approve runs for the requester, not the filer; car-now's free car must suit the requester's driving).
+- **To confirm with the owner:** which screen he was on when it was missing (if it was the weekly sentence form, the toggle is not discoverable enough — then it is a UI item, not a new path).
