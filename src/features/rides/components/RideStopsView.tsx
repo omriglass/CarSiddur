@@ -1,7 +1,7 @@
 // REQ item 246 h (owner mock board 5): the stops view - the one drawing of who rides where. Per leg, each place
 // with its time, who gets off (↓) and on (↑) there, and the free seats on the next stretch. Read on demand
-// (`ride_stretches`) only for a ride with places in the middle; anything else (and while it loads) shows
-// `RideRoute` as before.
+// (`ride_stretches`) for any ride with a route (owner 2026-11-18: a plain there-and-back ride too shows its places and
+// ~hours, not only one with stops); while it loads, `RideRoute` (with places in the middle) or the bare places.
 import { Lock } from "lucide-react";
 
 import { he, tv } from "@/i18n/he";
@@ -27,15 +27,41 @@ function freeLabel(n: number): string {
   return n === 1 ? he.rideStops.freeOne : he.rideStops.full;
 }
 
+/** A ride's places with their ~hours, before (or without) the stretches read. */
+function PlainRoute({ points }: { points: ReturnType<typeof parseRideRoute> }) {
+  if (points.length < 2) return null;
+  return (
+    <div className="space-y-1" data-testid="ride-stops-view">
+      <span className="font-medium">{he.rideStops.title}</span>
+      <ol className="space-y-1.5 text-sm">
+        {points.map((point, index) => (
+          <li key={`${point.leg}:${point.position}`} data-testid={`ride-stop-${point.leg}-${point.position}`}>
+            {index === 0 || points[index - 1]?.leg !== point.leg ? (
+              <p className={`text-xs font-semibold text-muted-foreground ${point.leg === "return" ? "mt-2 border-t pt-2" : ""}`}>
+                {point.leg === "out" ? he.rideRoute.out : he.rideRoute.return}
+              </p>
+            ) : null}
+            <div className="flex items-baseline justify-between gap-2">
+              <span className="font-medium">{point.name}</span>
+              {point.eta ? <span dir="ltr" className="text-xs tabular-nums text-muted-foreground">~{formatTime(new Date(point.eta))}</span> : null}
+            </div>
+          </li>
+        ))}
+      </ol>
+    </div>
+  );
+}
+
 export function RideStopsView({ rideId, version, route, people, served }: RideStopsViewProps) {
   const points = parseRideRoute(route);
   const hasMiddle = routeHasIntermediates(points);
-  const query = useRideStretchesQuery(rideId, version, hasMiddle);
-  if (!hasMiddle || !query.data) return <RideRoute route={route} served={served} />;
+  const query = useRideStretchesQuery(rideId, version, points.length >= 2);
+  const fallback = hasMiddle ? <RideRoute route={route} served={served} /> : <PlainRoute points={points} />;
+  if (!query.data) return fallback;
   // LT1 phase 2e: the ride's estimate ("~"), and beside it a stated hour - a lock when kept, said when not
   const stated = withStatedHours(points, query.data);
   const rows = stopRows(stated.points, people, query.data);
-  if (!rows.length) return <RideRoute route={route} served={served} />;
+  if (!rows.length) return fallback;
 
   return (
     <div className="space-y-1" data-testid="ride-stops-view">

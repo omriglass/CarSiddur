@@ -69,6 +69,11 @@ test("a guest on a shared ride edits the ride itself, after agreeing with its dr
     await test.step("the sheet names the shared ride and its edit opens the driver's trip", async () => {
       await openRideDetails(page, block);
       await page.getByTestId("ride-detail-tab-details").click();
+      // owner 2026-11-18: a plain ride (no stops) shows its places and ~hours too
+      const stopsView = page.getByTestId("ride-stops-view");
+      await expect(stopsView.getByTestId("ride-stop-out-0")).toContainText("~10:00");
+      await expect(stopsView.getByTestId("ride-stop-out-1")).toContainText(PLACES.haifa.name);
+      await expect(stopsView.getByTestId("ride-stop-return-1")).toContainText("~12:");
       await expect(page.getByTestId("ride-merged-of")).toHaveText(
         tv("rideDetail.mergedOf", { names: `${SEEDED_USERS.member1.fullName}, ${SEEDED_USERS.member2.fullName}` }));
       await page.getByTestId("ride-detail-tab-summary").click();

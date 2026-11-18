@@ -36,7 +36,7 @@ import { RideCarHandover } from "@/features/rides/components/RideCarHandover";
 import { RideRouteStops } from "@/features/rides/components/RideRouteStops";
 import { RideStopsView } from "@/features/rides/components/RideStopsView";
 import { RideSummaryLine } from "@/features/rides/components/RideSummaryLine";
-import { parseRideRoute, routeHasIntermediates } from "@/lib/rideRoute";
+import { parseRideRoute } from "@/lib/rideRoute";
 import { peopleOf } from "@/features/rides/ridePeople";
 import type { HandOverCandidate } from "@/features/rides/handOver";
 import type { OwnCar } from "@/features/rides/useOwnCarMove";
@@ -384,7 +384,7 @@ export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = 
                   ) : null}
                 </TabsContent>
                 <TabsContent value="details" className="space-y-4">
-                  {routeHasIntermediates(parseRideRoute(ride.route)) ? <RideStopsView rideId={ride.id} version={ride.version} route={ride.route} people={peopleOf(ride)} served={served} /> : <RideRouteStops served={served} />}
+                  {parseRideRoute(ride.route).length >= 2 ? <RideStopsView rideId={ride.id} version={ride.version} route={ride.route} people={peopleOf(ride)} served={served} /> : <RideRouteStops served={served} />}
                   {mergedNames.length > 1 ? <p className="text-muted-foreground" data-testid="ride-merged-of">{tv("rideDetail.mergedOf", { names: mergedNames.join(", ") })}</p> : null}
                   {/* What each request asked, one card per request (its words are also on the summary, with the notes). */}
                   {needsPersonBlocks(ride, served) ? <RidePersonBlocks blocks={buildPersonBlocks({ ride, served, homeDestinationId })} /> : null}
