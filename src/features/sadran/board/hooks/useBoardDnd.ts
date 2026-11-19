@@ -17,6 +17,7 @@ import { needsLargeTrunk, needsTowHitch } from "@/lib/luggageWaiver";
 import { askSmallTrunk } from "@/lib/smallTrunk";
 import { dateKey, formatTime } from "@/lib/time";
 import type { AppError } from "@/lib/rpc";
+import { refusalReasonText } from "@/lib/rpc";
 import { useSession } from "@/features/auth/useSession";
 import { useProfile } from "@/features/auth/useProfile";
 import { useDepartmentMembers } from "@/features/auth/useDepartmentMembers";
@@ -517,7 +518,7 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
       setSelectedProposalId(null);
       if (result.status === "applied") toast.success(he.boardDrafts.agreedApplied);
       else if (result.status === "waiting") toast.info(tv("boardDrafts.agreedWaiting", { names: waitingNames(result.waitingFor) }));
-      else toast.warning(tv("boardDrafts.agreedStale", { reason: result.reason }));
+      else toast.warning(tv("boardDrafts.agreedStale", { reason: refusalReasonText(result.reason) }));
     } catch { /* toast shown by the mutation */ }
   }
 
@@ -949,6 +950,19 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
       .filter((r) => r.id !== ride.id && r.car_id === carId && r.starts_at && r.ends_at)
       .map((r) => ({ startsAt: r.starts_at as string, endsAt: r.ends_at as string }));
     const hasCollision = wouldOverlap({ startsAt: newStartsAt, endsAt: newEndsAt }, otherRidesOnTargetCar, 0);
+    // Owner 2026-11-19 (ריטה): a move that needs the member's consent goes to the server as a shift, which refuses to
+    // leave the car where its next ride does not start - ask "לשבץ בכל זאת?" first, as a drop from the unmet list does
+    // (CH1). Asked only when the move makes the break: a break the ride already had stays a board warning.
+    const strandedAfterMove = strandedNextRide(dropCtx, carId, ride.destination_id, newEndsAt, ride.id);
+    const strandedBefore = strandedNextRide(dropCtx, ride.car_id, ride.destination_id, ride.ends_at, ride.id);
+    const newChainBreak = !!strandedAfterMove?.starts_at && strandedAfterMove.id !== strandedBefore?.id;
+    async function askChainBreak(): Promise<boolean> {
+      if (!newChainBreak || !strandedAfterMove?.starts_at) return true;
+      const answer = await new Promise<false | "one" | "both">((resolve) => setChainBreakAsk({
+        car: carsData.find((c) => c.id === carId)?.name ?? "", place: ride!.destination_name ?? "",
+        nextStart: formatTime(new Date(strandedAfterMove.starts_at as string)), nextPlace: strandedAfterMove.origin_name ?? "", partner: null, resolve }));
+      return !!answer;
+    }
 
     if (drafted && draftProposal) {
       // Back inside the request's flexibility on its own car: the draft goes, the ride is moved there as usual.
@@ -961,9 +975,10 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
         if (newStartsAt === ride.starts_at && newEndsAt === ride.ends_at) return;
       } else if (driverRequest) {
         // Still beyond it: the same draft, updated (a new Sadran draft supersedes the old one - `create_proposal`).
+        if (!(await askChainBreak())) return;
         const id = await saveDraft({
           requestId: driverRequest.id, rideId: ride.id, type: "shift",
-          payload: { ...rideShiftPayload(ride, driverRequest, driverEntry?.leg, carId, newStartsAt, newEndsAt), ...(allowSmallTrunk ? { allow_small_trunk: true } : {}) },
+          payload: { ...rideShiftPayload(ride, driverRequest, driverEntry?.leg, carId, newStartsAt, newEndsAt), ...(allowSmallTrunk ? { allow_small_trunk: true } : {}), ...(newChainBreak ? { allow_chain_break: true } : {}) },
         }, true);
         if (id) toast.success(he.boardDrafts.draftUpdated);
         return;
@@ -1048,12 +1063,13 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
       }
       await applyMove();
     } else if (driverRequest) {
+      if (!(await askChainBreak())) return;
       toast(he.sadranBoard.dragBeyondFlexToast);
       goToComposer({
         requestId: driverRequest.id,
         rideId: ride.id,
         type: "shift",
-        payload: { ...rideShiftPayload(ride, driverRequest, driverEntry?.leg, carId, newStartsAt, newEndsAt), ...(allowSmallTrunk ? { allow_small_trunk: true } : {}) },
+        payload: { ...rideShiftPayload(ride, driverRequest, driverEntry?.leg, carId, newStartsAt, newEndsAt), ...(allowSmallTrunk ? { allow_small_trunk: true } : {}), ...(newChainBreak ? { allow_chain_break: true } : {}) },
       });
     }
   }

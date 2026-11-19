@@ -10968,6 +10968,22 @@ $$;
 ALTER FUNCTION "public"."car_mileage_totals"("p_department_id" "uuid", "p_week_start" "date", "p_weeks" integer) OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."car_next_ride_id"("_car" "uuid", "_after" timestamp with time zone) RETURNS "uuid"
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  select r.id from public.rides r
+  where r.car_id = _car and r.status <> 'cancelled' and not r.planning_conflict
+    and (not r.auto_relocation or r.driver_id is not null or r.pin_reason = 'CAR_MOVE')
+    and not public.ride_is_reservation(r.id)
+    and r.starts_at >= _after
+  order by r.starts_at asc, r.id limit 1;
+$$;
+
+
+ALTER FUNCTION "public"."car_next_ride_id"("_car" "uuid", "_after" timestamp with time zone) OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."car_next_ride_origin"("_car" "uuid", "_after" timestamp with time zone) RETURNS "uuid"
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -17647,6 +17663,7 @@ declare
   v_leg public.ride_leg; v_at timestamptz; v_legs int := 0; v_wanted int := 0;
   v_s timestamptz; v_e timestamptz; v_loc uuid; v_ok boolean; k int; c int; v_rid uuid;
   v_relay boolean; v_pickup_driver uuid; v_needs_driver boolean := false;
+  v_prev_stranded uuid;
 begin
   select * into q from public.requests where id = p_request_id for update;
   if q.id is null then raise exception 'request_not_found' using errcode = 'P0001'; end if;
@@ -17672,6 +17689,16 @@ begin
   v_week_from := q.week_start::timestamp at time zone 'Asia/Jerusalem';
   v_week_until := (q.week_start + 7)::timestamp at time zone 'Asia/Jerusalem';
   v_buffer := coalesce(public.required_turnaround_minutes(q.department_id, q.week_start), 30);
+
+  -- Owner 2026-11-19 (ריטה): the next ride the request's current placement on this car already strands (it starts
+  -- where that placement does not leave the car). Moving the request on the same car keeps that break - a board
+  -- warning, as before the move - so it is not a reason to refuse the move; only a break the move makes is.
+  select public.car_next_ride_id(v_car, rd.ends_at) into v_prev_stranded
+  from public.rides rd join public.ride_requests rr on rr.ride_id = rd.id
+  where rr.request_id = q.id and rd.car_id = v_car and rd.status <> 'cancelled'
+    and public.car_next_ride_origin(v_car, rd.ends_at) is not null
+    and public.car_next_ride_origin(v_car, rd.ends_at) is distinct from rd.destination_id
+  order by rd.ends_at desc, rd.id limit 1;
 
   -- Replace the request's previous placement.
   for v_old in select rd.* from public.rides rd join public.ride_requests rr on rr.ride_id = rd.id
@@ -17701,7 +17728,12 @@ begin
       if public.car_location_at(v_car, v_dep) is distinct from v_loc then
         raise exception 'car_not_at_leg_origin' using errcode = 'P0001';
       end if;
-      if coalesce(public.car_next_ride_origin(v_car, v_ret), v_loc) <> v_loc then
+      if coalesce(public.car_next_ride_origin(v_car, v_ret), v_loc) <> v_loc
+         and public.car_next_ride_id(v_car, v_ret) is distinct from v_prev_stranded
+         -- CH1: the Sadran who saw "לשבץ בכל זאת?" said yes (owner 2026-11-19: a moved round trip asks too).
+         and not (v_manual and exists(select 1 from public.proposals pp
+           where pp.id::text = nullif(current_setting('app.applying_proposal', true), '')
+             and pp.created_via = 'sadran' and coalesce((pp.payload ->> 'allow_chain_break')::boolean, false))) then
         raise exception 'car_next_ride_elsewhere' using errcode = 'P0001';
       end if;
     end if;
@@ -17736,6 +17768,8 @@ begin
     -- car where its next ride does not start; the board's chain-break warning stays as the reminder.
     if exists(select 1 from public.cars where id = v_car and type = 'shared')
        and coalesce(public.car_next_ride_origin(v_car, v_end), q.destination_id) <> q.destination_id
+       -- Owner 2026-11-19 (ריטה): a break the request's placement already had is kept, not refused.
+       and public.car_next_ride_id(v_car, v_end) is distinct from v_prev_stranded
        -- OW1 (REQ §13.210): the Sadran changing the trip type said yes ("לשנות בכל זאת?") for this car.
        and v_car::text is distinct from nullif(current_setting('app.car_stays_away', true), '')
        and not (v_manual and exists(select 1 from public.proposals pp
@@ -39183,6 +39217,11 @@ GRANT ALL ON FUNCTION "public"."car_meets_needs"("_car" "uuid", "_luggage" integ
 REVOKE ALL ON FUNCTION "public"."car_mileage_totals"("p_department_id" "uuid", "p_week_start" "date", "p_weeks" integer) FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."car_mileage_totals"("p_department_id" "uuid", "p_week_start" "date", "p_weeks" integer) TO "service_role";
 GRANT ALL ON FUNCTION "public"."car_mileage_totals"("p_department_id" "uuid", "p_week_start" "date", "p_weeks" integer) TO "authenticated";
+
+
+
+REVOKE ALL ON FUNCTION "public"."car_next_ride_id"("_car" "uuid", "_after" timestamp with time zone) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."car_next_ride_id"("_car" "uuid", "_after" timestamp with time zone) TO "service_role";
 
 
 

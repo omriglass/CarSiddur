@@ -739,6 +739,16 @@ export function toAppError(error: unknown): AppError {
   return new AppError(code, message, undefined, code === "needs_large_trunk" || code === "person_busy" || code === "ride_move_needs_agreement" || code === "car_stays_away" || code === "host_edit_guests" || code === "riders_off_route" ? (pgError?.details ?? undefined) : undefined);
 }
 
+/**
+ * The Hebrew text of a refusal reason the server returned as data, not as an error (e.g. the `reason` of a
+ * `withdrawn_stale` "כבר סיכמנו" result, which is the raised code: `car_next_ride_elsewhere`). The same table as
+ * `toAppError`; an unknown reason reads as the generic error, never as the machine code (owner 2026-11-19).
+ */
+export function refusalReasonText(reason: string | null | undefined): string {
+  const code = reason ? MESSAGE_TO_CODE[reason.trim()] : undefined;
+  return CODE_TO_MESSAGE[code ?? "unknown"];
+}
+
 /** Maps the error and shows a Hebrew toast (mutations' `onError`, CLAUDE.md "Data"). */
 export function showErrorToast(error: unknown): AppError {
   const appError = toAppError(error);

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { he } from "@/i18n/he";
-import { toAppError } from "./rpc";
+import { refusalReasonText, toAppError } from "./rpc";
 
 describe("proposal send errors", () => {
   it("explains a pending-proposal conflict from the RPC", () => {
@@ -73,5 +73,17 @@ describe("a response cut off mid-download (production 2026-11-12)", () => {
 
   it("leaves a real database message alone", () => {
     expect(toAppError({ code: "XX000", message: "[boom]" }).code).toBe("unknown");
+  });
+});
+
+describe("refusalReasonText (owner 2026-11-19)", () => {
+  it("reads a server reason code in Hebrew", () => {
+    expect(refusalReasonText("car_next_ride_elsewhere")).toBe(he.errors.carNextRideElsewhere);
+  });
+
+  it("never shows an unknown machine code", () => {
+    const text = refusalReasonText("some_new_refusal");
+    expect(text).not.toContain("some_new_refusal");
+    expect(refusalReasonText(null)).toBe(text);
   });
 });

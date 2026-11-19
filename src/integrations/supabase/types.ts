@@ -7153,6 +7153,10 @@ export type Database = {
           source: string
         }[]
       }
+      car_next_ride_id: {
+        Args: { _after: string; _car: string }
+        Returns: string
+      }
       car_next_ride_origin: {
         Args: { _after: string; _car: string }
         Returns: string

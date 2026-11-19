@@ -218,6 +218,7 @@
         "qa_run11_noop_save.sql",
         "one_way_change_asks.sql",
         "one_way_pair_drop.sql",
+        "place_keeps_chain_break.sql",
         "stop_hours.sql",
         "travel_times.sql",
         "rider_stretches.sql",
