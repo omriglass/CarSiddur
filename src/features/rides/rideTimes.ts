@@ -52,6 +52,8 @@ export interface Stated {
   name: string;
   /** The ride's own start (a set hour, the Sadran's), not a person's. */
   rideStart?: boolean;
+  /** Whose hour it is (`identity`): hours of one person never conflict with each other (their own two rides merged). */
+  who?: string;
 }
 
 export type Mark =
@@ -116,6 +118,9 @@ export interface RideTimes {
 
 const SECONDARY = new Set<RidePerson["source"]>(["companion", "child", "guest"]);
 
+/** Who a people row is: the member (a driver also listed as the requester of another of their requests is one person). */
+const identity = (person: Pick<RidePerson, "person_id" | "key">) => person.person_id ?? person.key;
+
 function minutesOf(raw: unknown): number {
   const value = typeof raw === "number" ? raw : intervalMinutes(typeof raw === "string" ? raw : null);
   return value == null ? 0 : value;
@@ -153,6 +158,7 @@ export function definiteConflicts(stated: readonly Stated[]): Conflict[] {
       if (a === b) continue;
       const later = b.anchor === "leave" ? order(b) >= order(a) : order(b) > order(a);
       if (!later || bounds(b).hi >= lo) continue;
+      if (a.who && a.who === b.who) continue;
       const id = [a.id, b.id].sort().join("|");
       if (seen.has(id)) continue;
       seen.add(id);
@@ -210,7 +216,8 @@ export function rideTimes({ points, stretches, people, requests, startsAt }: Rid
   const statedOf = new Map<string, Stated[]>();
   const push = (key: string, s: Omit<Stated, "id">) => {
     if (stated.some((x) => x.name === s.name && x.leg === s.leg && x.position === s.position && x.anchor === s.anchor && x.at === s.at)) return;
-    const full = { ...s, id: `${key}:${s.leg}:${s.position}:${s.anchor}` };
+    const owner = main.find((person) => person.key === key);
+    const full = { ...s, id: `${key}:${s.leg}:${s.position}:${s.anchor}`, who: owner ? identity(owner) : key };
     stated.push(full);
     statedOf.set(key, [...(statedOf.get(key) ?? []), full]);
   };
@@ -249,7 +256,9 @@ export function rideTimes({ points, stretches, people, requests, startsAt }: Rid
     }
   }
   const all: Stated[] = startsAt && legs.includes("out")
-    ? [...stated, { id: "ride:start", leg: "out", position: 0, anchor: "leave", at: startsAt, early: 0, late: 0, name: "", rideStart: true }]
+    // the start is a person's when it is their own leave-at there (the driver's 07:45): it never conflicts with their own hours
+    ? [...stated, { id: "ride:start", leg: "out", position: 0, anchor: "leave", at: startsAt, early: 0, late: 0, name: "", rideStart: true,
+        who: stated.find((x) => x.leg === "out" && x.position === 0 && x.anchor === "leave" && Date.parse(x.at) === Date.parse(startsAt))?.who }]
     : [...stated];
   // the ride's start says nothing new when a person's own hour at that place is the same one (the driver's 09:00)
   const sameHour = (x: Stated, y: Stated) => x.leg === y.leg && x.position === y.position && x.anchor === y.anchor && x.at === y.at;
@@ -262,34 +271,55 @@ export function rideTimes({ points, stretches, people, requests, startsAt }: Rid
   const inConflict = new Set(conflicts.flatMap((c) => [c.a.id, c.b.id]));
   const markOf = (s: Stated): Mark => (inConflict.has(s.id) ? { kind: "conflict" } : estimateMark(s, actualAt(s.leg, s.position)));
 
-  // ---- per person ---------------------------------------------------------------------------------------------
-  const perPerson: PersonTimes[] = main.flatMap((person): PersonTimes[] => {
-    const own = spans.get(person.key);
-    if (!own?.size) return [];
-    const mine = statedOf.get(person.key) ?? [];
-    const rows: PersonRow[] = [];
-    for (const [leg, [board, alight]] of own) {
-      const pts = pointsOf.get(leg)!;
-      const at = (position: number, anchor: Stated["anchor"]) => mine.find((s) => s.leg === leg && s.position === position && s.anchor === anchor) ?? null;
-      const boardStated = at(board, "leave");
-      rows.push({ leg, position: board, kind: board === 0 ? "leave" : "board", place: pts[board]?.name ?? "", stated: boardStated,
-        actual: actualAt(leg, board), mark: boardStated ? markOf(boardStated) : null });
-      const alightStated = at(alight, "arrive");
-      const kind: RowKind = alightStated ? "arriveBy" : leg === "return" && alight === pts.length - 1 ? "back" : "alight";
-      rows.push({ leg, position: alight, kind, place: pts[alight]?.name ?? "", stated: alightStated,
-        actual: actualAt(leg, alight), mark: alightStated ? markOf(alightStated) : null });
+  // ---- per person: one block per PERSON (owner 2026-11-19: a driver merged with their own other ride is one
+  // person, not two) - their rows from every request they are on, once each ---------------------------------------
+  const byPerson = new Map<string, RidePerson[]>();
+  for (const person of main) {
+    const id = identity(person);
+    byPerson.set(id, [...(byPerson.get(id) ?? []), person]);
+  }
+  const perPerson: PersonTimes[] = [...byPerson.values()].flatMap((group): PersonTimes[] => {
+    const rows = new Map<string, PersonRow>();
+    const mine: Stated[] = [];
+    const ridden = new Set<RouteLeg>();
+    for (const person of group) {
+      const own = spans.get(person.key);
+      if (!own?.size) continue;
+      const theirs = statedOf.get(person.key) ?? [];
+      mine.push(...theirs);
+      for (const [leg, [board, alight]] of own) {
+        ridden.add(leg);
+        const pts = pointsOf.get(leg)!;
+        const at = (position: number, anchor: Stated["anchor"]) => theirs.find((s) => s.leg === leg && s.position === position && s.anchor === anchor) ?? null;
+        const add = (row: PersonRow) => {
+          const id = `${row.leg}:${row.position}:${row.kind === "board" || row.kind === "leave" ? "on" : "off"}`;
+          const had = rows.get(id);
+          if (!had || (!had.stated && row.stated)) rows.set(id, row);
+        };
+        const boardStated = at(board, "leave");
+        add({ leg, position: board, kind: board === 0 ? "leave" : "board", place: pts[board]?.name ?? "", stated: boardStated,
+          actual: actualAt(leg, board), mark: boardStated ? markOf(boardStated) : null });
+        const alightStated = at(alight, "arrive");
+        const kind: RowKind = alightStated ? "arriveBy" : leg === "return" && alight === pts.length - 1 ? "back" : "alight";
+        add({ leg, position: alight, kind, place: pts[alight]?.name ?? "", stated: alightStated,
+          actual: actualAt(leg, alight), mark: alightStated ? markOf(alightStated) : null });
+      }
     }
-    const legsRidden = own.has("out") && own.has("return") ? "both" : own.has("out") ? "out" : "return";
-    const withNames = person.request_id
-      ? people.filter((other) => other.request_id === person.request_id && SECONDARY.has(other.source)).map((other) => other.display_name.trim()).filter(Boolean)
-      : [];
+    if (!rows.size) return [];
+    const first = group[0]!;
+    const name = first.display_name.trim();
+    const requestIds = new Set(group.map((person) => person.request_id).filter(Boolean));
+    const withNames = [...new Set(people
+      .filter((other) => other.request_id && requestIds.has(other.request_id) && SECONDARY.has(other.source))
+      .map((other) => other.display_name.trim()))].filter((other) => other && other !== name);
+    const sorted = [...rows.values()].sort((a, b) => order(a) - order(b) || Number(a.kind !== "leave" && a.kind !== "board") - Number(b.kind !== "leave" && b.kind !== "board"));
     return [{
-      key: person.key,
-      name: person.display_name.trim(),
-      role: person.source === "driver" ? "driver" : person.source === "added" ? "added" : "rider",
-      legs: legsRidden,
+      key: first.key,
+      name,
+      role: group.some((person) => person.source === "driver") ? "driver" : group.every((person) => person.source === "added") ? "added" : "rider",
+      legs: ridden.has("out") && ridden.has("return") ? "both" : ridden.has("out") ? "out" : "return",
       withNames,
-      rows,
+      rows: sorted,
       conflicts: conflicts.filter((c) => mine.includes(c.a) || mine.includes(c.b)),
     }];
   });
@@ -305,8 +335,9 @@ export function rideTimes({ points, stretches, people, requests, startsAt }: Rid
       name: row.point.name,
       isStop: row.point.kind === "stop",
       actual: actualAt(row.leg, row.point.position),
-      on: row.on,
-      off: row.off,
+      // a person on the ride through two of their own requests is named once
+      on: [...new Set(row.on)],
+      off: [...new Set(row.off)],
       free: row.free,
       tags: here.map((s) => ({ stated: s, mark: markOf(s) })),
       conflicts: conflicts.filter((c) => here.includes(c.a) || here.includes(c.b)),

@@ -250,7 +250,6 @@ export const heSadran = {
       closeTime: "שינוי שעת הסגירה",
       carSwap: "החלפת הרכבים",
       autofill: "השיבוץ האוטומטי",
-      routeEdit: "שינוי המסלול",
       notes: "שינוי התיאור",
     },
     legsJoinedToast: "ההקפצה והאיסוף חוברו לנסיעה אחת",
@@ -1052,23 +1051,6 @@ export const heSadran = {
     returnRestored: "שעת החזרה {{time}} שוחזרה",
     /** REQ §13.98: no known return — set ~2 hours after arrival, flexible all day. */
     returnDefaulted: "שעת החזרה נקבעה ל-{{time}} (גמישות מלאה בחזרה — אפשר להזיז בלי לשאול)",
-  },
-  /** REQ §13.94 (G8): the ride sheet's "מסלול" section. */
-  rideRouteEdit: {
-    title: "מסלול",
-    start: "יציאה מ",
-    end: "יעד",
-    stopsOut: "עצירות בהלוך",
-    stopsReturn: "עצירות בחזור",
-    addStopOut: "+ עצירה",
-    addStopReturn: "+ עצירה בחזור",
-    removeStop: "הסר עצירה",
-    stopIsDestination: "עצירה לא יכולה להיות היעד עצמו",
-    save: "שמור מסלול",
-    saved: "המסלול נשמר",
-    presetOnly: "בהזמנת סדרן אפשר לבחור רק מקומות מהרשימה",
-    noStopsOnReservation: "בהזמנת סדרן אין עצירות — רק נקודת יציאה ויעד.",
-    placePlaceholder: "בחרו מקום",
   },
   /** REQ §13.94 (items 7): a drop-off with a pickup is two placeable cards. */
   tripLegs: {

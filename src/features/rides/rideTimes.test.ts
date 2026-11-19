@@ -87,6 +87,27 @@ describe("rideTimes (SD1)", () => {
   });
 });
 
+describe("one person on two of their own requests (owner 2026-11-19)", () => {
+  // דנה drives her own ride and her second request (Binyamina) was merged into it: two people rows, one person
+  const own = [
+    { ...person("driver:d", "driver", "qd", "דנה"), person_id: "p-dana" },
+    { ...person("req:qb", "requester", "qb", "דנה"), person_id: "p-dana" },
+    person("req:qy", "requester", "qy", "יואב"),
+  ];
+  const second: RequestHours = { id: "qb", trip_type: "one_way", depart_at: at("08:30"), depart_anchor: "leave", flex_depart_late: null };
+  const spans: RideStretches = {
+    out: { spans: { "driver:d": [0, 2], "req:qb": [0, 1], "req:qy": [1, 2] }, absent: [], free: [3, 2, null] },
+    return: { spans: { "driver:d": [0, 1] }, absent: ["req:qy", "req:qb"], free: [3, null] },
+  };
+  it("is one block, named once at each place, and their own two hours do not conflict", () => {
+    const view = rideTimes({ points, stretches: spans, people: own, requests: [dana, second, yoav], startsAt: at("07:45") });
+    expect(view.people.map((p) => p.name)).toEqual(["דנה", "יואב"]);
+    expect(view.people[0]!.role).toBe("driver");
+    expect(view.route.find((c) => c.leg === "out" && c.position === 0)!.on).toEqual(["דנה"]);
+    expect(view.conflicts).toEqual([]);
+  });
+});
+
 describe("definiteConflicts", () => {
   const s = (id: string, leg: "out" | "return", position: number, anchor: "arrive" | "leave", hhmm: string, late = 0): Stated =>
     ({ id, leg, position, anchor, at: iso(hhmm), early: 0, late, name: id });

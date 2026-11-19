@@ -76,13 +76,16 @@ test("the ride's hours per person and per route; a set hour the ride cannot keep
     await expect(guest.getByTestId("ride-details-conflict")).toHaveText(
       tv("rideDetails.conflictLine", { a: SEEDED_USERS.member1.fullName, t1: "09:00", b: SEEDED_USERS.member2.fullName, t2: "08:30" }));
     await expect(guest.getByTestId("ride-details-mark")).toHaveAttribute("data-mark", "conflict");
-    await expect(guest).toContainText(tv("rideDetails.statedFixed", { time: "08:30" }));
+    // a fixed hour: blue with a lock, not the word "קבוע" (owner 2026-11-19)
+    await expect(guest.getByTestId("ride-details-fixed")).toHaveText("08:30");
     await page.setViewportSize({ width: 390, height: 1400 });
     await view.screenshot({ path: test.info().outputPath("sd1-people.png") });
 
     await page.getByTestId("ride-details-view-route").click();
     await expect(view).toHaveAttribute("data-view", "route");
-    await expect(page.getByTestId("ride-details-place-out-0")).toContainText(tv("rideDetails.tagLeave", { name: SEEDED_USERS.member2.fullName, time: "08:30" }));
+    const home = page.getByTestId("ride-details-place-out-0");
+    await expect(home).toContainText(tv("rideDetails.tagLeave", { name: SEEDED_USERS.member2.fullName, time: "" }).trim());
+    await expect(home).toContainText(tv("rideStops.on", { names: `${SEEDED_USERS.member1.fullName}, ${SEEDED_USERS.member2.fullName}` }));
     await view.screenshot({ path: test.info().outputPath("sd1-route.png") });
 
     // remembered on this device

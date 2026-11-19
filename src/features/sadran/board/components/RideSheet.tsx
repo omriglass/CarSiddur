@@ -47,7 +47,6 @@ import { isReservation } from "@/features/rides/servedOf";
 import { namedPassengersOf, relayPartnerOf, servedOf, withChildNames } from "../../solverRun";
 import { addedPeopleNames, peopleOf } from "@/features/rides/ridePeople";
 import { RidePassengersEditor } from "./RidePassengersEditor";
-import { RideRouteEditor } from "./RideRouteEditor";
 import { PlanSwitchButton } from "./PlanSwitchButton";
 import { TripTypeChange } from "./TripTypeChange";
 import { WithdrawDuplicateAction } from "./WithdrawDuplicateAction";
@@ -59,7 +58,6 @@ import { busyDriverIds, personDayEntries } from "../driverBusy";
 import { RideDriverPicker, type DriverCandidate } from "./RideDriverPicker";
 import { RideCancelDialog } from "./RideCancelDialog";
 import { rideCancelLines } from "../rideCancelChoices";
-import { initialRouteEditValues, type RouteEditValues } from "../rideRouteEdit";
 
 import type { BoardRide, WeekRequestRow } from "../../api";
 import type { Car } from "@/features/fleet/api";
@@ -104,7 +102,6 @@ interface RideSheetProps {
   /** REQ §13.94 (G8): list places for the "מסלול" editor; omit to hide the section. */
   destinations?: readonly DestinationPreset[];
   /** Saves the "מסלול" section (shift proposal for a served request, `edit_ride` for a reservation). */
-  onSaveRoute?: (values: RouteEditValues) => void;
   /** REQ §13.94 (G10): "הוצא מהנסיעה" for an added person of a merged ride. */
   onRemoveAddedPerson?: (requestId: string, name: string) => void;
   /** Owner 2026-11-09: take a merged guest out without asking again (the passenger dialog already asked). */
@@ -125,7 +122,7 @@ interface RideSheetProps {
  * fallback for reassigning a car via the "העבר לרכב" select below instead of
  * dragging.
  */
-export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenChange, onSave, onTogglePin, onCancel, onUnassign, onJoinLegs, saving, tightSchedule, onClaimDriver, coordinatorNotes, isPlanning, requests = [], departmentId, weekStart, destinations, onSaveRoute, onRemoveAddedPerson, onSplitGuest, driverCandidates, otherRides = [], pendingMerge, pendingDraft }: RideSheetProps) {
+export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenChange, onSave, onTogglePin, onCancel, onUnassign, onJoinLegs, saving, tightSchedule, onClaimDriver, coordinatorNotes, isPlanning, requests = [], departmentId, weekStart, destinations, onRemoveAddedPerson, onSplitGuest, driverCandidates, otherRides = [], pendingMerge, pendingDraft }: RideSheetProps) {
   // Bug-fix pass (owner bug #2): the previous re-sync condition compared
   // `ride.car_id !== carId` to detect "a different ride opened" — but that's
   // exactly as true the moment the Sadran picks a *different* car for the
@@ -182,7 +179,6 @@ export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenCha
   // Everyone but the base request (the driver's, else the first) was added by a merge.
   const baseEntry = servedEntries.find((entry) => entry.role === "driver") ?? servedEntries[0];
   const addedPeople = servedEntries.filter((entry) => entry.request_id && entry.request_id !== baseEntry?.request_id);
-  const baseRequest = baseEntry?.request_id ? requests.find((request) => request.id === baseEntry.request_id) : undefined;
   // Directly `add_ride_passengers()`-added names (`people`, `source: 'added'`) — not tied to
   // any served request, so the summary/details lines take them as an extra list of their own.
   const addedNames = ride ? addedPeopleNames(ride, servedEntries) : [];
@@ -524,24 +520,9 @@ export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenCha
                     ? <RideDetailsView rideId={ride.id} version={ride.version} route={ride.route} people={peopleOf(ride)} requests={requests} startsAt={ride.starts_at} served={servedEntries} />
                     : <RideRouteStops served={servedEntries} />}
 
-                  {/* REQ §13.94 (G8): start, end and stops per leg. */}
-                  {!reservation && onSaveRoute && destinations && !isPlanning && ride.id && !cancelled && (baseRequest || !servedEntries.length) ? (
-                    <RideRouteEditor
-                      key={`${ride.id}:${ride.version}:route`}
-                      initial={initialRouteEditValues({
-                        request: baseRequest ?? null,
-                        stops: baseEntry?.stops ?? [],
-                        ride,
-                        homeId: homeDestinationId,
-                        placeName: (id) => destinations.find((d) => d.id === id)?.name,
-                      })}
-                      destinations={destinations}
-                      stopsEditable={!!baseRequest}
-                      hasReturn={baseRequest?.trip_shape === "round_trip"}
-                      saving={saving}
-                      onSave={onSaveRoute}
-                    />
-                  ) : cancelled || reservation || isPlanning ? <p className="text-muted-foreground">{cancelled ? he.sadranRideSheet.cancelledNote : he.sadranRideSheet.noRoute}</p> : null}
+                  {/* SD1 (owner 2026-11-19): no route editor here any more - it overcomplicated the tab; a ride's places
+                      change through its request ("עריכת נסיעה" under פעולות). */}
+                  {cancelled || reservation || isPlanning ? <p className="text-muted-foreground">{cancelled ? he.sadranRideSheet.cancelledNote : he.sadranRideSheet.noRoute}</p> : null}
                 </TabsContent>
 
                 {/* ── פעולות ── */}

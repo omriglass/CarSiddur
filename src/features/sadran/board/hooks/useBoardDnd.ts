@@ -29,7 +29,6 @@ import { mergeGhostTarget } from "../mergeGhostClick";
 import { isDropOffWithPickup, legView, unmetItemId, unmetItemKey } from "../unmetLegs";
 import type { GuestDropTarget } from "@/components/GuestChips";
 import { requestStart, requestWithinFlex, tripTypeOf } from "../phantomLanes";
-import { reservationRoutePlaces, routeEditPayload, type RouteEditValues } from "../rideRouteEdit";
 import { buildDraftInput, type ComposerPrefill } from "../draftInput";
 import {
   carLocationAt,
@@ -498,39 +497,6 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
     const item = placeItem();
     if (!item) return;
     await handlePlaceUnmetRequest(item, target.carId, target.minutes, target.hostRideId);
-  }
-
-  /**
-   * REQ §13.94 (G8): save the ride sheet's "מסלול" section. A ride serving a member's request goes
-   * through a `shift` proposal (draft or compose); a Sadran reservation uses `edit_ride` directly.
-   */
-  async function saveRideRoute(ride: BoardRide, values: RouteEditValues) {
-    if (!ride.id) return;
-    const served = servedOf(ride);
-    const base = served.find((entry) => entry.role === "driver") ?? served[0];
-    if (base?.request_id) {
-      setSelectedRideId(null);
-      goToComposer({ requestId: base.request_id, rideId: ride.id, type: "shift", payload: routeEditPayload(ride.id, values) });
-      return;
-    }
-    const places = reservationRoutePlaces(values);
-    if (!places || !ride.car_id || !ride.starts_at || !ride.ends_at) { toast.error(he.rideRouteEdit.presetOnly); return; }
-    const [carId, startsAt, endsAt] = [ride.car_id, ride.starts_at, ride.ends_at];
-    try {
-      await recordUndo(U.routeEdit, () => editRideMutation.mutateAsync({
-        input: {
-          id: ride.id ?? undefined, department_id: departmentId, week_start: weekStart, car_id: carId,
-          starts_at: startsAt, ends_at: endsAt,
-          origin_id: places.originId, destination_id: places.destinationId,
-          driver_id: ride.driver_id, needs_driver: !!ride.needs_driver, notes: ride.notes ?? undefined,
-          is_pinned: !!ride.is_pinned, pin_reason: ride.pin_reason, allow_conflict: true,
-          served: servedToEditRideLegs(served),
-        },
-        expectedVersion: ride.version ?? undefined, departmentId, weekStart,
-      }));
-      setSelectedRideId(null);
-      toast.success(he.rideRouteEdit.saved);
-    } catch { /* toast shown by the mutation */ }
   }
 
   /** "שלח" on a draft: the composer on that draft, whose send is the existing `send_proposal`. */
@@ -1331,7 +1297,6 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
     handleGuestDrop,
     guestHover,
     setGuestHover,
-    saveRideRoute,
     composeChoice,
     setComposeChoice,
     selectedProposal,

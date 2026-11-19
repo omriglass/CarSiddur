@@ -2,6 +2,7 @@
 // time constraints in one picture - "לפי אנשים" (default) or "לפי מסלול", the last choice remembered per device.
 // Header: each way's hours and the route. Data: `rideTimes()` (../rideTimes.ts). While the stretches load (or when
 // the ride has no way with two places) the stops view stands in.
+import { Lock } from "lucide-react";
 import { useState } from "react";
 
 import { he, tv } from "@/i18n/he";
@@ -36,12 +37,34 @@ function Time({ actual }: { actual: Actual | null }) {
   return <span dir="ltr" className="tabular-nums">{actual.estimate ? "~" : ""}{hhmm(actual.at)}</span>;
 }
 
-/** What the person asked: "08:15 · קבוע", "09:00 · גמיש 15 דק׳", "גמיש 07:30–08:00". */
+/** A stated hour with no flexibility (owner 2026-11-19): blue, with a little lock, never the word "קבוע". */
+const isFixed = (s: Stated) => s.early === 0 && s.late === 0;
+
+function FixedTime({ iso }: { iso: string }) {
+  return (
+    <span className="inline-flex items-center gap-0.5 font-semibold text-blue-700 dark:text-blue-300" data-testid="ride-details-fixed">
+      <Lock className="size-3 shrink-0" aria-label={he.rideStops.fixed} />
+      <span dir="ltr" className="tabular-nums">{hhmm(iso)}</span>
+    </span>
+  );
+}
+
+/** What the person asked: a fixed hour (lock), "09:00 · גמיש 15 דק׳", "גמיש 07:30–08:00". */
+function Asked({ s }: { s: Stated }) {
+  return isFixed(s) ? <FixedTime iso={s.at} /> : <>{askedText(s)}</>;
+}
+
 function askedText(s: Stated): string {
   if (s.early >= 1440 || s.late >= 1440) return tv("rideDetails.statedAnyTime", { time: hhmm(s.at) });
   if (s.anchor === "leave" && s.early > 0) return tv("rideDetails.statedRange", { from: hhmm(shift(s.at, -s.early)), to: hhmm(shift(s.at, s.late)) });
-  if (s.late > 0) return tv("rideDetails.statedFlex", { time: hhmm(s.at), n: String(s.late) });
-  return tv("rideDetails.statedFixed", { time: hhmm(s.at) });
+  return tv("rideDetails.statedFlex", { time: hhmm(s.at), n: String(s.late) });
+}
+
+function Tag({ s }: { s: Stated }) {
+  if (!isFixed(s)) return <>{tagText(s)}</>;
+  // "X: להגיע עד" / "X: לצאת ב־" and the hour in blue with the lock
+  const words = tv(s.anchor === "arrive" ? "rideDetails.tagArrive" : "rideDetails.tagLeave", { name: s.name, time: "" }).trim();
+  return <>{words}<FixedTime iso={s.at} /></>;
 }
 
 function tagText(s: Stated): string {
@@ -147,7 +170,7 @@ export function RideDetailsView({ rideId, version, route, people, requests, star
                 {person.rows.map((row) => (
                   <div key={`${row.leg}:${row.position}:${row.kind}`} className="contents" data-testid={`ride-details-row-${row.leg}-${row.position}`}>
                     <span className="break-words">{rowLabel(row)}</span>
-                    <span className={row.stated ? "font-medium" : "text-muted-foreground"}>{row.stated ? askedText(row.stated) : he.rideDetails.none}</span>
+                    <span className={row.stated ? "font-medium" : "text-muted-foreground"}>{row.stated ? <Asked s={row.stated} /> : he.rideDetails.none}</span>
                     <span className="break-words">
                       <Time actual={row.actual} />
                       {row.mark ? <span className={cn("ms-1", markClass(row.mark))} data-testid="ride-details-mark" data-mark={row.mark.kind}>{markText(row.mark)}</span> : null}
@@ -175,11 +198,11 @@ export function RideDetailsView({ rideId, version, route, people, requests, star
                     {card.name}
                     {card.isStop ? <span className="text-xs font-normal text-muted-foreground"> · {he.rideDetails.stop}</span> : null}
                   </p>
-                  {card.on.length ? <p className="break-words text-xs text-emerald-800 dark:text-emerald-300">{tv("rideDetails.on", { names: card.on.join(", ") })}</p> : null}
-                  {card.off.length ? <p className="break-words text-xs text-rose-800 dark:text-rose-300">{tv("rideDetails.off", { names: card.off.join(", ") })}</p> : null}
+                  {card.on.length ? <p className="break-words text-xs text-emerald-800 dark:text-emerald-300">{tv("rideStops.on", { names: card.on.join(", ") })}</p> : null}
+                  {card.off.length ? <p className="break-words text-xs text-rose-800 dark:text-rose-300">{tv("rideStops.off", { names: card.off.join(", ") })}</p> : null}
                   {card.tags.map((tag) => (
                     <p key={tag.stated.id} className="break-words text-xs" data-testid="ride-details-tag">
-                      <span className="font-medium">{tagText(tag.stated)}</span>
+                      <span className="font-medium"><Tag s={tag.stated} /></span>
                       <span className={cn("ms-1", markClass(tag.mark))} data-mark={tag.mark.kind}>{markText(tag.mark)}</span>
                     </p>
                   ))}
@@ -192,7 +215,9 @@ export function RideDetailsView({ rideId, version, route, people, requests, star
         </ol>
       )}
 
-      <p className="text-xs text-muted-foreground">{he.rideDetails.legend}</p>
+      <p className="text-xs text-muted-foreground">
+        <Lock className="inline size-3 text-blue-700 dark:text-blue-300" aria-label={he.rideStops.fixed} /> {he.rideDetails.legend}
+      </p>
     </div>
   );
 }
