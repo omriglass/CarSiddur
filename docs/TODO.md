@@ -1884,7 +1884,7 @@ Owner's notes (Hebrew as given):
 
 Owner: a ride that already started (its time passed) but is still today cannot be edited. It should stay editable for the whole day, whatever the hours. Example: a round trip (הלוך-חזור) must become one-way when plans changed mid-day and the person cannot bring the car back, so someone else returns it. Check where the "past" cut-off sits (form / ride sheet "עריכה" / `submit_request` and related guards) and move it to the end of the ride's day (Asia/Jerusalem); **Owner answer 2026-11-17: every edit, also on a day that is part of a multi-day ride.** Guiding principle (owner): "I'd rather be able to edit too much than too little" — when unsure whether to block an edit of a same-day ride, allow it.
 
-## HIGH PRIORITY (low-hanging fruit) — ask when a ride looks like a round trip with only one way placed (owner 2026-11-17, RT1) — not built yet
+## ✅ 2026-11-19 (REQ item 251; wordings owner-approved 2026-11-19; no migration — `edit_ride` stores the leg `both`; e2e `round-trip-ask.spec.ts`) — ask when a ride looks like a round trip with only one way placed (owner 2026-11-17, RT1)
 
 Production case 2026-11-18 (טוסיה, 09:00): a member asked for a round trip; the Sadran placed only the way out and lengthened that ride to cover the return hours, but never placed the way back. The ride therefore had one way only, and an added passenger could not choose "רק הלוך" (the part picker offers "כל הנסיעה" only on a one-way ride, `RidePartsPicker` / `rideLegs`). The health check showed it as `request_leg_not_covered`.
 

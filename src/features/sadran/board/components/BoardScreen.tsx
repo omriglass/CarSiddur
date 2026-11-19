@@ -875,6 +875,18 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
         confirmLabel={he.rideEditing.ownCarMoveConfirm}
         onConfirm={() => dnd.answerOwnCarAsk(true)}
       />
+      {/* RT1 (REQ item 251): the edited ride looks like a round trip / also the pickup, with that way unplaced. */}
+      <ConfirmDialog
+        open={!!dnd.roundTripPrompt}
+        onOpenChange={(open) => { if (!open) void dnd.answerRoundTripPrompt(false); }}
+        title={dnd.roundTripPrompt?.kind === "drop_off" ? he.sadranBoard.pickupAskTitle : he.sadranBoard.roundTripAskTitle}
+        description={dnd.roundTripPrompt?.kind === "drop_off"
+          ? tv("sadranBoard.pickupAskBody", { end: formatTime(new Date(dnd.roundTripPrompt.endsAt)), name: dnd.roundTripPrompt.name, pickup: formatTime(new Date(dnd.roundTripPrompt.returnAt)) })
+          : tv("sadranBoard.roundTripAskBody", { end: dnd.roundTripPrompt ? formatTime(new Date(dnd.roundTripPrompt.endsAt)) : "", origin: dnd.roundTripPrompt?.originName ?? "", name: dnd.roundTripPrompt?.name ?? "" })}
+        confirmLabel={dnd.roundTripPrompt?.kind === "drop_off" ? he.sadranBoard.pickupAskConfirm : he.sadranBoard.roundTripAskConfirm}
+        cancelLabel={dnd.roundTripPrompt?.kind === "drop_off" ? he.sadranBoard.pickupAskDecline : he.sadranBoard.roundTripAskDecline}
+        onConfirm={() => void dnd.answerRoundTripPrompt(true)}
+      />
       <ConfirmDialog
         open={!!dnd.chainBreakAsk}
         onOpenChange={(open) => { if (!open) dnd.answerChainBreakAsk(false); }}

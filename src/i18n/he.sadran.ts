@@ -254,6 +254,16 @@ export const heSadran = {
       notes: "שינוי התיאור",
     },
     legsJoinedToast: "ההקפצה והאיסוף חוברו לנסיעה אחת",
+    /** RT1 (REQ item 251, wording owner-approved 2026-11-19): a board edit left a ride that looks like a round trip, the way back unplaced. */
+    roundTripAskTitle: "נראה שזו נסיעה הלוך-חזור",
+    roundTripAskBody: "הנסיעה עכשיו עד {{end}} וחוזרת ל{{origin}}, אבל {{name}} משובץ/ת בה רק להלוך. לשבץ בה גם את החזור?",
+    roundTripAskConfirm: "כן, גם החזור",
+    roundTripAskDecline: "לא, רק הלוך ארוך",
+    /** RT1, the הקפצה variant: the drop-off's pickup is unplaced and the ride covers its hour. */
+    pickupAskTitle: "נראה שזו גם נסיעת האיסוף",
+    pickupAskBody: "הנסיעה עכשיו עד {{end}}, אבל האיסוף של {{name}} ב־{{pickup}} לא משובץ. לחבר את האיסוף לנסיעה הזאת?",
+    pickupAskConfirm: "כן, לחבר",
+    pickupAskDecline: "לא",
     /**
      * Mobile-friendly board header (2026-09-10): the eye/kebab icon menus that
      * replace the old inline row of buttons (the former `he.action.runSolver` key was removed on 2026-09-10 —

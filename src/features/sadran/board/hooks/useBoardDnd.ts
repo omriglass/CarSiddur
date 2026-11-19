@@ -16,6 +16,7 @@ import { he, tv } from "@/i18n/he";
 import { needsLargeTrunk, needsTowHitch } from "@/lib/luggageWaiver";
 import { askSmallTrunk } from "@/lib/smallTrunk";
 import { dateKey, formatTime } from "@/lib/time";
+import { rememberRoundTripAskDeclined, roundTripAsk, roundTripAskDeclined, servedWithBothWays, type RoundTripAsk } from "../roundTripAsk";
 import type { AppError } from "@/lib/rpc";
 import { refusalReasonText } from "@/lib/rpc";
 import { useSession } from "@/features/auth/useSession";
@@ -163,7 +164,21 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
   const agreeOfflineMutation = useAgreeProposalOfflineMutation();
   const templatesQuery = useWhatsappTemplates();
   const profileQuery = useProfile();
-  const editRideMutation = useEditRideMutation();
+  const editRideMutationRaw = useEditRideMutation();
+  // RT1 (REQ item 251): every board edit of a ride is looked at once the board has the new data - a ride that now looks
+  // like a round trip with only the way out placed asks the Sadran (`roundTripAsk`).
+  // `at` = the rides' refresh time when the edit was saved: the question waits for newer data (the ride as saved).
+  const [roundTripCheck, setRoundTripCheck] = useState<{ rideId: string; at: number } | null>(null);
+  const editRideMutation = {
+    ...editRideMutationRaw,
+    mutateAsync: async (vars: Parameters<typeof editRideMutationRaw.mutateAsync>[0]) => {
+      const at = board.ridesQuery.dataUpdatedAt;
+      const id = await editRideMutationRaw.mutateAsync(vars);
+      const rideId = vars.input.id ?? id;
+      if (rideId) setRoundTripCheck({ rideId, at });
+      return id;
+    },
+  };
   const placeSeriesMutation = usePlaceSeriesOnCarMutation();
   const markCarMoveMutation = useMarkCarMoveMutation();
   const setRidePassengersMutation = useSetRidePassengersMutation();
@@ -240,6 +255,33 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
 
   const { selectedDay, dropCtx, rides } = board;
   const requestsData = board.requestsQuery.data ?? [];
+
+  // RT1: asked once the edited ride is on the board as saved (rides refreshed after the edit).
+  const roundTripRide = roundTripCheck && board.ridesQuery.dataUpdatedAt > roundTripCheck.at
+    ? rides.find((r) => r.id === roundTripCheck.rideId) : undefined;
+  const roundTripFound: RoundTripAsk | null = roundTripRide ? roundTripAsk(roundTripRide, rides, requestsData) : null;
+  const roundTripPrompt = roundTripFound && !roundTripAskDeclined(roundTripFound) ? roundTripFound : null;
+
+  /** RT1: "כן" stores the request on the ride for both ways (`edit_ride`, leg `both`); "לא" is remembered. */
+  async function answerRoundTripPrompt(yes: boolean) {
+    const ask = roundTripPrompt;
+    setRoundTripCheck(null);
+    if (!ask) return;
+    if (!yes) { rememberRoundTripAskDeclined(ask); return; }
+    const ride = rides.find((r) => r.id === ask.rideId);
+    if (!ride?.id || !ride.car_id || !ride.starts_at || !ride.ends_at || !ride.origin_id || !ride.destination_id) return;
+    const input: EditRideInput = {
+      id: ride.id, department_id: departmentId, week_start: weekStart, car_id: ride.car_id,
+      starts_at: ride.starts_at, ends_at: ride.ends_at, origin_id: ride.origin_id, destination_id: ride.destination_id,
+      driver_id: ride.driver_id, needs_driver: !!ride.needs_driver, notes: ride.notes ?? undefined,
+      is_pinned: !!ride.is_pinned, pin_reason: ride.pin_reason,
+      served: servedWithBothWays(servedToEditRideLegs(servedOf(ride)), ask.requestId),
+    };
+    try {
+      await recordUndo(U.joinLegs, () => editRideMutationRaw.mutateAsync({ input, expectedVersion: ride.version ?? undefined, departmentId, weekStart }));
+      if (ask.kind === "drop_off") toast.success(he.sadranBoard.legsJoinedToast);
+    } catch { /* toast shown by the mutation */ }
+  }
   const carsData = board.carsQuery.data ?? [];
   const department = board.department;
 
@@ -514,8 +556,12 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
   /** REQ §13.138 (b) "סיכמנו": applies the draft with no proposal; a stale draft is withdrawn with its reason. */
   async function agreeProposalById(proposalId: string) {
     try {
+      const at = board.ridesQuery.dataUpdatedAt;
       const result = await recordUndo(U.agreed, () => agreeOfflineMutation.mutateAsync({ proposalId, departmentId, weekStart }));
       setSelectedProposalId(null);
+      // RT1: an applied merge / shift may leave its ride looking like a round trip with the way back unplaced.
+      const appliedRideId = proposals.find((p) => p.id === proposalId)?.ride_id;
+      if (result.status === "applied" && appliedRideId) setRoundTripCheck({ rideId: appliedRideId, at });
       if (result.status === "applied") toast.success(he.boardDrafts.agreedApplied);
       else if (result.status === "waiting") toast.info(tv("boardDrafts.agreedWaiting", { names: waitingNames(result.waitingFor) }));
       else toast.warning(tv("boardDrafts.agreedStale", { reason: refusalReasonText(result.reason) }));
@@ -1300,6 +1346,8 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
     answerOwnCarAsk,
     chainBreakAsk,
     answerChainBreakAsk,
+    roundTripPrompt,
+    answerRoundTripPrompt,
     unmetDragHover,
     setUnmetDragHover,
     editRideMutation,
