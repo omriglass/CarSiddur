@@ -3,6 +3,7 @@
 // free-text row last. The classic form keeps `DestinationCombobox` (popover) unchanged.
 import type { DestinationValue } from "@/components/DestinationCombobox";
 import { filterDestinations } from "@/components/destinationFilter";
+import { useHomePlaceIds } from "@/components/useHomePlaceIds";
 import { he, tv } from "@/i18n/he";
 
 import { InlineSearchList } from "./InlineSearchList";
@@ -28,6 +29,7 @@ interface PlacePickerProps {
 
 export function PlacePicker({ places, value, onPick, placeholder, recent }: PlacePickerProps) {
   const byId = new Map(places.map((place) => [place.id, place]));
+  const homeIds = useHomePlaceIds();
   return (
     <div className="space-y-3">
       {recent && recent.length > 0 ? <RecentDestinationChips values={recent} onPick={onPick} /> : null}
@@ -36,7 +38,7 @@ export function PlacePicker({ places, value, onPick, placeholder, recent }: Plac
         getItems={(query) =>
           filterDestinations(places, query).map((place) => ({
             key: place.id,
-            label: place.name,
+            label: homeIds.has(place.id) ? tv("field.homePlace", { name: place.name }) : place.name,
             selected: !!value && "presetId" in value && value.presetId === place.id,
             hint: place.tag ?? (place.travelMinutes ? <><span dir="ltr">{place.travelMinutes}</span> {he.requestSentence.minutesUnit}</> : undefined),
           }))

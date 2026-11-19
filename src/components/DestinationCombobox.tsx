@@ -12,10 +12,11 @@ import {
   CommandList,
 } from "@/components/ui/command";
 import { SheetPortalContext } from "@/components/SheetPortalContext";
-import { t } from "@/i18n/he";
+import { t, tv } from "@/i18n/he";
 import { useKeyboardInset } from "@/lib/keyboardInset";
 import { cn } from "@/lib/utils";
 import { filterDestinations } from "./destinationFilter";
+import { useHomePlaceIds } from "./useHomePlaceIds";
 
 // Raw Radix primitives rather than the shared `components/ui/popover.tsx` (component inventory,
 // same reasoning as `TimeField15`): its `PopoverContent` always portals to `document.body` with
@@ -46,9 +47,10 @@ interface DestinationComboboxProps {
   placeholder?: string;
 }
 
-function labelFor(value: DestinationValue | null): string {
+function labelFor(value: DestinationValue | null, homeIds: ReadonlySet<string>): string {
   if (!value) return "";
-  return "presetId" in value ? value.name : value.freeText;
+  if (!("presetId" in value)) return value.freeText;
+  return homeIds.has(value.presetId) ? tv("field.homePlace", { name: value.name }) : value.name;
 }
 
 /**
@@ -63,6 +65,7 @@ export function DestinationCombobox({ destinations, value, onChange, autoFocus, 
   const trimmedQuery = query.trim();
   const portalContainer = useContext(SheetPortalContext);
   const keyboardInset = useKeyboardInset();
+  const homeIds = useHomePlaceIds();
 
   function select(next: DestinationValue) {
     onChange(next);
@@ -83,7 +86,7 @@ export function DestinationCombobox({ destinations, value, onChange, autoFocus, 
         >
           <span className="flex items-center gap-2 truncate">
             <MapPin className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-            {labelFor(value) || placeholder || t("field.destination")}
+            {labelFor(value, homeIds) || placeholder || t("field.destination")}
           </span>
           <ChevronsUpDown className="size-4 shrink-0 opacity-50" />
         </Button>
@@ -115,7 +118,7 @@ export function DestinationCombobox({ destinations, value, onChange, autoFocus, 
                       onSelect={() => select({ presetId: dest.id, name: dest.name })}
                     >
                       <Check className={cn("size-4", isSelected ? "opacity-100" : "opacity-0")} />
-                      {dest.name}
+                      {homeIds.has(dest.id) ? tv("field.homePlace", { name: dest.name }) : dest.name}
                       {dest.zone ? (
                         <span className="ms-1 text-xs text-muted-foreground">· {dest.zone}</span>
                       ) : null}

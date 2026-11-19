@@ -5,6 +5,9 @@ import { SheetPortalContext } from "./SheetPortalContext";
 import { DestinationCombobox, type DestinationPreset } from "./DestinationCombobox";
 import { filterDestinations } from "./destinationFilter";
 
+// The department's home place is "חיפה" here (`departments.home_destination_id`, normally read with the session).
+vi.mock("./useHomePlaceIds", () => ({ useHomePlaceIds: () => new Set(["2"]) }));
+
 // jsdom has no `Element.scrollIntoView` (`cmdk`'s own item-selection layout effect calls it as
 // soon as the command list mounts); same jsdom-gap pattern as `src/test/setup.ts`'s
 // `ResizeObserver` stub, scoped to this file since nothing else here renders `cmdk`.
@@ -64,5 +67,21 @@ describe("popover portal container", () => {
   it("falls back to portaling into document.body when no context is provided", () => {
     render(<DestinationCombobox destinations={DESTINATIONS} value={null} onChange={vi.fn()} autoFocus />);
     expect(document.body.querySelector("[cmdk-input]")).not.toBeNull();
+  });
+});
+
+describe("home place marker (owner 2026-11-19)", () => {
+  it("marks the department's home place so it is not mistaken for a similar name", () => {
+    const { getByRole } = render(
+      <DestinationCombobox destinations={DESTINATIONS} value={{ presetId: "2", name: "חיפה" }} onChange={() => {}} />,
+    );
+    expect(getByRole("combobox").textContent).toContain("חיפה (בסיס)");
+  });
+
+  it("leaves other places as they are", () => {
+    const { getByRole } = render(
+      <DestinationCombobox destinations={DESTINATIONS} value={{ presetId: "1", name: "עפולה" }} onChange={() => {}} />,
+    );
+    expect(getByRole("combobox").textContent).not.toContain("(בסיס)");
   });
 });

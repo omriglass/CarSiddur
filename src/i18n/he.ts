@@ -586,6 +586,8 @@ export const he = {
     destination: "לאן?",
     destinationFrom: "מאיפה?",
     destinationFreeText: "יעד חופשי",
+    /** A place picker's label for the department's home place, so it is never mistaken for a similar name (owner 2026-11-19). */
+    homePlace: "{{name}} (בסיס)",
     /** Origin field label (REQ §13.93) — opened when the member taps the "מ..." line above the destination. */
     origin: "נקודת יציאה",
     rideType: "סוג נסיעה",
