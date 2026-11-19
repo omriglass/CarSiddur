@@ -1904,11 +1904,11 @@ Owner (bug hunt after v2026.11.17-1): "the calculated times are often wrong" —
 - **Owner decision 2026-11-18 (mockups https://claude.ai/artifact/V4fgeTNMeXcX2pSnPYnxHq):** a selector at the top of the sheet, **default "per person"** (one block per person: role, legs, a row per point — boards / by / leaves / home — with "asked" vs "actual" columns, ✓ or ⚠ near-break), the other option **"per route"** (one card per place in driving order: hour, who gets on/off, each person's constraint tagged fixed / flexible / ~estimate). Header in both: route and each way's hours. The last view chosen is remembered per device (owner 2026-11-18; localStorage, like the other per-device view switches). Wordings on the mockups are placeholders.
 - **Still to settle before building:** layout details (see RD1, which built the per-person part), whether the siddur's ride sheet (members' "פרטים" tab, `RideStopsView`, 0304473) takes the same design, and every new wording (owner approval). Design pass in UX_FLOWS first; check phone width. Related: RD1, LT1, TT1 (REQ items 246, 249).
 
-## The per-person ride view in the siddur too (owner 2026-11-19, SD2) — not built yet, later
+## The per-person ride view in the siddur too (owner 2026-11-19, SD2) — not built yet; owner 2026-11-20: decide after the pilot
 
 - After seeing SD1 on production's week, the owner finds the board's "לפי אנשים" view (REQ item 256, `RideDetailsView` / `rideTimes.ts`) far more readable than the siddur's "פרטים" tab (`RideStopsView`, the people summary). **Maybe** use it in the members' siddur ride sheet as it is — "we'll see about that"; decide with the owner before building. Check what members may see (notes to the Sadran stay hidden; other people's stated hours and flexibility would become visible to every member) and phone width.
 
-## A non-driver's new request opens on the הקפצה dialog (owner 2026-11-18, ND1) — ✅ done 2026-11-19 (REQ item 254): weekly and quick sentence forms, the form's hours (defaults included, owner); car-now left as is (no hours to set) — open
+## A non-driver's new request opens on the הקפצה dialog (owner 2026-11-18, ND1) — ✅ done 2026-11-19 (REQ item 254): weekly and quick sentence forms, the form's hours (defaults included, owner); car-now left as is (no hours to set; owner confirmed 2026-11-20)
 
 Context: קטיה (non-driver, `profiles.does_not_drive`) could not find "הקפצה + איסוף" on a new ride and filed two separate one-way הקפצות instead (production 2026-11-18; she was also on a stale build, v2026.11.04-1).
 
@@ -1925,7 +1925,7 @@ Owner: when creating a ride I should be able to remove myself and add someone el
 - **Build:** the same "אני" toggle + named member as requester in every new-ride entry point, same server path (`submit_request` `requester_id`, the confirmation shown to everyone). Check the quick/car-now specifics (auto-approve runs for the requester, not the filer; car-now's free car must suit the requester's driving).
 - **Owner case 2026-11-18:** a new ride for tomorrow morning in a published week (the quick variant, `QuickRequestSheet` → `RequestForm variant="quick"`): no way to take "אני" out; the workaround was to file it and then edit it (editing already allows changing the requester, REQ §13.169 b). So the fix is the quick variant first (then car-now and classic), and the result must equal "file + edit" — same requester, `filed_by`, notices, placement.
 
-## Fewer Sadran notices on active weeks (owner 2026-11-18, SN1) — ✅ done 2026-11-19 (REQ item 255): one combined notice per Sadran per tick (`sadran_digest_items`, `flush_sadran_digests`); `late_request` / `auto_approved` left as they are
+## Fewer Sadran notices on active weeks (owner 2026-11-18, SN1) — ✅ done 2026-11-19 (REQ item 255): one combined notice per Sadran per tick (`sadran_digest_items`, `flush_sadran_digests`); `late_request` / `auto_approved` left as they are; singular lines ("בקשה אחת השתנתה" / "בקשה אחת נכנסה להמתנה") owner-approved 2026-11-20
 
 Production 2026-11-18: מאי (this week's Sadran) got 18 `request_changed` notices in 24 h (48 in 7 days) — `submit_request` enqueues one per edit to every Sadran of a `solving`/`published`/`live` week, no dedupe (dedupe key carries `now()`), push + inbox, not mutable (`sadranRole`). The member-side banner "השבוע כבר בהכנה — השינוי יסומן לסדרן/ית" (`request.changedSinceSolveBanner`, edit form) understates it.
 
