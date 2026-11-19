@@ -60,9 +60,9 @@ begin
 
   -- nobody but the Sadran heard of it
   assert (select count(*) from public.notifications where recipient_id = m1) = n_driver, 'the driver is not told';
-  -- (one per request per transaction: its key carries now(), the same for both edits here)
-  assert (select count(*) from public.notifications where recipient_id = manager and event = 'request_changed') > n_sadran,
-    'the Sadran gets request_changed';
+  -- SN1 (REQ item 255): the change waits in the Sadran's queue for the combined notice (dropped there: she stayed on the ride)
+  assert exists (select 1 from public.sadran_digest_items where recipient_id = manager and request_id = qB),
+    'the Sadran''s queue has the change';
 
   -- (E) her stored return already lies past the ride's end (merged a little off): moving only the departure still stays
   update public.requests set return_at = d0 + interval '10 hours' where id = qB;

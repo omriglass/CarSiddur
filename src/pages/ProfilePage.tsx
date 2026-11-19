@@ -548,6 +548,21 @@ export function ProfilePage() {
                   data-testid="profile-driver-reminder"
                 />
               </div>
+              {/* SN1 (REQ item 255): the Sadran's combined notice also counts requests that went to the waiting list. */}
+              {isSadran ? (
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <Label htmlFor="profile-sadran-waitlist-notices" className="text-sm font-normal">{he.profileExtra.sadranWaitlistNoticesLabel}</Label>
+                    <p className="text-xs text-muted-foreground">{he.profileExtra.sadranWaitlistNoticesHint}</p>
+                  </div>
+                  <Switch
+                    id="profile-sadran-waitlist-notices"
+                    checked={profileQuery.data?.sadran_waitlist_notices ?? false}
+                    onCheckedChange={(checked) => updateProfileMutation.mutate({ sadran_waitlist_notices: checked })}
+                    data-testid="profile-sadran-waitlist-notices"
+                  />
+                </div>
+              ) : null}
               <div className="flex items-center justify-between opacity-60">
                 <span className="text-sm">{he.nav.sadran}</span>
                 <span className="text-xs text-muted-foreground">{he.profileExtra.sadranEventsNote}</span>

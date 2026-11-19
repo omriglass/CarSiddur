@@ -91,8 +91,9 @@ begin
   select count(*) into n from public.notifications
   where event = 'ride_edited' and data ->> 'request_id' = (select id::text from q21 where k = 'qB');
   assert n = 0, format('TEST 1 FAILED: nobody gets "ride edited" when the guest stays, got %s', n);
-  assert exists (select 1 from public.notifications where recipient_id = '00000000-0000-0000-0000-000000000102' and event = 'request_changed'
-                 and data ->> 'request_id' = (select id::text from q21 where k = 'qB')), 'TEST 1 FAILED: the Sadran gets request_changed';
+  -- SN1 (REQ item 255): queued for the Sadran's combined notice (a settled edit is dropped at the tick)
+  assert exists (select 1 from public.sadran_digest_items where recipient_id = '00000000-0000-0000-0000-000000000102' and kind = 'changed'
+                 and request_id = (select id from q21 where k = 'qB')), 'TEST 1 FAILED: the Sadran''s queue has the change';
   raise notice 'TEST 1 passed: a guest who stays tells only the Sadran';
 end $$;
 

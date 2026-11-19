@@ -32,7 +32,8 @@ begin
   assert ride.origin_id=ride.destination_id and ride.notes is null,'quick reservation copied private notes';
   select * into q from public.requests where id=req;
   assert q.ride_description='Public outing' and q.guest_passenger_names=array['Guest A'] and q.notes='Private medical detail','public/private fields mixed or not normalized';
-  assert exists(select 1 from public.notifications where event='waitlisted_request' and data->>'request_id'=req::text and data->>'ride_id'=ride.id::text),'driver vacancy did not notify coordinator';
+  -- SN1 (REQ item 255): queued for the Sadran's combined notice (counted when their waiting-list switch is on)
+  assert exists(select 1 from public.sadran_digest_items where kind='waitlisted' and request_id=req),'driver vacancy did not reach the coordinator''s queue';
   assert q.status='waitlisted' and q.status_reason='UNMET_NEEDS_DRIVER','driver vacancy counted fulfilled';
   assert exists(select 1 from public.ride_requests where ride_id=ride.id and request_id=req and role='passenger' and leg='out' and car_mode='chauffeur'),'passenger leg missing';
   insert into quick_fixture_ids values('public_request',req),('public_ride',ride.id);

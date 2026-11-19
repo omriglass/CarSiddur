@@ -303,7 +303,7 @@ export const heMember = {
     tooShortWarning: "הנסיעה לשם ובחזרה לוקחת בערך {{minutes}} דקות — יותר מכל זמן הבקשה. כדאי לבדוק את השעות.",
     duplicateWarning: "יש לך כבר בקשה חופפת בזמנים האלה — אולי כדאי לערוך אותה במקום לפתוח בקשה חדשה.",
     editRequestLink: "לעריכת הבקשה",
-    changedSinceSolveBanner: "השבוע כבר בהכנה — השינוי יסומן לסדרן/ית",
+    changedSinceSolveBanner: "השבוע כבר בהכנה — השינוי יופיע בלוח של הסדרן/ית",
     withdrawConfirmTitle: "להסיר את הבקשה?",
     withdrawConfirmBody: "הבקשה תוסר ולא תישלח לסדרן/ית.",
     /** R10U7: removing / cancelling a request that is already served by its plan B (REQ §13.112 a) — it is placed, not unsent. */
@@ -926,6 +926,9 @@ export const heMember = {
     classicRequestFormLabel: "טופס הבקשה הקלאסי",
     classicRequestFormHelp: "הטופס הישן, שדה אחרי שדה",
     pushRideEditsLabel: "התראה כשמישהו משנה את הנסיעות שלי",
+    /** SN1 (REQ item 255, owner-approved 2026-11-19): a Sadran's combined notice also counts requests that went to the waiting list. */
+    sadranWaitlistNoticesLabel: "התראות סדרן בשבועות פעילים",
+    sadranWaitlistNoticesHint: "הודעה מרוכזת כשבקשה חדשה או שינוי נכנסים להמתנה",
     driverReminderLabel: "תזכורת לצאת, 30 דקות לפני נסיעה שאני נוהג/ת בה",
     historyLink: "היסטוריה וסטטיסטיקה",
     managementTitle: "ניהול",

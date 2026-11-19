@@ -1921,7 +1921,7 @@ Owner: when creating a ride I should be able to remove myself and add someone el
 - **Build:** the same "אני" toggle + named member as requester in every new-ride entry point, same server path (`submit_request` `requester_id`, the confirmation shown to everyone). Check the quick/car-now specifics (auto-approve runs for the requester, not the filer; car-now's free car must suit the requester's driving).
 - **Owner case 2026-11-18:** a new ride for tomorrow morning in a published week (the quick variant, `QuickRequestSheet` → `RequestForm variant="quick"`): no way to take "אני" out; the workaround was to file it and then edit it (editing already allows changing the requester, REQ §13.169 b). So the fix is the quick variant first (then car-now and classic), and the result must equal "file + edit" — same requester, `filed_by`, notices, placement.
 
-## Fewer Sadran notices on active weeks (owner 2026-11-18, SN1) — not built yet
+## Fewer Sadran notices on active weeks (owner 2026-11-18, SN1) — ✅ done 2026-11-19 (REQ item 255): one combined notice per Sadran per tick (`sadran_digest_items`, `flush_sadran_digests`); `late_request` / `auto_approved` left as they are
 
 Production 2026-11-18: מאי (this week's Sadran) got 18 `request_changed` notices in 24 h (48 in 7 days) — `submit_request` enqueues one per edit to every Sadran of a `solving`/`published`/`live` week, no dedupe (dedupe key carries `now()`), push + inbox, not mutable (`sadranRole`). The member-side banner "השבוע כבר בהכנה — השינוי יסומן לסדרן/ית" (`request.changedSinceSolveBanner`, edit form) understates it.
 

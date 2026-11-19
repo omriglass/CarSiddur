@@ -128,7 +128,8 @@ begin
   perform pg_temp.as_user(m2);
   res:=public.answer_short_turnaround(q1, false);
   assert res->>'status'='waitlisted' and not (res ? 'short_turnaround'), format('(3) no = the usual waiting list, got %s', res);
-  assert exists(select 1 from public.notifications where event='waitlisted_request' and data->>'request_id'=q1::text), '(3) now the Sadran is told';
+  -- SN1 (REQ item 255): queued for the Sadran's combined notice
+  assert exists(select 1 from public.sadran_digest_items where kind='waitlisted' and request_id=q1), '(3) now the Sadran is told';
   perform pg_temp.as_user(m2);
   perform public.withdraw_request(q1, (select version from public.requests where id=q1));
 

@@ -723,3 +723,15 @@ select 'car_task'::public.notification_event, ch, null, t.title, t.body, t.title
 from (values ('לפני הנסיעה ברכב {{car}} ב-{{depart}}', '{{tasks}}')) as t(title, body)
 cross join unnest(array['inbox', 'push']::public.notification_channel[]) as ch
 on conflict (event, channel, coalesce(variant, '')) do nothing;
+
+-- SN1 (REQ item 255, owner-approved 2026-11-19): the Sadran's combined notice; mirrors 20261119210000_sadran_digest_schema.sql.
+insert into public.notification_templates (event, channel, variant, title, body, default_title, default_body)
+select 'request_changed'::public.notification_event, ch, 'digest', 'שינויים בבקשות', '{{digestLine}}', 'שינויים בבקשות', '{{digestLine}}'
+from unnest(array['inbox', 'push']::public.notification_channel[]) ch
+on conflict (event, channel, coalesce(variant, '')) do nothing;
+insert into public.text_fragments (key, body) values
+  ('sadran_digest.changed', '{{n}} בקשות השתנו'),
+  ('sadran_digest.changed_one', 'בקשה אחת השתנתה'),
+  ('sadran_digest.waitlisted', '{{n}} נכנסו להמתנה'),
+  ('sadran_digest.waitlisted_one', 'בקשה אחת נכנסה להמתנה')
+on conflict (key) do nothing;

@@ -13448,6 +13448,18 @@ begin
   end if;
   if _event = 'auto_approved' then return null; end if;
   _data := coalesce(_data, '{}'::jsonb);
+  -- SN1 (REQ item 255): a member's request change / a request left waiting is not told to the week's Sadranim one by
+  -- one: it is queued and told as one combined notice on the next tick (`flush_sadran_digests`). Variants (the
+  -- requester's "by_sadran", an ask to join) and the combined notice itself go out as before.
+  if _event in ('request_changed', 'waitlisted_request') and nullif(_data ->> 'variant', '') is null
+     and _department_id is not null and _week_start is not null and nullif(_data ->> 'request_id', '') is not null
+     and exists (select 1 from public.sadranim_of(_department_id, _week_start) s where s = _recipient) then
+    insert into public.sadran_digest_items (department_id, week_start, recipient_id, request_id, kind)
+    values (_department_id, _week_start, _recipient, (_data ->> 'request_id')::uuid,
+            case when _event = 'waitlisted_request' then 'waitlisted' else 'changed' end)
+    on conflict (recipient_id, request_id, kind) do update set updated_at = now();
+    return null;
+  end if;
   -- R8B7: no outcome notice before the day is published.
   if public._notice_is_unpublished_outcome(_event, _data, _recipient, _department_id, _week_start, v_caller_days) then
     return null;
@@ -13891,6 +13903,52 @@ end $$;
 
 
 ALTER FUNCTION "public"."flush_held_notices"("p_department_id" "uuid", "p_week_start" "date", "p_days" "date"[]) OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."flush_sadran_digests"("p_now" timestamp with time zone DEFAULT "now"()) RETURNS "void"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  r record;
+  v_changed int;
+  v_waiting int;
+  v_line text;
+begin
+  for r in select distinct i.recipient_id, i.department_id, i.week_start from public.sadran_digest_items i loop
+    with taken as (
+      delete from public.sadran_digest_items i
+      where i.recipient_id = r.recipient_id and i.department_id = r.department_id and i.week_start = r.week_start
+      returning i.request_id
+    )
+    select
+      count(distinct q.id) filter (where q.status not in ('waitlisted', 'withdrawn', 'cancelled', 'denied', 'external')
+        -- settled: the server placed it (kept or moved its booking)
+        and not (q.status in ('assigned', 'merged') and exists (
+          select 1 from public.ride_requests rr join public.rides rd on rd.id = rr.ride_id
+          where rr.request_id = q.id and rd.status <> 'cancelled'))),
+      count(distinct q.id) filter (where q.status = 'waitlisted')
+    into v_changed, v_waiting
+    from taken t join public.requests q on q.id = t.request_id;
+    if not coalesce((select p.sadran_waitlist_notices from public.profiles p where p.id = r.recipient_id), false) then
+      v_waiting := 0;
+    end if;
+    continue when coalesce(v_changed, 0) + coalesce(v_waiting, 0) = 0;
+    v_line := concat_ws(' · ',
+      case when v_changed = 1 then public._frag('sadran_digest.changed_one')
+           when v_changed > 1 then public._frag('sadran_digest.changed', jsonb_build_object('n', v_changed)) end,
+      case when v_waiting = 1 then public._frag('sadran_digest.waitlisted_one')
+           when v_waiting > 1 then public._frag('sadran_digest.waitlisted', jsonb_build_object('n', v_waiting)) end);
+    perform public.enqueue_notification(r.recipient_id, 'request_changed', r.department_id, r.week_start,
+      jsonb_build_object('digestLine', v_line),
+      jsonb_build_object('variant', 'digest', 'url', format('/sadran/%s/%s/board', r.department_id, r.week_start)),
+      format('sadran_digest:%s:%s:%s:%s', r.recipient_id, r.department_id, r.week_start, p_now));
+  end loop;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."flush_sadran_digests"("p_now" timestamp with time zone) OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."forbid_mutation"() RETURNS "trigger"
@@ -27330,10 +27388,7 @@ begin
       if payload ? 'fallback' or payload ? 'alternative' or v_existing.fallback <> 'none' then
         perform public._save_request_alternative(v_request_id, payload, v_existing.depart_at);
       end if;
-      perform public.enqueue_notification(s.profile_id, 'request_changed', v_department_id, v_week_start,
-        jsonb_build_object('requestId', v_request_id::text), jsonb_build_object('request_id', v_request_id),
-        format('request_changed:%s:%s', v_request_id, now()))
-      from public.sadranim_of(v_department_id, v_week_start) as s(profile_id);
+      -- SN1 (REQ item 255): a note-only change is settled by itself — no Sadran notice (the board still marks it).
       if not v_form_notice then perform public._notify_request_edited_by_manager(v_request_id, v_actor); end if;
       return jsonb_build_object('ok', true, 'placement_neutral', true, 'unchanged', false, 'request_id', v_request_id,
         'status', v_existing.status, 'is_late', v_existing.is_late, 'warnings', '[]'::jsonb, 'overlaps', '[]'::jsonb);
@@ -31591,6 +31646,7 @@ CREATE TABLE IF NOT EXISTS "public"."profiles" (
     "my_rides_week_view" boolean DEFAULT false NOT NULL,
     "push_on_ride_edits" boolean DEFAULT true NOT NULL,
     "driver_reminder" boolean,
+    "sadran_waitlist_notices" boolean DEFAULT false NOT NULL,
     CONSTRAINT "profiles_default_boosters_ck" CHECK (("default_boosters" >= 0)),
     CONSTRAINT "profiles_default_child_seats_ck" CHECK (("default_child_seats" >= 0)),
     CONSTRAINT "profiles_phone_format" CHECK ((("phone" IS NULL) OR ("phone" ~ '^\+[1-9][0-9]{7,14}$'::"text")))
@@ -31600,6 +31656,10 @@ ALTER TABLE ONLY "public"."profiles" FORCE ROW LEVEL SECURITY;
 
 
 ALTER TABLE "public"."profiles" OWNER TO "postgres";
+
+
+COMMENT ON COLUMN "public"."profiles"."sadran_waitlist_notices" IS 'SN1 (REQ item 255): the combined Sadran notice also counts requests that went to the waiting list. Off by default.';
+
 
 
 CREATE TABLE IF NOT EXISTS "public"."proposal_parties" (
@@ -32106,6 +32166,28 @@ ALTER TABLE ONLY "public"."sadran_assignments" FORCE ROW LEVEL SECURITY;
 
 
 ALTER TABLE "public"."sadran_assignments" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."sadran_digest_items" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "department_id" "uuid" NOT NULL,
+    "week_start" "date" NOT NULL,
+    "recipient_id" "uuid" NOT NULL,
+    "request_id" "uuid" NOT NULL,
+    "kind" "text" NOT NULL,
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    CONSTRAINT "sadran_digest_items_kind_check" CHECK (("kind" = ANY (ARRAY['changed'::"text", 'waitlisted'::"text"])))
+);
+
+ALTER TABLE ONLY "public"."sadran_digest_items" FORCE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."sadran_digest_items" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."sadran_digest_items" IS 'SN1 (REQ item 255): request changes / waiting requests queued for one combined Sadran notice per tick. Server-only (no policies).';
+
 
 
 CREATE TABLE IF NOT EXISTS "public"."siddur_versions" (
@@ -33519,6 +33601,16 @@ ALTER TABLE ONLY "public"."sadran_assignments"
 
 
 
+ALTER TABLE ONLY "public"."sadran_digest_items"
+    ADD CONSTRAINT "sadran_digest_items_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."sadran_digest_items"
+    ADD CONSTRAINT "sadran_digest_items_recipient_id_request_id_kind_key" UNIQUE ("recipient_id", "request_id", "kind");
+
+
+
 ALTER TABLE ONLY "public"."siddur_versions"
     ADD CONSTRAINT "siddur_versions_pkey" PRIMARY KEY ("id");
 
@@ -33922,6 +34014,14 @@ CREATE INDEX "rides_week_idx" ON "public"."rides" USING "btree" ("department_id"
 
 
 CREATE UNIQUE INDEX "sadran_assignments_unique_idx" ON "public"."sadran_assignments" USING "btree" ("department_id", "profile_id", COALESCE("week_start", '1970-01-04'::"date"));
+
+
+
+CREATE INDEX "sadran_digest_items_request_idx" ON "public"."sadran_digest_items" USING "btree" ("request_id");
+
+
+
+CREATE INDEX "sadran_digest_items_week_idx" ON "public"."sadran_digest_items" USING "btree" ("department_id", "week_start");
 
 
 
@@ -35047,6 +35147,10 @@ CREATE OR REPLACE TRIGGER "rides_within_week" BEFORE INSERT OR UPDATE ON "public
 
 
 CREATE OR REPLACE TRIGGER "sadran_assignments_require_roster_role" BEFORE INSERT OR UPDATE ON "public"."sadran_assignments" FOR EACH ROW EXECUTE FUNCTION "public"."sadran_assignments_require_roster_role"();
+
+
+
+CREATE OR REPLACE TRIGGER "sadran_digest_items_set_updated_at" BEFORE UPDATE ON "public"."sadran_digest_items" FOR EACH ROW EXECUTE FUNCTION "public"."set_updated_at"();
 
 
 
@@ -36464,6 +36568,26 @@ ALTER TABLE ONLY "public"."sadran_assignments"
 
 
 
+ALTER TABLE ONLY "public"."sadran_digest_items"
+    ADD CONSTRAINT "sadran_digest_items_department_id_fkey" FOREIGN KEY ("department_id") REFERENCES "public"."departments"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."sadran_digest_items"
+    ADD CONSTRAINT "sadran_digest_items_department_id_week_start_fkey" FOREIGN KEY ("department_id", "week_start") REFERENCES "public"."weeks"("department_id", "week_start") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."sadran_digest_items"
+    ADD CONSTRAINT "sadran_digest_items_recipient_id_fkey" FOREIGN KEY ("recipient_id") REFERENCES "public"."profiles"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."sadran_digest_items"
+    ADD CONSTRAINT "sadran_digest_items_request_id_fkey" FOREIGN KEY ("request_id") REFERENCES "public"."requests"("id") ON DELETE CASCADE;
+
+
+
 ALTER TABLE ONLY "public"."siddur_versions"
     ADD CONSTRAINT "siddur_versions_published_by_fkey" FOREIGN KEY ("published_by") REFERENCES "public"."profiles"("id");
 
@@ -37509,6 +37633,9 @@ CREATE POLICY "sadran_assignments_select" ON "public"."sadran_assignments" FOR S
 
 CREATE POLICY "sadran_assignments_update" ON "public"."sadran_assignments" FOR UPDATE TO "authenticated" USING (( SELECT "public"."is_admin"() AS "is_admin")) WITH CHECK (( SELECT "public"."is_admin"() AS "is_admin"));
 
+
+
+ALTER TABLE "public"."sadran_digest_items" ENABLE ROW LEVEL SECURITY;
 
 
 ALTER TABLE "public"."siddur_versions" ENABLE ROW LEVEL SECURITY;
@@ -39587,6 +39714,11 @@ GRANT ALL ON FUNCTION "public"."flag_rides_in_maintenance"() TO "service_role";
 REVOKE ALL ON FUNCTION "public"."flush_held_notices"("p_department_id" "uuid", "p_week_start" "date", "p_days" "date"[]) FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."flush_held_notices"("p_department_id" "uuid", "p_week_start" "date", "p_days" "date"[]) TO "service_role";
 GRANT ALL ON FUNCTION "public"."flush_held_notices"("p_department_id" "uuid", "p_week_start" "date", "p_days" "date"[]) TO "authenticated";
+
+
+
+REVOKE ALL ON FUNCTION "public"."flush_sadran_digests"("p_now" timestamp with time zone) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."flush_sadran_digests"("p_now" timestamp with time zone) TO "service_role";
 
 
 
@@ -41888,6 +42020,10 @@ GRANT SELECT("driver_reminder") ON TABLE "public"."profiles" TO "authenticated";
 
 
 
+GRANT SELECT("sadran_waitlist_notices") ON TABLE "public"."profiles" TO "authenticated";
+
+
+
 GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE "public"."proposal_parties" TO "authenticated";
 GRANT ALL ON TABLE "public"."proposal_parties" TO "service_role";
 
@@ -42003,6 +42139,11 @@ GRANT ALL ON TABLE "public"."rides" TO "service_role";
 
 GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE "public"."sadran_assignments" TO "authenticated";
 GRANT ALL ON TABLE "public"."sadran_assignments" TO "service_role";
+
+
+
+GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE "public"."sadran_digest_items" TO "authenticated";
+GRANT ALL ON TABLE "public"."sadran_digest_items" TO "service_role";
 
 
 

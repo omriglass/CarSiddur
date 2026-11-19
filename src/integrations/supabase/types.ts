@@ -2396,6 +2396,7 @@ export type Database = {
           my_rides_week_view: boolean
           phone: string | null
           push_on_ride_edits: boolean
+          sadran_waitlist_notices: boolean
           updated_at: string
         }
         Insert: {
@@ -2421,6 +2422,7 @@ export type Database = {
           my_rides_week_view?: boolean
           phone?: string | null
           push_on_ride_edits?: boolean
+          sadran_waitlist_notices?: boolean
           updated_at?: string
         }
         Update: {
@@ -2446,6 +2448,7 @@ export type Database = {
           my_rides_week_view?: boolean
           phone?: string | null
           push_on_ride_edits?: boolean
+          sadran_waitlist_notices?: boolean
           updated_at?: string
         }
         Relationships: [
@@ -4614,6 +4617,75 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "department_members"
             referencedColumns: ["department_id", "profile_id"]
+          },
+        ]
+      }
+      sadran_digest_items: {
+        Row: {
+          created_at: string
+          department_id: string
+          id: string
+          kind: string
+          recipient_id: string
+          request_id: string
+          updated_at: string
+          week_start: string
+        }
+        Insert: {
+          created_at?: string
+          department_id: string
+          id?: string
+          kind: string
+          recipient_id: string
+          request_id: string
+          updated_at?: string
+          week_start: string
+        }
+        Update: {
+          created_at?: string
+          department_id?: string
+          id?: string
+          kind?: string
+          recipient_id?: string
+          request_id?: string
+          updated_at?: string
+          week_start?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sadran_digest_items_department_id_fkey"
+            columns: ["department_id"]
+            isOneToOne: false
+            referencedRelation: "departments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sadran_digest_items_department_id_week_start_fkey"
+            columns: ["department_id", "week_start"]
+            isOneToOne: false
+            referencedRelation: "weeks"
+            referencedColumns: ["department_id", "week_start"]
+          },
+          {
+            foreignKeyName: "sadran_digest_items_recipient_id_fkey"
+            columns: ["recipient_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sadran_digest_items_request_id_fkey"
+            columns: ["request_id"]
+            isOneToOne: false
+            referencedRelation: "requests"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sadran_digest_items_request_id_fkey"
+            columns: ["request_id"]
+            isOneToOne: false
+            referencedRelation: "v_my_requests"
+            referencedColumns: ["request_id"]
           },
         ]
       }
@@ -7407,6 +7479,7 @@ export type Database = {
         }
         Returns: number
       }
+      flush_sadran_digests: { Args: { p_now?: string }; Returns: undefined }
       form_waitlist_groups: {
         Args: { p_day: string; p_department_id: string; p_week_start: string }
         Returns: number
