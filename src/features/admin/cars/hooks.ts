@@ -18,6 +18,8 @@ import {
   type CarInsert,
   type CarUpdate,
 } from "./api";
+import { carKeys } from "@/features/cars/keys";
+
 import { carAdminKeys } from "./queryKeys";
 
 import type { Passengers } from "@/solver";
@@ -103,6 +105,9 @@ export function useResolveCarIssueMutation() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (issueId: string) => resolveCarIssue(issueId),
-    onSuccess: () => void queryClient.invalidateQueries({ queryKey: carAdminKeys.issues() }),
+    onSuccess: () => Promise.all([
+      queryClient.invalidateQueries({ queryKey: carAdminKeys.issues() }),
+      queryClient.invalidateQueries({ queryKey: carKeys.all }), // the car page's history and every open-issue list (CR1)
+    ]),
   });
 }

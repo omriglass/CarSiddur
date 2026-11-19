@@ -303,6 +303,8 @@ Unique index `(department_id, profile_id, coalesce(week_start, '1970-01-04'))`. 
 | type | car_type | NN | 'shared' | |
 | status | car_status | NN | 'active' | |
 | fuel_type | car_fuel_type | | | REQ item 217 (`20261113110100`): בנזין / סולר / חשמלי, null = not set; diesel cars take urea (item 219). Public like every `cars` column (`rls_smoke.sql` TEST 18) |
+| corporation | text | | | REQ item 257 (`20261120090000`): "תאגיד", free text, 1–80 chars (`cars_corporation_ck`); the car page suggests the names already used on any car. Public (TEST 18) |
+| tire_pressure_front_psi / tire_pressure_rear_psi | smallint | | | REQ item 257: the recommended tire pressure, PSI, 10–99 each (`cars_tire_pressure_ck`; the UI takes both or neither); shown on the car page and in the tire-fill dialog. Public (TEST 18) |
 | owner_id | uuid | | | FK profiles. Since REQ item 227 (`20261113170100`) a **mirror of the first owner** in `car_owners` (by `created_at`, id), kept by triggers and read by nothing that decides permissions; CHECK `cars_temporary_owner_ck` = `type = 'temporary' or owner_id is null` (a private car may be ownerless when its last owner left the department). An explicit change of `type`/`owner_id` (the car form, the "רכב פרטי" switch, a member registering a car) sets the owner list: shared = none, a new owner_id = just that person (`cars_sync_owners`) |
 | features | text[] | NN | '{}' | 'roof_rack','large_trunk','manual','awd','tow_hitch' (app-side vocabulary, `CAR_FEATURES`; `manual` replaced `automatic` 2026-11-08, REQ §13.199) |
 | notes | text | | | key location, quirks |

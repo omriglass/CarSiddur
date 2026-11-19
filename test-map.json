@@ -1432,13 +1432,17 @@
         "supabase/migrations/**/*car_checklist*",
         "supabase/tests/car_checklists.sql",
         "src/i18n/he.carChecklist.ts",
-        "src/pages/CarChecklistEditorPage.tsx"
+        "src/pages/CarChecklistEditorPage.tsx",
+        "src/lib/plate.ts",
+        "e2e/car-page-details.spec.ts",
+        "supabase/migrations/**/*car_corporation*"
       ],
       "vitest": [
         "src/features/carCare",
         "src/features/cars",
         "src/features/carTasks",
-        "src/features/carsOverview"
+        "src/features/carsOverview",
+        "src/lib/plate.test.ts"
       ],
       "sql": [
         "car_care_semantics.sql",
@@ -1453,7 +1457,8 @@
         "@car-admin",
         "@car-tasks",
         "@car-checklist",
-        "@car-owners"
+        "@car-owners",
+        "@car-page"
       ],
       "reqRefs": [
         "13.69",
@@ -1461,14 +1466,16 @@
         "13.71",
         "13.72",
         "13.73",
-        "150"
+        "150",
+        "257"
       ],
       "qaChecklist": [
         "Report a car problem with a category; confirm the responsible person/admin sees it (REQ §13.69)",
         "Log a tire fill across all five positions; confirm all required (REQ §13.72)",
         "Export car-care history by date range to Excel (REQ §13.73)",
         "Admin sets 'מנהל/ת רכבים' on a membership; that member's /my lists only cars they are responsible for, and they can correct kilometrage on a shared car (REQ item 150 a)",
-        "Log a kilometrage reading; a lower one is refused; a manager's correction may lower it; history and export list both (REQ item 150 c)"
+        "Log a kilometrage reading; a lower one is refused; a manager's correction may lower it; history and export list both (REQ item 150 c)",
+        "Car page (REQ item 257): plate shows xxx-xx-xxx / xx-xxx-xx; open issues on top, in the report dialog and as ⚠ on /my rides; edit tire pressure and corporation in place (suggestions); seat configurations in a dialog; 'רכב פרטי / מושאל' checkbox"
       ]
     },
     {

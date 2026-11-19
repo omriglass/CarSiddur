@@ -118,7 +118,7 @@ test("a car admin of a private car gets a status select only", { tag: ["@car-che
   try {
     await page.goto(paths.car(PRIVATE_CAR_ID));
     await expect(page.getByTestId("car-status-select")).toBeVisible();
-    await expect(page.getByTestId("car-private-card").getByRole("switch")).toHaveCount(0);
+    await expect(page.getByTestId("car-private-card").getByRole("checkbox")).toHaveCount(0);
     await page.getByTestId("car-status-select").click();
     await page.getByRole("option", { name: he.car.status.maintenance }).click();
     await expect.poll(async () => (await service.from("cars").select("status").eq("id", PRIVATE_CAR_ID).single()).data?.status).toBe("maintenance");

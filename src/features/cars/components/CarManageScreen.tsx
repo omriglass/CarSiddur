@@ -12,10 +12,9 @@ import { PageHeader } from "@/components/PageHeader";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { CarForm, type ResponsibleOption } from "@/features/admin/cars/components/CarForm";
-import { CarDetailsList } from "./CarDetailsList";
+import type { ResponsibleOption } from "@/features/admin/cars/components/CarForm";
 import type { Car } from "@/features/admin/cars/api";
 import { useAllDepartmentMembers, useAllProfiles } from "@/features/admin/members/hooks";
 import { CarSparkle } from "@/components/CarSparkle";
@@ -34,9 +33,14 @@ import { CarMoodCard } from "./CarMoodCard";
 import { CarOwnersCard } from "./CarOwnersCard";
 import { CarKilometrageCard } from "./CarKilometrageCard";
 import { CarChecklistCard } from "../checklist/components/CarChecklistCard";
-import { CarPrivateSwitch } from "./CarPrivateSwitch";
+import { CarFactsCard } from "./CarFactsCard";
+import { CarOpenIssues } from "./CarOpenIssues";
+import { CarRegistrationCard } from "./CarRegistrationCard";
 import { CarStatusSelect } from "./CarStatusSelect";
-import { useCarCareHistoryQuery, useCarCurrentKmQuery, useCarIssueHistoryQuery, useCarOdometerHistoryQuery } from "../hooks";
+import { useCarCareHistoryQuery, useCarCurrentKmQuery, useCarIssueHistoryQuery, useCarOdometerHistoryQuery, useOpenCarIssuesQuery } from "../hooks";
+import { formatPlate } from "@/lib/plate";
+import { isCarOwner } from "@/lib/carOwners";
+import { useProfile } from "@/features/auth/useProfile";
 import { formatKm } from "../lib/kilometrage";
 import { filterCarHistory, mergeCarHistory, type CarHistoryEntry, type CarHistoryFilter } from "../lib/history";
 
@@ -176,6 +180,9 @@ export function CarManageScreen({ car, isAdmin, canEdit, canManageCar, canDefine
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [logView, setLogView] = useState<"wash" | "km" | null>(null);
+  const [historyAll, setHistoryAll] = useState(false);
+  const openIssuesQuery = useOpenCarIssuesQuery([car.id]);
+  const profile = useProfile().data;
 
   const responsibleOptions: ResponsibleOption[] = useMemo(() => {
     const profilesById = new Map((profilesQuery.data ?? []).map((p) => [p.id, p.full_name]));
@@ -205,8 +212,16 @@ export function CarManageScreen({ car, isAdmin, canEdit, canManageCar, canDefine
     ...(canManageCar ? [{ value: "task" as const, label: he.carTasks.historyFilter }] : []),
   ];
 
+  // CR1 (REQ item 257, owner 2026-11-20): one page ordered by who needs what — everyone, good to know, the car's managers.
+  const asOwner = car.type === "temporary" && isCarOwner(car, profile?.id);
+  const showManage = canEdit || canManageCar || canSetStatusOnly || asOwner;
+  const shown = historyAll ? filtered : filtered.slice(0, 3);
+  const tier = (label: string) => (
+    <h2 className="flex items-center gap-2 pt-2 text-xs font-semibold text-muted-foreground after:h-px after:flex-1 after:bg-border">{label}</h2>
+  );
+
   return (
-    <div className="mx-auto max-w-2xl space-y-4 p-4 pb-24">
+    <div className="mx-auto max-w-2xl space-y-3 p-4 pb-24">
       <PageHeader
         title={
           <span className="relative inline-flex items-center gap-1 px-2">
@@ -218,7 +233,7 @@ export function CarManageScreen({ car, isAdmin, canEdit, canManageCar, canDefine
       />
       {/* FU1 (REQ item 217): licence plate and fuel type are the first facts about a car. */}
       <div className="flex flex-wrap items-center gap-2 text-sm">
-        <span className="font-medium" dir="ltr" data-testid="car-plate">{car.license_plate}</span>
+        <span className="font-medium" dir="ltr" data-testid="car-plate">{formatPlate(car.license_plate)}</span>
         <CarFuelChip fuel={car.fuel_type} />
         <StatusBadge kind="car" status={car.status} />
         {/* Owner 2026-11-13: the last urea fill at a glance on a diesel car. */}
@@ -229,68 +244,44 @@ export function CarManageScreen({ car, isAdmin, canEdit, canManageCar, canDefine
         ) : null}
       </div>
 
-      <CarOwnersCard car={car} canManageOwners={canManageOwners} />
+      <CarOpenIssues issues={openIssuesQuery.data ?? []} variant="banner" />
 
+      {tier(he.carPage.tierEveryone)}
+      <CarFactsCard
+        car={car}
+        canEdit={canEdit}
+        canEditResponsible={isAdmin}
+        responsibleOptions={responsibleOptions}
+        codeVisible={codeVisible}
+      />
+      <CarOwnersCard car={car} canManageOwners={canManageOwners} />
       <CarMoodCard
         lastWashAt={merged.find((entry) => entry.kind === "wash")?.createdAt ?? null}
         onLogWash={() => setLogView("wash")}
       />
-
       <CarKilometrageCard car={car} current={currentKmQuery.data ?? null} loading={currentKmQuery.isLoading} canCorrect={canManageCar} onLogKm={() => setLogView("km")} />
       {/* R20U3 (QA run 20): the wash and kilometrage cards open their step of the car report dialog. */}
       {logView ? <CarReportDialog carId={car.id} carName={car.name} open initialView={logView} onOpenChange={(open) => { if (!open) setLogView(null); }} /> : null}
-
-      {canManageCar ? <CarTasksManagerCard car={car} /> : null}
-
-      <CarChecklistCard car={car} canManageCar={canManageCar} canDefine={canDefineChecklist} />
-
-      <CarPrivateSwitch car={car} canEdit={canEdit} />
-
-      {canSetStatusOnly && !canEdit ? <CarStatusSelect car={car} /> : null}
-
       <CarMaintenancePanel car={car} />
 
-      <Tabs defaultValue="details">
-        <TabsList>
-          <TabsTrigger value="details">{he.carPage.tabDetails}</TabsTrigger>
-          <TabsTrigger value="history">{he.carPage.tabHistory}</TabsTrigger>
-          <TabsTrigger value="export">{he.carPage.tabExport}</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="details" className="pt-4">
-          {canEdit ? (
-          <CarForm
-            car={car}
-            showDepartmentField={false}
-            canEditResponsible={isAdmin}
-            canEditSeatConfigs={isAdmin || (canEdit && car.type === "temporary")}
-            responsibleOptions={responsibleOptions}
-            onSaved={() => undefined}
-          />
-          ) : (
-            <CarDetailsList
-              car={car}
-              responsibleName={responsibleOptions.find((o) => o.id === car.responsible_id)?.name ?? null}
-              codeVisible={codeVisible}
-            />
-          )}
-        </TabsContent>
-
-        <TabsContent value="history" className="space-y-4 pt-4">
-          <div className="flex flex-wrap gap-2">
-            {FILTER_CHIPS.map((chip) => (
-              <button
-                key={chip.value}
-                type="button"
-                onClick={() => setFilter(chip.value)}
-                className={`rounded-full border px-3 py-1 text-xs transition-smooth ${
-                  filter === chip.value ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground"
-                }`}
-              >
-                {chip.label}
-              </button>
-            ))}
-          </div>
+      {tier(he.carPage.tierMore)}
+      <section className="space-y-3" data-testid="car-history">
+        <h3 className="text-sm font-semibold">{he.carPage.tabHistory}</h3>
+        <div className="flex flex-wrap gap-2">
+          {FILTER_CHIPS.map((chip) => (
+            <button
+              key={chip.value}
+              type="button"
+              onClick={() => setFilter(chip.value)}
+              className={`rounded-full border px-3 py-1 text-xs transition-smooth ${
+                filter === chip.value ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground"
+              }`}
+            >
+              {chip.label}
+            </button>
+          ))}
+        </div>
+        {historyAll ? (
           <div className="flex flex-wrap items-end gap-3">
             <label className="flex flex-col gap-1 text-xs text-muted-foreground">
               {he.carPage.historyDateFrom}
@@ -301,29 +292,45 @@ export function CarManageScreen({ car, isAdmin, canEdit, canManageCar, canDefine
               <Input type="date" dir="ltr" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="h-9 w-36" />
             </label>
           </div>
+        ) : null}
 
-          {historyLoading ? (
-            <CardListSkeleton count={3} />
-          ) : historyError ? (
-            <ErrorState onRetry={() => { void issuesQuery.refetch(); void careEventsQuery.refetch(); void odometerQuery.refetch(); }} />
-          ) : filtered.length === 0 ? (
-            <EmptyState icon={HistoryIcon} message={he.carPage.historyEmpty} />
-          ) : (
-            <div className="space-y-2">{filtered.map(historyRow)}</div>
-          )}
-        </TabsContent>
+        {historyLoading ? (
+          <CardListSkeleton count={3} />
+        ) : historyError ? (
+          <ErrorState onRetry={() => { void issuesQuery.refetch(); void careEventsQuery.refetch(); void odometerQuery.refetch(); }} />
+        ) : filtered.length === 0 ? (
+          <EmptyState icon={HistoryIcon} message={he.carPage.historyEmpty} />
+        ) : (
+          <div className="space-y-2">{shown.map(historyRow)}</div>
+        )}
+        {!historyAll && filtered.length > shown.length ? (
+          <Button variant="ghost" size="sm" onClick={() => setHistoryAll(true)} data-testid="car-history-all">
+            {tv("carPage.historyShowAll", { count: String(filtered.length) })}
+          </Button>
+        ) : null}
+      </section>
 
-        <TabsContent value="export" className="pt-4">
-          <CarExcelExportButton
-            carName={car.name}
-            issues={issuesQuery.data ?? []}
-            careEvents={careEventsQuery.data ?? []}
-            odometer={odometerQuery.data ?? []}
-            tasks={tasksQuery.data ?? []}
-            loading={historyLoading}
-          />
-        </TabsContent>
-      </Tabs>
+      {showManage ? (
+        <>
+          {tier(he.carPage.tierManage)}
+          {canManageCar ? <CarTasksManagerCard car={car} /> : null}
+          <CarChecklistCard car={car} canManageCar={canManageCar} canDefine={canDefineChecklist} />
+          {canSetStatusOnly && !canEdit ? <CarStatusSelect car={car} /> : null}
+          <CarRegistrationCard car={car} canEdit={canEdit} canEditSeatConfigs={isAdmin || (canEdit && car.type === "temporary")} />
+          {canEdit || canManageCar ? (
+            <CarExcelExportButton
+              carName={car.name}
+              issues={issuesQuery.data ?? []}
+              careEvents={careEventsQuery.data ?? []}
+              odometer={odometerQuery.data ?? []}
+              tasks={tasksQuery.data ?? []}
+              loading={historyLoading}
+            />
+          ) : null}
+        </>
+      ) : (
+        <CarChecklistCard car={car} canManageCar={false} canDefine={false} />
+      )}
     </div>
   );
 }

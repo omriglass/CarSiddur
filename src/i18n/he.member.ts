@@ -1422,6 +1422,10 @@ export const heMember = {
    * `dialogTitle` doubles as the opening icon button's `aria-label`.
    */
   carCare: {
+    /** CR1 (REQ item 257): the car's recommended pressure above the tire drawing. */
+    tireRecommended: "לחץ רצוי: קדמיים {{front}} · אחוריים {{rear}} PSI",
+    /** CR1: the car's open issues first, so the same problem is not reported twice. */
+    problemOpenIssues: "כבר דווח ועדיין פתוח:",
     dialogTitle: "דיווח על רכב {{car}}",
     close: "סגירה",
     homeProblemTitle: "דיווח על תקלה",
@@ -1484,6 +1488,21 @@ export const heMember = {
    * for issue status (CLAUDE.md hard rule 3: one Hebrew string, one place).
    */
   carPage: {
+    /** CR1 (REQ item 257, owner 2026-11-19/20): one page ordered by who needs what. */
+    tierEveryone: "לכל מי שנוסע/ת ברכב",
+    tierMore: "למי שרוצה לדעת עוד",
+    tierManage: "לניהול הרכב",
+    registrationTitle: "פרטי רישום",
+    openIssues: "תקלות פתוחות ({{count}})",
+    historyShowAll: "הכול ({{count}})",
+    privateCheckbox: "רכב פרטי / מושאל",
+    editField: "עריכה",
+    saveField: "שמירה",
+    cancelField: "ביטול",
+    seatConfigsNone: "לא הוגדרו",
+    /** CR1: on a ride of mine on `/my` (every ride I am on), a tap opens the car page. */
+    rideOpenIssuesOne: "⚠ תקלה פתוחה ברכב",
+    rideOpenIssuesMany: "⚠ {{count}} תקלות פתוחות ברכב",
     notAuthorized: "רק אחראי/ת הרכב או מנהל/ת מערכת יכולים לצפות בעמוד הזה",
     backHome: "חזרה לדף הבית",
     notFound: "הרכב לא נמצא",
@@ -1497,7 +1516,6 @@ export const heMember = {
     codeUnset: "לא הוגדר",
     privateStateOn: "רכב פרטי — בשימוש {{name}}",
     privateStateOnNoName: "רכב פרטי (מושאל)",
-    privateSwitchLabel: "רכב פרטי (מושאל)",
     privateTurnOnTitle: "הפיכת הרכב לפרטי",
     privateTurnOnDescription: "זה יוציא את הרכב מהסידור, ורק את/ה תוכל/י לשבץ אנשים אליו.",
     privateOwnerLabel: "מי משתמש/ת ברכב?",

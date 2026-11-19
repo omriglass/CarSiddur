@@ -25,6 +25,7 @@ export function useReportCarIssueMutation() {
     onSuccess: (_result, { carId }) => {
       void queryClient.invalidateQueries({ queryKey: carCareKeys.issues(carId) });
       void queryClient.invalidateQueries({ queryKey: carKeys.issues(carId) });
+      void queryClient.invalidateQueries({ queryKey: carKeys.openIssuesAll() });
     },
     onError: showErrorToast,
   });

@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 
 import { paths } from "../src/app/routes";
 import { he } from "../src/i18n/he";
-import { NEVO_DEPARTMENT_ID, newSignedInPage, SEEDED_USERS, serviceRoleClient, signIn } from "./helpers";
+import { NEVO_DEPARTMENT_ID, newSignedInPage, SEEDED_USERS, serviceRoleClient, signIn, showWholeCarHistory } from "./helpers";
 
 /**
  * REQ item 150 (a) + (c): the admin sets "מנהל/ת רכבים" on a membership; a car admin manages the department's
@@ -79,7 +79,7 @@ test("admin sets car admin; car admin corrects kilometrage but /my stays persona
         await dialog.getByRole("button", { name: he.carPage.kmCorrectSubmit }).click();
         await expect(member2.getByText(he.carPage.kmCorrected)).toBeVisible();
         await expect(member2.getByTestId("car-current-km")).toContainText("11,500");
-        await member2.getByRole("tab", { name: he.carPage.tabHistory }).click();
+        await showWholeCarHistory(member2); // CR1: the history shows the latest three, "הכול" the rest
         await expect(member2.getByTestId("car-history-km")).toHaveCount(2);
         await expect(member2.getByText(he.carPage.historyKindKilometrageCorrection)).toBeVisible();
       });

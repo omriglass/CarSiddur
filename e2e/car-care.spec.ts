@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 
 import { paths } from "../src/app/routes";
 import { he, tv } from "../src/i18n/he";
-import { getWeekStart, NEVO_DEPARTMENT_ID, newSignedInPage, SEEDED_USERS, serviceRoleClient, signIn } from "./helpers";
+import { getWeekStart, NEVO_DEPARTMENT_ID, newSignedInPage, SEEDED_USERS, serviceRoleClient, signIn, showWholeCarHistory } from "./helpers";
 
 /**
  * Car care portal (REQUIREMENTS §6.6, UX_FLOWS §3.9 / §5.11):
@@ -235,7 +235,7 @@ test("member logs car care (wash, tire fill, problem) and only the car's respons
         await responsiblePage.goto(paths.car(carId));
         await expect(responsiblePage.getByRole("heading", { name: carName })).toBeVisible();
 
-        await responsiblePage.getByRole("tab", { name: he.carPage.tabHistory }).click();
+        await showWholeCarHistory(responsiblePage); // CR1: the history shows the latest three, "הכול" the rest
         await expect(responsiblePage.getByText(he.carPage.historyKindWash).first()).toBeVisible();
         await expect(responsiblePage.getByText(he.carPage.historyKindTireFill).first()).toBeVisible();
         await expect(responsiblePage.getByText(he.carCare.category.mechanical).first()).toBeVisible();

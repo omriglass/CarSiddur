@@ -49,6 +49,7 @@ import { showDiagnosticErrorToast, showErrorToast } from "@/lib/rpc";
 import { supabase } from "@/integrations/supabase/client";
 
 import type { HomeWeekPreference, NotificationEvent } from "@/lib/enums";
+import { formatPlate } from "@/lib/plate";
 
 /**
  * `/profile` (UX_FLOWS.md §3.8). Departments, home-week preference, mute
@@ -269,7 +270,7 @@ export function ProfilePage() {
                       {car.license_plate ? (
                         <>
                           <span aria-hidden>·</span>
-                          <span dir="ltr">{car.license_plate}</span>
+                          <span dir="ltr">{formatPlate(car.license_plate)}</span>
                         </>
                       ) : null}
                     </Link>

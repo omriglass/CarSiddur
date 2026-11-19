@@ -8,6 +8,7 @@ const car = {
   name: "Car", license_plate: "1234567", fuel_type: null, department_id: "00000000-0000-0000-0000-000000000001",
   type: "shared", status: "active", features: [], notes: null, built_in_child_seats: 0, built_in_boosters: 0,
   access_code: "01234", is_replaced: false, replacement_code: null, responsible_id: null, base_location_id: null,
+  corporation: null, tire_pressure_front_psi: null, tire_pressure_rear_psi: null,
 };
 
 describe("car access codes", () => {
@@ -34,5 +35,13 @@ describe("car access codes", () => {
   it("allows a car with no code, but not a replacement for it", () => {
     expect(carSchema.parse({ ...car, access_code: "" }).access_code).toBe("");
     expect(carSchema.safeParse({ ...car, access_code: "", is_replaced: true, replacement_code: "0567" }).success).toBe(false);
+  });
+});
+
+describe("recommended tire pressure (CR1, REQ item 257)", () => {
+  it("takes both or neither, 10-99 PSI", () => {
+    expect(carSchema.safeParse({ ...car, tire_pressure_front_psi: 32, tire_pressure_rear_psi: 30 }).success).toBe(true);
+    expect(carSchema.safeParse({ ...car, tire_pressure_front_psi: 32 }).success).toBe(false);
+    expect(carSchema.safeParse({ ...car, tire_pressure_front_psi: 120, tire_pressure_rear_psi: 30 }).success).toBe(false);
   });
 });

@@ -138,3 +138,27 @@ export async function addCarOwner(carId: string, profileId: string): Promise<voi
 export async function removeCarOwner(carId: string, profileId: string): Promise<void> {
   await rpc("remove_car_owner", { p_car_id: carId, p_profile_id: profileId });
 }
+
+/** CR1 (REQ item 257): a car's open issue, as the car page banner, the report dialog and `/my` show it. */
+export type OpenCarIssue = Pick<CarIssue, "id" | "car_id" | "description" | "is_unsafe" | "created_at">;
+
+/** The open issues of `carIds`, oldest first (RLS: members of the car's department, admins). */
+export async function fetchOpenCarIssues(carIds: readonly string[]): Promise<OpenCarIssue[]> {
+  if (carIds.length === 0) return [];
+  const { data, error } = await supabase
+    .from("car_issues")
+    .select("id, car_id, description, is_unsafe, created_at")
+    .in("car_id", [...carIds])
+    .eq("status", "open")
+    .order("created_at", { ascending: true })
+    .order("id", { ascending: true });
+  if (error) throw toAppError(error);
+  return data ?? [];
+}
+
+/** CR1: every corporation name already used on a car, for the "תאגיד" suggestions (no list table, owner 2026-11-19). */
+export async function fetchCarCorporations(): Promise<string[]> {
+  const { data, error } = await supabase.from("cars").select("corporation").not("corporation", "is", null);
+  if (error) throw toAppError(error);
+  return [...new Set((data ?? []).map((row) => (row.corporation ?? "").trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, "he"));
+}

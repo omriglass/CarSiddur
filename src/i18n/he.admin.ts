@@ -197,6 +197,13 @@ export const heAdmin = {
     edit: "עריכת רכב",
     fieldName: "שם הרכב",
     fieldPlate: "מספר רישוי",
+    /** CR1 (REQ item 257): free text; the names already used on any car are suggested. */
+    fieldCorporation: "תאגיד",
+    fieldTirePressure: "לחץ אוויר רצוי בגלגלים (PSI)",
+    tireFront: "קדמיים",
+    tireRear: "אחוריים",
+    tirePressureValue: "קדמיים {{front}} · אחוריים {{rear}} PSI",
+    tirePressureBoth: "יש למלא את שני הערכים, בין 10 ל־99",
     fieldAccessCode: "קוד הרכב",
     accessCodeHelp: "4 או 5 ספרות. להשאיר ריק אם אין לרכב קוד.",
     fieldIsReplaced: "הרכב הוחלף ברכב חלופי",

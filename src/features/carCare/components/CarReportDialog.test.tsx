@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { he } from "@/i18n/he";
+import { he, tv } from "@/i18n/he";
 
 import { CarReportDialog } from "./CarReportDialog";
 
@@ -10,7 +10,8 @@ const mocks = vi.hoisted(() => ({
   logCarCare: vi.fn(),
   logKilometrage: vi.fn(),
   currentKm: { data: null as null | { km: number; recorded_at: string }, isLoading: false },
-  car: { data: { fuel_type: null as null | string } },
+  car: { data: { fuel_type: null as null | string, tire_pressure_front_psi: null as null | number, tire_pressure_rear_psi: null as null | number } },
+  openIssues: { data: [] as { id: string; car_id: string; description: string; is_unsafe: boolean; created_at: string }[] },
 }));
 
 vi.mock("../hooks", () => ({
@@ -22,6 +23,7 @@ vi.mock("../hooks", () => ({
 vi.mock("@/features/cars/hooks", () => ({
   useCarCurrentKmQuery: () => mocks.currentKm,
   useCarQuery: () => mocks.car,
+  useOpenCarIssuesQuery: () => mocks.openIssues,
 }));
 
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
@@ -31,7 +33,8 @@ beforeEach(() => {
   mocks.logCarCare.mockReset().mockResolvedValue("event-1");
   mocks.logKilometrage.mockReset().mockResolvedValue("reading-1");
   mocks.currentKm.data = null;
-  mocks.car.data = { fuel_type: null };
+  mocks.car.data = { fuel_type: null, tire_pressure_front_psi: null, tire_pressure_rear_psi: null };
+  mocks.openIssues.data = [];
 });
 
 function show(onOpenChange = vi.fn()) {
@@ -54,14 +57,14 @@ describe("CarReportDialog", () => {
   });
 
   it("urea on a diesel car: fill only, no \"needs urea\" report (owner 2026-11-13)", () => {
-    mocks.car.data = { fuel_type: "diesel" };
+    mocks.car.data = { fuel_type: "diesel", tire_pressure_front_psi: null, tire_pressure_rear_psi: null };
     show();
     expect(screen.getByTestId("car-urea-fill")).toBeInTheDocument();
     expect(screen.queryByTestId("car-urea-need")).not.toBeInTheDocument();
   });
 
   it("urea fill: the game's skip logs a urea fill and shows the smiling boy", async () => {
-    mocks.car.data = { fuel_type: "diesel" };
+    mocks.car.data = { fuel_type: "diesel", tire_pressure_front_psi: null, tire_pressure_rear_psi: null };
     show();
     fireEvent.click(screen.getByTestId("car-urea-fill"));
     expect(screen.getByTestId("urea-game")).toBeInTheDocument();
@@ -71,7 +74,7 @@ describe("CarReportDialog", () => {
   });
 
   it("urea fill carries an optional note, like a tire fill (owner 2026-11-13)", async () => {
-    mocks.car.data = { fuel_type: "diesel" };
+    mocks.car.data = { fuel_type: "diesel", tire_pressure_front_psi: null, tire_pressure_rear_psi: null };
     show();
     fireEvent.click(screen.getByTestId("car-urea-fill"));
     fireEvent.change(screen.getByTestId("urea-note"), { target: { value: "  מילאתי חצי  " } });
@@ -175,5 +178,17 @@ describe("CarReportDialog", () => {
 
     expect(await screen.findByText(he.carCare.categoryRequired)).toBeInTheDocument();
     expect(mocks.reportIssue).not.toHaveBeenCalled();
+  });
+
+  it("CR1: the problem step lists the car's open issues first; the tires step shows the recommended pressure", () => {
+    mocks.openIssues.data = [{ id: "i1", car_id: "car-1", description: "נורית שמן דולקת", is_unsafe: true, created_at: "2026-11-12T08:00:00Z" }];
+    mocks.car.data = { fuel_type: null, tire_pressure_front_psi: 32, tire_pressure_rear_psi: 30 };
+    show();
+    fireEvent.click(screen.getByText(he.carCare.homeProblemTitle));
+    expect(screen.getByText(he.carCare.problemOpenIssues)).toBeInTheDocument();
+    expect(screen.getByText("נורית שמן דולקת")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: he.common.back }));
+    fireEvent.click(screen.getByText(he.carCare.homeTireFillTitle));
+    expect(screen.getByTestId("tire-recommended").textContent).toBe(tv("carCare.tireRecommended", { front: "32", rear: "30" }));
   });
 });

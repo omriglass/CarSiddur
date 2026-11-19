@@ -14,5 +14,9 @@ export const carKeys = {
   currentKm: (carId: string | undefined) => [...carKeys.all, "currentKm", carId] as const,
   upcomingRides: (carId: string | undefined) => [...carKeys.all, "upcomingRides", carId] as const,
   myResponsible: (profileId: string | undefined) => [...carKeys.all, "myResponsible", profileId] as const,
+  /** CR1: open issues of several cars (car page, report dialog, `/my`); prefix `openIssuesAll` refreshes every set. */
+  openIssuesAll: () => [...carKeys.all, "openIssues"] as const,
+  openIssues: (carIds: readonly string[]) => [...carKeys.openIssuesAll(), [...carIds].sort().join(",")] as const,
+  corporations: () => [...carKeys.all, "corporations"] as const,
   byIds: (carIds: readonly string[]) => [...carKeys.all, "byIds", [...carIds].sort().join(",")] as const,
 };

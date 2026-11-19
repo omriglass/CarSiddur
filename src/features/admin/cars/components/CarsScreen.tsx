@@ -19,6 +19,7 @@ import { useAllDepartmentMembers, useAllProfiles } from "../../members/hooks";
 import { useAllMaintenanceBlocks, useCarsAdmin } from "../hooks";
 import { CarForm } from "./CarForm";
 import type { Car } from "../api";
+import { formatPlate } from "@/lib/plate";
 
 export function CarsScreen({ initialCarId }: { initialCarId?: string } = {}) {
   const carsQuery = useCarsAdmin();
@@ -112,7 +113,7 @@ export function CarsScreen({ initialCarId }: { initialCarId?: string } = {}) {
                   </Link>
                   {car.is_replaced ? <Badge variant="outline" className="ms-2">{he.adminCars.replacedBadge}</Badge> : null}
                 </TableCell>
-                <TableCell dir="ltr">{car.license_plate}</TableCell>
+                <TableCell dir="ltr">{formatPlate(car.license_plate)}</TableCell>
                 <TableCell>{departmentsById.get(car.department_id) ?? car.department_id}</TableCell>
                 <TableCell>{he.car.type[car.type]}</TableCell>
                 <TableCell>

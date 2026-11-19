@@ -12,6 +12,7 @@ import type { CarFuelType } from "@/lib/enums";
 
 import { activeCarCode } from "../lib/relevantCars";
 import { CarFuelChip } from "./CarFuelChip";
+import { formatPlate } from "@/lib/plate";
 
 /**
  * One car on "my rides" (/my): a car I am responsible for, my own private car, or (MC1) the car of a ride I am on now. Tapping it offers
@@ -45,7 +46,7 @@ export function HomeCarCard({ car, addRideTo, checklistPrompt }: {
                 <div>
                   <p className="font-medium">{car.is_replaced ? tv("siddurCar.replacementName", { name: car.name }) : car.name}</p>
                   <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
-                    <span dir="ltr">{car.license_plate}</span>
+                    <span dir="ltr">{formatPlate(car.license_plate)}</span>
                     <CarFuelChip fuel={car.fuel_type} />
                     {code ? (
                       <span className="font-medium text-foreground" data-testid="home-car-code">

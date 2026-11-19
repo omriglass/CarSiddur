@@ -1082,6 +1082,7 @@ export type Database = {
           base_location_id: string | null
           built_in_boosters: number
           built_in_child_seats: number
+          corporation: string | null
           created_at: string
           department_id: string
           features: string[]
@@ -1094,6 +1095,8 @@ export type Database = {
           responsible_id: string | null
           retired_at: string | null
           status: Database["public"]["Enums"]["car_status"]
+          tire_pressure_front_psi: number | null
+          tire_pressure_rear_psi: number | null
           type: Database["public"]["Enums"]["car_type"]
           updated_at: string
         }
@@ -1101,6 +1104,7 @@ export type Database = {
           base_location_id?: string | null
           built_in_boosters?: number
           built_in_child_seats?: number
+          corporation?: string | null
           created_at?: string
           department_id: string
           features?: string[]
@@ -1113,6 +1117,8 @@ export type Database = {
           responsible_id?: string | null
           retired_at?: string | null
           status?: Database["public"]["Enums"]["car_status"]
+          tire_pressure_front_psi?: number | null
+          tire_pressure_rear_psi?: number | null
           type?: Database["public"]["Enums"]["car_type"]
           updated_at?: string
         }
@@ -1120,6 +1126,7 @@ export type Database = {
           base_location_id?: string | null
           built_in_boosters?: number
           built_in_child_seats?: number
+          corporation?: string | null
           created_at?: string
           department_id?: string
           features?: string[]
@@ -1132,6 +1139,8 @@ export type Database = {
           responsible_id?: string | null
           retired_at?: string | null
           status?: Database["public"]["Enums"]["car_status"]
+          tire_pressure_front_psi?: number | null
+          tire_pressure_rear_psi?: number | null
           type?: Database["public"]["Enums"]["car_type"]
           updated_at?: string
         }

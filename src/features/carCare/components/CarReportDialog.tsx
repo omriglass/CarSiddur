@@ -12,7 +12,9 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Textarea } from "@/components/ui/textarea";
 import { useScrollToFirstError } from "@/components/useScrollToFirstError";
-import { useCarCurrentKmQuery, useCarQuery } from "@/features/cars/hooks";
+import { useCarCurrentKmQuery, useCarQuery, useOpenCarIssuesQuery } from "@/features/cars/hooks";
+import { CarOpenIssues } from "@/features/cars/components/CarOpenIssues";
+import { tirePressureLabel } from "@/features/cars/lib/carDetails";
 import { he, tv } from "@/i18n/he";
 import { formatKm, parseKm } from "@/features/cars/lib/kilometrage";
 import { formatDayDate } from "@/lib/dayLabels";
@@ -66,7 +68,13 @@ export function CarReportDialog({ carId, carName, open, onOpenChange, initialVie
   const currentKmQuery = useCarCurrentKmQuery(carId, open && view === "km");
   // FU2 (REQ item 219): urea only on a diesel car (the fuel type is on the car row). Owner 2026-11-13: no "needs urea"
   // report — whoever sees it fills it.
-  const isDiesel = useCarQuery(open ? carId : undefined).data?.fuel_type === "diesel";
+  const carRow = useCarQuery(open ? carId : undefined).data;
+  const isDiesel = carRow?.fuel_type === "diesel";
+  // CR1 (REQ item 257): the known open issues before a new report; the recommended pressure above the tires.
+  const openIssues = useOpenCarIssuesQuery(open && view === "problem" ? [carId] : []).data ?? [];
+  const recommendedPressure = carRow && tirePressureLabel(carRow.tire_pressure_front_psi, carRow.tire_pressure_rear_psi)
+    ? tv("carCare.tireRecommended", { front: carRow.tire_pressure_front_psi?.toString() ?? "—", rear: carRow.tire_pressure_rear_psi?.toString() ?? "—" })
+    : null;
   const kmValue = parseKm(kmText);
 
   const form = useForm<CarIssueReportValues>({
@@ -209,6 +217,7 @@ export function CarReportDialog({ carId, carName, open, onOpenChange, initialVie
         {view === "problem" ? (
           <Form {...form}>
             <form ref={formRef} className="flex flex-col gap-4" onSubmit={form.handleSubmit(submitProblem, onInvalid)}>
+              <CarOpenIssues issues={openIssues} variant="known" />
               <FormField
                 control={form.control}
                 name="category"
@@ -256,6 +265,7 @@ export function CarReportDialog({ carId, carName, open, onOpenChange, initialVie
 
         {view === "tires" ? (
           <div className="flex flex-col gap-4">
+            {recommendedPressure ? <p className="text-center text-sm font-medium" dir="rtl" data-testid="tire-recommended">{recommendedPressure}</p> : null}
             <TireFillPanel value={tires} onChange={setTires} note={tireNote} onNoteChange={setTireNote} />
             <div className="flex justify-end gap-2">
               <Button type="button" variant="ghost" onClick={() => setView("home")}>

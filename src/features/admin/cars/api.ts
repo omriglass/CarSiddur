@@ -87,12 +87,19 @@ export async function createCar(input: CarInsert): Promise<Car> {
   return { ...data, access_code: access_code ?? null, is_replaced: is_replaced ?? false, replacement_code: replacement_code ?? null };
 }
 
+/**
+ * Saves `patch`. The access-code row is written only when the patch carries a code key (CR1: the car page saves one
+ * field at a time — a note must not wipe the code); then all three code keys are written, absent ones as empty.
+ */
 export async function updateCar(id: string, patch: CarUpdate): Promise<Car> {
   const { access_code, is_replaced, replacement_code, ...carPatch } = patch;
-  const { data, error } = await supabase.from("cars").update(carPatch).eq("id", id).select().single();
+  const touchesCodes = "access_code" in patch || "is_replaced" in patch || "replacement_code" in patch;
+  const { data, error } = await supabase.from("cars").update(carPatch).eq("id", id).select(CARS_WITH_CODES_SELECT).single();
   if (error) throw toAppError(error);
-  await upsertCarCodes(id, data.department_id, { access_code, is_replaced, replacement_code });
-  return { ...data, access_code: access_code ?? null, is_replaced: is_replaced ?? false, replacement_code: replacement_code ?? null };
+  const row = flattenCarCodes(data as unknown as Database["public"]["Tables"]["cars"]["Row"] & { codes: CarCodes | CarCodes[] | null });
+  if (!touchesCodes) return row;
+  await upsertCarCodes(id, row.department_id, { access_code, is_replaced, replacement_code });
+  return { ...row, access_code: access_code ?? null, is_replaced: is_replaced ?? false, replacement_code: replacement_code ?? null };
 }
 
 export async function fetchSeatConfigs(carId: string): Promise<SeatConfig[]> {

@@ -249,3 +249,11 @@ export async function openRideSheetTab(page: Page, tab: "summary" | "merged" | "
   await trigger.click();
   await expect(trigger).toHaveAttribute("data-state", "active");
 }
+
+/** CR1 (REQ item 257): the car page's history shows the latest three entries; "הכול (n)" shows the rest. */
+export async function showWholeCarHistory(page: Page): Promise<void> {
+  const history = page.getByTestId("car-history");
+  await history.scrollIntoViewIfNeeded();
+  const all = page.getByTestId("car-history-all");
+  if (await all.isVisible().catch(() => false)) await all.click();
+}

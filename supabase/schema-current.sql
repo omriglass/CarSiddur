@@ -31228,9 +31228,14 @@ CREATE TABLE IF NOT EXISTS "public"."cars" (
     "responsible_id" "uuid",
     "base_location_id" "uuid",
     "fuel_type" "public"."car_fuel_type",
+    "corporation" "text",
+    "tire_pressure_front_psi" smallint,
+    "tire_pressure_rear_psi" smallint,
     CONSTRAINT "cars_built_in_boosters_ck" CHECK (("built_in_boosters" >= 0)),
     CONSTRAINT "cars_built_in_child_seats_ck" CHECK (("built_in_child_seats" >= 0)),
-    CONSTRAINT "cars_temporary_owner_ck" CHECK ((("type" = 'temporary'::"public"."car_type") OR ("owner_id" IS NULL)))
+    CONSTRAINT "cars_corporation_ck" CHECK ((("corporation" IS NULL) OR (("length"(TRIM(BOTH FROM "corporation")) >= 1) AND ("length"(TRIM(BOTH FROM "corporation")) <= 80)))),
+    CONSTRAINT "cars_temporary_owner_ck" CHECK ((("type" = 'temporary'::"public"."car_type") OR ("owner_id" IS NULL))),
+    CONSTRAINT "cars_tire_pressure_ck" CHECK (((("tire_pressure_front_psi" IS NULL) OR (("tire_pressure_front_psi" >= 10) AND ("tire_pressure_front_psi" <= 99))) AND (("tire_pressure_rear_psi" IS NULL) OR (("tire_pressure_rear_psi" >= 10) AND ("tire_pressure_rear_psi" <= 99)))))
 );
 
 ALTER TABLE ONLY "public"."cars" FORCE ROW LEVEL SECURITY;

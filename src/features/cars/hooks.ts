@@ -3,10 +3,12 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSession } from "@/features/auth/useSession";
 
 import { useUpdateCarMutation } from "@/features/admin/cars/hooks";
-import type { Car } from "@/features/admin/cars/api";
+import type { Car, CarUpdate } from "@/features/admin/cars/api";
 
 import {
   fetchCarById,
+  fetchCarCorporations,
+  fetchOpenCarIssues,
   fetchCarCareHistory,
   fetchCarCurrentKm,
   fetchCarIssueHistory,
@@ -141,5 +143,33 @@ export function useCarOwnerMutation() {
       // the siddur / board car lists and Profile's "my private cars" carry the owners too
       queryClient.invalidateQueries({ queryKey: ["fleet"] }),
     ]),
+  });
+}
+
+/** CR1 (REQ item 257): the open issues of `carIds` (empty = no query). */
+export function useOpenCarIssuesQuery(carIds: readonly string[]) {
+  return useQuery({
+    queryKey: carKeys.openIssues(carIds),
+    queryFn: () => fetchOpenCarIssues(carIds),
+    enabled: carIds.length > 0,
+    staleTime: 60_000,
+  });
+}
+
+/** CR1: the corporation names already used on any car (suggestions for "תאגיד"). */
+export function useCarCorporationsQuery(enabled: boolean) {
+  return useQuery({ queryKey: carKeys.corporations(), queryFn: fetchCarCorporations, enabled, staleTime: 5 * 60_000 });
+}
+
+/**
+ * CR1: one in-place edit on the car page — `patch` holds only the fields that changed (the access-code row is
+ * written only when the patch carries a code key, `updateCar`). Refreshes the car page and every car read.
+ */
+export function useSaveCarFieldsMutation() {
+  const queryClient = useQueryClient();
+  const update = useUpdateCarMutation();
+  return useMutation({
+    mutationFn: ({ carId, patch }: { carId: string; patch: CarUpdate }) => update.mutateAsync({ id: carId, patch }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: carKeys.all }),
   });
 }

@@ -1872,7 +1872,7 @@ Not covered: the freed-car prompt inside the long chain; member-side resize of b
 
 **WT1 — ✅ built 2026-11-15 on branch `wt1-tight-freed` (REQ item 243; not released).** Freed cars go to a waiting request also inside a turnaround; the member is told "חשוב לוודא עם X שנוסע/ת לפניך כי הסידור צפוף.", the neighbouring drivers get the short-turnaround notices. Suite `freed_car_tight.sql`; solver test in `freedSlotRun.test.ts`. Owner's first WT1 question (a plain waiting-list entry) left as it is: that member is present and is asked.
 
-## Cars: details, open issues, plate format (owner 2026-11-17, CR1) — not built yet (not today)
+## Cars: details, open issues, plate format (owner 2026-11-17, CR1) — ✅ done 2026-11-20 (REQ item 257, `20261120090000`, e2e `car-page-details.spec.ts`): corporation (free text, used names suggested), tire pressure front/rear PSI, plates formatted, open issues on the car page / report dialog / `/my` rides, the car page one page by relevance with in-place editing (owner answers 2026-11-19/20)
 
 Owner's notes (Hebrew as given):
 - **Missing car fields:** "תאגיד" (the car's owning corporation — confirm the exact meaning with the owner), and "לחץ אוויר רצוי בגלגלים" — the recommended tire pressure, shown also in the tire-fill ("מילוי אוויר") dialogs.

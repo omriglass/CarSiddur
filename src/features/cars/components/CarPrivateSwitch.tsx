@@ -5,7 +5,7 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { FormDialog } from "@/components/FormDialog";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
+import { Checkbox } from "@/components/ui/checkbox";
 import type { Car } from "@/features/admin/cars/api";
 import { useDepartmentMembers } from "@/features/auth/useDepartmentMembers";
 import { useProfile } from "@/features/auth/useProfile";
@@ -23,7 +23,7 @@ interface Props {
   canEdit: boolean;
 }
 
-/** "רכב פרטי (מושאל)" state line + switch on the car page (UX_FLOWS §5.11). The switch shows for editors and the private car's owner. */
+/** "רכב פרטי / מושאל" checkbox + state line (CR1: in the car page's "פרטי רישום") on the car page (UX_FLOWS §5.11). The switch shows for editors and the private car's owner. */
 export function CarPrivateSwitch({ car, canEdit }: Props) {
   const profile = useProfile().data;
   const membersQuery = useDepartmentMembers(car.department_id);
@@ -62,29 +62,32 @@ export function CarPrivateSwitch({ car, canEdit }: Props) {
   if (!isPrivate && !showSwitch) return null;
 
   return (
-    <div className="flex items-center justify-between gap-3 rounded-md border p-3" data-testid="car-private-card">
-      <div className="text-sm">
-        <Label htmlFor="car-private-switch">{he.carPage.privateSwitchLabel}</Label>
-        {isPrivate ? (
-          <p className="text-muted-foreground" data-testid="car-private-state">
-            {ownerName ? tv("carPage.privateStateOn", { name: ownerName }) : he.carPage.privateStateOnNoName}
-          </p>
-        ) : null}
-      </div>
+    <div className="space-y-1 border-t pt-2" data-testid="car-private-card">
+      {/* CR1 (owner 2026-11-20): a checkbox, not a switch. */}
       {showSwitch ? (
-        <Switch
-          id="car-private-switch"
-          checked={isPrivate}
-          disabled={mutation.isPending}
-          onCheckedChange={(checked) => {
-            if (checked) {
-              setPickedOwner(null);
-              setTurnOnOpen(true);
-            } else {
-              setTurnOffOpen(true);
-            }
-          }}
-        />
+        <label className="flex items-center gap-2 text-sm" htmlFor="car-private-switch">
+          <Checkbox
+            id="car-private-switch"
+            checked={isPrivate}
+            disabled={mutation.isPending}
+            onCheckedChange={(checked) => {
+              if (checked === true) {
+                setPickedOwner(null);
+                setTurnOnOpen(true);
+              } else {
+                setTurnOffOpen(true);
+              }
+            }}
+          />
+          {he.carPage.privateCheckbox}
+        </label>
+      ) : (
+        <p className="text-sm">{he.carPage.privateCheckbox}</p>
+      )}
+      {isPrivate ? (
+        <p className="text-sm text-muted-foreground" data-testid="car-private-state">
+          {ownerName ? tv("carPage.privateStateOn", { name: ownerName }) : he.carPage.privateStateOnNoName}
+        </p>
       ) : null}
 
       <FormDialog

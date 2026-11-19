@@ -1,4 +1,7 @@
 import { ArrowLeft, CarFront, MapPin, Star } from "lucide-react";
+import { Link } from "react-router-dom";
+
+import { paths } from "@/app/routes";
 
 import { Card, CardContent } from "@/components/ui/card";
 import { CarNameWithReport } from "@/features/carCare/components/CarNameWithReport";
@@ -67,6 +70,8 @@ export interface RideCardData {
   seriesCount?: number | null;
   /** REQ §13.108 f: "be back on time" note (only on the member's own ride, only when the gap is tight). */
   handover?: CarHandoverNotes;
+  /** CR1 (REQ item 257): the car's open issues on `/my` (a link to the car page; needs `carId`). */
+  openIssues?: number;
   /** REQ item 248: more people than seats (already worded, `seatsShortLabel`) - a warning until someone fixes it. */
   seatsShort?: string;
 }
@@ -179,6 +184,17 @@ export function RideCard({ ride, onClick }: RideCardProps) {
               <span className="rounded bg-amber-100 px-1 font-medium text-amber-950 dark:bg-amber-900/40 dark:text-amber-100" data-testid="ride-seats-short">
                 {ride.seatsShort}
               </span>
+            ) : null}
+            {ride.openIssues && ride.carId ? (
+              <Link
+                to={paths.car(ride.carId)}
+                className="rounded bg-maintenance/15 px-1 font-medium text-maintenance hover:underline"
+                onClick={(event) => event.stopPropagation()}
+                onKeyDown={(event) => event.stopPropagation()}
+                data-testid="ride-open-issues"
+              >
+                {ride.openIssues === 1 ? he.carPage.rideOpenIssuesOne : tv("carPage.rideOpenIssuesMany", { count: String(ride.openIssues) })}
+              </Link>
             ) : null}
             {ride.tightSchedule ? <span role="img" aria-label={he.rideCoordination.tightSchedule} title={he.rideCoordination.tightSchedule}>⏱</span> : null}
             {ride.carName && !ride.carOnTop ? carNameNode : null}

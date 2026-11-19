@@ -20,6 +20,7 @@ import { useCanViewCarsOverview, useCarsOverviewQuery } from "../hooks";
 
 import type { TireState } from "@/lib/enums";
 import type { CarOverviewRow, ChecklistStatus } from "../rows";
+import { formatPlate } from "@/lib/plate";
 
 const t = he.carsOverview;
 
@@ -93,7 +94,7 @@ function CarRow({ row }: { row: CarOverviewRow }) {
     >
       <div className="flex flex-wrap items-center gap-2">
         <span className="font-medium">{row.name}</span>
-        <span dir="ltr" className="text-xs text-muted-foreground">{row.licensePlate}</span>
+        <span dir="ltr" className="text-xs text-muted-foreground">{formatPlate(row.licensePlate)}</span>
         {row.isReplacement ? <Badge variant="secondary" data-testid="car-overview-replacement">{t.replacement}</Badge> : null}
       </div>
       <Cell label={t.colKm} testId="car-overview-km">

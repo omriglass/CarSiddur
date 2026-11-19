@@ -109,6 +109,8 @@ import { formatDayDate } from "@/lib/dayLabels";
 import { dateKey, formatTime, weekStartFor } from "@/lib/time";
 import { cn } from "@/lib/utils";
 import { paths } from "@/app/routes";
+import { useOpenCarIssuesQuery } from "@/features/cars/hooks";
+import { countByCar } from "@/features/cars/lib/openIssues";
 
 import { isAwaitingAnswer } from "@/features/requests/pendingProposal";
 import { hasRideTodayOrTomorrow, resolveHomeWeek } from "./homeWeek";
@@ -148,6 +150,8 @@ export function HomePage() {
   // A manager reads draft rides that never move the public counter: no return-to-tab gating for them (lib/counterGate.ts).
   const sadranAnywhere = useIsSadranAnywhere();
   const upcomingRidesQuery = useMyUpcomingRides();
+  // CR1 (REQ item 257): the open issues of the cars of my upcoming rides.
+  const openCarIssuesQuery = useOpenCarIssuesQuery([...new Set((upcomingRidesQuery.data ?? []).flatMap((ride) => (ride.car_id ? [ride.car_id] : [])))]);
   // REQ item 248: more people than seats after a member's edit - a warning on the card until someone fixes it
   const seatShortfalls = useSeatShortfalls(upcomingRidesQuery.data ?? [], active.departmentId);
   const rideTypesQuery = useRideTypes();
@@ -369,6 +373,7 @@ export function HomePage() {
   const closedWeeks = closedByWeek(closedQuery.data ?? []);
   const tripWeeks = buildTripWeeks(toDisplayRows(requests.filter((r) => !unservedIds.has(r.id))), unserved, listedRides, rideRequestIds);
   const unservedRides = ridesByRequestRow(unserved, upcomingRides, rideRequestIds);
+  const openIssuesByCar = countByCar(openCarIssuesQuery.data ?? []);
   const rideCardOf = (ride: (typeof upcomingRides)[number]) => {
     const related = ride.id ? relatedByRide.get(ride.id) : undefined;
     const card = myRideCard(ride, requests, rideTypesQuery.data ?? [], {
@@ -379,7 +384,10 @@ export function HomePage() {
     }, ride.department_id ? homeDestinationIds[ride.department_id] : undefined);
     // REQ item 248: more people than seats after a member's edit
     const seatsShort = ride.id ? seatsShortText(seatShortfalls.get(ride.id)) : undefined;
-    return card && seatsShort ? { ...card, seatsShort } : card;
+    // CR1 (REQ item 257): the car's open issues, on every ride of mine.
+    const openIssues = ride.car_id && !related ? openIssuesByCar.get(ride.car_id) : undefined;
+    if (!card) return card;
+    return { ...card, ...(seatsShort ? { seatsShort } : {}), ...(openIssues ? { openIssues } : {}) };
   };
   const rideCardsOf = (rides: readonly (typeof upcomingRides)[number][] | undefined) =>
     (rides ?? []).flatMap((ride) => { const data = rideCardOf(ride); return data ? [data] : []; });

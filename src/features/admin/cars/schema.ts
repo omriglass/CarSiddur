@@ -30,7 +30,15 @@ export const carSchema = z.object({
   responsible_id: z.string().uuid().nullable(),
   /** "מיקום קבוע" (REQ §13.93) — null = the department home. */
   base_location_id: z.string().uuid().nullable(),
+  /** CR1 (REQ item 257): "תאגיד", free text (names already used are suggested). */
+  corporation: z.string().trim().max(80).nullable(),
+  /** CR1: the recommended tire pressure, PSI — both or neither (`cars_tire_pressure_ck`, 10–99). */
+  tire_pressure_front_psi: z.number().int().min(10).max(99).nullable(),
+  tire_pressure_rear_psi: z.number().int().min(10).max(99).nullable(),
 }).superRefine((values, ctx) => {
+  if ((values.tire_pressure_front_psi === null) !== (values.tire_pressure_rear_psi === null)) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["tire_pressure_rear_psi"], message: he.adminCars.tirePressureBoth });
+  }
   if (!values.is_replaced) return;
   if (!values.access_code) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["is_replaced"], message: he.adminCars.replacementNeedsCode });

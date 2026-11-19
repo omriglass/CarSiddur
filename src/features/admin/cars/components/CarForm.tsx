@@ -10,6 +10,7 @@ import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, For
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { useCarCorporationsQuery } from "@/features/cars/hooks";
 import { useDestinations } from "@/features/fleet/hooks";
 import { he } from "@/i18n/he";
 import { CAR_FUEL_TYPES } from "@/lib/enums";
@@ -71,6 +72,7 @@ export function CarForm({
   const createMutation = useCreateCarMutation();
   const updateMutation = useUpdateCarMutation();
   const seatConfigsQuery = useSeatConfigs(car?.id);
+  const corporationsQuery = useCarCorporationsQuery(!readOnly);
   const replaceSeatConfigsMutation = useReplaceSeatConfigsMutation();
   const [pendingSeatConfigs, setPendingSeatConfigs] = useState<Passengers[] | null>(null);
 
@@ -91,6 +93,9 @@ export function CarForm({
       built_in_boosters: car?.built_in_boosters ?? 0,
       responsible_id: car?.responsible_id ?? null,
       base_location_id: car?.base_location_id ?? null,
+      corporation: car?.corporation ?? null,
+      tire_pressure_front_psi: car?.tire_pressure_front_psi ?? null,
+      tire_pressure_rear_psi: car?.tire_pressure_rear_psi ?? null,
     },
   });
   const formRef = useRef<HTMLFormElement>(null);
@@ -103,7 +108,7 @@ export function CarForm({
 
   async function onSubmit(values: CarFormValues) {
     try {
-      const payload = { ...values, access_code: values.access_code || null, replacement_code: values.is_replaced ? values.replacement_code : null };
+      const payload = { ...values, corporation: values.corporation || null, access_code: values.access_code || null, replacement_code: values.is_replaced ? values.replacement_code : null };
       let carId = car?.id;
       if (car) {
         await updateMutation.mutateAsync({ id: car.id, patch: payload });
@@ -388,6 +393,51 @@ export function CarForm({
               </FormItem>
             )}
           />
+        </div>
+        <FormField
+          control={form.control}
+          name="corporation"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>{he.adminCars.fieldCorporation}</FormLabel>
+              <FormControl>
+                <Input {...field} list="car-corporations" value={field.value ?? ""} />
+              </FormControl>
+              <datalist id="car-corporations">{(corporationsQuery.data ?? []).map((name) => <option key={name} value={name} />)}</datalist>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+        <div className="space-y-1">
+          <p className="text-sm font-medium">{he.adminCars.fieldTirePressure}</p>
+          <div className="grid grid-cols-2 gap-4">
+            <FormField
+              control={form.control}
+              name="tire_pressure_front_psi"
+              render={({ field }) => (
+                <FormItem data-field="tire_pressure_front_psi">
+                  <FormLabel className="text-xs text-muted-foreground">{he.adminCars.tireFront}</FormLabel>
+                  <FormControl>
+                    <Input type="number" dir="ltr" min={10} max={99} value={field.value ?? ""} onChange={(e) => field.onChange(e.target.value === "" ? null : Number(e.target.value))} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="tire_pressure_rear_psi"
+              render={({ field }) => (
+                <FormItem data-field="tire_pressure_rear_psi">
+                  <FormLabel className="text-xs text-muted-foreground">{he.adminCars.tireRear}</FormLabel>
+                  <FormControl>
+                    <Input type="number" dir="ltr" min={10} max={99} value={field.value ?? ""} onChange={(e) => field.onChange(e.target.value === "" ? null : Number(e.target.value))} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          </div>
         </div>
         <FormField
           control={form.control}

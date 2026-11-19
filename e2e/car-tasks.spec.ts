@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 
 import { paths } from "../src/app/routes";
 import { he } from "../src/i18n/he";
-import { getWeekStart, NEVO_DEPARTMENT_ID, newSignedInPage, SEEDED_USERS, serviceRoleClient } from "./helpers";
+import { getWeekStart, NEVO_DEPARTMENT_ID, newSignedInPage, SEEDED_USERS, serviceRoleClient, showWholeCarHistory } from "./helpers";
 
 /**
  * REQ item 150 (b): the car's manager asks the next user for tyres + kilometrage + a free-text task; the driver of
@@ -99,7 +99,7 @@ test("manager asks the next user; the driver sees it only in the window and comp
         await expect(admin.page.getByTestId("car-task-row")).toHaveCount(1);
         await admin.page.getByTestId("car-task-withdraw").click();
         await expect(admin.page.getByTestId("car-task-row")).toHaveCount(0);
-        await admin.page.getByRole("tab", { name: he.carPage.tabHistory }).click();
+        await showWholeCarHistory(admin.page); // CR1: the history shows the latest three, "הכול" the rest
         await expect(admin.page.getByTestId("car-history-task")).toHaveCount(3);
       });
     } finally {
