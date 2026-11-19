@@ -10848,6 +10848,11 @@ begin
      and (to_jsonb(new) - 'status' - 'resolved_by' - 'resolved_at') is not distinct from (to_jsonb(old) - 'status' - 'resolved_by' - 'resolved_at') then
     return new;
   end if;
+  -- update_car_issue checked the caller and changes only status / resolution / description.
+  if nullif(current_setting('app.car_issue_manage', true), '') = old.id::text
+     and (to_jsonb(new) - 'status' - 'resolved_by' - 'resolved_at' - 'description') is not distinct from (to_jsonb(old) - 'status' - 'resolved_by' - 'resolved_at' - 'description') then
+    return new;
+  end if;
   if not (public.is_admin() or public.is_sadran_any(new.department_id)) then
     if new.status is distinct from old.status or new.resolved_by is distinct from old.resolved_by
        or new.resolved_at is distinct from old.resolved_at or new.is_unsafe is distinct from old.is_unsafe
@@ -29554,6 +29559,39 @@ $$;
 ALTER FUNCTION "public"."unmerge_request"("p_ride_id" "uuid", "p_request_id" "uuid", "p_expected_version" integer) OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."update_car_issue"("p_issue_id" "uuid", "p_action" "text", "p_description" "text" DEFAULT NULL::"text") RETURNS "void"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  v_uid uuid := (select auth.uid());
+  v_issue public.car_issues%rowtype;
+  v_prev text := current_setting('app.car_issue_manage', true);
+begin
+  select * into v_issue from public.car_issues where id = p_issue_id;
+  if v_issue.id is null then raise exception 'car_issue_not_found' using errcode = 'P0001'; end if;
+  if p_action not in ('resolve', 'edit') then raise exception 'invalid_input' using errcode = 'P0001'; end if;
+  if not (public._can_edit_car_maintenance(v_issue.car_id)
+          or (p_action = 'edit' and v_issue.reported_by = v_uid and v_issue.status = 'open' and public.is_approved())) then
+    raise exception 'not_authorized' using errcode = 'P0001';
+  end if;
+  if p_action = 'edit' and length(trim(coalesce(p_description, ''))) = 0 then
+    raise exception 'invalid_input' using errcode = 'P0001';
+  end if;
+  perform set_config('app.car_issue_manage', p_issue_id::text, true);
+  if p_action = 'resolve' then
+    update public.car_issues set status = 'resolved', resolved_by = v_uid, resolved_at = now()
+     where id = p_issue_id and status = 'open';
+  else
+    update public.car_issues set description = trim(p_description) where id = p_issue_id;
+  end if;
+  perform set_config('app.car_issue_manage', coalesce(v_prev, ''), true);
+end $$;
+
+
+ALTER FUNCTION "public"."update_car_issue"("p_issue_id" "uuid", "p_action" "text", "p_description" "text") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."update_car_maintenance"("p_block_id" "uuid", "p_starts_at" timestamp with time zone, "p_ends_at" timestamp with time zone) RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -41534,6 +41572,12 @@ GRANT ALL ON FUNCTION "public"."undo_board_change"("p_department_id" "uuid", "p_
 REVOKE ALL ON FUNCTION "public"."unmerge_request"("p_ride_id" "uuid", "p_request_id" "uuid", "p_expected_version" integer) FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."unmerge_request"("p_ride_id" "uuid", "p_request_id" "uuid", "p_expected_version" integer) TO "service_role";
 GRANT ALL ON FUNCTION "public"."unmerge_request"("p_ride_id" "uuid", "p_request_id" "uuid", "p_expected_version" integer) TO "authenticated";
+
+
+
+REVOKE ALL ON FUNCTION "public"."update_car_issue"("p_issue_id" "uuid", "p_action" "text", "p_description" "text") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."update_car_issue"("p_issue_id" "uuid", "p_action" "text", "p_description" "text") TO "service_role";
+GRANT ALL ON FUNCTION "public"."update_car_issue"("p_issue_id" "uuid", "p_action" "text", "p_description" "text") TO "authenticated";
 
 
 

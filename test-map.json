@@ -1435,7 +1435,9 @@
         "src/pages/CarChecklistEditorPage.tsx",
         "src/lib/plate.ts",
         "e2e/car-page-details.spec.ts",
-        "supabase/migrations/**/*car_corporation*"
+        "supabase/migrations/**/*car_corporation*",
+        "supabase/migrations/**/*update_car_issue*",
+        "supabase/tests/car_issue_manage.sql"
       ],
       "vitest": [
         "src/features/carCare",
@@ -1450,7 +1452,8 @@
         "car_tasks.sql",
         "car_checklists.sql",
         "car_owners.sql",
-        "department_isolation.sql"
+        "department_isolation.sql",
+        "car_issue_manage.sql"
       ],
       "playwrightTags": [
         "@car-care",
@@ -1475,7 +1478,8 @@
         "Export car-care history by date range to Excel (REQ §13.73)",
         "Admin sets 'מנהל/ת רכבים' on a membership; that member's /my lists only cars they are responsible for, and they can correct kilometrage on a shared car (REQ item 150 a)",
         "Log a kilometrage reading; a lower one is refused; a manager's correction may lower it; history and export list both (REQ item 150 c)",
-        "Car page (REQ item 257): plate shows xxx-xx-xxx / xx-xxx-xx; open issues on top, in the report dialog and as ⚠ on /my rides; edit tire pressure and corporation in place (suggestions); seat configurations in a dialog; 'רכב פרטי / מושאל' checkbox"
+        "Car page (REQ item 257): plate shows xxx-xx-xxx / xx-xxx-xx; open issues on top, in the report dialog and as ⚠ on /my rides; edit tire pressure and corporation in place (suggestions); seat configurations in a dialog; 'רכב פרטי / מושאל' checkbox",
+        "As a car's responsible person (not a Sadran): tap an open issue on the car page or in its history; reword it, open 'קביעת טיפול' (note prefilled), mark it handled - it leaves the banner and /my (REQ item 257 b)"
       ]
     },
     {

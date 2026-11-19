@@ -294,6 +294,8 @@ begin
   perform pg_temp.expect_refused('cars.update_car_maintenance', format('select public.update_car_maintenance(%L, null, now() + interval ''9 days'')', block_b));
   perform pg_temp.expect_refused('cars.delete_car_maintenance', format('select public.delete_car_maintenance(%L)', block_b));
   perform pg_temp.expect_refused('cars.report_car_issue_unsafe_maintenance', format('select public.report_car_issue_unsafe_maintenance(%L, now() + interval ''3 hours'')', issue_b));
+  perform pg_temp.expect_refused('cars.update_car_issue', format('select public.update_car_issue(%L, %L)', issue_b, 'resolve'));
+  assert (select status = 'open' from public.car_issues where id = issue_b), 'cross-department update_car_issue resolved the issue';
   assert exists(select 1 from public.car_maintenance_blocks where id = block_b and ends_at = date_trunc('hour', now()) + interval '3 days'), 'cross-department maintenance call changed a block';
   perform pg_temp.expect_refused('cars.car_mileage_totals', format('select * from public.car_mileage_totals(%L, %L, 4)', dept_b, week_b));
   perform pg_temp.expect_refused('destinations.merge_destination', format('select public.merge_destination(%L, %L)', other_dest_b, home_b));
@@ -471,7 +473,7 @@ declare
     'place_travel_for_week','car_start_locations','set_my_default_origin','set_my_preferred_car','route_minutes_preview','route_hops_preview','request_notes','request_history',
     'my_co_guardians','set_ride_driver','withdraw_duplicate_request','restore_duplicate_request','close_request','restore_closed_request','sadran_cancel_ride','place_on_own_car','set_own_private_car','add_car_owner','remove_car_owner','child_request_overlaps',
     'mark_car_move','shorten_series','split_series','leave_merged_ride','leave_merged_ride_fit','leave_ride_fit_preview','ride_busy_people','cancel_series_day','one_way_partner','place_one_way_pair','join_drop_off_legs','place_series_on_car',
-    'create_car_maintenance','update_car_maintenance','delete_car_maintenance','report_car_issue_unsafe_maintenance'
+    'create_car_maintenance','update_car_maintenance','delete_car_maintenance','report_car_issue_unsafe_maintenance','update_car_issue'
   ];
   -- 'name:one-word-reason'. Duplicated names (day_date_label has two overloads) are fine —
   -- the completeness check below groups by proname.

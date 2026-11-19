@@ -34,6 +34,7 @@ import { CarOwnersCard } from "./CarOwnersCard";
 import { CarKilometrageCard } from "./CarKilometrageCard";
 import { CarChecklistCard } from "../checklist/components/CarChecklistCard";
 import { CarFactsCard } from "./CarFactsCard";
+import { CarIssueSheet, type IssueTarget } from "./CarIssueSheet";
 import { CarOpenIssues } from "./CarOpenIssues";
 import { CarRegistrationCard } from "./CarRegistrationCard";
 import { CarStatusSelect } from "./CarStatusSelect";
@@ -78,12 +79,20 @@ function TireDots({ tires }: { tires: NonNullable<CarHistoryEntry["tires"]> }) {
   );
 }
 
-function historyRow(entry: CarHistoryEntry) {
+function historyRow(entry: CarHistoryEntry, onIssue?: (entry: CarHistoryEntry) => void) {
   const timestamp = formatInTimeZone(new Date(entry.createdAt), TZ, "dd/MM/yyyy HH:mm");
   const icon = entry.kind === "issue" ? Wrench : entry.kind === "tire_fill" ? CarFront : entry.kind === "kilometrage" ? Route : entry.kind === "task" ? ClipboardList : entry.kind === "urea_fill" ? Fuel : Droplets;
   const Icon = icon;
   return (
-    <Card key={`${entry.kind}:${entry.id}`} className="bg-gradient-card shadow-card">
+    <Card
+      key={`${entry.kind}:${entry.id}`}
+      className={`bg-gradient-card shadow-card${onIssue ? " cursor-pointer hover:border-primary/50" : ""}`}
+      {...(onIssue ? {
+        role: "button", tabIndex: 0, "data-testid": "car-history-open-issue",
+        onClick: () => onIssue(entry),
+        onKeyDown: (event: React.KeyboardEvent) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onIssue(entry); } },
+      } : {})}
+    >
       <CardContent className="flex items-start gap-3 p-3 text-sm">
         <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
           <Icon className="size-4" aria-hidden="true" />
@@ -110,6 +119,13 @@ function historyRow(entry: CarHistoryEntry) {
                 {entry.status ? <StatusBadge kind="carIssue" status={entry.status} /> : null}
                 {entry.isUnsafe ? <Badge variant="destructive">{he.adminIssues.unsafe}</Badge> : null}
               </div>
+              {entry.status === "resolved" && entry.closedAt ? (
+                <p className="text-xs text-muted-foreground" data-testid="car-history-issue-resolved">
+                  {entry.closedByName
+                    ? tv("carPage.issueResolvedBy", { name: entry.closedByName, date: formatInTimeZone(new Date(entry.closedAt), TZ, "dd/MM/yyyy HH:mm") })
+                    : tv("carPage.issueResolvedAt", { date: formatInTimeZone(new Date(entry.closedAt), TZ, "dd/MM/yyyy HH:mm") })}
+                </p>
+              ) : null}
             </>
           ) : null}
           {entry.kind === "kilometrage" && entry.km !== undefined ? (
@@ -181,6 +197,7 @@ export function CarManageScreen({ car, isAdmin, canEdit, canManageCar, canDefine
   const [dateTo, setDateTo] = useState("");
   const [logView, setLogView] = useState<"wash" | "km" | null>(null);
   const [historyAll, setHistoryAll] = useState(false);
+  const [selectedIssue, setSelectedIssue] = useState<(IssueTarget & { reporterId?: string | null }) | null>(null);
   const openIssuesQuery = useOpenCarIssuesQuery([car.id]);
   const profile = useProfile().data;
 
@@ -215,6 +232,10 @@ export function CarManageScreen({ car, isAdmin, canEdit, canManageCar, canDefine
   // CR1 (REQ item 257, owner 2026-11-20): one page ordered by who needs what — everyone, good to know, the car's managers.
   const asOwner = car.type === "temporary" && isCarOwner(car, profile?.id);
   const showManage = canEdit || canManageCar || canSetStatusOnly || asOwner;
+  // CR2 (REQ item 257 b): the car's managers and the department's Sadran handle its open issues (update_car_issue re-checks).
+  const canHandleIssues = canEdit || canManageCar;
+  const openIssueFromHistory = (entry: CarHistoryEntry) =>
+    setSelectedIssue({ id: entry.id, description: entry.description ?? "", createdAt: entry.createdAt, isUnsafe: !!entry.isUnsafe, reporterId: entry.reporterId });
   const shown = historyAll ? filtered : filtered.slice(0, 3);
   const tier = (label: string) => (
     <h2 className="flex items-center gap-2 pt-2 text-xs font-semibold text-muted-foreground after:h-px after:flex-1 after:bg-border">{label}</h2>
@@ -244,7 +265,19 @@ export function CarManageScreen({ car, isAdmin, canEdit, canManageCar, canDefine
         ) : null}
       </div>
 
-      <CarOpenIssues issues={openIssuesQuery.data ?? []} variant="banner" />
+      <CarOpenIssues
+        issues={openIssuesQuery.data ?? []}
+        variant="banner"
+        canSelect={(issue) => canHandleIssues || issue.reported_by === profile?.id}
+        onSelect={(issue) => setSelectedIssue({ id: issue.id, description: issue.description, createdAt: issue.created_at, isUnsafe: issue.is_unsafe, reporterId: issue.reported_by })}
+      />
+      <CarIssueSheet
+        car={car}
+        issue={selectedIssue}
+        onClose={() => setSelectedIssue(null)}
+        canManage={canHandleIssues}
+        canReword={!!selectedIssue && selectedIssue.reporterId === profile?.id}
+      />
 
       {tier(he.carPage.tierEveryone)}
       <CarFactsCard
@@ -301,7 +334,9 @@ export function CarManageScreen({ car, isAdmin, canEdit, canManageCar, canDefine
         ) : filtered.length === 0 ? (
           <EmptyState icon={HistoryIcon} message={he.carPage.historyEmpty} />
         ) : (
-          <div className="space-y-2">{shown.map(historyRow)}</div>
+          <div className="space-y-2">
+            {shown.map((entry) => historyRow(entry, entry.kind === "issue" && entry.status === "open" && (canHandleIssues || entry.reporterId === profile?.id) ? openIssueFromHistory : undefined))}
+          </div>
         )}
         {!historyAll && filtered.length > shown.length ? (
           <Button variant="ghost" size="sm" onClick={() => setHistoryAll(true)} data-testid="car-history-all">

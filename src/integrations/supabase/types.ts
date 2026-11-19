@@ -8847,6 +8847,10 @@ export type Database = {
         }
         Returns: undefined
       }
+      update_car_issue: {
+        Args: { p_action: string; p_description?: string; p_issue_id: string }
+        Returns: undefined
+      }
       update_car_maintenance: {
         Args: { p_block_id: string; p_ends_at: string; p_starts_at: string }
         Returns: Json

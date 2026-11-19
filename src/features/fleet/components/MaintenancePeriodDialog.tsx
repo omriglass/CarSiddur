@@ -20,7 +20,8 @@ import {
 import type { MaintenancePeriod } from "../maintenance";
 
 export type MaintenancePeriodDialogTarget =
-  | { mode: "create"; carId: string; carName: string }
+  /** `reason`: prefilled (CR2: "קביעת טיפול" from an open issue starts with the issue's wording). */
+  | { mode: "create"; carId: string; carName: string; reason?: string }
   | { mode: "edit"; carName: string; block: MaintenancePeriod }
   /** From a car issue (REQ §13.114): the period starts now, only the end is chosen. */
   | { mode: "unsafe"; carName: string; issueId: string };
@@ -66,7 +67,7 @@ function DialogBody({ target, onOpenChange }: { target: MaintenancePeriodDialogT
   const [fromTime, setFromTime] = useState(initial.fromTime);
   const [toDate, setToDate] = useState(initial.toDate);
   const [toTime, setToTime] = useState(initial.toTime);
-  const [reason, setReason] = useState("");
+  const [reason, setReason] = useState(() => (target.mode === "create" ? (target.reason ?? "").slice(0, 200) : ""));
   const [confirmRemove, setConfirmRemove] = useState(false);
   const createMutation = useCreateCarMaintenanceMutation();
   const updateMutation = useUpdateCarMaintenanceMutation();

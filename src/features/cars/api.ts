@@ -26,7 +26,8 @@ interface ReporterName {
   reported_by_profile: { full_name: string } | null;
 }
 
-export type CarIssueWithReporter = CarIssue & ReporterName;
+/** CR2: who marked it handled (owner 2026-11-20: the history says when and by whom). */
+export type CarIssueWithReporter = CarIssue & ReporterName & { resolved_by_profile?: { full_name: string } | null };
 export type CarCareEventWithReporter = CarCareEvent & ReporterName;
 
 export async function fetchCarById(carId: string): Promise<Car | null> {
@@ -39,7 +40,7 @@ export async function fetchCarById(carId: string): Promise<Car | null> {
 export async function fetchCarIssueHistory(carId: string): Promise<CarIssueWithReporter[]> {
   const { data, error } = await supabase
     .from("car_issues")
-    .select("*, reported_by_profile:profiles!car_issues_reported_by_fkey(full_name)")
+    .select("*, reported_by_profile:profiles!car_issues_reported_by_fkey(full_name), resolved_by_profile:profiles!car_issues_resolved_by_fkey(full_name)")
     .eq("car_id", carId)
     .order("created_at", { ascending: false });
   if (error) throw toAppError(error);
@@ -140,14 +141,14 @@ export async function removeCarOwner(carId: string, profileId: string): Promise<
 }
 
 /** CR1 (REQ item 257): a car's open issue, as the car page banner, the report dialog and `/my` show it. */
-export type OpenCarIssue = Pick<CarIssue, "id" | "car_id" | "description" | "is_unsafe" | "created_at">;
+export type OpenCarIssue = Pick<CarIssue, "id" | "car_id" | "description" | "is_unsafe" | "created_at" | "reported_by">;
 
 /** The open issues of `carIds`, oldest first (RLS: members of the car's department, admins). */
 export async function fetchOpenCarIssues(carIds: readonly string[]): Promise<OpenCarIssue[]> {
   if (carIds.length === 0) return [];
   const { data, error } = await supabase
     .from("car_issues")
-    .select("id, car_id, description, is_unsafe, created_at")
+    .select("id, car_id, description, is_unsafe, created_at, reported_by")
     .in("car_id", [...carIds])
     .eq("status", "open")
     .order("created_at", { ascending: true })
@@ -161,4 +162,9 @@ export async function fetchCarCorporations(): Promise<string[]> {
   const { data, error } = await supabase.from("cars").select("corporation").not("corporation", "is", null);
   if (error) throw toAppError(error);
   return [...new Set((data ?? []).map((row) => (row.corporation ?? "").trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, "he"));
+}
+
+/** CR2 (REQ item 257 b): mark an open issue taken care of, or reword it (`update_car_issue`; no notification). */
+export async function updateCarIssue(issueId: string, action: "resolve" | "edit", description?: string): Promise<void> {
+  await rpc("update_car_issue", { p_issue_id: issueId, p_action: action, ...(description !== undefined ? { p_description: description } : {}) });
 }

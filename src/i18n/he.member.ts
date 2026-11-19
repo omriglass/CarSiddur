@@ -1501,6 +1501,15 @@ export const heMember = {
     cancelField: "ביטול",
     seatConfigsNone: "לא הוגדרו",
     /** CR1: on a ride of mine on `/my` (every ride I am on), a tap opens the car page. */
+    /** CR2 (owner 2026-11-20): tapping an open issue (banner or history) — for whoever looks after the car. */
+    issueResolve: "סימון כטופל",
+    issueEdit: "עריכת הניסוח",
+    issueMaintenance: "קביעת טיפול",
+    issueResolvedToast: "התקלה סומנה כטופלה",
+    /** History: a resolved issue says when and by whom (owner 2026-11-20). */
+    issueResolvedBy: "טופלה ע״י {{name}} · {{date}}",
+    issueResolvedAt: "טופלה · {{date}}",
+    issueEditedToast: "הניסוח עודכן",
     rideOpenIssuesOne: "⚠ תקלה פתוחה ברכב",
     rideOpenIssuesMany: "⚠ {{count}} תקלות פתוחות ברכב",
     notAuthorized: "רק אחראי/ת הרכב או מנהל/ת מערכת יכולים לצפות בעמוד הזה",

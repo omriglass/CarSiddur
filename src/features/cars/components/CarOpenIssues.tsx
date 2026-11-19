@@ -6,16 +6,33 @@ import { cn } from "@/lib/utils";
 
 import type { OpenCarIssue } from "../api";
 
-function IssueList({ issues }: { issues: readonly OpenCarIssue[] }) {
+interface Selectable {
+  /** CR2: a tap on an issue the viewer may act on (`canSelect`) opens its actions. */
+  onSelect?: (issue: OpenCarIssue) => void;
+  canSelect?: (issue: OpenCarIssue) => boolean;
+}
+
+function IssueList({ issues, onSelect, canSelect }: { issues: readonly OpenCarIssue[] } & Selectable) {
   return (
     <ul className="space-y-0.5 ps-5 text-sm" style={{ listStyleType: "disc" }}>
-      {issues.map((issue) => (
-        <li key={issue.id} data-testid="car-open-issue">
-          <span className="whitespace-pre-wrap break-words">{issue.description}</span>
-          {issue.is_unsafe ? <span className="ms-1.5 text-xs font-bold text-destructive">{he.adminIssues.unsafe}</span> : null}
-          <span className="ms-1.5 text-xs text-muted-foreground">{formatDayDate(issue.created_at)}</span>
-        </li>
-      ))}
+      {issues.map((issue) => {
+        const body = (
+          <>
+            <span className="whitespace-pre-wrap break-words">{issue.description}</span>
+            {issue.is_unsafe ? <span className="ms-1.5 text-xs font-bold text-destructive">{he.adminIssues.unsafe}</span> : null}
+            <span className="ms-1.5 text-xs text-muted-foreground">{formatDayDate(issue.created_at)}</span>
+          </>
+        );
+        return (
+          <li key={issue.id} data-testid="car-open-issue">
+            {onSelect && (canSelect?.(issue) ?? true) ? (
+              <button type="button" className="rounded text-start underline decoration-dotted underline-offset-4 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={() => onSelect(issue)}>
+                {body}
+              </button>
+            ) : body}
+          </li>
+        );
+      })}
     </ul>
   );
 }
@@ -25,7 +42,7 @@ function IssueList({ issues }: { issues: readonly OpenCarIssue[] }) {
  * everyone; `known` = the report dialog's problem step ("כבר דווח ועדיין פתוח:"), so the same thing is not reported
  * twice. Nothing renders without open issues.
  */
-export function CarOpenIssues({ issues, variant }: { issues: readonly OpenCarIssue[]; variant: "banner" | "known" }) {
+export function CarOpenIssues({ issues, variant, onSelect, canSelect }: { issues: readonly OpenCarIssue[]; variant: "banner" | "known" } & Selectable) {
   if (issues.length === 0) return null;
   if (variant === "known") {
     return (
@@ -45,7 +62,7 @@ export function CarOpenIssues({ issues, variant }: { issues: readonly OpenCarIss
         <AlertTriangle className="size-4 shrink-0" aria-hidden="true" />
         {tv("carPage.openIssues", { count: String(issues.length) })}
       </p>
-      <IssueList issues={issues} />
+      <IssueList issues={issues} onSelect={onSelect} canSelect={canSelect} />
     </section>
   );
 }

@@ -9,6 +9,7 @@ import {
   fetchCarById,
   fetchCarCorporations,
   fetchOpenCarIssues,
+  updateCarIssue,
   fetchCarCareHistory,
   fetchCarCurrentKm,
   fetchCarIssueHistory,
@@ -171,5 +172,19 @@ export function useSaveCarFieldsMutation() {
   return useMutation({
     mutationFn: ({ carId, patch }: { carId: string; patch: CarUpdate }) => update.mutateAsync({ id: carId, patch }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: carKeys.all }),
+  });
+}
+
+/** CR2: resolve / reword an issue; refreshes the car page history, every open-issue list and the admin issues list. */
+export function useUpdateCarIssueMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ issueId, action, description }: { issueId: string; action: "resolve" | "edit"; description?: string }) =>
+      updateCarIssue(issueId, action, description),
+    onSuccess: () => Promise.all([
+      queryClient.invalidateQueries({ queryKey: carKeys.all }),
+      queryClient.invalidateQueries({ queryKey: ["admin", "cars", "issues"] }),
+      queryClient.invalidateQueries({ queryKey: ["carCare"] }),
+    ]),
   });
 }

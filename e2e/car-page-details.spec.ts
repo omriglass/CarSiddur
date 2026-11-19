@@ -94,6 +94,41 @@ test("car page: formatted plate, open issues on top, in-place edits, the report 
   } finally {
     await member.context.close().catch(() => undefined);
   }
+
+  // CR2 (REQ item 257 b): whoever looks after the car taps the open issue: rewords it, schedules a טיפול, marks it handled.
+  const { data: resp } = car!.responsible_id
+    ? await service.from("profiles").select("email").eq("id", car!.responsible_id).single()
+    : { data: null };
+  const keeperUser = Object.values(SEEDED_USERS).find((u) => u.email === resp?.email) ?? SEEDED_USERS.admin;
+  const keeper = await newSignedInPage(browser, keeperUser);
+  try {
+    const page = keeper.page;
+    await page.goto(paths.car(car!.id));
+    const banner = page.getByTestId("car-open-issues");
+    await banner.getByRole("button", { name: new RegExp(description) }).click();
+    const sheet = page.getByTestId("car-issue-sheet");
+    await sheet.getByTestId("car-issue-edit").click();
+    await page.getByTestId("car-issue-edit-input").fill(`${description} — נבדק`);
+    await page.getByRole("dialog").getByRole("button", { name: he.carPage.saveField }).click();
+    await expect(banner).toContainText(`${description} — נבדק`);
+
+    await banner.getByRole("button", { name: new RegExp(description) }).click();
+    await page.getByTestId("car-issue-maintenance").click();
+    await expect(page.getByRole("dialog").getByRole("textbox").last()).toHaveValue(`${description} — נבדק`);
+    await page.keyboard.press("Escape");
+
+    await banner.getByRole("button", { name: new RegExp(description) }).click();
+    await page.getByTestId("car-issue-resolve").click();
+    await expect(page.getByText(he.carPage.issueResolvedToast)).toBeVisible();
+    await expect(page.getByTestId("car-open-issues")).toHaveCount(0);
+    const { data: done } = await service.from("car_issues").select("status").eq("id", issue!.id).single();
+    expect(done!.status).toBe("resolved");
+    // the history says when and by whom (owner 2026-11-20)
+    await page.getByTestId("car-history").getByRole("button", { name: he.carPage.historyFilterIssue }).click();
+    await expect(page.getByTestId("car-history-issue-resolved").first()).toContainText(keeperUser.fullName);
+  } finally {
+    await keeper.context.close().catch(() => undefined);
+  }
   } finally {
     await service.from("car_issues").delete().eq("id", issue!.id);
     await service.from("cars").update({

@@ -46,7 +46,8 @@ export interface CarHistoryEntry {
   /** `kilometrage` entries: the odometer value and whether it is a member's reading or a manager's correction. */
   km?: number;
   odometerKind?: CarOdometerKind;
-  /** `task` entries (REQ item 150 b): what was asked, how it ended and by whom. */
+  /** `task` entries (REQ item 150 b): what was asked, how it ended and by whom; `closedAt`/`closedByName` also for a
+   * resolved `issue` (CR2: when it was marked handled and by whom). */
   taskKind?: CarTaskKind;
   taskStatus?: CarTaskStatus;
   closedAt?: string | null;
@@ -71,6 +72,8 @@ export function mergeCarHistory(
       description: issue.description,
       status: issue.status,
       isUnsafe: issue.is_unsafe,
+      closedAt: issue.resolved_at ?? null,
+      closedByName: issue.resolved_by_profile?.full_name ?? null,
     })),
     ...careEvents.map((event) => ({
       id: event.id,
