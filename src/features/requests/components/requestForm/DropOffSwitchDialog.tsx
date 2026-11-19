@@ -14,7 +14,7 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { he, tv } from "@/i18n/he";
 import type { TripType } from "@/lib/enums";
 
-import { DROP_OFF_MODES, type DropOffMode } from "../../dropOffMode";
+import { DROP_OFF_MODES, type DropOffMode, type NonDriverStart } from "../../dropOffMode";
 import { defaultPlanB, dropPointsFirst, earliestPickup, hasAltPlace, pickupAfterArrivalMoved, type PlanBDetails } from "../../planB";
 import { isSamePlace, type RequestFormValues } from "../../schema";
 import { FieldError } from "./FieldError";
@@ -38,6 +38,8 @@ interface DropOffSwitchDialogProps {
   onConfirm: (plan: PlanBDetails) => void;
   /** REQ §13.181 (c): "רק איסוף" — picked up at `place` at `at`, back to where the trip starts. */
   onConfirmPickup: (pickup: { place: DestinationValue; at: string }) => void;
+  /** ND1 (REQ item 254): a non-driver's new request opens here — no "instead of" line, the form's hours and mode. */
+  start?: NonDriverStart;
 }
 
 function PlaceButton({ value, placeholder, onClick, testId }: { value: DestinationValue | null; placeholder: string; onClick: () => void; testId: string }) {
@@ -52,20 +54,20 @@ function PlaceButton({ value, placeholder, onClick, testId }: { value: Destinati
   );
 }
 
-export function DropOffSwitchDialog({ values, destinations, onCancel, onConfirm, onConfirmPickup }: DropOffSwitchDialogProps) {
+export function DropOffSwitchDialog({ values, destinations, onCancel, onConfirm, onConfirmPickup, start }: DropOffSwitchDialogProps) {
   const defaults = defaultPlanB({ tripType: values.tripType, departTime: values.departTime, returnTime: values.returnTime, arriveByTime: values.arriveByTime, departAnchor: values.departAnchor ?? "leave" });
   const [place, setPlace] = useState<DestinationValue | null>(hasAltPlace(values.altPlace) ? (values.altPlace as DestinationValue) : null);
-  const [arriveBy, setArriveBy] = useState(values.altArriveBy ?? defaults.altArriveBy ?? "09:00");
-  const [pickup, setPickup] = useState(values.altPickup ?? values.tripType === "round_trip");
+  const [arriveBy, setArriveBy] = useState(start?.arriveBy ?? values.altArriveBy ?? defaults.altArriveBy ?? "09:00");
+  const [pickup, setPickup] = useState(start ? start.mode === "both" : values.altPickup ?? values.tripType === "round_trip");
   // REQ §13.181 (c): רק הקפצה / רק איסוף / הקפצה ואיסוף (was a "ואיסוף" switch)
-  const [pickupOnly, setPickupOnly] = useState(false);
+  const [pickupOnly, setPickupOnly] = useState(start?.mode === "pickup");
   const mode: DropOffMode = pickupOnly ? "pickup" : pickup ? "both" : "drop";
   function chooseMode(next: DropOffMode) {
     setPickupOnly(next === "pickup");
     setPickup(next === "both");
     setError(null);
   }
-  const [pickupAt, setPickupAt] = useState(values.altPickupAt ?? defaults.altPickupAt ?? earliestPickup(arriveBy));
+  const [pickupAt, setPickupAt] = useState(start?.pickupAt ?? values.altPickupAt ?? defaults.altPickupAt ?? earliestPickup(arriveBy));
   const [pickupPlace, setPickupPlace] = useState<DestinationValue | null>(hasAltPlace(values.altPickupPlace) ? (values.altPickupPlace as DestinationValue) : null);
   const [picking, setPicking] = useState<"place" | "pickupPlace" | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -95,10 +97,10 @@ export function DropOffSwitchDialog({ values, destinations, onCancel, onConfirm,
     <FormDialog
       open
       onOpenChange={(open) => { if (!open) onCancel(); }}
-      title={picking === "place" ? he.planB.sheet.place : picking === "pickupPlace" ? he.planB.sheet.pickupPlace : he.planB.switch.title}
-      description={picking ? undefined : tv("planB.switch.instead", { trip })}
+      title={picking === "place" ? he.planB.sheet.place : picking === "pickupPlace" ? he.planB.sheet.pickupPlace : start ? he.request.tripTypeDropOff : he.planB.switch.title}
+      description={picking || start ? undefined : tv("planB.switch.instead", { trip })}
       onSubmit={submit}
-      submitLabel={he.planB.switch.confirm}
+      submitLabel={start ? he.requestSentence.sheetDone : he.planB.switch.confirm}
       className="max-w-md"
       footer={picking ? <Button type="button" variant="outline" className="w-full sm:w-auto" onClick={() => setPicking(null)}>{he.common.back}</Button> : undefined}
     >

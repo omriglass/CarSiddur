@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { UseFormReturn } from "react-hook-form";
 
-import { canSwapPlaces, dropOffMode, swapRequestPlaces } from "./dropOffMode";
+import { canSwapPlaces, dropOffMode, nonDriverStart, swapRequestPlaces } from "./dropOffMode";
 
 import type { RequestFormValues } from "./schema";
 
@@ -37,5 +37,17 @@ describe("swapRequestPlaces (REQ §13.181 b)", () => {
   it("is offered only when both places are chosen", () => {
     expect(canSwapPlaces({ origin: home, destination: binyamina })).toBe(true);
     expect(canSwapPlaces({ origin: home, destination: { freeText: " " } })).toBe(false);
+  });
+});
+
+describe("nonDriverStart (ND1)", () => {
+  it("both legs when the hours are more than an hour apart", () => {
+    expect(nonDriverStart("08:00", "12:00")).toEqual({ mode: "both", arriveBy: "08:00", pickupAt: "12:00" });
+  });
+  it("one leg when an hour or less apart: a drop-off before 13:00, a pickup from 13:00 on", () => {
+    expect(nonDriverStart("09:00", "10:00")).toMatchObject({ mode: "drop", arriveBy: "09:00" });
+    expect(nonDriverStart("12:45", "13:30")).toMatchObject({ mode: "drop" });
+    expect(nonDriverStart("13:00", "14:00")).toEqual({ mode: "pickup", arriveBy: "13:00", pickupAt: "13:00" });
+    expect(nonDriverStart("16:00", undefined)).toMatchObject({ mode: "pickup", pickupAt: "16:00" });
   });
 });

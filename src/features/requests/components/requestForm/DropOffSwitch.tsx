@@ -29,6 +29,7 @@ import {
 import { destinationValueToPoint } from "../../routePoints";
 import { rushWindowsForDay, travelMarginOf, withMargin } from "../../rushHours";
 import type { RequestFormValues } from "../../schema";
+import type { NonDriverStart } from "../../dropOffMode";
 import { DropOffSwitchDialog } from "./DropOffSwitchDialog";
 
 const ALT_FIELDS = ["altPlace", "altArriveBy", "altPickup", "altPickupAt", "altPickupPlace"] as const;
@@ -53,9 +54,12 @@ interface UseDropOffSwitchOptions {
  */
 export function useDropOffSwitch({ form, variant, departmentId, destinations, anchored }: UseDropOffSwitchOptions): {
   select: (next: TripType, applyPlain: (next: TripType) => void) => void;
+  /** ND1 (REQ item 254): open the dialog on a non-driver's new request; nothing is kept to switch back to. */
+  openStart: (start: NonDriverStart) => void;
   dialog: ReactNode;
 } {
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [start, setStart] = useState<NonDriverStart | null>(null);
   const fetchMinutes = useRouteMinutesFetcher(departmentId);
   // REQ §13.113: the classic form's plan-B switch converts "arrive by" / "pickup" with the same rush-hour rule.
   const settingsQuery = useDepartmentSettings(departmentId);
@@ -66,10 +70,10 @@ export function useDropOffSwitch({ form, variant, departmentId, destinations, an
     }
   }
 
-  async function switchToPlan(plan: PlanBDetails) {
+  async function switchToPlan(plan: PlanBDetails, keepBackup = true) {
     const current = form.getValues();
     patch(dropOffFromPlanBPatch(plan, anchored));
-    form.setValue("mainTripBackup", current.mainTripBackup ?? snapshotMainTrip(current), { shouldDirty: true });
+    if (keepBackup) form.setValue("mainTripBackup", current.mainTripBackup ?? snapshotMainTrip(current), { shouldDirty: true });
     form.clearErrors([...ALT_FIELDS]);
     const dropped = droppedPickupPlace(plan);
     if (dropped) toast(tv("planB.switch.pickupPlaceKept", { place: placeName(plan.place), pickupPlace: placeName(dropped) }));
@@ -89,7 +93,7 @@ export function useDropOffSwitch({ form, variant, departmentId, destinations, an
   }
 
   /** REQ §13.181 (c): "רק איסוף" — a הקפצה from the pickup place back to where the trip started, at the pickup time. */
-  function switchToPickup(pickup: { place: DestinationValue; at: string }) {
+  function switchToPickup(pickup: { place: DestinationValue; at: string }, keepBackup = true) {
     const current = form.getValues();
     patch({
       ...tripTypeToLegacyFields("drop_off", false),
@@ -98,7 +102,7 @@ export function useDropOffSwitch({ form, variant, departmentId, destinations, an
       departAnchor: "leave", departTime: pickup.at, arriveByTime: undefined, returnAnchor: "arrive", leaveDestTime: undefined,
       fallback: "none",
     });
-    form.setValue("mainTripBackup", current.mainTripBackup ?? snapshotMainTrip(current), { shouldDirty: true });
+    if (keepBackup) form.setValue("mainTripBackup", current.mainTripBackup ?? snapshotMainTrip(current), { shouldDirty: true });
     form.clearErrors([...ALT_FIELDS]);
   }
 
@@ -126,21 +130,32 @@ export function useDropOffSwitch({ form, variant, departmentId, destinations, an
     applyPlain(next);
   }
 
+  function openStart(next: NonDriverStart) {
+    setStart(next);
+    setDialogOpen(true);
+  }
+
+  function close() {
+    setDialogOpen(false);
+    setStart(null);
+  }
+
   const dialog = dialogOpen ? (
     <DropOffSwitchDialog
       values={form.getValues()}
       destinations={destinations}
-      onCancel={() => setDialogOpen(false)}
+      start={start ?? undefined}
+      onCancel={close}
       onConfirm={(plan) => {
-        setDialogOpen(false);
-        void switchToPlan(plan);
+        close();
+        void switchToPlan(plan, !start);
       }}
       onConfirmPickup={(pickup) => {
-        setDialogOpen(false);
-        switchToPickup(pickup);
+        close();
+        switchToPickup(pickup, !start);
       }}
     />
   ) : null;
 
-  return { select, dialog };
+  return { select, openStart, dialog };
 }

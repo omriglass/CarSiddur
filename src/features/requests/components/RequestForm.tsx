@@ -1608,6 +1608,7 @@ export function RequestForm({
           onStageChange={setStage}
           invalidSignal={invalidSignal}
           guide={mode === "new" && !templateSuggestion && !readNoAutoDialogs() ? { dayKnown: !!slotPrefill || !!dayPrefill, outKnown: !!slotPrefill?.departTime, returnKnown: !!slotPrefill?.returnTime } : undefined}
+          opensOnDropOff={profileQuery.isLoading ? undefined : !isReservation && !!profileQuery.data?.does_not_drive}
           quickContext={quickContext ? { cars: quickContext.cars, showCarPicker: quickContext.showCarPicker } : undefined}
           quickWindow={{ startMs, endMs, carIsFree, isAway, otherFreeCar, oneWay }}
         />

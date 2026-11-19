@@ -43,3 +43,28 @@ export function canSwapPlaces(values: Pick<RequestFormValues, "origin" | "destin
   const filled = (value: DestinationValue | undefined) => !!value && ("presetId" in value || !!value.freeText.trim());
   return filled(values.origin) && filled(values.destination);
 }
+
+export interface NonDriverStart {
+  mode: DropOffMode;
+  /** "עד" — the drop-off's be-there-by hour. */
+  arriveBy: string;
+  /** The pickup hour ("רק איסוף" / the pickup of "הקפצה ואיסוף"). */
+  pickupAt: string;
+}
+
+function minutesOf(time: string): number {
+  const [h, m] = time.split(":").map(Number);
+  return (h ?? 0) * 60 + (m ?? 0);
+}
+
+/**
+ * ND1 (owner 2026-11-18, REQ item 254): the הקפצה dialog a non-driver's new request opens on. "עד" = the form's start
+ * hour, the pickup = its end hour, "הקפצה ואיסוף"; when the two are an hour or less apart, one leg — "רק הקפצה" before
+ * 13:00, "רק איסוף" from 13:00 on (at the start hour).
+ */
+export function nonDriverStart(start: string, end: string | undefined): NonDriverStart {
+  if (end && minutesOf(end) - minutesOf(start) > 60) return { mode: "both", arriveBy: start, pickupAt: end };
+  return minutesOf(start) < 13 * 60
+    ? { mode: "drop", arriveBy: start, pickupAt: end ?? start }
+    : { mode: "pickup", arriveBy: start, pickupAt: start };
+}

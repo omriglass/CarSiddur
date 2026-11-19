@@ -4,7 +4,7 @@ import { he, tv } from "../src/i18n/he";
 import { paths } from "../src/app/routes";
 import { formatTime } from "../src/lib/time";
 import { SEEDED_USERS, serviceRoleClient, signIn, submitRequestForm } from "./helpers";
-import { dismissGuide } from "./request-form";
+import { dayOfWeek, dismissGuide, memberOpenWeek } from "./request-form";
 
 // REQ §13.110 / UX_FLOWS §3.4a: the sentence layout of the request form. The seeded accounts use the
 // classic form (e2e/global-setup.ts), so this spec flips one member to the sentence layout for its run
@@ -249,5 +249,41 @@ test.describe("request sentence layout", { tag: ["@request-form"] }, () => {
     await page.goto("/requests/new");
     await expect(page.getByTestId("request-sentence")).toHaveCount(0);
     await expect(page.getByRole("combobox").filter({ hasText: he.field.destination })).toBeVisible();
+  });
+
+  // ND1 (REQ item 254, owner 2026-11-18): a member who does not drive starts a new request on the הקפצה dialog, with the
+  // form's hours ("עד" = start, pickup = end); ✕ leaves the regular form.
+  test("a non-driver's new request opens on the הקפצה dialog; ✕ returns to the form", async ({ page }) => {
+    const service = serviceRoleClient();
+    const week = await memberOpenWeek();
+    await service.from("profiles").update({ does_not_drive: true }).eq("email", SEEDED_USERS.member2.email);
+    try {
+      await signIn(page, SEEDED_USERS.member2);
+      const day = dayOfWeek(week.weekStart, 2);
+      await page.goto(`${paths.requests.new()}?week=${week.weekStart}&day=${day}`);
+      const ask = page.getByTestId("drop-off-switch-dialog");
+      await expect(ask).toBeVisible();
+      await expect(page.getByRole("dialog").getByRole("heading", { name: he.request.tripTypeDropOff, exact: true })).toBeVisible();
+      await expect(ask.getByTestId("drop-off-switch-mode-both")).toHaveAttribute("data-state", "on");
+      await expect(ask.getByLabel(he.planB.switch.untilTime)).toHaveValue("08:00");
+      await ask.getByTestId("drop-off-switch-place").click();
+      await page.getByTestId("drop-off-switch-picker").getByRole("textbox").fill("עפולה");
+      await page.getByTestId("drop-off-switch-picker").getByText("עפולה").first().click();
+      await page.getByRole("button", { name: he.requestSentence.sheetDone, exact: true }).click();
+      const sentence = page.getByTestId("request-sentence");
+      await expect(ask).toHaveCount(0);
+      await expect(sentence.getByTestId("chip-destination")).toContainText("עפולה");
+      await expect(sentence.getByTestId("chip-trip")).toHaveText(he.requestSentence.tripDropOffPickup);
+
+      // ✕ closes it and leaves the regular form
+      await page.goto(`${paths.requests.new()}?week=${week.weekStart}&day=${day}`);
+      await expect(ask).toBeVisible();
+      await page.keyboard.press("Escape");
+      await expect(ask).toHaveCount(0);
+      await expect(page.getByTestId("request-sentence")).toBeVisible();
+    } finally {
+      await service.from("profiles").update({ does_not_drive: false }).eq("email", SEEDED_USERS.member2.email);
+      await week.cleanup();
+    }
   });
 });

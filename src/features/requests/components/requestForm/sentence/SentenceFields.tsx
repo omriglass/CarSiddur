@@ -26,7 +26,7 @@ import { toInstant } from "../../../mapper";
 import { whoText } from "../../../whoLabel";
 import type { RequestFormValues } from "../../../schema";
 import type { RushWindows } from "../../../rushHours";
-import { canSwapPlaces, dropOffMode, swapRequestPlaces } from "../../../dropOffMode";
+import { canSwapPlaces, dropOffMode, nonDriverStart, swapRequestPlaces } from "../../../dropOffMode";
 import { anchorLabelKey, bothOutHours, bothReturnHours, endEstimate, enteredOutTime, enteredReturnTime, minutesAtDestination, tooLittleTimeAtDestination } from "../../../timeAnchors";
 import {
   WINDOW_EARLIEST_START,
@@ -58,6 +58,7 @@ import { TimeAnchorSheet } from "./TimeAnchorSheet";
 import { StopsSheet } from "../StopsSheet";
 import { TimeField15 } from "@/components/TimeField15";
 import { WhoSheet } from "./WhoSheet";
+import { useDropOffSwitch } from "../DropOffSwitch";
 import { flexBriefText } from "../../../flexText";
 import { flexBrief, guideSteps, invalidTargetOf, nextGuideStep, type GuideStep, type SentenceSheet } from "./sentenceModel";
 
@@ -140,6 +141,12 @@ export interface SentenceFieldsProps {
    * (a grid tap). Absent = no guide (edit, a repeating-request suggestion, ask-to-join).
    */
   guide?: { dayKnown: boolean; outKnown: boolean; returnKnown: boolean };
+  /**
+   * ND1 (owner 2026-11-18, REQ item 254): the requester does not drive, so the guide (after the day) opens the הקפצה
+   * dialog instead of the destination and hour sheets; ✕ leaves the regular form. `undefined` = not known yet (the
+   * guide waits for it).
+   */
+  opensOnDropOff?: boolean;
   /** Seat-fit / overlap warnings, rendered right under the sentence (R9U4). */
   notices?: ReactNode;
   /** A named child was just added to the request (R9U7). */
@@ -186,7 +193,7 @@ export function SentenceFields(props: SentenceFieldsProps) {
     form, basePlaceId, variant, weekStart, departmentId, day, errors, destinations, rideTypes, preferredCars, initialPreferredCarName, members, allowOnBehalf, driverOptions, driverId, reservation, requesterName, childOptions,
     tripShape, tripType, dropOffPickup, canDrive, seeksDriver, isQuickContext, showReturnDayPicker,
     returnAnotherDay, setReturnAnotherDay, isMultiDay, multiDaySpan, routeMinutes, rush, recentDestinations, recentCompanionIds, stage, onStageChange,
-    invalidSignal, quickContext, quickWindow, notices, onChildAdded, mode, guide,
+    invalidSignal, quickContext, quickWindow, notices, onChildAdded, mode, guide, opensOnDropOff,
   } = props;
   const control = form.control;
   const values = useWatch({ control });
@@ -240,21 +247,29 @@ export function SentenceFields(props: SentenceFieldsProps) {
   const invalid = (...fields: string[]) => fields.some((field) => field in errors);
 
   // The guided start of a new request (owner 2026-10-11): the first missing step opens on mount (adjusted during render).
-  const currentGuideSteps = guide
+  const dropOffStart = useDropOffSwitch({ form, variant, departmentId, destinations, anchored: anchorsEnabled });
+  const dropOffFirst = !!opensOnDropOff && variant !== "carNow";
+  const allGuideSteps = guide
     ? guideSteps({ ...guide, dayChip: isWeekly, hasOut, hasReturn, timeChips: !windowOn && variant !== "carNow", hasDestination })
     : [];
+  const currentGuideSteps = dropOffFirst ? allGuideSteps.filter((step) => step === "day") : allGuideSteps;
   const [guideActive, setGuideActive] = useState(!!guide);
   const [guideStarted, setGuideStarted] = useState(false);
-  if (guide && !guideStarted) {
+  /** ND1: the guide's end opens the הקפצה dialog with the form's hours. */
+  function finishGuide() {
+    setGuideActive(false);
+    if (dropOffFirst) dropOffStart.openStart(nonDriverStart(form.getValues("departTime") ?? "08:00", form.getValues("returnTime")));
+  }
+  if (guide && !guideStarted && opensOnDropOff !== undefined) {
     setGuideStarted(true);
     setSheet(currentGuideSteps[0] ?? null);
-    if (!currentGuideSteps.length) setGuideActive(false);
+    if (!currentGuideSteps.length) finishGuide();
   }
   /** "אישור" on a guided step: open the next missing one, or close. */
   function advanceGuide(step: GuideStep) {
     const next = guideActive ? nextGuideStep(currentGuideSteps, step) : null;
     setSheet(next);
-    if (!next) setGuideActive(false);
+    if (!next && guideActive) finishGuide();
   }
   /** Dismissing a sheet (×, Escape, outside) ends the guide. */
   function closeSheet() {
@@ -720,6 +735,8 @@ export function SentenceFields(props: SentenceFieldsProps) {
           onChildAdded={mode === "new" ? onChildAdded : undefined}
         />
       </FieldSheet>
+
+      {dropOffStart.dialog}
 
       <FieldSheet open={sheet === "trip"} onOpenChange={(open) => !open && setSheet(null)} title={he.requestSentence.sheet.trip}>
         <TripTypeFields control={control} form={form} variant={variant} tripType={tripType} dropOffPickup={dropOffPickup} canDrive={canDrive} pill departmentId={departmentId} destinations={destinations} basePlaceId={basePlaceId} />

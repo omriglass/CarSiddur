@@ -1904,7 +1904,7 @@ Owner (bug hunt after v2026.11.17-1): "the calculated times are often wrong" —
 - **Owner decision 2026-11-18 (mockups https://claude.ai/artifact/V4fgeTNMeXcX2pSnPYnxHq):** a selector at the top of the sheet, **default "per person"** (one block per person: role, legs, a row per point — boards / by / leaves / home — with "asked" vs "actual" columns, ✓ or ⚠ near-break), the other option **"per route"** (one card per place in driving order: hour, who gets on/off, each person's constraint tagged fixed / flexible / ~estimate). Header in both: route and each way's hours. The last view chosen is remembered per device (owner 2026-11-18; localStorage, like the other per-device view switches). Wordings on the mockups are placeholders.
 - **Still to settle before building:** layout details (see RD1, which built the per-person part), whether the siddur's ride sheet (members' "פרטים" tab, `RideStopsView`, 0304473) takes the same design, and every new wording (owner approval). Design pass in UX_FLOWS first; check phone width. Related: RD1, LT1, TT1 (REQ items 246, 249).
 
-## A non-driver's new request opens on the הקפצה dialog (owner 2026-11-18, ND1) — not built yet
+## A non-driver's new request opens on the הקפצה dialog (owner 2026-11-18, ND1) — ✅ done 2026-11-19 (REQ item 254): weekly and quick sentence forms, the form's hours (defaults included, owner); car-now left as is (no hours to set) — open
 
 Context: קטיה (non-driver, `profiles.does_not_drive`) could not find "הקפצה + איסוף" on a new ride and filed two separate one-way הקפצות instead (production 2026-11-18; she was also on a stale build, v2026.11.04-1).
 
