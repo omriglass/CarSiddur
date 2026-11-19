@@ -655,7 +655,7 @@ Every assignment, unmet record and suggestion has a `reasonCode` and a Hebrew `r
 | `WARN_FIXED_RIDE_CONFLICT` | `נסיעה קבועה חופפת או צמודה מדי לנסיעה קבועה אחרת באותו רכב` (QB1) |
 | `WARN_FIXED_RIDE_OVER_CAPACITY` | `בנסיעה קבועה יש יותר נוסעים או ציוד ממה שהרכב מכיל` (R16B8: warning `FIXED_RIDE_OVER_CAPACITY`; the seat/luggage invariants check only the solver's own placements — a fixed ride is a fact, never a crash; since 2026-11-13 (R19B3) the bridge's `FixedRide.passengers`/`luggageCount`/`towCount` are the larger leg's load per seat kind — `boardRideToFixedRide`, `src/features/sadran/applySolve.ts` — so an out-only and a return-only rider share a seat) |
 | `WARN_CHAIN_BROKEN` | `נסיעה קבועה מתחילה במקום שהרכב אינו נמצא בו בפועל` (new, REQUIREMENTS §13.93 — replaces `WARN_FIXED_RIDE_LOCATION_MISMATCH`) |
-| `WARN_CAR_AWAY_AT_WEEK_END` | `{car} מסיים/ת את השבוע ב{place} ולא בבסיסו/ה` (new, REQUIREMENTS §13.93 — replaces `WARN_CAR_AWAY_AT_DAY_END`) |
+| `WARN_CAR_AWAY_AT_WEEK_END` | `{car} מסיים/ת את השבוע ב{place} ולא בביתו/ה` (new, REQUIREMENTS §13.93 — replaces `WARN_CAR_AWAY_AT_DAY_END`) |
 
 #### 3.13a Names, never ids
 

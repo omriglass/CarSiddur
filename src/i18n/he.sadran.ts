@@ -128,9 +128,9 @@ export const heSadran = {
     /** The board's "away" band, relative to the car's own base (REQ §89/§13.93). */
     awayBand: "הרכב ב{{place}}",
     /** REQUIREMENTS §13.93: the car's own base, shown on its column header when it isn't the department home. */
-    carBase: "בסיס: {{place}}",
+    carBase: "בית: {{place}}",
     /** REQUIREMENTS §13.93/SOLVER.md §1.3a `weekEndAway()` — a warning only, shown on the car's column on the week's last day. */
-    carAwayAtWeekEnd: "{{car}} מסיים/ת את השבוע ב{{place}}, לא בבסיס",
+    carAwayAtWeekEnd: "{{car}} מסיים/ת את השבוע ב{{place}}, לא בבית",
     /** REQUIREMENTS §13.93/SOLVER.md §1.3a `chainBreaks()` — a fixed ride whose car is actually elsewhere; a warning only. */
     carNotHereWarning: "הנסיעה ({{ride}}): הרכב לא נמצא כאן — הוא ב{{place}}",
     invalidWindow: "יש לבחור טווח שעות תקין באותו יום",

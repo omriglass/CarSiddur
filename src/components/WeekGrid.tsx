@@ -57,7 +57,7 @@ export interface WeekGridCar {
   group?: "shared" | "temporary" | "phantom";
   /** e.g. "בבנימינה" while away from its base — shown next to the car name. */
   locationBadge?: string;
-  /** REQUIREMENTS §13.93: the car's own base, shown only when it differs from the department home (e.g. "בסיס: בנימינה"). */
+  /** REQUIREMENTS §13.93: the car's own base, shown only when it differs from the department home (e.g. "בית: בנימינה"). */
   baseBadge?: string;
   /**
    * REQUIREMENTS §13.93/SOLVER.md §1.3a `weekEndAway()`: the car ends the *week* away from its

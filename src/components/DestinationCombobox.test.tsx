@@ -75,13 +75,13 @@ describe("home place marker (owner 2026-11-19)", () => {
     const { getByRole } = render(
       <DestinationCombobox destinations={DESTINATIONS} value={{ presetId: "2", name: "חיפה" }} onChange={() => {}} />,
     );
-    expect(getByRole("combobox").textContent).toContain("חיפה (בסיס)");
+    expect(getByRole("combobox").textContent).toContain("חיפה (בית)");
   });
 
   it("leaves other places as they are", () => {
     const { getByRole } = render(
       <DestinationCombobox destinations={DESTINATIONS} value={{ presetId: "1", name: "עפולה" }} onChange={() => {}} />,
     );
-    expect(getByRole("combobox").textContent).not.toContain("(בסיס)");
+    expect(getByRole("combobox").textContent).not.toContain("(בית)");
   });
 });
