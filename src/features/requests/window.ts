@@ -56,7 +56,8 @@ export function canEditRequest(request: {
       request.departAt ? Date.parse(request.departAt) : Number.NEGATIVE_INFINITY,
       request.returnAt ? Date.parse(request.returnAt) : Number.NEGATIVE_INFINITY,
     );
-    return Number.isFinite(end) && end > now;
+    // ED1 (REQ item 252): editable until the end of the request's day (Asia/Jerusalem), whatever the hours.
+    return Number.isFinite(end) && dateKey(new Date(end)) >= dateKey(new Date(now));
   }
   return isRequestWindowOpen(request.window, now)
     && !request.hasPublishedRide

@@ -50,6 +50,14 @@ describe("canEditRequest on a published day (REQ §13.101 f)", () => {
     expect(canEditRequest({ ...base, departAt: "2026-09-08T06:00:00Z", returnAt: "2026-09-08T09:00:00Z" }, now)).toBe(false);
     expect(canEditRequest({ ...base, status: "withdrawn" }, now)).toBe(false);
   });
+  it("ED1 (REQ item 252): stays editable until the end of its day (Asia/Jerusalem), whatever the hours", () => {
+    // a one-way that left at 08:00 and a round trip back at 11:00, seen at 22:30 the same day (Jerusalem, UTC+3 here)
+    const evening = Date.parse("2026-09-10T19:30:00Z");
+    expect(canEditRequest({ ...base, departAt: "2026-09-10T05:00:00Z", returnAt: null }, evening)).toBe(true);
+    expect(canEditRequest({ ...base, departAt: "2026-09-10T05:00:00Z", returnAt: "2026-09-10T08:00:00Z" }, evening)).toBe(true);
+    // 00:30 the next day (Jerusalem) - the day is over
+    expect(canEditRequest({ ...base, departAt: "2026-09-10T05:00:00Z", returnAt: null }, Date.parse("2026-09-10T21:30:00Z"))).toBe(false);
+  });
 });
 
 describe("isOnUnpublishedDay (REQ §13.155, R15U1)", () => {

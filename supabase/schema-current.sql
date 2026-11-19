@@ -3551,7 +3551,7 @@ begin
      or exists (select 1 from public.weeks w where w.department_id = h.department_id and w.week_start = h.week_start and w.phase = 'archived') then
     raise exception 'not_authorized' using errcode = 'P0001';
   end if;
-  if h.ends_at <= now() or src.ends_at <= now() then raise exception 'ride_in_past' using errcode = 'P0001'; end if;
+  if (h.starts_at at time zone 'Asia/Jerusalem')::date < (now() at time zone 'Asia/Jerusalem')::date or (src.starts_at at time zone 'Asia/Jerusalem')::date < (now() at time zone 'Asia/Jerusalem')::date then raise exception 'ride_in_past' using errcode = 'P0001'; end if;   -- ED1
   select * into q from public.requests where id = p_request_id;
   select bool_or(rr.covers_out), bool_or(rr.covers_return) into v_out, v_ret
   from public.ride_requests rr where rr.ride_id = src.id and rr.request_id = p_request_id;
@@ -17500,7 +17500,7 @@ begin
   else
     v_end := v_req.return_at;
   end if;
-  if v_req.depart_at < now() then raise exception 'ride_in_past' using errcode = 'P0001'; end if;
+  if (v_req.depart_at at time zone 'Asia/Jerusalem')::date < (now() at time zone 'Asia/Jerusalem')::date then raise exception 'ride_in_past' using errcode = 'P0001'; end if;   -- ED1
   select phase into v_phase from public.weeks where department_id = v_req.department_id and week_start = v_req.week_start;
   if v_phase is null or v_phase in ('archived', 'upcoming') then raise exception 'week_archived' using errcode = 'P0001'; end if;
   v_turnaround := coalesce(public.required_turnaround_minutes(v_req.department_id, v_req.week_start), 30);
@@ -22718,7 +22718,7 @@ begin
   if v_req.status <> 'withdrawn' or v_req.status_reason is distinct from 'DUPLICATE_WITHDRAWN' then
     raise exception 'request_not_editable' using errcode = 'P0001';
   end if;
-  if coalesce(v_req.return_at, v_req.depart_at) < now() then raise exception 'ride_in_past' using errcode = 'P0001'; end if;
+  if (coalesce(v_req.return_at, v_req.depart_at) at time zone 'Asia/Jerusalem')::date < (now() at time zone 'Asia/Jerusalem')::date then raise exception 'ride_in_past' using errcode = 'P0001'; end if;   -- ED1
   select phase into v_phase from public.weeks where department_id = v_req.department_id and week_start = v_req.week_start;
   if v_phase is null or v_phase in ('archived', 'upcoming') then raise exception 'week_archived' using errcode = 'P0001'; end if;
 
@@ -25642,7 +25642,7 @@ begin
   if exists (select 1 from public.weeks where department_id = r.department_id and week_start = r.week_start and phase = 'archived') then
     raise exception 'week_archived' using errcode = 'P0001';
   end if;
-  if r.ends_at <= now() then raise exception 'ride_in_past' using errcode = 'P0001'; end if;
+  if (r.starts_at at time zone 'Asia/Jerusalem')::date < (now() at time zone 'Asia/Jerusalem')::date then raise exception 'ride_in_past' using errcode = 'P0001'; end if;   -- ED1
   if exists (select 1 from public.cars c where c.id = r.car_id and c.type = 'temporary') then
     raise exception 'private_car_owner_only' using errcode = 'P0001';
   end if;
@@ -27254,7 +27254,8 @@ begin
     v_published_edit := v_week.phase in ('published', 'live')
       and (v_requester_id = v_actor or (v_actor is not null and public.request_related(v_request_id, v_actor)) or v_can_manage);
     if v_published_edit then
-      if coalesce(v_existing.return_at, v_existing.depart_at) < now() then raise exception 'request_not_editable'; end if;
+      -- ED1 (REQ item 252): editable until the end of the request's day, whatever the hours.
+      if (coalesce(v_existing.return_at, v_existing.depart_at) at time zone 'Asia/Jerusalem')::date < (now() at time zone 'Asia/Jerusalem')::date then raise exception 'request_not_editable'; end if;
     elsif not v_can_manage and (v_week.phase not in ('open','solving') or now() > v_week.close_at or now() < v_week.open_at) then raise exception 'request_window_closed'; end if;
     if v_existing.served_by_alternative then raise exception 'request_served_by_alternative' using errcode = 'P0001'; end if;
     if v_existing.status in ('cancelled','withdrawn') or (not v_published_edit and exists(select 1 from public.ride_requests rr join public.rides r on r.id=rr.ride_id where rr.request_id=v_request_id and r.status not in ('draft','cancelled'))) then raise exception 'request_not_editable'; end if;
@@ -27861,7 +27862,7 @@ begin
                  where c.id = v_preferred_car_id and c.type = 'temporary' and c.status = 'active'
                    and (public.is_car_owner(c.id, v_actor) or public.is_car_owner(c.id, q.requester_id) or public.is_car_owner(c.id, q.filed_by))) then
     v_own_car := v_preferred_car_id;
-    if v_depart_at < now() then raise exception 'ride_in_past' using errcode = 'P0001'; end if;
+    if (v_depart_at at time zone 'Asia/Jerusalem')::date < (now() at time zone 'Asia/Jerusalem')::date then raise exception 'ride_in_past' using errcode = 'P0001'; end if;   -- ED1
     v_own_turnaround := coalesce(public.required_turnaround_minutes(v_department_id, v_week_start), 30);
     v_own_end := v_return_at;
     if v_trip_type = 'one_way' then

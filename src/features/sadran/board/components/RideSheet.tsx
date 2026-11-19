@@ -1,3 +1,4 @@
+import { isRideDayEditable } from "@/features/rides/rideDayEditable";
 import { fromZonedTime } from "date-fns-tz";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -396,7 +397,7 @@ export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenCha
                     {he.sadranRideSheet.save}
                   </Button>
 
-                  {isPlanning ? <p className="text-destructive">{he.boardCoordination.planning}</p> : ride.id && ride.version != null && !cancelled && ride.ends_at && Date.parse(ride.ends_at) > nowMs && departmentId && weekStart ? (
+                  {isPlanning ? <p className="text-destructive">{he.boardCoordination.planning}</p> : ride.id && ride.version != null && !cancelled && isRideDayEditable(ride.starts_at, new Date(nowMs)) && departmentId && weekStart ? (
                     <RidePublicNotesEditor key={`${ride.id}:${ride.version}:notes`} rideId={ride.id} expectedVersion={ride.version} initialNotes={ride.notes} departmentId={departmentId} weekStart={weekStart} />
                   ) : ride.notes ? <p className="whitespace-pre-wrap break-words">{ride.notes}</p> : null}
                 </TabsContent>
@@ -451,7 +452,7 @@ export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenCha
                 {/* ── אנשים ── */}
                 <TabsContent value="people" className="space-y-4">
                   {driverCandidates && !isPlanning && !reservation && ride.id && ride.version != null && !cancelled
-                    && ride.ends_at && Date.parse(ride.ends_at) > nowMs && departmentId && weekStart ? (
+                    && isRideDayEditable(ride.starts_at, new Date(nowMs)) && departmentId && weekStart ? (
                     <RideDriverPicker
                       rideId={ride.id}
                       version={ride.version}
@@ -474,9 +475,9 @@ export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenCha
 
                   {/* F3 (20260914120000_ride_passengers.sql): editing named people on an
                       existing manual reservation, same editability gate as the notes editor
-                      (not planning, not cancelled, still in the future). */}
+                      (not planning, not cancelled, its day not over - ED1). */}
                   {!isPlanning && ride.pin_reason === "SADRAN_MANUAL" && ride.id && ride.version != null
-                    && !cancelled && ride.ends_at && Date.parse(ride.ends_at) > nowMs && departmentId && weekStart ? (
+                    && !cancelled && isRideDayEditable(ride.starts_at, new Date(nowMs)) && departmentId && weekStart ? (
                     <RidePassengersEditor
                       key={`${ride.id}:${ride.version}:passengers`}
                       rideId={ride.id}

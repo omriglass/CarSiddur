@@ -359,7 +359,7 @@ export function SiddurPage() {
   const editLinksForRide = (() => {
     const selected = selectedRideId ? rides.find((r) => r.id === selectedRideId) : undefined;
     if (!settingsQuery.data?.anyone_edits_rides || !isMyDepartment || !selected || selected.status === "cancelled"
-        || (selected.ends_at && Date.parse(selected.ends_at) <= now.getTime())) {
+        || !isRideDayEditable(selected.starts_at, now)) {   // ED1: until the end of the ride's day
       return editHrefForRide ? [{ href: editHrefForRide, label: editLabelForRide }] : [];
     }
     const targets = rideEditTargets(selected);
@@ -886,7 +886,7 @@ export function SiddurPage() {
           removeMe: removeMePreview(selectedRide, selectedRide ? myRidePersonKey(selectedRide, profileId) : null),
         }}
         editRequestLinks={editLinksForRide}
-        editor={selectedRide?.needs_driver && canEditWeek && selectedRide.ends_at && Date.parse(selectedRide.ends_at) > now.getTime() ? (
+        editor={selectedRide?.needs_driver && canEditWeek && isRideDayEditable(selectedRide.starts_at, now) ? (
           <VolunteerDriverPanel ride={selectedRide} onDone={() => setSelectedRideId(null)}
             canDrive={!profileQuery.data?.does_not_drive && !isDrivenOnRide(selectedRide, profileId)} />
         ) : selectedRide && canEditWeek && volunteerDriverOf(selectedRide) ? (
