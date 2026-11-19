@@ -22,8 +22,8 @@ import { RidePersonBlocks } from "@/features/rides/components/RidePersonBlocks";
 import { buildPersonBlocks, needsPersonBlocks, type RequestExtras } from "@/features/rides/ridePersonBlocks";
 import { RidePublicNotesEditor } from "@/features/rides/components/RidePublicNotesEditor";
 import { RideRouteStops } from "@/features/rides/components/RideRouteStops";
-import { RideStopsView } from "@/features/rides/components/RideStopsView";
-import { parseRideRoute, routeHasIntermediates, routeOverrunsWindow } from "@/lib/rideRoute";
+import { RideDetailsView } from "@/features/rides/components/RideDetailsView";
+import { parseRideRoute, routeOverrunsWindow } from "@/lib/rideRoute";
 import type { DestinationPreset } from "@/components/DestinationCombobox";
 
 import { Button } from "@/components/ui/button";
@@ -519,7 +519,10 @@ export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenCha
 
                 {/* ── יעדים ── */}
                 <TabsContent value="route" className="space-y-4">
-                  {reservation ? null : routeHasIntermediates(parseRideRoute(ride.route)) ? <RideStopsView rideId={ride.id} version={ride.version} route={ride.route} people={peopleOf(ride)} served={servedEntries} /> : <RideRouteStops served={servedEntries} />}
+                  {/* SD1 (REQ item 256): the ride's time constraints, per person or per route. */}
+                  {reservation ? null : parseRideRoute(ride.route).length >= 2
+                    ? <RideDetailsView rideId={ride.id} version={ride.version} route={ride.route} people={peopleOf(ride)} requests={requests} startsAt={ride.starts_at} served={servedEntries} />
+                    : <RideRouteStops served={servedEntries} />}
 
                   {/* REQ §13.94 (G8): start, end and stops per leg. */}
                   {!reservation && onSaveRoute && destinations && !isPlanning && ride.id && !cancelled && (baseRequest || !servedEntries.length) ? (

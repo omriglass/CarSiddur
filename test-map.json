@@ -979,6 +979,10 @@
         "src/features/rides/components/RidePartsPicker.tsx",
         "src/features/rides/components/RidePersonDialog.tsx",
         "src/features/rides/components/RideStopsView.tsx",
+        "src/features/rides/rideTimes.ts",
+        "src/features/rides/rideTimes.test.ts",
+        "src/features/rides/components/RideDetailsView.tsx",
+        "e2e/ride-details-view.spec.ts",
         "src/features/rides/components/RidePassengersList.test.tsx",
         "src/features/requests/riders.ts",
         "src/features/requests/riders.test.ts",
@@ -986,6 +990,7 @@
         "e2e/passengers-along-route.spec.ts"
       ],
       "vitest": [
+        "src/features/rides/rideTimes.test.ts",
         "src/features/rides/rideStretches.test.ts",
         "src/features/rides/rideSummary.test.ts",
         "src/features/rides/components/RidePassengersList.test.tsx",
@@ -1012,14 +1017,16 @@
       "reqRefs": [
         "13.82",
         "13.85",
-        "246"
+        "246",
+        "256"
       ],
       "qaChecklist": [
         "Name a member and a child on a manual reservation; confirm first named becomes driver (REQ §13.82)",
         "Open a ride's people list; confirm one unified list, driver-first (REQ §13.85)",
         "Cancel a ride with several people; confirm each gets notified individually (REQ §13.68)",
         "On a ride with a stop, add a passenger who gets on midway; confirm the stops view shows ↑ at that stop and the free seats per stretch (REQ item 246 h)",
-        "Tap a passenger's name; change them to 'רק הלוך' and to getting off at a stop; confirm the summary text and the seat line (REQ item 246 h)"
+        "Tap a passenger's name; change them to 'רק הלוך' and to getting off at a stop; confirm the summary text and the seat line (REQ item 246 h)",
+        "On the board, open a merged ride → יעדים; switch לפי אנשים / לפי מסלול, reopen and confirm the view is remembered; give two people clashing leave-at hours and confirm the red ✕ line (REQ item 256)"
       ]
     },
     {
