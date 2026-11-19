@@ -23,7 +23,7 @@ import { PillChip } from "./PillChip";
 interface WhoSheetProps {
   form: UseFormReturn<RequestFormValues>;
   members: { id: string; name: string }[];
-  /** REQ §13.127 (a): "אני" is on (default); a new weekly request may switch it off (`allowOnBehalf`). */
+  /** REQ §13.127 (a): "אני" is on (default); a new request (any variant, OB1) may switch it off (`allowOnBehalf`). */
   includeMe: boolean;
   /** The requester chip toggles: a new weekly request ("אני"), or an edit (REQ §13.169 b — the requester rides or not). */
   allowOnBehalf: boolean;

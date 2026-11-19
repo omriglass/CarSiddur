@@ -4,6 +4,7 @@ import { fromZonedTime } from "date-fns-tz";
 import { he } from "../src/i18n/he";
 
 import { getWeekStart, NEVO_DEPARTMENT_ID, SEEDED_USERS, serviceRoleClient, signIn } from "./helpers";
+import { chooseDestination, setClassicForm } from "./request-form";
 
 // Quick request from an empty slot (UX_FLOWS.md §18, REQUIREMENTS §8 "new request on a free
 // car"): clicking an empty grid cell on the LIVE week's published siddur (≥ lg viewport) opens
@@ -22,6 +23,8 @@ import { getWeekStart, NEVO_DEPARTMENT_ID, SEEDED_USERS, serviceRoleClient, sign
 // The default display range is 06:00–23:59 on the selected Jerusalem day.
 const DEST_1 = "בדיקת בקשה מהירה — רכב פנוי";
 const DEST_2 = "בדיקת בקשה מהירה — רכב תפוס";
+const MEMBER1_ID = "00000000-0000-0000-0000-000000000103";
+const MEMBER2_ID = "00000000-0000-0000-0000-000000000104";
 const VAN_NAME = "ואן 7 מקומות";
 const FRIDAY_INDEX = 5;
 const DAY_START_MINUTES = 6 * 60;
@@ -73,6 +76,17 @@ async function clearMember2Friday(liveWeekStart: string): Promise<void> {
     .eq("department_id", NEVO_DEPARTMENT_ID).eq("week_start", liveWeekStart).eq("requester_id", "00000000-0000-0000-0000-000000000104")
     .not("status", "in", "(withdrawn,cancelled,denied)");
   for (const request of (mine ?? []).filter((r) => r.depart_at && new Date(r.depart_at) < dayEnd && new Date(r.return_at ?? r.depart_at) > dayStart)) {
+    const { data: links } = await service.from("ride_requests").select("ride_id").eq("request_id", request.id);
+    if (links?.length) await service.from("rides").update({ status: "cancelled" }).in("id", links.map((l) => l.ride_id));
+    await service.from("requests").update({ status: "withdrawn" }).eq("id", request.id);
+  }
+}
+
+/** Rides member2 filed for member1 this live week (left by an earlier run) are taken away. */
+async function clearOnBehalfRides(liveWeekStart: string): Promise<void> {
+  const service = serviceRoleClient();
+  const { data } = await service.from("requests").select("id").eq("week_start", liveWeekStart).eq("requester_id", MEMBER1_ID).eq("filed_by", MEMBER2_ID);
+  for (const request of data ?? []) {
     const { data: links } = await service.from("ride_requests").select("ride_id").eq("request_id", request.id);
     if (links?.length) await service.from("rides").update({ status: "cancelled" }).in("id", links.map((l) => l.ride_id));
     await service.from("requests").update({ status: "withdrawn" }).eq("id", request.id);
@@ -201,5 +215,48 @@ test.describe.serial("quick request from an empty slot (live week)", { tag: ["@q
     const { data: ride } = await admin.from("rides").select("car_id").eq("id", rideRequest!.ride_id).maybeSingle();
     expect(ride?.car_id).toBeTruthy();
     expect(ride?.car_id).not.toBe(van!.id);
+  });
+  // OB1 (REQ item 253, owner 2026-11-18): the quick form files a ride in someone else's name, as the weekly form does.
+  test("taking \"אני\" out files the quick ride in the named member's name", async ({ page }) => {
+    const liveWeekStart = await getWeekStart("live");
+    const admin = serviceRoleClient();
+    const { data: cars } = await admin.from("cars").select("id, name").eq("department_id", NEVO_DEPARTMENT_ID).eq("type", "shared");
+    const van = cars?.find((c) => c.name === VAN_NAME);
+    expect(van).toBeTruthy();
+
+    await clearOnBehalfRides(liveWeekStart);
+    await setClassicForm(SEEDED_USERS.member2.email, false);
+    try {
+      await freezeToWednesdayMorning(page, liveWeekStart);
+      await page.goto(`/siddur/${NEVO_DEPARTMENT_ID}/${liveWeekStart}`);
+      await page.getByRole("radiogroup", { name: "יום" }).last().getByRole("radio").nth(FRIDAY_INDEX).click();
+      const col = page.locator(`[data-car-col-id="${van!.id}"]`);
+      await expect(col).toBeVisible();
+      const box = await col.boundingBox();
+      if (!box) throw new Error("car column not found");
+      await col.dblclick({ position: { x: box.width / 2, y: yForMinutes(17 * 60, box.height) } }); // 17:00, clear of the earlier tests' rides
+
+      await chooseDestination(page, "עפולה");
+      await page.getByTestId("chip-who").click();
+      await page.getByTestId("who-me").click();
+      await expect(page.getByTestId("who-me")).toHaveAttribute("aria-pressed", "false");
+      await page.getByTestId("who-add-member").click();
+      await page.getByTestId("who-sheet").getByText(SEEDED_USERS.member1.fullName, { exact: true }).click();
+      await page.getByTestId("who-dialog").getByRole("button", { name: he.requestSentence.sheetDone, exact: true }).click();
+
+      await page.getByRole("button", { name: "קח/י את הרכב" }).click();
+      const confirm = page.getByRole("dialog").filter({ hasText: he.request.onBehalfConfirm });
+      await expect(confirm).toContainText(SEEDED_USERS.member1.fullName);
+      await confirm.getByRole("button", { name: he.request.onBehalfConfirm, exact: true }).click();
+      const keepBoth = page.getByRole("dialog", { name: he.request.overlapTitle }).getByRole("button", { name: he.request.overlapKeepBoth });
+      await keepBoth.waitFor({ state: "visible", timeout: 2_000 }).then(() => keepBoth.click(), () => undefined);
+
+      await expect.poll(async () => (await admin.from("requests").select("status").eq("week_start", liveWeekStart)
+        .eq("requester_id", MEMBER1_ID).eq("filed_by", MEMBER2_ID).not("status", "in", "(withdrawn,cancelled)")).data, { timeout: 10_000 })
+        .toEqual([{ status: "assigned" }]);
+    } finally {
+      await setClassicForm(SEEDED_USERS.member2.email, true);
+      await clearOnBehalfRides(liveWeekStart);
+    }
   });
 });

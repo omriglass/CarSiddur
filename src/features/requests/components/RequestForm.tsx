@@ -627,7 +627,8 @@ export function RequestForm({
       const driver = editDriverOf(formValues) ?? editRequesterId;
       return { requesterId: driver === editRequesterId ? null : driver, companions: editRidersOf(formValues).filter((id) => id !== driver) };
     }
-    return mode === "new" && variant === "weekly" && !isReservation ? splitWho(formValues, membersQuery.data ?? []) : { requesterId: null, companions: [...formValues.companions] };
+    // OB1 (owner 2026-11-18, REQ item 253): every new-ride form (weekly, quick, car-now) may file for someone else.
+    return mode === "new" && !isReservation ? splitWho(formValues, membersQuery.data ?? []) : { requesterId: null, companions: [...formValues.companions] };
   }
   const onBehalfWho = whoOf({ includeMe: values.includeMe, companions: values.companions ?? [], driverId: values.driverId });
   const editDriverOptions = editRidersOf({ includeMe: values.includeMe, companions: values.companions ?? [] })
@@ -1579,7 +1580,7 @@ export function RequestForm({
           preferredCars={preferredCars}
           initialPreferredCarName={initial?.preferredCarName}
           members={companionMembers}
-          allowOnBehalf={(mode === "new" && variant === "weekly" && !isReservation) || !!editRequesterId}
+          allowOnBehalf={(mode === "new" && !isReservation) || !!editRequesterId}
           driverOptions={editDriverOptions}
           driverId={editRequesterId ? editDriverOf({ includeMe: values.includeMe, companions: values.companions ?? [], driverId: values.driverId }) : null}
           reservation={isReservation}

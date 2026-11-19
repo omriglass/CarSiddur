@@ -1913,7 +1913,7 @@ Context: קטיה (non-driver, `profiles.does_not_drive`) could not find "הקפ
 - **Owner answers 2026-11-18:** the **quick and car-now** variants open it too (same behaviour everywhere — consistency). Closing the dialog with **✕ returns to the regular request form** (the sentence form, nothing lost). Principle: assume a non-driver almost always needs a הקפצה, but **keep it flexible** — when they file for someone else (REQ §13.127, "אני" out) or add a driving companion, the other trip types become available as today (`canUseDrivingTripTypes`) and the dialog does not force anything.
 - **Still to settle:** which hours count as "start/end" when the form opens from a slot / `?day=` vs the default 08:00 (and with no end hour yet). A REQUIREMENTS item goes in first; any new wording needs the owner's approval.
 
-## File a new ride in someone else's name from every "new ride" entry (owner 2026-11-18, OB1) — not built yet
+## File a new ride in someone else's name from every "new ride" entry (owner 2026-11-18, OB1) — ✅ done 2026-11-19 (REQ item 253): quick and car-now forms; the classic form has no who chip (left as is)
 
 Owner: when creating a ride I should be able to remove myself and add someone else instead, so the ride is filed in their name.
 
