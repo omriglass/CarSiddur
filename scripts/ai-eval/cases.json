@@ -4,104 +4,750 @@
     "now": "2026-11-18T21:00",
     "weekday": "Wednesday",
     "calendar": [
-      { "date": "2026-11-18", "weekday": "Wednesday" },
-      { "date": "2026-11-19", "weekday": "Thursday" },
-      { "date": "2026-11-20", "weekday": "Friday" },
-      { "date": "2026-11-21", "weekday": "Saturday" },
-      { "date": "2026-11-22", "weekday": "Sunday" },
-      { "date": "2026-11-23", "weekday": "Monday" },
-      { "date": "2026-11-24", "weekday": "Tuesday" },
-      { "date": "2026-11-25", "weekday": "Wednesday" },
-      { "date": "2026-11-26", "weekday": "Thursday" },
-      { "date": "2026-11-27", "weekday": "Friday" },
-      { "date": "2026-11-28", "weekday": "Saturday" },
-      { "date": "2026-11-29", "weekday": "Sunday" },
-      { "date": "2026-11-30", "weekday": "Monday" },
-      { "date": "2026-12-01", "weekday": "Tuesday" }
+      {
+        "date": "2026-11-18",
+        "weekday": "Wednesday"
+      },
+      {
+        "date": "2026-11-19",
+        "weekday": "Thursday"
+      },
+      {
+        "date": "2026-11-20",
+        "weekday": "Friday"
+      },
+      {
+        "date": "2026-11-21",
+        "weekday": "Saturday"
+      },
+      {
+        "date": "2026-11-22",
+        "weekday": "Sunday"
+      },
+      {
+        "date": "2026-11-23",
+        "weekday": "Monday"
+      },
+      {
+        "date": "2026-11-24",
+        "weekday": "Tuesday"
+      },
+      {
+        "date": "2026-11-25",
+        "weekday": "Wednesday"
+      },
+      {
+        "date": "2026-11-26",
+        "weekday": "Thursday"
+      },
+      {
+        "date": "2026-11-27",
+        "weekday": "Friday"
+      },
+      {
+        "date": "2026-11-28",
+        "weekday": "Saturday"
+      },
+      {
+        "date": "2026-11-29",
+        "weekday": "Sunday"
+      },
+      {
+        "date": "2026-11-30",
+        "weekday": "Monday"
+      },
+      {
+        "date": "2026-12-01",
+        "weekday": "Tuesday"
+      }
     ],
     "home": "גבעת חביבה",
     "places": [
-      { "name": "גבעת חביבה", "aliases": ["בית", "הביתה"] },
-      { "name": "חיפה" },
-      { "name": "בנימינה", "aliases": ["רכבת בנימינה"] },
-      { "name": "זכרון יעקב", "aliases": ["זכרון"] },
-      { "name": "קיסריה" },
-      { "name": "תל אביב", "aliases": ["ת״א", "תא"] },
-      { "name": "עפולה" },
-      { "name": "פרדס חנה", "aliases": ["פרדס חנה כרכור", "כרכור"] },
-      { "name": "נתניה" },
-      { "name": "ירושלים" }
+      {
+        "name": "גבעת חביבה",
+        "aliases": [
+          "בית",
+          "הביתה"
+        ]
+      },
+      {
+        "name": "חיפה"
+      },
+      {
+        "name": "בנימינה",
+        "aliases": [
+          "רכבת בנימינה"
+        ]
+      },
+      {
+        "name": "זכרון יעקב",
+        "aliases": [
+          "זכרון"
+        ]
+      },
+      {
+        "name": "קיסריה"
+      },
+      {
+        "name": "תל אביב",
+        "aliases": [
+          "ת״א",
+          "תא"
+        ]
+      },
+      {
+        "name": "עפולה"
+      },
+      {
+        "name": "פרדס חנה",
+        "aliases": [
+          "פרדס חנה כרכור",
+          "כרכור"
+        ]
+      },
+      {
+        "name": "נתניה"
+      },
+      {
+        "name": "ירושלים"
+      }
     ],
     "people": [
-      { "name": "נועה", "kind": "child" },
-      { "name": "איתי", "kind": "child" },
-      { "name": "דנה כהן", "kind": "member", "drives": true },
-      { "name": "יעל לוי", "kind": "member", "drives": true },
-      { "name": "יאן גל", "kind": "member", "drives": false }
+      {
+        "name": "נועה",
+        "kind": "child"
+      },
+      {
+        "name": "איתי",
+        "kind": "child"
+      },
+      {
+        "name": "דנה כהן",
+        "kind": "member",
+        "drives": true
+      },
+      {
+        "name": "יעל לוי",
+        "kind": "member",
+        "drives": true
+      },
+      {
+        "name": "יאן גל",
+        "kind": "member",
+        "drives": false
+      }
     ],
     "my_rides": [
-      { "ref": "RIDE_1", "date": "2026-11-22", "weekday": "Sunday", "start": "08:00", "end": "12:00", "trip_type": "round_trip", "origin": "גבעת חביבה", "destination": "חיפה", "stops": [], "people": ["דנה כהן"] },
-      { "ref": "RIDE_2", "date": "2026-11-22", "weekday": "Sunday", "start": "16:00", "end": "18:00", "trip_type": "round_trip", "origin": "גבעת חביבה", "destination": "עפולה", "stops": [], "people": [] },
-      { "ref": "RIDE_3", "date": "2026-11-25", "weekday": "Wednesday", "start": "17:00", "end": "19:30", "trip_type": "round_trip", "origin": "גבעת חביבה", "destination": "זכרון יעקב", "stops": [], "people": [] },
-      { "ref": "RIDE_4", "date": "2026-11-19", "weekday": "Thursday", "start": "07:30", "end": null, "trip_type": "drop_off", "origin": "גבעת חביבה", "destination": "פרדס חנה", "stops": [], "people": ["נועה", "איתי"] }
+      {
+        "ref": "RIDE_1",
+        "date": "2026-11-22",
+        "weekday": "Sunday",
+        "start": "08:00",
+        "end": "12:00",
+        "trip_type": "round_trip",
+        "origin": "גבעת חביבה",
+        "destination": "חיפה",
+        "stops": [],
+        "people": [
+          "דנה כהן"
+        ]
+      },
+      {
+        "ref": "RIDE_2",
+        "date": "2026-11-22",
+        "weekday": "Sunday",
+        "start": "16:00",
+        "end": "18:00",
+        "trip_type": "round_trip",
+        "origin": "גבעת חביבה",
+        "destination": "עפולה",
+        "stops": [],
+        "people": []
+      },
+      {
+        "ref": "RIDE_3",
+        "date": "2026-11-25",
+        "weekday": "Wednesday",
+        "start": "17:00",
+        "end": "19:30",
+        "trip_type": "round_trip",
+        "origin": "גבעת חביבה",
+        "destination": "זכרון יעקב",
+        "stops": [],
+        "people": []
+      },
+      {
+        "ref": "RIDE_4",
+        "date": "2026-11-19",
+        "weekday": "Thursday",
+        "start": "07:30",
+        "end": null,
+        "trip_type": "drop_off",
+        "origin": "גבעת חביבה",
+        "destination": "פרדס חנה",
+        "stops": [],
+        "people": [
+          "נועה",
+          "איתי"
+        ]
+      }
     ]
   },
   "cases": [
-    { "id": "new-arrive-by-tomorrow", "text": "אני צריכה להיות בבנימינה עד 10 מחר", "expect": { "intent": "new_request", "date": "2026-11-19", "time_mode": "arrive_by", "time": "10:00", "destination": "בנימינה" } },
-    { "id": "new-depart-return", "text": "מחר בבוקר לחיפה ב-8, חוזרת ב-14", "expect": { "intent": "new_request", "date": "2026-11-19", "time_mode": "depart", "time": "08:00", "return_time": "14:00", "destination": "חיפה" } },
-    { "id": "new-sunday-evening-return", "text": "רוצה לנסוע לתל אביב ביום ראשון ב-7 בבוקר ולחזור בערב ב-19:00", "expect": { "intent": "new_request", "date": "2026-11-22", "time": "07:00", "return_time": "19:00", "destination": "תל אביב" } },
-    { "id": "new-drop-off-friday", "text": "הקפצה לפרדס חנה ביום שישי עד 9", "expect": { "intent": "new_request", "trip_type": "drop_off", "date": "2026-11-20", "time_mode": "arrive_by", "time": "09:00", "destination": "פרדס חנה" } },
-    { "id": "new-alias-range", "text": "צריך רכב לזכרון ביום שני 16:00-18:30", "expect": { "intent": "new_request", "date": "2026-11-23", "time": "16:00", "return_time": "18:30", "destination": "זכרון יעקב" } },
-    { "id": "new-the-kids", "text": "אני והילדים לקיסריה בשבת ב-10", "expect": { "intent": "new_request", "date": "2026-11-21", "time": "10:00", "destination": "קיסריה", "people": ["נועה", "איתי"] } },
-    { "id": "new-child-named", "text": "נועה צריכה להגיע לחוג בעפולה ביום שלישי ב-17:00, אני אקח אותה", "expect": { "intent": "new_request", "date": "2026-11-24", "time_mode": "arrive_by", "time": "17:00", "destination": "עפולה", "people": ["נועה"] } },
-    { "id": "new-one-way-next-week", "text": "נסיעה לירושלים ביום רביעי הבא, יוצא ב-6:30, הלוך בלבד", "expect": { "intent": "new_request", "date": "2026-11-25", "time_mode": "depart", "time": "06:30", "trip_type": "one_way", "destination": "ירושלים" } },
-    { "id": "new-unlisted-place", "text": "רופא שיניים בחדרה מחר ב-11", "expect": { "intent": "new_request", "date": "2026-11-19", "time": "11:00", "destination": { "list_name": null, "text_contains": "חדרה" } } },
-    { "id": "new-with-driver-no-time", "text": "מחר לנתניה עם דנה, היא נוהגת", "expect": { "intent": "new_request", "date": "2026-11-19", "destination": "נתניה", "people": ["דנה כהן"], "time": null, "ask": "what_time" } },
-    { "id": "new-minimal", "text": "בנימינה מחר", "expect": { "intent": "new_request", "date": "2026-11-19", "destination": "בנימינה", "time": null, "ask": "what_time" } },
-    { "id": "new-train-drop-off", "text": "תקפיצו אותי לרכבת בבנימינה ביום ראשון ב-7:15", "expect": { "intent": "new_request", "trip_type": "drop_off", "date": "2026-11-22", "time": "07:15", "destination": "בנימינה" } },
-    { "id": "new-next-thursday", "text": "ביום חמישי הבא לחיפה מ-9 עד 13", "expect": { "intent": "new_request", "date": "2026-11-26", "time": "09:00", "return_time": "13:00", "destination": "חיפה" } },
-    { "id": "new-luggage", "text": "עפולה, יום ראשון, 8 עד 15, ציוד רב", "expect": { "intent": "new_request", "date": "2026-11-22", "time": "08:00", "return_time": "15:00", "destination": "עפולה", "needs": ["large_trunk"] } },
-    { "id": "new-tow-two-hours", "text": "צריכה רכב עם וו גרירה לזכרון ביום שני ב-10 לשעתיים", "expect": { "intent": "new_request", "date": "2026-11-23", "time": "10:00", "return_time": "12:00", "destination": "זכרון יעקב", "needs": ["tow_hitch"] } },
-    { "id": "new-origin-one-way", "text": "מחר ב-9 מחיפה לבנימינה, הלוך בלבד", "expect": { "intent": "new_request", "date": "2026-11-19", "time": "09:00", "origin": "חיפה", "destination": "בנימינה", "trip_type": "one_way" } },
-    { "id": "new-half-past", "text": "אני רוצה לנסוע מחר לתל אביב בשמונה וחצי", "expect": { "intent": "new_request", "date": "2026-11-19", "time": "08:30", "destination": "תל אביב" } },
-    { "id": "new-quarter-to", "text": "ביום שישי לקיסריה ברבע לעשר", "expect": { "intent": "new_request", "date": "2026-11-20", "time": "09:45", "destination": "קיסריה" } },
-    { "id": "new-in-a-week", "text": "בעוד שבוע ביום רביעי לירושלים בשש בבוקר", "expect": { "intent": "new_request", "date": "2026-11-25", "time": "06:00", "destination": "ירושלים" } },
-    { "id": "new-in-an-hour", "text": "היום בעוד שעה לפרדס חנה", "expect": { "intent": "new_request", "date": "2026-11-18", "time": "22:00", "destination": "פרדס חנה" } },
-    { "id": "new-vague-times", "text": "לחיפה ביום ראשון בבוקר, לחזור אחרי הצהריים", "expect": { "intent": "new_request", "date": "2026-11-22", "destination": "חיפה", "time": null, "ask": "what_time" } },
-    { "id": "new-english", "text": "Need to be in Haifa by 9 tomorrow", "expect": { "intent": "new_request", "date": "2026-11-19", "time_mode": "arrive_by", "time": "09:00", "destination": "חיפה" } },
-    { "id": "new-typo-place", "text": "צריך להגיע לבינימינה עד 10 מחר", "expect": { "intent": "new_request", "date": "2026-11-19", "time_mode": "arrive_by", "time": "10:00", "destination": "בנימינה" } },
-    { "id": "new-typo-place-2", "text": "פרדס חנא ביום שלישי ב12", "expect": { "intent": "new_request", "date": "2026-11-24", "time": "12:00", "destination": "פרדס חנה" } },
-    { "id": "new-group", "text": "אני ודנה ויאן ביום שלישי לתל אביב ב-7, חוזרים ב-20", "expect": { "intent": "new_request", "date": "2026-11-24", "time": "07:00", "return_time": "20:00", "destination": "תל אביב", "people": ["דנה כהן", "יאן גל"] } },
-    { "id": "new-stop-on-the-way", "text": "ביום ראשון אני צריך להיות בעפולה ב-8 ולחזור ב-12, ובדרך לעצור בבנימינה", "expect": { "intent": "new_request", "date": "2026-11-22", "time_mode": "arrive_by", "time": "08:00", "return_time": "12:00", "destination": "עפולה", "stops": [{ "leg": "out", "place": "בנימינה" }] } },
-    { "id": "new-extra-adults", "text": "מחר עם 2 חברים מבחוץ לקיסריה ב-10", "expect": { "intent": "new_request", "date": "2026-11-19", "time": "10:00", "destination": "קיסריה", "extra_adults": 2 } },
-    { "id": "new-no-place", "text": "צריכה רכב מחר מ-10 עד 12", "expect": { "intent": "new_request", "date": "2026-11-19", "time": "10:00", "return_time": "12:00", "destination": null, "ask": "what_place" } },
-    { "id": "new-no-day", "text": "לחיפה ב-8 בבוקר", "expect": { "intent": "new_request", "time": "08:00", "destination": "חיפה", "date": null, "ask": "what_day" } },
-
-    { "id": "find-join-tomorrow", "text": "אני צריך להגיע לפרדס חנה מחר בבוקר, למי אני יכול להצטרף?", "expect": { "intent": "find_ride", "date": "2026-11-19", "destination": "פרדס חנה" } },
-    { "id": "find-anyone-going", "text": "מישהו נוסע לחיפה ביום ראשון?", "expect": { "intent": "find_ride", "date": "2026-11-22", "destination": "חיפה" } },
-    { "id": "find-tremp", "text": "יש טרמפ לתל אביב מחר ב-8?", "expect": { "intent": "find_ride", "date": "2026-11-19", "time": "08:00", "destination": "תל אביב" } },
-    { "id": "find-free-car-now", "text": "יש רכב פנוי עכשיו?", "expect": { "intent": "find_ride", "date": "2026-11-18" } },
-    { "id": "find-with-whom", "text": "עם מי אפשר לנסוע לזכרון ביום שני אחה״צ", "expect": { "intent": "find_ride", "date": "2026-11-23", "destination": "זכרון יעקב" } },
-
-    { "id": "edit-ambiguous-sunday", "text": "תאריך את הנסיעה שלי ביום ראשון בשעה", "expect": { "intent": "edit_request", "target_ride": null, "ask": "which_ride" } },
-    { "id": "edit-extend-hour", "text": "תאריך את הנסיעה לחיפה ביום ראשון בשעה", "expect": { "intent": "edit_request", "target_ride": "RIDE_1", "end_shift_minutes": 60 } },
-    { "id": "edit-grocery-stop", "text": "אני אעצור בסופר בדרך חזרה ביום רביעי", "expect": { "intent": "edit_request", "target_ride": "RIDE_3", "stops": [{ "leg": "return", "place_text_contains": "סופר" }] } },
-    { "id": "edit-move-start", "text": "תזיז את הנסיעה לזכרון לשעה 18:00", "expect": { "intent": "edit_request", "target_ride": "RIDE_3", "time": "18:00" } },
-    { "id": "edit-add-person", "text": "תוסיף את יעל לנסיעה לעפולה", "expect": { "intent": "edit_request", "target_ride": "RIDE_2", "people": ["יעל לוי"] } },
-    { "id": "edit-remove-person", "text": "דנה לא באה איתי לחיפה", "expect": { "intent": "edit_request", "target_ride": "RIDE_1", "remove_people": ["דנה כהן"] } },
-    { "id": "edit-new-return", "text": "בנסיעה של יום רביעי אני אחזור ב-21:00 במקום 19:30", "expect": { "intent": "edit_request", "target_ride": "RIDE_3", "return_time": "21:00" } },
-    { "id": "edit-earlier-half-hour", "text": "תקדים את ההקפצה של מחר בחצי שעה", "expect": { "intent": "edit_request", "target_ride": "RIDE_4", "start_shift_minutes": -30 } },
-    { "id": "edit-one-way", "text": "הנסיעה לחיפה תהיה הלוך בלבד", "expect": { "intent": "edit_request", "target_ride": "RIDE_1", "trip_type": "one_way" } },
-    { "id": "edit-add-child", "text": "גם איתי מצטרף לנסיעה לזכרון", "expect": { "intent": "edit_request", "target_ride": "RIDE_3", "people": ["איתי"] } },
-    { "id": "edit-add-pickup", "text": "בהקפצה מחר לפרדס חנה תוסיפו גם איסוף ב-13:00", "expect": { "intent": "edit_request", "target_ride": "RIDE_4", "return_time": "13:00" } },
-
-    { "id": "cancel-named", "text": "תבטל את הנסיעה שלי לעפולה", "expect": { "intent": "cancel_request", "target_ride": "RIDE_2" } },
-    { "id": "cancel-tomorrow", "text": "אני לא צריכה את ההקפצה מחר", "expect": { "intent": "cancel_request", "target_ride": "RIDE_4" } },
-    { "id": "cancel-ambiguous", "text": "בטל את הנסיעה ביום ראשון", "expect": { "intent": "cancel_request", "target_ride": null, "ask": "which_ride" } },
-
-    { "id": "unclear-small-talk", "text": "מה נשמע?", "expect": { "intent": "unclear" } },
-    { "id": "unclear-fuel", "text": "כמה עולה דלק?", "expect": { "intent": "unclear" } },
-    { "id": "unclear-message-sadran", "text": "תגיד לסדרן שאני מאחרת", "expect": { "intent": "unclear" } },
-    { "id": "unclear-whole-week", "text": "סדר לי את כל השבוע", "expect": { "intent": "unclear" } }
+    {
+      "id": "new-arrive-by-tomorrow",
+      "text": "אני צריכה להיות בבנימינה עד 10 מחר",
+      "expect": {
+        "intent": "new_request",
+        "date": "2026-11-19",
+        "time_mode": "arrive_by",
+        "time": "10:00",
+        "destination": "בנימינה"
+      }
+    },
+    {
+      "id": "new-depart-return",
+      "text": "מחר בבוקר לחיפה ב-8, חוזרת ב-14",
+      "expect": {
+        "intent": "new_request",
+        "date": "2026-11-19",
+        "time_mode": "depart",
+        "time": "08:00",
+        "return_time": "14:00",
+        "destination": "חיפה"
+      }
+    },
+    {
+      "id": "new-sunday-evening-return",
+      "text": "רוצה לנסוע לתל אביב ביום ראשון ב-7 בבוקר ולחזור בערב ב-19:00",
+      "expect": {
+        "intent": "new_request",
+        "date": "2026-11-22",
+        "time": "07:00",
+        "return_time": "19:00",
+        "destination": "תל אביב"
+      }
+    },
+    {
+      "id": "new-drop-off-friday",
+      "text": "הקפצה לפרדס חנה ביום שישי עד 9",
+      "expect": {
+        "intent": "new_request",
+        "trip_type": "drop_off",
+        "date": "2026-11-20",
+        "time_mode": "arrive_by",
+        "time": "09:00",
+        "destination": "פרדס חנה"
+      }
+    },
+    {
+      "id": "new-alias-range",
+      "text": "צריך רכב לזכרון ביום שני 16:00-18:30",
+      "expect": {
+        "intent": "new_request",
+        "date": "2026-11-23",
+        "time": "16:00",
+        "return_time": "18:30",
+        "destination": "זכרון יעקב"
+      }
+    },
+    {
+      "id": "new-the-kids",
+      "text": "אני והילדים לקיסריה בשבת ב-10",
+      "expect": {
+        "intent": "new_request",
+        "date": "2026-11-21",
+        "time": "10:00",
+        "destination": "קיסריה",
+        "people": [
+          "נועה",
+          "איתי"
+        ]
+      }
+    },
+    {
+      "id": "new-child-named",
+      "text": "נועה צריכה להגיע לחוג בעפולה ביום שלישי ב-17:00, אני אקח אותה",
+      "expect": {
+        "intent": "new_request",
+        "date": "2026-11-24",
+        "time_mode": "arrive_by",
+        "time": "17:00",
+        "destination": "עפולה",
+        "people": [
+          "נועה"
+        ]
+      }
+    },
+    {
+      "id": "new-one-way-next-week",
+      "text": "נסיעה לירושלים ביום רביעי הבא, יוצא ב-6:30, הלוך בלבד",
+      "expect": {
+        "intent": "new_request",
+        "date": "2026-11-25",
+        "time_mode": "depart",
+        "time": "06:30",
+        "trip_type": "one_way",
+        "destination": "ירושלים"
+      }
+    },
+    {
+      "id": "new-unlisted-place",
+      "text": "רופא שיניים בחדרה מחר ב-11",
+      "expect": {
+        "intent": "new_request",
+        "date": "2026-11-19",
+        "time": "11:00",
+        "destination": {
+          "list_name": null,
+          "text_contains": "חדרה"
+        }
+      }
+    },
+    {
+      "id": "new-with-driver-no-time",
+      "text": "מחר לנתניה עם דנה, היא נוהגת",
+      "expect": {
+        "intent": "new_request",
+        "date": "2026-11-19",
+        "destination": "נתניה",
+        "people": [
+          "דנה כהן"
+        ],
+        "time": null,
+        "ask": "what_time"
+      }
+    },
+    {
+      "id": "new-minimal",
+      "text": "בנימינה מחר",
+      "expect": {
+        "intent": "new_request",
+        "date": "2026-11-19",
+        "destination": "בנימינה",
+        "time": null,
+        "ask": "what_time"
+      }
+    },
+    {
+      "id": "new-train-drop-off",
+      "text": "תקפיצו אותי לרכבת בבנימינה ביום ראשון ב-7:15",
+      "expect": {
+        "intent": "new_request",
+        "trip_type": "drop_off",
+        "date": "2026-11-22",
+        "time": "07:15",
+        "destination": "בנימינה"
+      }
+    },
+    {
+      "id": "new-next-thursday",
+      "text": "ביום חמישי הבא לחיפה מ-9 עד 13",
+      "expect": {
+        "intent": "new_request",
+        "date": "2026-11-26",
+        "time": "09:00",
+        "return_time": "13:00",
+        "destination": "חיפה"
+      }
+    },
+    {
+      "id": "new-luggage",
+      "text": "עפולה, יום ראשון, 8 עד 15, ציוד רב",
+      "expect": {
+        "intent": "new_request",
+        "date": "2026-11-22",
+        "time": "08:00",
+        "return_time": "15:00",
+        "destination": "עפולה",
+        "needs": [
+          "large_trunk"
+        ]
+      }
+    },
+    {
+      "id": "new-tow-two-hours",
+      "text": "צריכה רכב עם וו גרירה לזכרון ביום שני ב-10 לשעתיים",
+      "expect": {
+        "intent": "new_request",
+        "date": "2026-11-23",
+        "time": "10:00",
+        "return_time": "12:00",
+        "destination": "זכרון יעקב",
+        "needs": [
+          "tow_hitch"
+        ]
+      }
+    },
+    {
+      "id": "new-origin-one-way",
+      "text": "מחר ב-9 מחיפה לבנימינה, הלוך בלבד",
+      "expect": {
+        "intent": "new_request",
+        "date": "2026-11-19",
+        "time": "09:00",
+        "origin": "חיפה",
+        "destination": "בנימינה",
+        "trip_type": "one_way"
+      }
+    },
+    {
+      "id": "new-half-past",
+      "text": "אני רוצה לנסוע מחר לתל אביב בשמונה וחצי",
+      "expect": {
+        "intent": "new_request",
+        "date": "2026-11-19",
+        "time": "08:30",
+        "destination": "תל אביב"
+      }
+    },
+    {
+      "id": "new-quarter-to",
+      "text": "ביום שישי לקיסריה ברבע לעשר",
+      "expect": {
+        "intent": "new_request",
+        "date": "2026-11-20",
+        "time": "09:45",
+        "destination": "קיסריה"
+      }
+    },
+    {
+      "id": "new-in-a-week",
+      "text": "בעוד שבוע ביום רביעי לירושלים בשש בבוקר",
+      "expect": {
+        "intent": "new_request",
+        "date": "2026-11-25",
+        "time": "06:00",
+        "destination": "ירושלים"
+      }
+    },
+    {
+      "id": "new-in-an-hour",
+      "text": "היום בעוד שעה לפרדס חנה",
+      "expect": {
+        "intent": "new_request",
+        "date": "2026-11-18",
+        "time": "22:00",
+        "destination": "פרדס חנה"
+      }
+    },
+    {
+      "id": "new-vague-times",
+      "text": "לחיפה ביום ראשון בבוקר, לחזור אחרי הצהריים",
+      "expect": {
+        "intent": "new_request",
+        "date": "2026-11-22",
+        "destination": "חיפה",
+        "time": null,
+        "ask": "what_time"
+      }
+    },
+    {
+      "id": "new-english",
+      "text": "Need to be in Haifa by 9 tomorrow",
+      "expect": {
+        "intent": "new_request",
+        "date": "2026-11-19",
+        "time_mode": "arrive_by",
+        "time": "09:00",
+        "destination": "חיפה"
+      }
+    },
+    {
+      "id": "new-typo-place",
+      "text": "צריך להגיע לבינימינה עד 10 מחר",
+      "expect": {
+        "intent": "new_request",
+        "date": "2026-11-19",
+        "time_mode": "arrive_by",
+        "time": "10:00",
+        "destination": "בנימינה"
+      }
+    },
+    {
+      "id": "new-typo-place-2",
+      "text": "פרדס חנא ביום שלישי ב12",
+      "expect": {
+        "intent": "new_request",
+        "date": "2026-11-24",
+        "time": "12:00",
+        "destination": "פרדס חנה"
+      }
+    },
+    {
+      "id": "new-group",
+      "text": "אני ודנה ויאן ביום שלישי לתל אביב ב-7, חוזרים ב-20",
+      "expect": {
+        "intent": "new_request",
+        "date": "2026-11-24",
+        "time": "07:00",
+        "return_time": "20:00",
+        "destination": "תל אביב",
+        "people": [
+          "דנה כהן",
+          "יאן גל"
+        ]
+      }
+    },
+    {
+      "id": "new-stop-on-the-way",
+      "text": "ביום ראשון אני צריך להיות בעפולה ב-8 ולחזור ב-12, ובדרך לעצור בבנימינה",
+      "expect": {
+        "intent": "new_request",
+        "date": "2026-11-22",
+        "time_mode": "arrive_by",
+        "time": "08:00",
+        "return_time": "12:00",
+        "destination": "עפולה",
+        "stops": [
+          {
+            "leg": "out",
+            "place": "בנימינה"
+          }
+        ]
+      }
+    },
+    {
+      "id": "new-extra-adults",
+      "text": "מחר עם 2 חברים מבחוץ לקיסריה ב-10",
+      "expect": {
+        "intent": "new_request",
+        "date": "2026-11-19",
+        "time": "10:00",
+        "destination": "קיסריה",
+        "extra_adults": 2
+      }
+    },
+    {
+      "id": "new-no-place",
+      "text": "צריכה רכב מחר מ-10 עד 12",
+      "expect": {
+        "intent": "new_request",
+        "date": "2026-11-19",
+        "time": "10:00",
+        "return_time": "12:00",
+        "destination": null,
+        "ask": "what_place"
+      }
+    },
+    {
+      "id": "new-no-day",
+      "text": "לחיפה ב-8 בבוקר",
+      "expect": {
+        "intent": "new_request",
+        "time": "08:00",
+        "destination": "חיפה",
+        "date": null,
+        "ask": "what_day"
+      }
+    },
+    {
+      "id": "find-join-tomorrow",
+      "text": "אני צריך להגיע לפרדס חנה מחר בבוקר, למי אני יכול להצטרף?",
+      "expect": {
+        "intent": "find_ride",
+        "date": "2026-11-19",
+        "destination": "פרדס חנה"
+      }
+    },
+    {
+      "id": "find-anyone-going",
+      "text": "מישהו נוסע לחיפה ביום ראשון?",
+      "expect": {
+        "intent": "find_ride",
+        "date": "2026-11-22",
+        "destination": "חיפה"
+      }
+    },
+    {
+      "id": "find-tremp",
+      "text": "יש טרמפ לתל אביב מחר ב-8?",
+      "expect": {
+        "intent": "find_ride",
+        "date": "2026-11-19",
+        "time": "08:00",
+        "destination": "תל אביב"
+      }
+    },
+    {
+      "id": "find-free-car-now",
+      "text": "יש רכב פנוי עכשיו?",
+      "expect": {
+        "intent": "find_ride",
+        "date": "2026-11-18"
+      }
+    },
+    {
+      "id": "find-with-whom",
+      "text": "עם מי אפשר לנסוע לזכרון ביום שני אחה״צ",
+      "expect": {
+        "intent": "find_ride",
+        "date": "2026-11-23",
+        "destination": "זכרון יעקב"
+      }
+    },
+    {
+      "id": "edit-ambiguous-sunday",
+      "text": "תאריך את הנסיעה שלי ביום ראשון בשעה",
+      "expect": {
+        "intent": "edit_request",
+        "target_ride": null,
+        "ask": "which_ride"
+      }
+    },
+    {
+      "id": "edit-extend-hour",
+      "text": "תאריך את הנסיעה לחיפה ביום ראשון בשעה",
+      "expect": {
+        "intent": "edit_request",
+        "target_ride": "RIDE_1",
+        "return_time": "13:00"
+      }
+    },
+    {
+      "id": "edit-grocery-stop",
+      "text": "אני אעצור בסופר בדרך חזרה ביום רביעי",
+      "expect": {
+        "intent": "edit_request",
+        "target_ride": "RIDE_3",
+        "stops": [
+          {
+            "leg": "return",
+            "place_text_contains": "סופר"
+          }
+        ]
+      }
+    },
+    {
+      "id": "edit-move-start",
+      "text": "תזיז את הנסיעה לזכרון לשעה 18:00",
+      "expect": {
+        "intent": "edit_request",
+        "target_ride": "RIDE_3",
+        "time": "18:00"
+      }
+    },
+    {
+      "id": "edit-add-person",
+      "text": "תוסיף את יעל לנסיעה לעפולה",
+      "expect": {
+        "intent": "edit_request",
+        "target_ride": "RIDE_2",
+        "people": [
+          "יעל לוי"
+        ]
+      }
+    },
+    {
+      "id": "edit-remove-person",
+      "text": "דנה לא באה איתי לחיפה",
+      "expect": {
+        "intent": "edit_request",
+        "target_ride": "RIDE_1",
+        "remove_people": [
+          "דנה כהן"
+        ]
+      }
+    },
+    {
+      "id": "edit-new-return",
+      "text": "בנסיעה של יום רביעי אני אחזור ב-21:00 במקום 19:30",
+      "expect": {
+        "intent": "edit_request",
+        "target_ride": "RIDE_3",
+        "return_time": "21:00"
+      }
+    },
+    {
+      "id": "edit-earlier-half-hour",
+      "text": "תקדים את ההקפצה של מחר בחצי שעה",
+      "expect": {
+        "intent": "edit_request",
+        "target_ride": "RIDE_4",
+        "time": "07:00"
+      }
+    },
+    {
+      "id": "edit-one-way",
+      "text": "הנסיעה לחיפה תהיה הלוך בלבד",
+      "expect": {
+        "intent": "edit_request",
+        "target_ride": "RIDE_1",
+        "trip_type": "one_way"
+      }
+    },
+    {
+      "id": "edit-add-child",
+      "text": "גם איתי מצטרף לנסיעה לזכרון",
+      "expect": {
+        "intent": "edit_request",
+        "target_ride": "RIDE_3",
+        "people": [
+          "איתי"
+        ]
+      }
+    },
+    {
+      "id": "edit-add-pickup",
+      "text": "בהקפצה מחר לפרדס חנה תוסיפו גם איסוף ב-13:00",
+      "expect": {
+        "intent": "edit_request",
+        "target_ride": "RIDE_4",
+        "return_time": "13:00"
+      }
+    },
+    {
+      "id": "cancel-named",
+      "text": "תבטל את הנסיעה שלי לעפולה",
+      "expect": {
+        "intent": "cancel_request",
+        "target_ride": "RIDE_2"
+      }
+    },
+    {
+      "id": "cancel-tomorrow",
+      "text": "אני לא צריכה את ההקפצה מחר",
+      "expect": {
+        "intent": "cancel_request",
+        "target_ride": "RIDE_4"
+      }
+    },
+    {
+      "id": "cancel-ambiguous",
+      "text": "בטל את הנסיעה ביום ראשון",
+      "expect": {
+        "intent": "cancel_request",
+        "target_ride": null,
+        "ask": "which_ride"
+      }
+    },
+    {
+      "id": "unclear-small-talk",
+      "text": "מה נשמע?",
+      "expect": {
+        "intent": "unclear"
+      }
+    },
+    {
+      "id": "unclear-fuel",
+      "text": "כמה עולה דלק?",
+      "expect": {
+        "intent": "unclear"
+      }
+    },
+    {
+      "id": "unclear-message-sadran",
+      "text": "תגיד לסדרן שאני מאחרת",
+      "expect": {
+        "intent": "unclear"
+      }
+    },
+    {
+      "id": "unclear-whole-week",
+      "text": "סדר לי את כל השבוע",
+      "expect": {
+        "intent": "unclear"
+      }
+    }
   ]
 }

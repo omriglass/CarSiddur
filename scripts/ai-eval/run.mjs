@@ -6,6 +6,7 @@
  *   node scripts/ai-eval/run.mjs --model <id> [--only <case-id,...>] [--delay <ms>]
  *
  * The key is GEMINI_API_KEY in supabase/functions/.env (gitignored) or the environment; it is never printed.
+ * Each answer is scored after `normalizeAnswer` (our checks), as the edge function will return it.
  * Results go to .ai-eval/ (gitignored). The prompt and schema are the edge function's own
  * (supabase/functions/_shared/askPrompt.ts, loaded through Node's type stripping).
  */
@@ -13,6 +14,7 @@ import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { normalizeAnswer } from "../../supabase/functions/_shared/askNormalize.ts";
 import { buildGenerateRequest, PROMPT_VERSION } from "../../supabase/functions/_shared/askPrompt.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -40,9 +42,14 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function call(path, init, key) {
   for (let attempt = 0; ; attempt++) {
-    const res = await fetch(`${API}/${path}`, { ...init, headers: { "content-type": "application/json", "x-goog-api-key": key, ...init?.headers } });
+    const res = await fetch(`${API}/${path}`, {
+      ...init, signal: AbortSignal.timeout(90_000),
+      headers: { "content-type": "application/json", "x-goog-api-key": key, ...init?.headers },
+    });
     if ((res.status === 429 || res.status >= 500) && attempt < 4) {
-      await sleep(2000 * 2 ** attempt);
+      const wait = 2000 * 2 ** attempt;
+      console.log(`        HTTP ${res.status}, retrying in ${wait / 1000} s`);
+      await sleep(wait);
       continue;
     }
     const body = await res.json().catch(() => ({}));
@@ -109,11 +116,13 @@ async function main() {
     if (i > 0) await sleep(delay);
     const started = Date.now();
     let actual = null;
+    let raw = null;
     let error = null;
     try {
       const body = await call(`models/${model}:generateContent`, { method: "POST", body: JSON.stringify(buildGenerateRequest(context, c.text)) }, key);
       const text = body.candidates?.[0]?.content?.parts?.map((p) => p.text ?? "").join("") ?? "";
-      actual = JSON.parse(text);
+      raw = JSON.parse(text);
+      actual = normalizeAnswer(raw, context);
     } catch (e) {
       error = String(e.message ?? e);
     }
@@ -127,7 +136,7 @@ async function main() {
       else misses.push({ field, expected, got: actual ? actual[field] ?? null : null });
     }
     const pass = !error && misses.length === 0;
-    results.push({ id: c.id, text: c.text, pass, ms, error, misses, actual });
+    results.push({ id: c.id, text: c.text, pass, ms, error, misses, actual, raw });
     console.log(`${pass ? "PASS" : "FAIL"}  ${c.id}  (${ms} ms)${error ? `  ${error}` : ""}`);
     for (const m of misses) console.log(`        ${m.field}: expected ${JSON.stringify(m.expected)}, got ${JSON.stringify(m.got)}`);
   }

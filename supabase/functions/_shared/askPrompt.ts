@@ -7,7 +7,7 @@
  * No Hebrew here (hard rule 3): place names, people and the member's text arrive as data in the user turn.
  */
 
-export const PROMPT_VERSION = "ai1-2026-11-20.1";
+export const PROMPT_VERSION = "ai1-2026-11-20.2";
 
 export interface AskPlace { name: string; aliases?: string[] }
 export interface AskPerson { name: string; kind: "child" | "member"; drives?: boolean }
@@ -60,10 +60,14 @@ Rules:
 - people: names exactly as written in the context's people list when they match (children included); unknown names as written.
   "the kids" = all the member's children. The member themselves is never in people. extra_adults = unnamed extra adults.
 - needs: "large_trunk" for a lot of luggage / a big trunk; "tow_hitch" for a towing hook.
-- Edits and cancels: target_ride is the ref of exactly one ride in my_rides that the message clearly identifies.
-  If more than one ride fits, or none, set target_ride null and ask "which_ride". For an edit fill ONLY what changes:
-  a new departure or return time in time / return_time, a relative change in start_shift_minutes / end_shift_minutes (an hour later = 60),
-  added stops in stops, added people in people, removed people in remove_people, a new trip type in trip_type.
+- Edits and cancels: matching_rides lists the ref of EVERY ride in my_rides the message could mean (by day, place, time, people).
+  Never choose between several — list them all; the app asks the member. An empty list when none fits.
+  For an edit fill ONLY what changes: a new departure or return time in time / return_time, a relative change in
+  start_shift_minutes / end_shift_minutes ("an hour longer" / "extend by an hour" = end_shift_minutes 60, "half an hour earlier" =
+  start_shift_minutes -30), added stops in stops, added people in people, removed people in remove_people, a new trip type in trip_type.
+- A message describing a trip with its own destination and hours is a new_request, even when the member already has rides that day.
+- Never assume a day: no day said means date null (ask "what_day"). "now" / "right now" means today, and time = now's time.
+- A duration ("for two hours", "for an hour") goes in duration_minutes; do not convert it into a return time yourself.
 - ask: what the app must ask the member next, or null when nothing is missing. For new_request a missing date asks "what_day",
   a missing destination asks "what_place", a missing or vague time asks "what_time".
 - Leave every field you were not told null or empty. Never invent values.`;
@@ -83,7 +87,7 @@ export const RESPONSE_SCHEMA = {
   type: "OBJECT",
   properties: {
     intent: { type: "STRING", enum: ["new_request", "find_ride", "edit_request", "cancel_request", "unclear"] },
-    target_ride: { type: "STRING", nullable: true },
+    matching_rides: { type: "ARRAY", items: { type: "STRING" } },
     date: { type: "STRING", nullable: true, description: "YYYY-MM-DD" },
     time_mode: { type: "STRING", nullable: true, enum: ["depart", "arrive_by"] },
     time: { type: "STRING", nullable: true, description: "HH:MM" },
@@ -105,12 +109,13 @@ export const RESPONSE_SCHEMA = {
     needs: { type: "ARRAY", items: { type: "STRING", enum: ["large_trunk", "tow_hitch"] } },
     start_shift_minutes: { type: "INTEGER", nullable: true },
     end_shift_minutes: { type: "INTEGER", nullable: true },
+    duration_minutes: { type: "INTEGER", nullable: true },
     ask: { type: "STRING", nullable: true, enum: ["which_ride", "what_day", "what_place", "what_time"] },
   },
-  required: ["intent", "target_ride", "date", "time_mode", "time", "return_time", "trip_type", "destination", "origin", "stops",
-    "people", "remove_people", "extra_adults", "needs", "start_shift_minutes", "end_shift_minutes", "ask"],
-  propertyOrdering: ["intent", "target_ride", "date", "time_mode", "time", "return_time", "trip_type", "destination", "origin", "stops",
-    "people", "remove_people", "extra_adults", "needs", "start_shift_minutes", "end_shift_minutes", "ask"],
+  required: ["intent", "matching_rides", "date", "time_mode", "time", "return_time", "trip_type", "destination", "origin", "stops",
+    "people", "remove_people", "extra_adults", "needs", "start_shift_minutes", "end_shift_minutes", "duration_minutes", "ask"],
+  propertyOrdering: ["intent", "matching_rides", "date", "time_mode", "time", "return_time", "trip_type", "destination", "origin", "stops",
+    "people", "remove_people", "extra_adults", "needs", "start_shift_minutes", "end_shift_minutes", "duration_minutes", "ask"],
 } as const;
 
 /** The user turn: the context as JSON, then the member's message. */
