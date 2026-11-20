@@ -758,6 +758,11 @@ migrations matching `*maintenance*`; `supabase/tests/scheduled_maintenance.sql`;
   one's own conversation; a closing request must be the member's own, in the conversation's department; evaluation
   cases admin-only; housekeeping deletes after one month; RLS own rows / admin all, no direct writes),
   `department_isolation.sql`, `rls_smoke.sql`
+- Vitest: `npx vitest run src/lib/ask.test.ts` (the handler with a fake Gemini: refs instead of ids, follow-ups from the
+  stored or sent draft, refusals, limits before the model, failed calls recorded with a code; context calendar in
+  Israel time; normalize follow-ups and flags)
+- SQL (also): `ask_semantics.sql` (9) the turn RPCs (access, owner, department, 12 / 60 limits, service role only), (10)
+  `ask_context` (access, own department, own rides only, no notes)
 - Prompt quality (not CI, calls Google): `node scripts/ai-eval/run.mjs --model <id>`
 
 **QA script**:

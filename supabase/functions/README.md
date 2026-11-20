@@ -16,6 +16,7 @@ supabase/functions/
     solver.js             GENERATED — bundled src/solver, no external imports (do not hand-edit); the only
                           generated file — Edge Functions mirror the few solver types they need inline
   push-dispatch/index.ts
+  ask/                  handler.ts (pure, tested in src/lib/ask.test.ts) + index.ts; prompt/check/context in _shared/ask*.ts
   answer-proposal/index.ts
   on-ride-cancelled/index.ts
   .env                  local secrets (gitignored) — see below
@@ -51,6 +52,14 @@ timeline) — noted here per the task instead of stubbed.
   REQUIREMENTS §13.168). A candidate served by plan B is read with its main trip (`original_main`);
   `freedSlotOptions()` builds the options (one request or several one after another) passed as
   `p_options`. `enqueue_notification` is called by that RPC, not by this function.
+
+- **`ask`** — "לכתוב במילים" (REQ item 258), one chat turn; `verify_jwt = false`, the handler verifies the JWT.
+  `POST { department_id, message, conversation_id?, draft? }` → `{ conversation_id, turn_id, draft, refs }`.
+  Reads `ask_context()` as the member (refused unless opted in), `ask_begin_turn()` / `ask_record_turn()` with the
+  service role (12 turns a conversation, 60 a day), Gemini with `GEMINI_API_KEY` / `ASK_MODEL`. Errors are codes:
+  `not_authorized`, `invalid_request`, `daily_limit`, `conversation_too_long`, `conversation_ended`, `not_found`,
+  `quota`, `timeout`, `unavailable`, `bad_answer`, `ask_not_configured`. Writes nothing in the siddur. Locally:
+  `GEMINI_API_KEY` in `supabase/functions/.env` (gitignored); tests use a fake Gemini, CI never calls Google.
 
 ## How the DB invokes them
 

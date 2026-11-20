@@ -1768,9 +1768,13 @@
         "scripts/ai-eval/**",
         "src/features/ask/**",
         "supabase/migrations/**/*_ask_*",
-        "supabase/tests/ask_semantics.sql"
+        "supabase/tests/ask_semantics.sql",
+        "supabase/functions/_shared/askContext.ts",
+        "src/lib/ask.test.ts"
       ],
-      "vitest": [],
+      "vitest": [
+        "src/lib/ask.test.ts"
+      ],
       "sql": [
         "ask_semantics.sql",
         "department_isolation.sql",

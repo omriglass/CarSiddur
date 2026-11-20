@@ -160,6 +160,7 @@ supabase/
     answer-proposal/           token validation, proposal response (no sign-in required)
     on-ride-cancelled/         freed-slot matching via bundled solver
     destination-route/         Google Maps route/distance estimate for a destination (admin, signed-in, `can_manage_operations`)
+    ask/                       "Ask in words" chat turn (REQ item 258): `handler.ts` (pure, Vitest `src/lib/ask.test.ts` with a fake Gemini) + `_shared/askPrompt.ts`/`askNormalize.ts`/`askContext.ts`; prompt quality `scripts/ai-eval/`
     _shared/                   bundled solver.js (built by npm run functions:bundle)
   config.toml                  Supabase config
 e2e/

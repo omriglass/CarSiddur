@@ -748,6 +748,122 @@
       "expect": {
         "intent": "unclear"
       }
+    },
+    {
+      "id": "follow-time",
+      "previous": {
+        "answer": {
+          "intent": "new_request",
+          "date": "2026-11-19",
+          "destination": {
+            "text": "חיפה",
+            "list_name": "חיפה"
+          }
+        },
+        "messages": [
+          "חיפה מחר"
+        ]
+      },
+      "text": "בעשר",
+      "expect": {
+        "intent": "new_request",
+        "date": "2026-11-19",
+        "time": "10:00",
+        "destination": "חיפה"
+      }
+    },
+    {
+      "id": "follow-one-way",
+      "previous": {
+        "answer": {
+          "intent": "new_request",
+          "date": "2026-11-19",
+          "time": "08:00",
+          "time_mode": "depart",
+          "return_time": "12:00",
+          "destination": {
+            "text": "חיפה",
+            "list_name": "חיפה"
+          }
+        },
+        "messages": [
+          "חיפה מחר משמונה עד 12"
+        ]
+      },
+      "text": "בעצם רק הלוך",
+      "expect": {
+        "intent": "new_request",
+        "trip_type": "one_way",
+        "return_time": null,
+        "time": "08:00",
+        "destination": "חיפה"
+      }
+    },
+    {
+      "id": "follow-edit-more",
+      "previous": {
+        "answer": {
+          "intent": "edit_request",
+          "matching_rides": [
+            "RIDE_1"
+          ]
+        },
+        "messages": [
+          "הנסיעה שלי לחיפה ביום ראשון"
+        ]
+      },
+      "text": "תאריך אותה בשעה",
+      "expect": {
+        "intent": "edit_request",
+        "target_ride": "RIDE_1",
+        "return_time": "13:00"
+      }
+    },
+    {
+      "id": "follow-new-topic",
+      "previous": {
+        "answer": {
+          "intent": "new_request",
+          "date": "2026-11-19",
+          "time": "10:00",
+          "destination": {
+            "text": "חיפה",
+            "list_name": "חיפה"
+          }
+        },
+        "messages": [
+          "חיפה מחר בעשר"
+        ]
+      },
+      "text": "ותבטל לי את הנסיעה לעפולה",
+      "expect": {
+        "intent": "cancel_request",
+        "target_ride": "RIDE_2"
+      }
+    },
+    {
+      "id": "follow-day",
+      "previous": {
+        "answer": {
+          "intent": "new_request",
+          "time": "09:00",
+          "time_mode": "depart",
+          "destination": {
+            "text": "בנימינה",
+            "list_name": "בנימינה"
+          }
+        },
+        "messages": [
+          "בנימינה בתשע"
+        ]
+      },
+      "text": "ביום שישי",
+      "expect": {
+        "intent": "new_request",
+        "date": "2026-11-20",
+        "time": "09:00",
+        "destination": "בנימינה"
+      }
     }
   ]
 }

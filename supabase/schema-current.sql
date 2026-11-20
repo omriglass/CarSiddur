@@ -9465,6 +9465,159 @@ $$;
 ALTER FUNCTION "public"."approve_claim"("p_offer_id" "uuid", "p_request_id" "uuid") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."ask_begin_turn"("p_profile_id" "uuid", "p_department_id" "uuid", "p_conversation_id" "uuid" DEFAULT NULL::"uuid") RETURNS "jsonb"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  v_conv public.ask_conversations;
+  v_position int;
+begin
+  if not exists (select 1 from public.ask_access where profile_id = p_profile_id) then
+    raise exception 'not_authorized' using errcode = 'P0001';
+  end if;
+  if (select count(*) from public.ask_turns where profile_id = p_profile_id and created_at > now() - interval '1 day') >= 60 then
+    raise exception 'daily_limit' using errcode = 'P0001';
+  end if;
+  if p_conversation_id is null then
+    insert into public.ask_conversations (profile_id, department_id) values (p_profile_id, p_department_id) returning * into v_conv;
+  else
+    select * into v_conv from public.ask_conversations
+    where id = p_conversation_id and profile_id = p_profile_id and department_id = p_department_id for update;
+    if not found then raise exception 'not_found' using errcode = 'P0001'; end if;
+    if v_conv.outcome <> 'open' then raise exception 'conversation_ended' using errcode = 'P0001'; end if;
+  end if;
+  select coalesce(max(position), 0) + 1 into v_position from public.ask_turns where conversation_id = v_conv.id;
+  if v_position > 12 then raise exception 'conversation_too_long' using errcode = 'P0001'; end if;
+  return jsonb_build_object(
+    'conversation_id', v_conv.id,
+    'position', v_position,
+    'previous_draft', (select t.draft from public.ask_turns t
+      where t.conversation_id = v_conv.id and t.draft is not null order by t.position desc limit 1),
+    'messages', coalesce((select jsonb_agg(t.user_text order by t.position) from public.ask_turns t
+      where t.conversation_id = v_conv.id), '[]'::jsonb)
+  );
+end $$;
+
+
+ALTER FUNCTION "public"."ask_begin_turn"("p_profile_id" "uuid", "p_department_id" "uuid", "p_conversation_id" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."ask_context"("p_department_id" "uuid", "p_now" timestamp with time zone DEFAULT "now"()) RETURNS "jsonb"
+    LANGUAGE "plpgsql" STABLE
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  v_me uuid := (select auth.uid());
+  v_home text;
+begin
+  if v_me is null or not exists (select 1 from public.ask_access a where a.profile_id = v_me) then
+    raise exception 'not_authorized' using errcode = 'P0001';
+  end if;
+  if not public.member_of(p_department_id) then raise exception 'not_authorized' using errcode = 'P0001'; end if;
+
+  select d.name into v_home
+  from public.departments dep join public.destinations d on d.id = dep.home_destination_id
+  where dep.id = p_department_id;
+
+  return jsonb_build_object(
+    'home', coalesce(v_home, ''),
+    'places', coalesce((
+      select jsonb_agg(jsonb_build_object('name', d.name, 'aliases', d.aliases) order by d.name, d.id)
+      from public.destinations d where d.department_id = p_department_id and d.is_approved
+    ), '[]'::jsonb),
+    'people', coalesce((
+      select jsonb_agg(x.person order by x.kind, x.n desc, x.name)
+      from (
+        select 0 as kind, 0::bigint as n, c.full_name as name,
+          jsonb_build_object('name', c.full_name, 'kind', 'child') as person
+        from public.child_guardians g join public.children c on c.id = g.child_id
+        where g.profile_id = v_me and c.department_id = p_department_id
+        union all
+        select 1, t.n, p.full_name,
+          jsonb_build_object('name', p.full_name, 'kind', 'member', 'drives', not p.does_not_drive)
+        from (
+          select other_id, count(*) as n from (
+            select rc.profile_id as other_id
+            from public.requests r join public.request_companions rc on rc.request_id = r.id
+            where r.department_id = p_department_id and r.requester_id = v_me and coalesce(r.depart_at, r.return_at) > p_now - interval '60 days'
+            union all
+            select r.requester_id
+            from public.requests r join public.request_companions rc on rc.request_id = r.id
+            where r.department_id = p_department_id and rc.profile_id = v_me and coalesce(r.depart_at, r.return_at) > p_now - interval '60 days'
+          ) o where other_id <> v_me group by other_id order by count(*) desc, other_id limit 12
+        ) t join public.profiles p on p.id = t.other_id
+      ) x
+    ), '[]'::jsonb),
+    'rides', coalesce((
+      select jsonb_agg(jsonb_build_object(
+          'request_id', r.id,
+          'date', to_char(coalesce(r.depart_at, r.return_at) at time zone 'Asia/Jerusalem', 'YYYY-MM-DD'),
+          'start', to_char(coalesce(r.depart_at, r.return_at) at time zone 'Asia/Jerusalem', 'HH24:MI'),
+          'end', case when r.return_at is null then null else to_char(r.return_at at time zone 'Asia/Jerusalem', 'HH24:MI') end,
+          'trip_type', r.trip_type,
+          'origin', coalesce(od.name, nullif(trim(r.origin_text), ''), v_home, ''),
+          'destination', coalesce(dd.name, nullif(trim(r.destination_text), ''), ''),
+          'stops', coalesce((
+            select jsonb_agg(jsonb_build_object('leg', s.leg, 'place', coalesce(sd.name, s.place_text)) order by s.leg, s.position)
+            from public.request_stops s left join public.destinations sd on sd.id = s.place_id
+            where s.request_id = r.id and (s.leg = 'out' or r.return_at is not null)
+          ), '[]'::jsonb),
+          'people', coalesce((
+            select jsonb_agg(n.name order by n.ord, n.name) from (
+              select 0 as ord, rp.full_name as name from public.profiles rp where rp.id = r.requester_id and r.requester_id <> v_me
+              union all
+              select 1, cp.full_name from public.request_companions rc join public.profiles cp on cp.id = rc.profile_id
+              where rc.request_id = r.id and rc.profile_id <> v_me
+              union all
+              select 2, ch.full_name from public.request_children rch join public.children ch on ch.id = rch.child_id
+              where rch.request_id = r.id
+            ) n
+          ), '[]'::jsonb)
+        ) order by coalesce(r.depart_at, r.return_at), r.id)
+      from public.requests r
+      left join public.destinations od on od.id = r.origin_id
+      left join public.destinations dd on dd.id = r.destination_id
+      where r.department_id = p_department_id
+        and (r.requester_id = v_me or r.filed_by = v_me
+          or exists (select 1 from public.request_companions rc where rc.request_id = r.id and rc.profile_id = v_me))
+        and r.status not in ('withdrawn', 'cancelled', 'denied', 'draft')
+        and r.plan_b_parent_id is null
+        and coalesce(r.return_at, r.depart_at) >= p_now
+        and coalesce(r.depart_at, r.return_at) < p_now + interval '15 days'
+    ), '[]'::jsonb)
+  );
+end $$;
+
+
+ALTER FUNCTION "public"."ask_context"("p_department_id" "uuid", "p_now" timestamp with time zone) OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."ask_record_turn"("p_conversation_id" "uuid", "p_position" integer, "p_turn" "jsonb") RETURNS "uuid"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  v_conv public.ask_conversations;
+  v_id uuid;
+begin
+  select * into v_conv from public.ask_conversations where id = p_conversation_id;
+  if not found then raise exception 'not_found' using errcode = 'P0001'; end if;
+  insert into public.ask_turns (conversation_id, profile_id, department_id, position, user_text, draft_in, raw_answer, draft,
+    flags, error, prompt_version, model, latency_ms)
+  values (v_conv.id, v_conv.profile_id, v_conv.department_id, p_position, p_turn ->> 'user_text',
+    p_turn -> 'draft_in', p_turn -> 'raw_answer', p_turn -> 'draft',
+    coalesce(array(select jsonb_array_elements_text(coalesce(p_turn -> 'flags', '[]'::jsonb))), '{}'),
+    p_turn ->> 'error', coalesce(p_turn ->> 'prompt_version', ''), coalesce(p_turn ->> 'model', ''),
+    nullif(p_turn ->> 'latency_ms', '')::int)
+  returning id into v_id;
+  return v_id;
+end $$;
+
+
+ALTER FUNCTION "public"."ask_record_turn"("p_conversation_id" "uuid", "p_position" integer, "p_turn" "jsonb") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."assert_car_chain"("_car" "uuid", "_week" "date") RETURNS "void"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -39436,6 +39589,22 @@ GRANT ALL ON FUNCTION "public"."apply_solver_result"("p_department_id" "uuid", "
 REVOKE ALL ON FUNCTION "public"."approve_claim"("p_offer_id" "uuid", "p_request_id" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."approve_claim"("p_offer_id" "uuid", "p_request_id" "uuid") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."approve_claim"("p_offer_id" "uuid", "p_request_id" "uuid") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."ask_begin_turn"("p_profile_id" "uuid", "p_department_id" "uuid", "p_conversation_id" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."ask_begin_turn"("p_profile_id" "uuid", "p_department_id" "uuid", "p_conversation_id" "uuid") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."ask_context"("p_department_id" "uuid", "p_now" timestamp with time zone) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."ask_context"("p_department_id" "uuid", "p_now" timestamp with time zone) TO "service_role";
+GRANT ALL ON FUNCTION "public"."ask_context"("p_department_id" "uuid", "p_now" timestamp with time zone) TO "authenticated";
+
+
+
+REVOKE ALL ON FUNCTION "public"."ask_record_turn"("p_conversation_id" "uuid", "p_position" integer, "p_turn" "jsonb") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."ask_record_turn"("p_conversation_id" "uuid", "p_position" integer, "p_turn" "jsonb") TO "service_role";
 
 
 

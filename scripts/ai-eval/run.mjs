@@ -6,7 +6,8 @@
  *   node scripts/ai-eval/run.mjs --model <id> [--only <case-id,...>] [--delay <ms>]
  *
  * The key is GEMINI_API_KEY in supabase/functions/.env (gitignored) or the environment; it is never printed.
- * Each answer is scored after `normalizeAnswer` (our checks), as the edge function will return it.
+ * Each answer is scored after `normalizeAnswer` (our checks), as the edge function will return it. A case with
+ * `previous: { answer, messages }` is a follow-up turn: `answer` (a model-shaped answer) becomes the stored draft.
  * Results go to .ai-eval/ (gitignored). The prompt and schema are the edge function's own
  * (supabase/functions/_shared/askPrompt.ts, loaded through Node's type stripping).
  */
@@ -119,10 +120,13 @@ async function main() {
     let raw = null;
     let error = null;
     try {
-      const body = await call(`models/${model}:generateContent`, { method: "POST", body: JSON.stringify(buildGenerateRequest(context, c.text)) }, key);
+      // a follow-up case: the previous turn's draft, made by our checks exactly as the edge function stores it
+      const previousDraft = c.previous ? normalizeAnswer(c.previous.answer, context) : null;
+      const previous = c.previous ? { draft: previousDraft, messages: c.previous.messages ?? [] } : null;
+      const body = await call(`models/${model}:generateContent`, { method: "POST", body: JSON.stringify(buildGenerateRequest(context, c.text, previous)) }, key);
       const text = body.candidates?.[0]?.content?.parts?.map((p) => p.text ?? "").join("") ?? "";
       raw = JSON.parse(text);
-      actual = normalizeAnswer(raw, context);
+      actual = normalizeAnswer(raw, context, previousDraft);
     } catch (e) {
       error = String(e.message ?? e);
     }

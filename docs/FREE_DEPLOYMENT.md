@@ -59,6 +59,11 @@ Save these Supabase Edge Function secrets using the dashboard's secret editor:
 - `VAPID_PRIVATE_KEY`: matching private key.
 - `VAPID_SUBJECT`: `mailto:YOUR_REAL_CONTACT_EMAIL`.
 - `CRON_SECRET`: generated random secret.
+- `GEMINI_API_KEY`: the production Gemini API key ("לכתוב במילים", REQ item 258) from Google AI Studio — a key of its own,
+  not the development one in `supabase/functions/.env`. Without it the `ask` function answers `ask_not_configured`
+  and the app shows the form instead.
+- `ASK_MODEL` (optional): the Gemini model id; default `gemini-3.5-flash-lite` (free tier). Check a new model first with
+  `node scripts/ai-eval/run.mjs --model <id>`.
 
 Keep the VAPID pair stable across deployments so existing browser subscriptions continue to work. The frontend also requires the public key; its environment validation rejects an empty value.
 
@@ -70,6 +75,7 @@ npx supabase functions deploy push-dispatch --project-ref YOUR_PROJECT_REF
 npx supabase functions deploy answer-proposal --project-ref YOUR_PROJECT_REF
 npx supabase functions deploy on-ride-cancelled --project-ref YOUR_PROJECT_REF
 npx supabase functions deploy destination-route --project-ref YOUR_PROJECT_REF
+npx supabase functions deploy ask --project-ref YOUR_PROJECT_REF
 ```
 
 These functions perform their own authentication. In particular, `answer-proposal` must accept the app's proposal token without requiring a signed-in Supabase session; preserve the checked-in `verify_jwt = false` settings.

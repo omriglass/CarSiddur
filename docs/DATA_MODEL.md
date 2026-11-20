@@ -1286,6 +1286,8 @@ Indexes: `(department_id, week_start, at desc)`, `(subject_profile_id, at desc)`
 
 Kept one month (`housekeeping()`, turns cascade). Never holds a request's note to the Sadran (it is never sent).
 
+Functions for the `ask` edge function (`20261120120000`–`120100`): `ask_context(department, now?)` — **security invoker**, granted to `authenticated`, read as the member: refused unless they have an `ask_access` row and are a member of the department; returns the home, the department's approved places (name, aliases), the member's children and up to 12 people they rode with in the last 60 days (`drives`), and their own upcoming rides for 15 days (requester, filer or companion; not withdrawn/cancelled/denied/draft, no plan-B siblings): date, start, end, trip type, origin, destination, active stops, the other people — no notes. `ask_begin_turn(profile, department, conversation?)` and `ask_record_turn(conversation, position, turn jsonb)` — **service role only**: the first refuses without access, after 60 turns a day or 12 in a conversation, and a conversation of someone else / another department / already ended, and returns the position, the last stored draft and the earlier messages; the second inserts the turn.
+
 #### `client_errors` (ARCHITECTURE §12 — uncaught front-end errors)
 
 | column | type | null | default | notes |

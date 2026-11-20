@@ -4,6 +4,9 @@
  *   set only when exactly one fits, otherwise the app asks "which ride?".
  * - Arithmetic is ours: relative shifts and durations become times here, not in the model.
  * - Anything outside the context is dropped: a date not in the calendar, a place name not on the list, an unknown ride.
+ * - A follow-up keeps the previous draft: what the new answer leaves empty is taken from it (the model is asked to
+ *   return the whole draft, this makes sure).
+ * - `flags` records what was dropped or decided here, for the conversation record (REQ item 258 f).
  * Pure (no Deno/Node APIs) so the evaluation runner scores exactly what the edge function will return.
  */
 import type { AskContext } from "./askPrompt.ts";
@@ -37,12 +40,39 @@ export interface AskDraft extends Omit<AskModelAnswer, "matching_rides"> {
   target_ride: string | null;
   /** The rides a "which ride?" question offers (empty unless asked). */
   ride_choices: string[];
+  /** What our checks dropped or decided (date_dropped, place_unlisted, time_dropped, ride_unknown, ride_ambiguous, kept_previous, intent_kept). */
+  flags: string[];
+}
+
+const SCALARS = ["date", "time_mode", "time", "return_time", "trip_type", "destination", "origin", "extra_adults"] as const;
+const LISTS = ["people", "remove_people", "stops", "needs"] as const;
+
+/** A follow-up answer completed from the previous draft (same intent; an "unclear" answer keeps the draft's intent). */
+function withPrevious(answer: AskModelAnswer, previous: AskDraft | null | undefined, flags: string[]): AskModelAnswer {
+  if (!previous || previous.intent === "unclear") return answer;
+  const merged: AskModelAnswer = { ...answer };
+  if (merged.intent === "unclear") { merged.intent = previous.intent; flags.push("intent_kept"); }
+  if (merged.intent !== previous.intent) return merged;
+  let kept = false;
+  for (const key of SCALARS) {
+    if ((merged[key] ?? null) === null && (previous[key] ?? null) !== null) {
+      if (key === "return_time" && merged.trip_type === "one_way") continue;
+      (merged as unknown as Record<string, unknown>)[key] = previous[key];
+      kept = true;
+    }
+  }
+  for (const key of LISTS) {
+    if (!(merged[key]?.length) && previous[key]?.length) { (merged as unknown as Record<string, unknown>)[key] = previous[key]; kept = true; }
+  }
+  if (!(merged.matching_rides?.length) && previous.target_ride) { merged.matching_rides = [previous.target_ride]; kept = true; }
+  if (kept) flags.push("kept_previous");
+  return merged;
 }
 
 const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 function toMinutes(time: string): number {
-  const [h, m] = time.split(":").map(Number);
+  const [h = 0, m = 0] = time.split(":").map(Number);
   return h * 60 + m;
 }
 function fromMinutes(total: number): string | null {
@@ -56,13 +86,22 @@ function checkPlace(ref: AskPlaceRef | null | undefined, names: Set<string>): As
   return { text: ref.text.trim(), list_name: ref.list_name && names.has(ref.list_name) ? ref.list_name : null };
 }
 
-export function normalizeAnswer(answer: AskModelAnswer, context: AskContext): AskDraft {
+export function normalizeAnswer(modelAnswer: AskModelAnswer, context: AskContext, previous?: AskDraft | null): AskDraft {
+  const flags: string[] = [];
+  const answer = withPrevious(modelAnswer, previous, flags);
   const names = new Set(context.places.flatMap((p) => [p.name]));
   const dates = new Set(context.calendar.map((d) => d.date));
   const today = context.now.split("T")[0];
   const rides = new Map(context.my_rides.map((r) => [r.ref, r]));
 
   const { matching_rides: matching = [], ...rest } = answer;
+  delete (rest as Partial<AskDraft>).target_ride;
+  delete (rest as Partial<AskDraft>).ride_choices;
+  delete (rest as Partial<AskDraft>).flags;
+  if (answer.date && !dates.has(answer.date)) flags.push("date_dropped");
+  if ((answer.time && !validTime(answer.time)) || (answer.return_time && !validTime(answer.return_time))) flags.push("time_dropped");
+  const listed = [answer.destination, answer.origin, ...(answer.stops ?? [])];
+  if (listed.some((p) => p?.list_name && !names.has(p.list_name))) flags.push("place_unlisted");
   const draft: AskDraft = {
     ...rest,
     date: answer.date && dates.has(answer.date) ? answer.date : null,
@@ -77,12 +116,15 @@ export function normalizeAnswer(answer: AskModelAnswer, context: AskContext): As
     ask: answer.ask ?? null,
     target_ride: null,
     ride_choices: [],
+    flags,
   };
 
   if (answer.intent === "edit_request" || answer.intent === "cancel_request") {
     const known = [...new Set(matching)].filter((ref) => rides.has(ref));
+    if (known.length < new Set(matching).size) flags.push("ride_unknown");
+    if (known.length > 1) flags.push("ride_ambiguous");
     if (known.length === 1) {
-      draft.target_ride = known[0];
+      draft.target_ride = known[0] ?? null;
       if (draft.ask === "which_ride") draft.ask = null;
     } else {
       draft.ride_choices = known.length > 1 ? known : context.my_rides.map((r) => r.ref);

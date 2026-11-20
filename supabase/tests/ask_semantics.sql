@@ -116,6 +116,107 @@ begin
   assert not exists (select 1 from public.ask_access where profile_id = other), 'opted out';
 end $$;
 
+-- (9) the edge function's turn RPCs: access, the conversation's owner and department, limits, history.
+do $$
+declare
+  member uuid := '00000000-0000-0000-0000-000000000103';
+  other uuid := '00000000-0000-0000-0000-000000000104';
+  dept uuid; other_dept uuid;
+  b jsonb; b2 jsonb; t uuid; i int;
+begin
+  select department_id into dept from public.department_members where profile_id = member and removed_at is null limit 1;
+  select id into other_dept from public.departments where id <> dept limit 1;
+  begin
+    perform public.ask_begin_turn(other, dept, null);
+    raise exception 'a member without access began a turn';
+  exception when raise_exception then assert sqlerrm = 'not_authorized', sqlerrm; end;
+
+  b := public.ask_begin_turn(member, dept, null);
+  assert (b ->> 'position')::int = 1 and b -> 'previous_draft' = 'null'::jsonb and b -> 'messages' = '[]'::jsonb, format('first turn: %s', b);
+  t := public.ask_record_turn((b ->> 'conversation_id')::uuid, 1, jsonb_build_object('user_text', 'to haifa tomorrow',
+    'draft', '{"intent":"new_request"}'::jsonb, 'flags', '["kept_previous"]'::jsonb, 'prompt_version', 'v', 'model', 'm', 'latency_ms', 900));
+  assert (select flags = '{kept_previous}' and latency_ms = 900 and profile_id = member and department_id = dept
+    from public.ask_turns where id = t), 'turn recorded with the conversation''s owner and department';
+  b2 := public.ask_begin_turn(member, dept, (b ->> 'conversation_id')::uuid);
+  assert (b2 ->> 'position')::int = 2 and b2 -> 'previous_draft' ->> 'intent' = 'new_request'
+    and b2 -> 'messages' = '["to haifa tomorrow"]'::jsonb, format('second turn: %s', b2);
+  -- a failed turn (no draft) does not hide the last good draft
+  perform public.ask_record_turn((b ->> 'conversation_id')::uuid, 2, '{"user_text":"x","error":"quota","prompt_version":"v","model":"m"}'::jsonb);
+  assert public.ask_begin_turn(member, dept, (b ->> 'conversation_id')::uuid) -> 'previous_draft' ->> 'intent' = 'new_request', 'last good draft';
+
+  if other_dept is not null then
+    begin
+      perform public.ask_begin_turn(member, other_dept, (b ->> 'conversation_id')::uuid);
+      raise exception 'a conversation continued in another department';
+    exception when raise_exception then assert sqlerrm = 'not_found', sqlerrm; end;
+  end if;
+
+  for i in 3..12 loop
+    perform public.ask_record_turn((b ->> 'conversation_id')::uuid, i, '{"user_text":"x","prompt_version":"v","model":"m"}'::jsonb);
+  end loop;
+  begin
+    perform public.ask_begin_turn(member, dept, (b ->> 'conversation_id')::uuid);
+    raise exception 'a 13th turn began';
+  exception when raise_exception then assert sqlerrm = 'conversation_too_long', sqlerrm; end;
+  -- 60 turns a day per member
+  b := public.ask_begin_turn(member, dept, null);
+  insert into public.ask_turns (conversation_id, profile_id, department_id, position, user_text, prompt_version, model)
+    select (b ->> 'conversation_id')::uuid, member, dept, g, 'x', 'v', 'm' from generate_series(1, 60) g;
+  begin
+    perform public.ask_begin_turn(member, dept, null);
+    raise exception 'the daily limit did not hold';
+  exception when raise_exception then assert sqlerrm = 'daily_limit', sqlerrm; end;
+  delete from public.ask_conversations where id = (b ->> 'conversation_id')::uuid;
+
+  update public.ask_conversations set outcome = 'closed' where profile_id = member and outcome = 'open';
+  begin
+    perform public.ask_begin_turn(member, dept, (select id from public.ask_conversations where profile_id = member and outcome = 'closed' limit 1));
+    raise exception 'a closed conversation continued';
+  exception when raise_exception then assert sqlerrm = 'conversation_ended', sqlerrm; end;
+
+  assert not has_function_privilege('authenticated', 'public.ask_begin_turn(uuid, uuid, uuid)', 'execute')
+    and not has_function_privilege('authenticated', 'public.ask_record_turn(uuid, integer, jsonb)', 'execute'),
+    'the turn RPCs are service-role only';
+end $$;
+
+-- (10) ask_context: as the member, only with access and in their own department; their own rides, no ids of others,
+--      never the note to the Sadran.
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000000104","role":"authenticated"}', true);
+do $$ begin
+  begin
+    perform public.ask_context((select department_id from public.department_members
+      where profile_id = '00000000-0000-0000-0000-000000000104' and removed_at is null limit 1));
+    raise exception 'ask_context without access';
+  exception when raise_exception then assert sqlerrm = 'not_authorized', sqlerrm; end;
+end $$;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000000103","role":"authenticated"}', true);
+do $$
+declare
+  me uuid := '00000000-0000-0000-0000-000000000103';
+  dept uuid := (select department_id from public.department_members where profile_id = me and removed_at is null limit 1);
+  other_dept uuid := (select d from unnest(array(select id from public.departments)) d
+    where not exists (select 1 from public.department_members m where m.profile_id = me and m.department_id = d and m.removed_at is null) limit 1);
+  c jsonb;
+begin
+  c := public.ask_context(dept);
+  assert c ? 'home' and jsonb_typeof(c -> 'places') = 'array' and jsonb_typeof(c -> 'people') = 'array', format('shape: %s', c);
+  assert jsonb_array_length(c -> 'places') > 0, 'the department''s places';
+  assert not exists (
+    select 1 from jsonb_array_elements(c -> 'rides') r
+    where not exists (select 1 from public.requests q where q.id = (r ->> 'request_id')::uuid
+      and (q.requester_id = me or q.filed_by = me or exists (select 1 from public.request_companions rc where rc.request_id = q.id and rc.profile_id = me)))
+  ), 'only the member''s own rides';
+  assert not exists (select 1 from jsonb_array_elements(c -> 'rides') r where r ? 'notes'), 'no note to the Sadran';
+  if other_dept is not null then
+    begin
+      perform public.ask_context(other_dept);
+      raise exception 'ask_context for another department';
+    exception when raise_exception then assert sqlerrm = 'not_authorized', sqlerrm; end;
+  end if;
+end $$;
+reset role;
+
 -- RLS: a member reads only their own rows and writes nothing directly; an admin reads all.
 set local role authenticated;
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000000104","role":"authenticated"}', true);
@@ -131,7 +232,7 @@ end $$;
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000000103","role":"authenticated"}', true);
 do $$ begin
   assert (select count(*) from public.ask_access) = 1, 'the member reads their own access row';
-  assert (select count(*) from public.ask_turns) = 1, 'the member reads their own turns';
+  assert (select count(*) from public.ask_turns) >= 1 and not exists (select 1 from public.ask_turns where profile_id <> '00000000-0000-0000-0000-000000000103'), 'the member reads their own turns only';
   begin
     update public.ask_access set hidden = true;
     raise exception 'a member updated ask_access directly';

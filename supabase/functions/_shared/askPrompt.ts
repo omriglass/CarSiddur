@@ -2,12 +2,12 @@
  * AI1 (docs/TODO.md "Ask in words", owner 2026-11-20): the system prompt and the structured-output schema for the
  * "ask in words" box. One generative call returns one JSON object; our code validates every field afterwards (the
  * model proposes, the member decides). Kept free of Deno/Node specifics so the evaluation runner
- * (`scripts/ai-eval/run.mjs`, Node type stripping; lives in `_shared` until the `ask` function exists) measures exactly what the edge function will send.
+ * (`scripts/ai-eval/run.mjs`, Node type stripping) measures exactly what the edge function will send.
  *
  * No Hebrew here (hard rule 3): place names, people and the member's text arrive as data in the user turn.
  */
 
-export const PROMPT_VERSION = "ai1-2026-11-20.2";
+export const PROMPT_VERSION = "ai1-2026-11-20.4";
 
 export interface AskPlace { name: string; aliases?: string[] }
 export interface AskPerson { name: string; kind: "child" | "member"; drives?: boolean }
@@ -65,12 +65,22 @@ Rules:
   For an edit fill ONLY what changes: a new departure or return time in time / return_time, a relative change in
   start_shift_minutes / end_shift_minutes ("an hour longer" / "extend by an hour" = end_shift_minutes 60, "half an hour earlier" =
   start_shift_minutes -30), added stops in stops, added people in people, removed people in remove_people, a new trip type in trip_type.
+- In Hebrew the verb "to lengthen / extend" (or "to shorten") followed by the word for "in an hour" / "in half an hour" means
+  BY that amount. Its imperative "ta'arich" (lengthen!) is spelled exactly like the noun "date": at the start of a message about
+  a ride it is the verb. "ta'arich ... be-sha'a" = extend by an hour: end_shift_minutes 60 / 30 (shortening: negative), never a time to ask about. "Earlier/later by" works the same
+  on the start (start_shift_minutes) unless the member says "the return".
 - A message describing a trip with its own destination and hours is a new_request, even when the member already has rides that day.
 - Never assume a day: no day said means date null (ask "what_day"). "now" / "right now" means today, and time = now's time.
 - A duration ("for two hours", "for an hour") goes in duration_minutes; do not convert it into a return time yourself.
 - ask: what the app must ask the member next, or null when nothing is missing. For new_request a missing date asks "what_day",
   a missing destination asks "what_place", a missing or vague time asks "what_time".
-- Leave every field you were not told null or empty. Never invent values.`;
+- Leave every field you were not told null or empty. Never invent values.
+
+Follow-ups: the user turn may also carry "Draft so far" (the JSON you returned before, after the app's checks) and
+"Earlier messages". Then the new message usually answers the app's question or corrects the draft: return the WHOLE
+updated draft — keep the draft's intent and every field the new message does not change; for an edit or cancel keep its ride in
+matching_rides. A bare time, day, place or name answers the open question ("ask"). Start a new draft only when the new
+message is clearly about a different ride.`;
 
 const placeRef = {
   type: "OBJECT",
@@ -119,15 +129,21 @@ export const RESPONSE_SCHEMA = {
 } as const;
 
 /** The user turn: the context as JSON, then the member's message. */
-export function buildUserTurn(context: AskContext, message: string): string {
-  return `Context:\n${JSON.stringify(context)}\n\nMessage:\n${message}`;
+/** A follow-up turn: the checked draft of the previous turn and the member's earlier messages, oldest first. */
+export interface AskPrevious { draft: object | null; messages: string[] }
+
+export function buildUserTurn(context: AskContext, message: string, previous?: AskPrevious | null): string {
+  const earlier = previous && (previous.draft || previous.messages.length)
+    ? `Draft so far:\n${JSON.stringify(previous.draft)}\n\nEarlier messages:\n${JSON.stringify(previous.messages)}\n\n`
+    : "";
+  return `Context:\n${JSON.stringify(context)}\n\n${earlier}Message:\n${message}`;
 }
 
 /** The `generateContent` request body (REST, v1beta). */
-export function buildGenerateRequest(context: AskContext, message: string) {
+export function buildGenerateRequest(context: AskContext, message: string, previous?: AskPrevious | null) {
   return {
     systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
-    contents: [{ role: "user", parts: [{ text: buildUserTurn(context, message) }] }],
+    contents: [{ role: "user", parts: [{ text: buildUserTurn(context, message, previous) }] }],
     generationConfig: { temperature: 0, responseMimeType: "application/json", responseSchema: RESPONSE_SCHEMA },
   };
 }

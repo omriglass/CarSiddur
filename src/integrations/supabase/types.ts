@@ -7187,6 +7187,22 @@ export type Database = {
         Args: { p_offer_id: string; p_request_id: string }
         Returns: string
       }
+      ask_begin_turn: {
+        Args: {
+          p_conversation_id?: string
+          p_department_id: string
+          p_profile_id: string
+        }
+        Returns: Json
+      }
+      ask_context: {
+        Args: { p_department_id: string; p_now?: string }
+        Returns: Json
+      }
+      ask_record_turn: {
+        Args: { p_conversation_id: string; p_position: number; p_turn: Json }
+        Returns: string
+      }
       assert_car_chain: {
         Args: { _car: string; _week: string }
         Returns: undefined

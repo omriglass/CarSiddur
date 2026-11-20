@@ -27,6 +27,6 @@
 
     "types": ["vite/client"]
   },
-  "include": ["src", "e2e", "vitest.config.ts", "playwright.config.ts", "supabase/functions/destination-route/handler.ts", "supabase/functions/_shared/cors.ts", "supabase/functions/_shared/request.ts"],
+  "include": ["src", "e2e", "vitest.config.ts", "playwright.config.ts", "supabase/functions/destination-route/handler.ts", "supabase/functions/ask/handler.ts", "supabase/functions/_shared/askPrompt.ts", "supabase/functions/_shared/askNormalize.ts", "supabase/functions/_shared/askContext.ts", "supabase/functions/_shared/cors.ts", "supabase/functions/_shared/request.ts"],
   "exclude": ["src/sw.ts"]
 }

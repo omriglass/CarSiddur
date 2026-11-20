@@ -62,7 +62,7 @@ import { fileURLToPath } from "node:url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
 const TZ = "Asia/Jerusalem";
-const EDGE_FUNCTIONS = ["push-dispatch", "answer-proposal", "on-ride-cancelled", "destination-route"];
+const EDGE_FUNCTIONS = ["push-dispatch", "answer-proposal", "on-ride-cancelled", "destination-route", "ask"];
 const TAG_RE = /^v(\d{4})\.(\d{2})\.(\d{2})-(\d+)$/;
 /** A `--tag` alias: "v" + a git-friendly name (letters, digits, . _ -), e.g. `v1.2`. */
 const ALIAS_TAG_RE = /^v[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;

@@ -542,7 +542,10 @@ declare
     -- conversation's own department or one the caller is not related to (ask_semantics.sql (5)).
     'admin_set_ask_access:admin-global', 'set_ask_eval_case:admin-global',
     'set_my_ask_hidden:self-only', 'ack_ask_disclaimer:self-only', 'mark_ask_turn:self-only',
-    'finish_ask_conversation:inspected'
+    'finish_ask_conversation:inspected',
+    -- ask_context runs as the caller (security invoker, their own RLS) and refuses a department they are not a member of
+    -- (ask_semantics.sql (10)).
+    'ask_context:caller_scoped'
   ];
   v_exempt_names text[];
   v_uncovered text;

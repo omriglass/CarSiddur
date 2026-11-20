@@ -447,3 +447,7 @@ enabled = true
 # Verifies the bearer JWT with getUser inside the function, then checks department authority.
 [functions.destination-route]
 verify_jwt = false
+
+# REQ item 258: verifies the bearer JWT with getUser inside the function; ask_context() refuses anyone not opted in.
+[functions.ask]
+verify_jwt = false
