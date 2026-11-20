@@ -1971,6 +1971,8 @@ Owner: type "אני צריכה להיות בבנימינה עד 10 מחר" and g
 - Cancel → the existing cancel confirmation, never one step.
 - Code validates what the model returns: the date against the open weeks, the place against the list (no match → free text), people and rides against the context.
 
+- **Phase 1 decisions (owner 2026-11-20):** the draft card's "אישור" **opens the regular form prefilled** (the form's submit and its follow-up questions as today; filing straight from the card later). The admin review screen (bad turns first, add a turn to the evaluation set) is **in phase 1**. Order: step 0 measure Gemini on ~50 Hebrew phrasings (script, no app change) → REQ item + UX_FLOWS design and wordings for approval → migration (admin opt-in, member hide switch, `ai_conversations`/`ai_turns`, retention) → edge function `ask` (context built server-side with the member's JWT, fake Gemini in tests) → the app (+ menu, chat, cards) → telemetry + review screen.
+
 **AI2 — plans on the siddur / board (later):**
 - The model returns **steps from a fixed action list** that already exists (move / add / remove a passenger, change hours, add a stop, merge, set the driver, change trip type), naming rides and people from the context.
 - **Dry run on the server** (a new function: apply the steps in a transaction, report, roll back; `merge_preview` exists for merges) → one screen: each ride before → after, who is notified (one combined notice each — notification noise), refused steps with the reason.
