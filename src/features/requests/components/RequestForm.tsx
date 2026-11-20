@@ -97,6 +97,9 @@ import { SeriesCarTakenDialog, type SeriesCarTakenQuestion } from "./SeriesCarTa
 import { affectedNames, attachToBlocker, carTakenChoice, editRefusal, ridersOffRouteConfirmation, seriesCarTaken, carStaysAwayConfirmation, hostGuestsConfirmation, releaseConfirmation, shouldOfferJoinableRides, toastSeriesSubmitOutcome, toastSubmitOutcome , type CarTakenChoice } from "../submitOutcome";
 import { shouldSuggestChildcare } from "../childcareType";
 import { suggestionToFormValues } from "../templatePrefill";
+import { finishAskConversation } from "@/features/ask/api";
+import { formDiff, sentSnapshot } from "@/features/ask/draftToForm";
+import type { AskPrefill } from "@/features/ask/prefill";
 import { canSwapPlaces, swapRequestPlaces } from "../dropOffMode";
 import { canUseDrivingTripTypes, tripTypeToLegacyFields } from "../tripType";
 import { JoinableRidesDialog } from "./JoinableRidesDialog";
@@ -223,6 +226,11 @@ interface RequestFormProps {
    * `id`: editing that reservation). Plan B, "repeat weekly" and "on someone else's behalf" are not offered.
    */
   reservation?: { id?: string };
+  /**
+   * REQ item 258 (d): filled from "לכתוב במילים" — `apply` puts the chat's draft on the new form's empty values / on the
+   * edited request's loaded values (once); the conversation is told what was finally sent.
+   */
+  askPrefill?: AskPrefill;
 }
 
 function buildDefaultDay(weekStart: string, lastDepartAt: string | null | undefined): string {
@@ -324,6 +332,7 @@ export function RequestForm({
   waitlist = false,
   joinGroupId,
   templateSuggestion,
+  askPrefill,
   quickContext,
   onDone,
   reservation,
@@ -387,6 +396,10 @@ export function RequestForm({
   const defaultValues = useMemo(() => {
     if (mode === "edit") return emptyValues(departmentId, weekStart, weekStart, defaultRideTypeId);
     if (templateSuggestion) return suggestionToFormValues(templateSuggestion, weekStart);
+    if (askPrefill) {
+      const applied = askPrefill.apply(emptyValues(departmentId, weekStart, weekStart, defaultRideTypeId)).values;
+      return { ...applied, dayIndex: Math.max(datesOfWeek(weekStart).indexOf(applied.day), 0) };
+    }
     if (slotPrefill) {
       const returnTime =
         slotPrefill.returnTime ??
@@ -416,7 +429,7 @@ export function RequestForm({
       carPrefill ?? "",
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [departmentId, weekStart, mode, defaultRideTypeId, variant, dayPrefill, templateSuggestion?.templateId, slotPrefill?.day, slotPrefill?.departTime, slotPrefill?.returnTime, slotPrefill?.carId, carPrefill]);
+  }, [departmentId, weekStart, mode, defaultRideTypeId, variant, dayPrefill, templateSuggestion?.templateId, askPrefill?.conversationId, slotPrefill?.day, slotPrefill?.departTime, slotPrefill?.returnTime, slotPrefill?.carId, carPrefill]);
 
   const form = useForm<RequestFormValues>({
     resolver: zodResolver(requestFormSchema),
@@ -503,6 +516,9 @@ export function RequestForm({
   // here to tell the submit bar it is inside a sheet: sticky within the sheet's scroll container,
   // no app tab bar to clear (SheetPortalContext.ts).
   const insideModalSheet = useContext(SheetPortalContext) !== null;
+  // REQ item 258: what the chat put on the form (for the "what was finally sent" diff) and whether it was reported.
+  const askUnderstoodRef = useRef<Partial<RequestFormValues> | null>(askPrefill && mode !== "edit" ? askPrefill.apply(emptyValues(departmentId, weekStart, weekStart, "")).understood : null);
+  const askReportedRef = useRef(false);
   const linkedChildrenKnown =
     requestChildrenQuery.isSuccess && (requestChildrenQuery.data.length === 0 || childrenQuery.isSuccess || childrenQuery.isError);
   if (mode === "edit" && initial && companionsQuery.isSuccess && linkedChildrenKnown) {
@@ -524,7 +540,14 @@ export function RequestForm({
       const unknownSeatChildren = childrenQuery.data ? 0 : requestChildrenQuery.data.length;
       const unnamedChildSeats = unnamedChildSeatsFromStored({ storedChildSeats: initial.childSeats, seatChildrenCount: linkedSeatChildren + unknownSeatChildren });
       const mapped = editRowToFormValues(initial, weekStart, companionsQuery.data, requestChildrenQuery.data, extraAdults, unnamedChildSeats);
-      form.reset(mapped);
+      // REQ item 258 (d): the chat's change goes on the first load only; the baseline stays the stored request.
+      if (askPrefill && resetKey === null) {
+        const applied = askPrefill.apply(mapped);
+        askUnderstoodRef.current = applied.understood;
+        form.reset(applied.values);
+      } else {
+        form.reset(mapped);
+      }
       // R11B1: the loaded request in the same normalized form the save compares against (parsed like a submit would be).
       const parsed = requestFormSchema.safeParse(mapped);
       setBaselineSignature(editSignature(parsed.success ? parsed.data : mapped, { anchorSync: isSentence && variant === "weekly" }));
@@ -592,7 +615,8 @@ export function RequestForm({
   // `Controller`, which kept showing an empty "מ אל" (found by e2e 2026-10-04). The applied key
   // lives in a ref, so no state is set inside the effect.
   const appliedOriginKeyRef = useRef<string | null>(null);
-  const shouldApplyOrigin = mode !== "edit" && !templateSuggestion && !!resolvedOrigin;
+  const askHasOrigin = !!askUnderstoodRef.current?.origin;
+  const shouldApplyOrigin = mode !== "edit" && !templateSuggestion && !askHasOrigin && !!resolvedOrigin;
   const resolvedOriginKey = resolvedOrigin ? JSON.stringify(resolvedOrigin) : null;
   useEffect(() => {
     if (!shouldApplyOrigin || !resolvedOriginKey || resolvedOriginKey === appliedOriginKeyRef.current) return;
@@ -945,6 +969,16 @@ export function RequestForm({
   // re-deriving them from form state a second time later.
   const [joinRequestContext, setJoinRequestContext] = useState<{ requestId: string; peopleInputs: RidePassengerInput[] } | null>(null);
 
+  /** REQ item 258 (f): tell the conversation what was finally sent (once) and how it differs from what was understood. */
+  function reportAskDone(sent: RequestFormValues, requestId: string | null | undefined) {
+    if (!askPrefill || askReportedRef.current) return;
+    askReportedRef.current = true;
+    const understood = askUnderstoodRef.current ?? askPrefill.apply(sent).understood;
+    void finishAskConversation(askPrefill.conversationId, "done", {
+      requestId: requestId ?? undefined, sent: sentSnapshot(sent), diff: formDiff(understood, sent),
+    }).catch(() => { /* the record is best effort; the request itself was saved */ });
+  }
+
   /** Same gate as `isMultiDay` above, so the hint and the filed request never disagree (B1). */
   function isSeriesSubmit(formValues: RequestFormValues): boolean {
     return isSeriesSubmission({ pickerShown: showReturnDayPicker, pickerOpen: returnAnotherDay, day: formValues.day, returnDay: formValues.returnDay });
@@ -1227,6 +1261,7 @@ export function RequestForm({
         }
         // All legs and both calls in parallel; a brand-new series with nobody named has nothing to set.
         submittedWeek = true;
+        reportAskDone(formValues, seriesResult?.request_ids?.[0]);
         const seriesPeople = seriesEdit || formValues.companions.length > 0 || formValues.children.length > 0;
         if (seriesPeople) {
           await Promise.all((seriesResult?.request_ids ?? []).flatMap((requestId) => [
@@ -1303,6 +1338,7 @@ export function RequestForm({
       }
 
       submittedWeek = true;
+      reportAskDone(formValues, requestId);
       let peopleChanged = false;
       let templateChanged = false;
       if (requestId) {
@@ -1543,6 +1579,9 @@ export function RequestForm({
       }}
       className={cn("mx-auto flex max-w-2xl flex-col p-4", isSentence ? "gap-3 pt-1" : "gap-5", insideModalSheet ? "" : "pb-28")}
     >
+      {askPrefill ? (
+        <p className="rounded-md bg-muted px-3 py-2 text-sm" data-testid="ask-prefill-line">{tv("ask.fromChat", { summary: askPrefill.summary })}</p>
+      ) : null}
       {quickContext ? (
         <p className="text-base font-semibold">
           {seeksDriver

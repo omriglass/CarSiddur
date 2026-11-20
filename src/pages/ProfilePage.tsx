@@ -46,6 +46,7 @@ import { sendTestNotification } from "@/features/auth/api";
 import { he, tv } from "@/i18n/he";
 import { isPushSupported, subscribeToPush, unsubscribeFromPush } from "@/lib/push";
 import { showDiagnosticErrorToast, showErrorToast } from "@/lib/rpc";
+import { useAskAccess, useSetMyAskHiddenMutation } from "@/features/ask/hooks";
 import { supabase } from "@/integrations/supabase/client";
 
 import type { HomeWeekPreference, NotificationEvent } from "@/lib/enums";
@@ -61,6 +62,8 @@ export function ProfilePage() {
   const profileId = session?.user.id;
   const profileQuery = useProfile();
   const updateProfileMutation = useUpdateProfileMutation();
+  const askAccessQuery = useAskAccess();
+  const setAskHidden = useSetMyAskHiddenMutation();
   const departmentsQuery = useMyDepartments();
   const active = useActiveDepartment();
   const { isSadran } = useIsSadranAnywhere();
@@ -415,6 +418,21 @@ export function ProfilePage() {
             </div>
           </CardContent>
         </Card>
+
+        {/* REQ item 258 (b): only for a member an admin opted in; off = "+" opens the form. */}
+        {askAccessQuery.data ? (
+          <Card>
+            <CardContent className="pt-6">
+              <div className="flex items-center justify-between gap-3">
+                <Label htmlFor="profile-ask-in-words">{he.ask.profileSwitch}</Label>
+                <Switch id="profile-ask-in-words" data-testid="profile-ask-in-words"
+                  checked={!askAccessQuery.data.hidden}
+                  disabled={setAskHidden.isPending}
+                  onCheckedChange={(checked) => setAskHidden.mutate(!checked)} />
+              </div>
+            </CardContent>
+          </Card>
+        ) : null}
 
         {/* Owner 2026-10-16: per-device, turns the new-request guided start off. */}
         <Card>

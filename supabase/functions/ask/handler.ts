@@ -3,7 +3,9 @@
  * the app shows as a card; the member then confirms in the regular form.
  *
  *   POST { department_id, message, conversation_id?, draft? }
- *   → 200 { conversation_id, turn_id, draft, refs }       refs: RIDE_n → request id (the draft names rides by ref)
+ *   → 200 { conversation_id, turn_id, draft, refs, rides, people }
+ *        refs: RIDE_n → request id (the draft names rides by ref); rides: the member's rides as the model saw them (for
+ *        the "which ride?" chips and the edit card's "before"); people: name → { id, kind } | null (two with the name)
  *   → 4xx/503 { error: { code }, conversation_id? }        codes only, no Hebrew (the app words them)
  *
  *   POST { probe: true } → 200 { available, code? }   (owner 2026-11-20: the app greys "לכתוב במילים" out before the
@@ -140,7 +142,7 @@ export async function handleAsk(req: Request, deps: AskDependencies): Promise<Re
   }
 
   const now = deps.now?.() ?? new Date();
-  const { context, refs } = buildAskContext(row, now);
+  const { context, refs, people } = buildAskContext(row, now);
   const previous = (draftOverride as AskDraft | null) ?? begin.previous_draft;
   const started = Date.now();
   const result = await callModel(deps, buildGenerateRequest(context, message, { draft: previous, messages: begin.messages }));
@@ -158,5 +160,5 @@ export async function handleAsk(req: Request, deps: AskDependencies): Promise<Re
     // the member still gets their answer; a lost record is not worth failing the turn
   }
   if ("error" in result) return failure(result.error, 503, { conversation_id: begin.conversation_id });
-  return response({ conversation_id: begin.conversation_id, turn_id: turnId, draft, refs });
+  return response({ conversation_id: begin.conversation_id, turn_id: turnId, draft, refs, rides: context.my_rides, people });
 }

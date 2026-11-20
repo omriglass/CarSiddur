@@ -751,7 +751,7 @@ migrations matching `*maintenance*`; `supabase/tests/scheduled_maintenance.sql`;
 ### ask-in-words — Ask in words (AI1): opt-in, the chat, the ask edge function, the conversation record
 
 **Paths**: `supabase/functions/_shared/askPrompt.ts`, `askNormalize.ts`, `supabase/functions/ask/**`,
-`scripts/ai-eval/**`, `src/features/ask/**`; migrations `*_ask_*`; `supabase/tests/ask_semantics.sql` (REQ item 258).
+`scripts/ai-eval/**`, `src/features/ask/**`; migrations `*_ask_*`; `supabase/tests/ask_semantics.sql`; `e2e/ask-in-words.spec.ts` (REQ item 258).
 
 **Automated**:
 - SQL: `ask_semantics.sql` (only an admin opts in; hide switch and disclaimer need access; 👎 and closing only on
@@ -763,6 +763,12 @@ migrations matching `*maintenance*`; `supabase/tests/scheduled_maintenance.sql`;
   Israel time; normalize follow-ups and flags)
 - SQL (also): `ask_semantics.sql` (9) the turn RPCs (access, owner, department, 12 / 60 limits, service role only), (10)
   `ask_context` (access, own department, own rides only, no notes)
+- Vitest (app): `npx vitest run src/features/ask` (draft → form values: places by list name else text, names through the
+  function's refs and never guessed, 15-minute grid, an edit changes only what the draft changes, the sent/diff record
+  without the note; the card's rows, "? חסר", the last turn's changes, "מתי חוזרים?", the ride chips)
+- Playwright: `npx playwright test --grep @ask-in-words` (the function mocked in the browser: "+" → disclaimer →
+  card → "רק הלוך" → the form filled in → sent; the conversation goes `to_form` then `done` with the request; no
+  working key → the option greyed out)
 - Prompt quality (not CI, calls Google): `node scripts/ai-eval/run.mjs --model <id>`
 
 **QA script**:
@@ -770,6 +776,13 @@ migrations matching `*maintenance*`; `supabase/tests/scheduled_maintenance.sql`;
    offers "מילוי טופס" / "לכתוב במילים".
 2. As that member turn off "לכתוב במילים בכפתור +" in the profile. Expected: "+" opens the form directly again.
 3. A member the admin did not opt in sees only the form; the `ask` edge function refuses them.
+4. As the opted-in member: "+" → "לכתוב במילים" → the disclaimer once → write "בנימינה מחר עד 10". Expected: the card
+   ("? חסר" for what is missing, "מתי חוזרים?"); "אישור ← לטופס" opens the regular form filled in with
+   "💬 מולא מהשיחה" on top; sending works as usual.
+5. "להאריך את הנסיעה שלי ביום X בשעה" with two rides that day. Expected: "לאיזו נסיעה?" chips; after picking, "שינוי
+   בנסיעה" old → new; "אישור ← לטופס העריכה" opens that request's edit form with the change applied.
+6. "לבטל את הנסיעה שלי מחר". Expected: /my opens with that request's own cancel confirmation.
+7. With no `GEMINI_API_KEY` (or a wrong one) on the function. Expected: "לכתוב במילים" greyed out, "לא זמין כרגע".
 
 ## Known coverage gaps (do not silently "fix" — flag to QA as manual-only)
 

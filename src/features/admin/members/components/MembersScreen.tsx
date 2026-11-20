@@ -14,6 +14,7 @@ import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
+import { AdminAskAccessSwitch } from "@/features/ask/components/AdminAskAccessSwitch";
 import { useDestinations } from "@/features/fleet/hooks";
 import { useDepartments } from "@/features/siddur/hooks";
 import { useSession } from "@/features/auth/useSession";
@@ -232,6 +233,7 @@ function MembersTab() {
             onCheckedChange={(checked) => setEditing((old) => old && ({ ...old, doesNotDrive: checked }))}
           />
         </div>
+        {editing ? <AdminAskAccessSwitch profileId={editing.profileId} /> : null}
         <div className="grid gap-2">
           <span>{he.adminMembers.columnDepartments}</span>
           {(membershipsByProfile.get(editing?.profileId ?? "") ?? []).map((membership) => {

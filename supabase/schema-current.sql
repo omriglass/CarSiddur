@@ -9530,12 +9530,12 @@ begin
       select jsonb_agg(x.person order by x.kind, x.n desc, x.name)
       from (
         select 0 as kind, 0::bigint as n, c.full_name as name,
-          jsonb_build_object('name', c.full_name, 'kind', 'child') as person
+          jsonb_build_object('id', c.id, 'name', c.full_name, 'kind', 'child') as person
         from public.child_guardians g join public.children c on c.id = g.child_id
         where g.profile_id = v_me and c.department_id = p_department_id
         union all
         select 1, t.n, p.full_name,
-          jsonb_build_object('name', p.full_name, 'kind', 'member', 'drives', not p.does_not_drive)
+          jsonb_build_object('id', p.id, 'name', p.full_name, 'kind', 'member', 'drives', not p.does_not_drive)
         from (
           select other_id, count(*) as n from (
             select rc.profile_id as other_id

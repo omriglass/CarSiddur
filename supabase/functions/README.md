@@ -54,7 +54,9 @@ timeline) — noted here per the task instead of stubbed.
   `p_options`. `enqueue_notification` is called by that RPC, not by this function.
 
 - **`ask`** — "לכתוב במילים" (REQ item 258), one chat turn; `verify_jwt = false`, the handler verifies the JWT.
-  `POST { department_id, message, conversation_id?, draft? }` → `{ conversation_id, turn_id, draft, refs }`.
+  `POST { department_id, message, conversation_id?, draft? }` → `{ conversation_id, turn_id, draft, refs, rides, people }`
+  (`refs` RIDE_n → request id, `rides` the member's rides as the model saw them, `people` name → `{ id, kind }` or null
+  when two share the name — no id ever reaches the model).
   Reads `ask_context()` as the member (refused unless opted in), `ask_begin_turn()` / `ask_record_turn()` with the
   service role (12 turns a conversation, 60 a day), Gemini with `GEMINI_API_KEY` / `ASK_MODEL`. Errors are codes:
   `not_authorized`, `invalid_request`, `daily_limit`, `conversation_too_long`, `conversation_ended`, `not_found`,

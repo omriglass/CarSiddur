@@ -1770,24 +1770,33 @@
         "supabase/migrations/**/*_ask_*",
         "supabase/tests/ask_semantics.sql",
         "supabase/functions/_shared/askContext.ts",
-        "src/lib/ask.test.ts"
+        "src/lib/ask.test.ts",
+        "e2e/ask-in-words.spec.ts"
       ],
       "vitest": [
-        "src/lib/ask.test.ts"
+        "src/lib/ask.test.ts",
+        "src/features/ask/draftToForm.test.ts",
+        "src/features/ask/draftCard.test.ts"
       ],
       "sql": [
         "ask_semantics.sql",
         "department_isolation.sql",
         "rls_smoke.sql"
       ],
-      "playwrightTags": [],
+      "playwrightTags": [
+        "@ask-in-words"
+      ],
       "reqRefs": [
         "258"
       ],
       "qaChecklist": [
         "As admin open a member in /admin/members and turn on \"גישה ל״לכתוב במילים״\"; as that member \"+\" now offers \"מילוי טופס\" / \"לכתוב במילים\"",
         "As that member turn off \"לכתוב במילים בכפתור +\" in the profile: \"+\" opens the form directly again",
-        "A member the admin did not opt in sees only the form; the ask edge function refuses them"
+        "A member the admin did not opt in sees only the form; the ask edge function refuses them",
+        "As the opted-in member: \"+\" → \"לכתוב במילים\" → the disclaimer once → write \"בנימינה מחר עד 10\" → the card (\"? חסר\" for what is missing, \"מתי חוזרים?\") → \"אישור ← לטופס\" opens the regular form filled in with \"💬 מולא מהשיחה\" on top; send it",
+        "Write \"להאריך את הנסיעה שלי ביום X בשעה\" with two rides that day: \"לאיזו נסיעה?\" chips; pick one → \"שינוי בנסיעה\" old → new → \"אישור ← לטופס העריכה\" opens that request's edit form with the change",
+        "Write \"לבטל את הנסיעה שלי מחר\": /my opens with that request's own cancel confirmation",
+        "With no GEMINI_API_KEY (or a wrong one) on the function: \"לכתוב במילים\" is greyed out, \"לא זמין כרגע\""
       ]
     }
   ],

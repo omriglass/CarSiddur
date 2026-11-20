@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { Link, useLocation, useParams } from "react-router-dom";
 
 import { RequestOverlay } from "@/app/RequestOverlay";
@@ -12,6 +13,8 @@ import { PageHeader } from "@/components/PageHeader";
 import { RequestForm } from "@/features/requests/components/RequestForm";
 import { useCanEditRequestQuery, useRequestQuery } from "@/features/requests/hooks";
 import { useWeeks } from "@/features/siddur/hooks";
+import { editPrefill, readAskHandoff } from "@/features/ask/prefill";
+import { useDestinations } from "@/features/fleet/hooks";
 import { he } from "@/i18n/he";
 
 /** `/requests/:id/edit` (UX_FLOWS.md §3.4 "Edit mode"). */
@@ -25,14 +28,23 @@ export function EditRequestPage() {
   const close = useCloseRequestOverlay();
   // Owner 2026-10-16: opened from the board's unplaced card -> save returns there; the Sadran (can_manage_week)
   // edits regardless of the member's closing time (the server allows it: submit_request `v_can_manage`).
-  const cameFromPage = !!readOverlayFrom(useLocation().state);
+  const location = useLocation();
+  const cameFromPage = !!readOverlayFrom(location.state);
+  // REQ item 258 (d): "אישור ← לטופס העריכה" from the chat — the change goes on the loaded request once.
+  const askHandoff = readAskHandoff(location.state);
+  const destinationsQuery = useDestinations(askHandoff ? requestQuery.data?.departmentId : undefined);
+  const askPrefill = useMemo(
+    () => (askHandoff && destinationsQuery.data ? editPrefill(askHandoff, destinationsQuery.data) : undefined),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [askHandoff?.conversationId, destinationsQuery.data],
+  );
   const sadran = useIsSadran(requestQuery.data?.departmentId, requestQuery.data?.weekStart).isSadran;
   const overlay = !!profileQuery.data && !profileQuery.data.classic_request_form;
 
   const request = requestQuery.data;
   const weeksQuery = useWeeks(request?.departmentId);
   const weekOnSiddur = weekShownOnSiddur((weeksQuery.data ?? []).find((week) => week.week_start === request?.weekStart)?.phase);
-  const body = requestQuery.isLoading || canEditQuery.isLoading ? (
+  const body = requestQuery.isLoading || canEditQuery.isLoading || (!!askHandoff && !askPrefill && !destinationsQuery.isError) ? (
     <div className="space-y-3 p-4">
       <div className="h-11 animate-pulse rounded-md bg-muted" />
       <div className="h-11 animate-pulse rounded-md bg-muted" />
@@ -52,6 +64,7 @@ export function EditRequestPage() {
       departmentId={requestQuery.data.departmentId}
       weekStart={requestQuery.data.weekStart}
       initial={requestQuery.data}
+      askPrefill={askPrefill}
       onDone={(overlay || cameFromPage) && request ? (_result, day) => close({ departmentId: request.departmentId, weekStart: request.weekStart, day, weekOnSiddur }) : undefined}
     />
   );

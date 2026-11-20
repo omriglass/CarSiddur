@@ -82,6 +82,7 @@ src/
     policyView/                "הצג מדיניות" (REQ §13.133): member-facing policy pie/list (`ruleExplain.ts` mirrors the solver rules' formulas), `policy_week_alignment` RPC; page `src/pages/PolicyPage.tsx`, route `/policy/:dept`
     waitlist/                  contested waiting-list groups (`v_waitlist_groups`, `resolve_waitlist_group`, `cancel_waitlist_group`)
     rides/                     shared by siddur + sadran (R8, 2026-09-24): ridePeople, servedOf, addPassengers, passenger/notes components, ride-change + passenger RPCs (api/hooks/keys), export/weekWorkbook, invalidateWeek.ts (`invalidateWeekData()` — the one week-scoped cache refresh after a ride/request change). ESLint forbids sadran ⇄ siddur internals imports; sadran may use only siddur/api, hooks, queryKeys, RideChangeAnswers
+    ask/                       REQ item 258 (AI1) "לכתוב במילים": "+" choice sheet (`AskOrFormSheet`, greyed when the `ask` probe says unavailable), the chat (`AskChatSheet`, draft card, "which ride?" chips), draft → form values (`draftToForm.ts`, `prefill.ts` → `RequestForm askPrefill`), profile/admin switches; types shared with `supabase/functions/_shared/ask*.ts`
     calendar/                  EXPERIMENTAL (2026-10-12, REQ §13.126 b): member's Google calendar faintly behind the /my week view; browser-only (GIS token in memory, picked calendar ids in localStorage), gated by the per-device profile switch `features/member/useExperimentalFeatures.ts` + `VITE_GOOGLE_CLIENT_ID`; own calendar button next to the eye menu (fields, colors, all-day bands — REQ §13.131); `sampleSource.ts` = a fake week for local dev builds only
     solverBridge/              buildSolverInput() (DB→solver mapper for board & admin policy preview)
     liveSync/                  REQ item 149: `useWeekChangeWatch(dept, weeks, scope)` on siddur, /my, board, publish — change counters (`week_change_seqs`, 60 s with Realtime / 15 s without, on visible/online) + private Realtime broadcast `week:<dept>:<week>:<public|sadran>` (`realtime.ts`), lean invalidation (`invalidation.ts`); counters/triggers in DATA_MODEL §3.13. A new week-scoped table needs `wcs_*` triggers + a `_wcs_capture()` template
@@ -172,6 +173,7 @@ e2e/
   admin-errors.spec.ts           /admin/errors lists client_errors for an admin; a member is redirected (REQ §13.108, E1)
   auth.spec.ts                   sign-in / onboarding
   auto-approve.spec.ts           auto-approve on a free car (live week)
+  ask-in-words.spec.ts           "+" → "לכתוב במילים" → disclaimer → draft card → the regular form filled in → sent, conversation to_form/done; no working key → greyed out (the `ask` function mocked in the browser)
   car-now.spec.ts                "רוצה רכב עכשיו!" in the sentence layout files today's ride on the free car (clock pinned, nearby rides parked)
   board.spec.ts                  board regression pass (fake-week data)
   board-coordination.spec.ts     one-way drop, tight edits, merge consent coordination

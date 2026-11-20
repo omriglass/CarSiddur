@@ -52,7 +52,7 @@ import {
 } from "@/features/requests/hooks";
 import { isSeriesDay, useCancelSeriesDay } from "@/features/requests/useCancelSeriesDay";
 import type { ClosedRequestRow, MyRequestRow } from "@/features/requests/api";
-import { canEditRequest, isPublishedDayWindow } from "@/features/requests/window";
+import { canEditRequest, isOnUnpublishedDay, isPublishedDayWindow } from "@/features/requests/window";
 import {
   confirmDialogDescription,
   confirmDialogLabel,
@@ -265,6 +265,7 @@ export function HomePage() {
   // `?focus=<request_id>` (notification deep link, `notification_default_url`'s `/my?focus=<id>`
   // case, formerly `/requests?focus=`): scroll the matching card into view and ring-highlight it.
   const focusedId = searchParams.get("focus");
+  const [cancelHandledFor, setCancelHandledFor] = useState<string | null>(null);
   const highlightedRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     if (focusedId) highlightedRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -396,6 +397,16 @@ export function HomePage() {
   const selectedWeekRow = selectedRequestId
     ? toDisplayRows(requests).find((row) => row.id === selectedRequestId || row.seriesLegs?.some((leg) => leg.id === selectedRequestId)) ?? null
     : null;
+  // REQ item 258 (d): "cancel one of my rides" from the chat opens that request's own confirmation here
+  // (`/my?focus=<id>&cancel=1`) — the same rules as the row's red "ביטול". Once per focused request (render-time
+  // "remembered value" idiom: no effect, no hook after the loading return).
+  if (searchParams.get("cancel") === "1" && focusedId && requestsQuery.isSuccess && cancelHandledFor !== focusedId) {
+    setCancelHandledFor(focusedId);
+    const row = toDisplayRows(requests).find((r) => r.id === focusedId || r.seriesLegs?.some((leg) => leg.id === focusedId));
+    if (row && !row.companionOf && !isOnUnpublishedDay(row)) {
+      setConfirmAction(row.ride && row.ride.status !== "cancelled" ? { kind: "cancel", row } : { kind: "withdraw", row });
+    }
+  }
   const phaseOf = (weekStart: string) => weeks.find((w) => w.weekStart === weekStart)?.phase;
   const openOffers = (freedOffersQuery.data ?? []).filter(
     // REQ §13.168: an offer with several options waits for the Sadran (pending_approval); the member may step out.

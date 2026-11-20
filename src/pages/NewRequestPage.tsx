@@ -1,5 +1,6 @@
 import { useActiveDepartment } from "@/features/auth/useActiveDepartment";
-import { useSearchParams } from "react-router-dom";
+import { useMemo } from "react";
+import { useLocation, useSearchParams } from "react-router-dom";
 
 import { RequestOverlay } from "@/app/RequestOverlay";
 import { useCloseRequestOverlay, weekShownOnSiddur } from "@/app/overlayState";
@@ -13,6 +14,8 @@ import { RequestForm } from "@/features/requests/components/RequestForm";
 import { TemplateSuggestions } from "@/features/requests/components/TemplateSuggestions";
 import { useTemplateSuggestionsQuery } from "@/features/requests/hooks";
 import { useWeeks } from "@/features/siddur/hooks";
+import { newRequestPrefill, readAskHandoff } from "@/features/ask/prefill";
+import { useDestinations } from "@/features/fleet/hooks";
 import { he } from "@/i18n/he";
 
 const isDayKey = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value);
@@ -43,6 +46,9 @@ export function NewRequestPage() {
   // REQ §13.157: "הצטרפות לדיון" from a "בדיון" block.
   const joinGroupId = searchParams.get("group") ?? undefined;
 
+  // REQ item 258 (d): "אישור ← לטופס" from the chat — the form opens filled in from the draft.
+  const askHandoff = readAskHandoff(useLocation().state);
+
   const profileQuery = useProfile();
   const departmentsQuery = useMyDepartments();
   const active = useActiveDepartment();
@@ -55,7 +61,15 @@ export function NewRequestPage() {
     ? (templateSuggestionsQuery.data ?? []).find((row) => row.templateId === templateId)
     : undefined;
 
+  const destinationsQuery = useDestinations(askHandoff ? departmentId ?? undefined : undefined);
+  const askPrefill = useMemo(
+    () => (askHandoff && destinationsQuery.data ? newRequestPrefill(askHandoff, destinationsQuery.data) : undefined),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [askHandoff?.conversationId, destinationsQuery.data],
+  );
+
   const isLoading =
+    (!!askHandoff && !askPrefill && !destinationsQuery.isError) ||
     active.isLoading || profileQuery.isLoading || departmentsQuery.isLoading || weeksQuery.isLoading ||
     (!!templateId && templateSuggestionsQuery.isLoading);
 
@@ -71,7 +85,7 @@ export function NewRequestPage() {
       </div>
     ) : (
       <>
-        {!templateId ? (
+        {!templateId && !askHandoff ? (
           <div className="px-4 pt-2">
             <TemplateSuggestions weekStart={weekStart} />
           </div>
@@ -86,6 +100,7 @@ export function NewRequestPage() {
           waitlist={waitlist}
           joinGroupId={joinGroupId}
           templateSuggestion={templateSuggestion}
+          askPrefill={askPrefill}
           onDone={overlay ? (_result, day) => close({ departmentId, weekStart, day, weekOnSiddur }) : undefined}
         />
       </>

@@ -63,9 +63,10 @@ export const paths = {
   /**
    * `/my` — Home, the one member request/ride list (REQ §13 item 91, owner 2026-09-16, E3).
    * `focusId` maps to `?focus=<request_id>` (notification deep link, `notification_default_url`),
-   * scrolled to and ring-highlighted by `HomePage`.
+   * scrolled to and ring-highlighted by `HomePage`; `cancel` (REQ item 258 d, the chat) also opens its cancel confirmation.
    */
-  my: (focusId?: string): string => withQuery("/my", { focus: focusId }),
+  my: (focusId?: string, options: { cancel?: boolean } = {}): string =>
+    withQuery("/my", { focus: focusId, cancel: options.cancel ? "1" : undefined }),
 
   /** `/my/history` — read-only list of past requests/rides (REQ §13 item 91). */
   myHistory: (): string => "/my/history",

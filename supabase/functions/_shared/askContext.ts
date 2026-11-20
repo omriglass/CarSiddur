@@ -1,6 +1,8 @@
 /**
  * AI1 (REQ item 258 e): the model's context, built from `ask_context()` (read as the member) and the clock.
  * - Request ids never reach the model: each ride becomes RIDE_1, RIDE_2, … in start order; `refs` maps them back.
+ * - Person ids never reach the model either: `people` maps a name back to its id (null when two people share it —
+ *   the app then asks, it never guesses).
  * - The calendar is the next 14 days with weekday names, so the model looks dates up instead of computing them.
  * Pure (web-standard Intl only), shared by the edge function and Vitest.
  */
@@ -9,7 +11,7 @@ import type { AskContext, AskPerson, AskPlace, AskRide } from "./askPrompt.ts";
 export interface AskContextRow {
   home: string;
   places: { name: string; aliases?: string[] | null }[];
-  people: AskPerson[];
+  people: (AskPerson & { id: string })[];
   rides: (Omit<AskRide, "ref" | "weekday"> & { request_id: string })[];
 }
 
@@ -36,7 +38,11 @@ function weekdayOf(date: string): string {
   return WEEKDAYS[utcDay(date).getUTCDay()] ?? "";
 }
 
-export function buildAskContext(row: AskContextRow, now: Date): { context: AskContext; refs: Record<string, string> } {
+export interface AskPersonRef { id: string; kind: AskPerson["kind"] }
+
+export function buildAskContext(row: AskContextRow, now: Date): {
+  context: AskContext; refs: Record<string, string>; people: Record<string, AskPersonRef | null>;
+} {
   const wall = jerusalemWallClock(now);
   const calendar = Array.from({ length: 14 }, (_, i) => {
     const date = addDays(wall.date, i);
@@ -49,6 +55,11 @@ export function buildAskContext(row: AskContextRow, now: Date): { context: AskCo
     refs[ref] = request_id;
     return { ref, ...ride, weekday: weekdayOf(ride.date) };
   });
+  const people: Record<string, AskPersonRef | null> = {};
+  const persons: AskPerson[] = row.people.map(({ id, ...person }) => {
+    people[person.name] = person.name in people ? null : { id, kind: person.kind };
+    return person;
+  });
   return {
     context: {
       now: `${wall.date}T${wall.time}`,
@@ -56,9 +67,10 @@ export function buildAskContext(row: AskContextRow, now: Date): { context: AskCo
       calendar,
       home: row.home,
       places,
-      people: row.people,
+      people: persons,
       my_rides: myRides,
     },
     refs,
+    people,
   };
 }

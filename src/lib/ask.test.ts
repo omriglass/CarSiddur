@@ -15,7 +15,7 @@ const NOW = new Date('2026-11-18T19:00:00Z');
 const row: AskContextRow = {
   home: 'Home',
   places: [{ name: 'Home', aliases: ['house'] }, { name: 'Haifa', aliases: [] }, { name: 'Binyamina' }],
-  people: [{ name: 'Noa', kind: 'child' }, { name: 'Dana', kind: 'member', drives: true }],
+  people: [{ id: 'child-noa', name: 'Noa', kind: 'child' }, { id: 'p-dana', name: 'Dana', kind: 'member', drives: true }],
   rides: [
     { request_id: ride1, date: '2026-11-22', start: '08:00', end: '12:00', trip_type: 'round_trip', origin: 'Home', destination: 'Haifa', stops: [], people: ['Dana'] },
     { request_id: ride2, date: '2026-11-22', start: '16:00', end: '18:00', trip_type: 'round_trip', origin: 'Home', destination: 'Binyamina', stops: [], people: [] },
@@ -60,6 +60,14 @@ describe('ask context', () => {
     expect(JSON.stringify(context)).not.toContain(ride1);
     expect(context.my_rides.map((r) => [r.ref, r.weekday])).toEqual([['RIDE_1', 'Sunday'], ['RIDE_2', 'Sunday']]);
     expect(refs).toEqual({ RIDE_1: ride1, RIDE_2: ride2 });
+  });
+
+  it('keeps person ids out of the prompt, maps names back, and never guesses between two with one name', () => {
+    const { context, people } = buildAskContext(row, NOW);
+    expect(JSON.stringify(context)).not.toContain('p-dana');
+    expect(people).toEqual({ Noa: { id: 'child-noa', kind: 'child' }, Dana: { id: 'p-dana', kind: 'member' } });
+    const twice = buildAskContext({ ...row, people: [...row.people, { id: 'p-dana-2', name: 'Dana', kind: 'member', drives: false }] }, NOW);
+    expect(twice.people.Dana).toBeNull();
   });
 
   it('crosses the day boundary in Israel time, not UTC', () => {
@@ -113,6 +121,7 @@ describe('ask edge function', () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body).toMatchObject({ conversation_id: conversation, turn_id: 'turn-1', refs: { RIDE_1: ride1 },
+      people: { Dana: { id: 'p-dana', kind: 'member' } }, rides: [{ ref: 'RIDE_1', destination: 'Haifa' }, { ref: 'RIDE_2' }],
       draft: { intent: 'new_request', date: '2026-11-19', time: '10:00', destination: { list_name: 'Binyamina' }, ask: null } });
     expect(deps.loadContext).toHaveBeenCalledWith('user-token', department);
     expect(deps.beginTurn).toHaveBeenCalledWith('profile-1', department, null);
