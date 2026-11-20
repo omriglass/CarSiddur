@@ -1947,3 +1947,35 @@ Example: ride A 07:45 home → school (drop the kids, back home) and ride B 08:3
   - **(a) "With you for the whole ride, or picked up?"** Merging a ride into one that already carries someone else (example: I drop the kids at school; Y and I both go home → Binyamina) asks per other person: "Y מצטרף/ת לכל הנסיעה או לאסוף אותו/ה?" — whole ride: home → school → Binyamina → home with Y from the start; picked up: home → school → home (Y boards) → Binyamina → home. If Y cancels, the pick-up visit drops out by itself (the route is derived from the people on the ride) and I drive straight from school. **Needs** the LT1 "not built" piece: a ride visiting the same place twice (a stored boarding position per guest in `ride_requests` instead of the route builder inserting each place once at its cheapest point, mock board 5), plus the CM1 chaining. Seats per stretch already exist (`_ride_stretch_loads`). Wording to approve, REQUIREMENTS first.
   - **(b) Suggest merging adjacent rides:** when the Sadran (board drop/move) or the member (siddur edit mode) puts a ride next to another ride with the same person on it — any car, gap ≤ turnaround + the drive between them — offer "לאחד את הנסיעות?" → the CM1 merge (with (a)'s question when others are on the ride). Detection only on drop, no new reads on the hot path.
   - **(c) Editing a merged ride easily — owner decision 2026-11-18: the ride-owned route ("עריכת מסלול"), not "פשט נסיעה".** Owner idea: a "פשט נסיעה" (simplify ride) button with a warning ("are you sure? the merged rides become one ride with all passengers and stops — harder to separate, easier to edit") that flattens the merge into one ride/request. Cost: the other people's requests disappear (their own hours, "my rides", cancelling themselves, fairness history, notices about their trip). **Chosen:** "עריכת מסלול" on any merged ride makes the **route ride-owned** — add / remove / reorder stops and pick each person's on/off place from it, as on a simple ride — while every person keeps their own request. Once edited, the route is stored on the ride (no longer rebuilt from the requests); when someone leaves or cancels, only places nobody else uses (and the driver did not add) drop out. Same ease of editing, still separable. Builds on (a)'s stored boarding positions; the LT1 ride-detail edit (`edit_ride` places, shift proposals with stops) is the starting point.
+
+## Ask in words — free-text requests, questions and edits (owner 2026-11-20, AI1 + AI2) — not built yet; plan first
+
+Owner: type "אני צריכה להיות בבנימינה עד 10 מחר" and get a request; ask "I need to get to Pardes Hanna, who should I join?"; edit "extend my Sunday ride by an hour", "a grocery stop on my way back on Wednesday"; and later complex siddur changes ("move Yan to Tosia's ride and put Yael in the free seat on Silvia's", "one ride to מצר on Wednesday"). Clear, non-intrusive, optional.
+
+**Decided (owner 2026-11-20):**
+- **One generative LLM call with a JSON schema** (structured output) — not a decision model (Gemini Decision 1 / Jev only pick among caller-supplied options and cannot return a time or a free-text place; decision model + own Hebrew parser judged convoluted). **Gemini free tier** (Google may use the text for training — accepted).
+- **Server-side only:** an edge function holds the key; **no bring-your-own-key** in the browser.
+- **Data sent:** the text, today's date/weekday (Asia/Jerusalem), the week's phase, the department's places (names + aliases), and the week's rides as the user may see them (names are fine). **Never notes to the Sadran** (`requests.notes`, `request_notes()` — not even fetched for the prompt).
+- **The model proposes, the person decides:** nothing changes in the siddur without the person seeing exactly what will happen and confirming. The model never chooses between two candidates (two Sunday rides, two Danas) — the app asks.
+- **Entry point:** the **+ button** (`AddRideFab` / `NewRequestButton`) opens two options — the form, or the text box. Wordings to approve.
+- **Optional:** behind a profile switch (off by default; the + button behaves exactly as today when off).
+
+**AI1 — my own rides (first):**
+- Intents: new request · find a ride or a free car · edit one of my rides (hours, stops, trip type, passengers, children) · cancel one of my rides · anything else → "לא הבנתי" + examples.
+- New request / edit → **opens the existing form prefilled** (sentence form, or the request's edit form with the change applied); the member submits as today, so every rule stays (an edit never costs the car, REQ §13.158; the overlap question; release to the waiting list; held board notices).
+- Find a ride → our ranking (`joinable_rides_for_request`-style: radius, time, free seat) with "+ נוסעים", **plus a free shared car when one is free then** (the siddur's free-car logic, `waitlist_group_holds()` respected; for a non-driver only when someone on the ride drives) → "request the free car" prefills the form.
+- Cancel → the existing cancel confirmation, never one step.
+- Code validates what the model returns: the date against the open weeks, the place against the list (no match → free text), people and rides against the context.
+
+**AI2 — plans on the siddur / board (later):**
+- The model returns **steps from a fixed action list** that already exists (move / add / remove a passenger, change hours, add a stop, merge, set the driver, change trip type), naming rides and people from the context.
+- **Dry run on the server** (a new function: apply the steps in a transaction, report, roll back; `merge_preview` exists for merges) → one screen: each ride before → after, who is notified (one combined notice each — notification noise), refused steps with the reason.
+- **"אישור" runs all steps as one transaction** (all or nothing).
+- **Same permissions as by hand** (same server functions): a member only on their own rides unless the department's "anyone edits rides" is on (REQ §13.169); the Sadran as on the board. **Consent rules unchanged:** a merge or another change that affects other members asks "דיברת עם X על השינוי?" (REQ §13.138) and board notices are held as today.
+
+**Open:**
+- The Gemini free tier's daily limits vs a department's use; what to show when the quota is out.
+- An evaluation set (~40–60 real Hebrew phrasings, scored per field) before rollout; rerun on every prompt or model change.
+- Wordings (the + menu, the box's placeholder and examples, "לא הבנתי", the plan screen) — owner approval.
+- Further ideas, not decided: example chips under the box; voice input (browser speech recognition, Hebrew quality varies); the box remembers nothing between sessions.
+- A REQUIREMENTS item first, then a UX_FLOWS design pass (phone width).
