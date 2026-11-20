@@ -1958,7 +1958,7 @@ Owner: type "אני צריכה להיות בבנימינה עד 10 מחר" and g
 - **Data sent:** the text, today's date/weekday (Asia/Jerusalem), the week's phase, the department's places (names + aliases), and the week's rides as the user may see them (names are fine). **Never notes to the Sadran** (`requests.notes`, `request_notes()` — not even fetched for the prompt).
 - **The model proposes, the person decides:** nothing changes in the siddur without the person seeing exactly what will happen and confirming. The model never chooses between two candidates (two Sunday rides, two Danas) — the app asks.
 - **Entry point:** the **+ button** (`AddRideFab` / `NewRequestButton`) opens two options — the form, or the text box. Wordings to approve.
-- **Optional:** behind a profile switch (off by default; the + button behaves exactly as today when off).
+- **Who gets it — the admin decides (owner 2026-11-20):** an admin opts members in (a per-member setting in the admin member editor, server-side, so the edge function refuses anyone not opted in — this also caps use of the free-tier quota); members do not opt themselves in. Without it the + button behaves exactly as today. Open: whether an opted-in member can still hide it for themselves (a profile switch), and whether a per-department "everyone" switch is wanted later.
 
 **AI1 — my own rides (first):**
 - Intents: new request · find a ride or a free car · edit one of my rides (hours, stops, trip type, passengers, children) · cancel one of my rides · anything else → "לא הבנתי" + examples.
