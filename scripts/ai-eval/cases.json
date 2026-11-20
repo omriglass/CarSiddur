@@ -920,6 +920,51 @@
         "ask": null,
         "errand": null
       }
+    },
+    {
+      "id": "info-when-wednesday",
+      "text": "מתי הנסיעה שלי ברביעי?",
+      "expect": {
+        "intent": "ride_info",
+        "ride_choices": [
+          "RIDE_3"
+        ]
+      }
+    },
+    {
+      "id": "info-which-car-sunday",
+      "text": "באיזה רכב הנסיעה שלי ביום ראשון",
+      "expect": {
+        "intent": "ride_info",
+        "ride_choices": [
+          "RIDE_1",
+          "RIDE_2"
+        ]
+      }
+    },
+    {
+      "id": "info-who-drives-afula",
+      "text": "מי נוהג בנסיעה לעפולה?",
+      "expect": {
+        "intent": "ride_info",
+        "ride_choices": [
+          "RIDE_2"
+        ]
+      }
+    },
+    {
+      "id": "info-all-week",
+      "text": "אילו נסיעות יש לי השבוע?",
+      "expect": {
+        "intent": "ride_info"
+      }
+    },
+    {
+      "id": "info-not-find",
+      "text": "מישהו נוסע לזכרון ברביעי?",
+      "expect": {
+        "intent": "find_ride"
+      }
     }
   ]
 }

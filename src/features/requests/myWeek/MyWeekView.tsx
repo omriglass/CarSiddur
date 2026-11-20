@@ -1,4 +1,5 @@
 import { CalendarDays } from "lucide-react";
+import { AskChatButton } from "@/features/ask/components/AskChatButton";
 import { useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
@@ -288,6 +289,7 @@ export function MyWeekView({ departmentId, homeDestinationId, profileId, request
         <MyWeekSwitcher weeks={weeks} activeWeekStart={weekStart} onSelect={selectWeek} onArchive={archive ? undefined : () => navigate(paths.myArchive())} />
         {onViewChange && !archive ? (
           <div className="flex items-center gap-2">
+            <AskChatButton />
             {calendar.available ? (
               <Button type="button" variant="outline" size="icon" aria-label={he.calendar.openButton} onClick={() => setCalendarOpen(true)} data-testid="my-calendar-button">
                 <CalendarDays className="size-4" />
@@ -300,7 +302,8 @@ export function MyWeekView({ departmentId, homeDestinationId, profileId, request
         ) : null}
       </div>
       {isPast ? null : <RequestDeadlineNote week={week} />}
-      <p className="text-xs text-muted-foreground" data-testid="my-week-hint">{isPast ? he.myWeek.hintReadOnly : acceptsRequests ? he.myWeek.hint : null}</p>
+      {/* Owner 2026-11-20: the "my rides by day, double-tap to ask" line is gone; a past week still says it is read-only. */}
+      {isPast ? <p className="text-xs text-muted-foreground" data-testid="my-week-hint">{he.myWeek.hintReadOnly}</p> : null}
       {calendar.needsReconnect && !archive ? (
         <Button type="button" variant="outline" size="sm" onClick={() => void calendar.connect()} disabled={calendar.connecting} data-testid="calendar-reconnect">
           <CalendarDays className="me-2 size-4" aria-hidden="true" />{he.calendar.reconnect}

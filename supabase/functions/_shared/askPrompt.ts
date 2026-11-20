@@ -7,7 +7,7 @@
  * No Hebrew here (hard rule 3): place names, people and the member's text arrive as data in the user turn.
  */
 
-export const PROMPT_VERSION = "ai1-2026-11-20.5";
+export const PROMPT_VERSION = "ai1-2026-11-20.6";
 
 export interface AskPlace { name: string; aliases?: string[] }
 export interface AskPerson { name: string; kind: "child" | "member"; drives?: boolean }
@@ -41,6 +41,9 @@ Intents:
 - "find_ride": the member asks who they can join, whether someone is going somewhere, or whether a car is free.
 - "edit_request": the member changes one of their own upcoming rides listed in my_rides.
 - "cancel_request": the member no longer needs one of their rides in my_rides.
+- "ride_info": the member only ASKS about their own rides in my_rides — when it leaves or returns, which car, who drives, who
+  rides along, where from — and changes nothing ("when is my ride on Saturday?", "which car is my Monday ride?", "what rides do
+  I have this week?"). Asking whether SOMEONE ELSE goes somewhere or whether a car is free is "find_ride", not "ride_info".
 - "unclear": anything else (small talk, questions the app cannot answer, messages to the coordinator, several rides at once).
 
 Rules:
@@ -66,6 +69,8 @@ Rules:
   "the kids" = all the member's children. The member themselves is never in people. extra_adults = unnamed extra adults
   ("a friend", "a guest", "two more" are extra_adults, not people).
 - needs: "large_trunk" for a lot of luggage / a big trunk; "tow_hitch" for a towing hook.
+- ride_info: matching_rides lists the ref of every ride in my_rides the question is about (by day, place, time, people); every
+  ride when it asks about all of them or about a whole week. Set date when a single day is said. Never ask anything.
 - Edits and cancels: matching_rides lists the ref of EVERY ride in my_rides the message could mean (by day, place, time, people).
   Never choose between several — list them all; the app asks the member. An empty list when none fits.
   For an edit fill ONLY what changes: a new departure or return time in time / return_time, a relative change in
@@ -103,7 +108,7 @@ const placeRef = {
 export const RESPONSE_SCHEMA = {
   type: "OBJECT",
   properties: {
-    intent: { type: "STRING", enum: ["new_request", "find_ride", "edit_request", "cancel_request", "unclear"] },
+    intent: { type: "STRING", enum: ["new_request", "find_ride", "edit_request", "cancel_request", "ride_info", "unclear"] },
     matching_rides: { type: "ARRAY", items: { type: "STRING" } },
     date: { type: "STRING", nullable: true, description: "YYYY-MM-DD" },
     time_mode: { type: "STRING", nullable: true, enum: ["depart", "arrive_by"] },

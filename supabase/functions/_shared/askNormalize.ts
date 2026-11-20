@@ -11,7 +11,7 @@
  */
 import type { AskContext } from "./askPrompt.ts";
 
-export type AskIntent = "new_request" | "find_ride" | "edit_request" | "cancel_request" | "unclear";
+export type AskIntent = "new_request" | "find_ride" | "edit_request" | "cancel_request" | "ride_info" | "unclear";
 export type AskQuestion = "which_ride" | "what_day" | "what_place" | "what_time";
 export interface AskPlaceRef { text: string; list_name: string | null }
 
@@ -40,7 +40,7 @@ export interface AskModelAnswer {
 
 export interface AskDraft extends Omit<AskModelAnswer, "matching_rides"> {
   target_ride: string | null;
-  /** The rides a "which ride?" question offers (empty unless asked). */
+  /** The rides a "which ride?" question offers (empty unless asked); for ride_info, the rides the question is about. */
   ride_choices: string[];
   /** What our checks dropped or decided (date_dropped, place_unlisted, time_dropped, ride_unknown, ride_ambiguous, kept_previous, intent_kept). */
   flags: string[];
@@ -142,6 +142,14 @@ export function normalizeAnswer(modelAnswer: AskModelAnswer, context: AskContext
   }
 
   if (answer.intent === "find_ride" && !draft.date) draft.date = today;
+
+  // A question about my own rides changes nothing: the app shows the rides it is about (known ones only), never asks.
+  if (answer.intent === "ride_info") {
+    const known = [...new Set(matching)].filter((ref) => rides.has(ref));
+    if (known.length < new Set(matching).size) flags.push("ride_unknown");
+    draft.ride_choices = known;
+    draft.ask = null;
+  }
 
   if (answer.intent === "new_request") {
     if (draft.time && !draft.return_time && answer.duration_minutes && answer.duration_minutes > 0 && draft.time_mode !== "arrive_by") {

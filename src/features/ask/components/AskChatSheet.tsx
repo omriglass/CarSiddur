@@ -25,6 +25,7 @@ import { useAckAskDisclaimerMutation, useAskAccess } from "../hooks";
 import type { AskDraft, AskFormHandoff, AskTurnResult } from "../types";
 import { AskDraftCardView } from "./AskDraftCardView";
 import { AskFindView } from "./AskFindView";
+import { AskRideInfoView } from "./AskRideInfoView";
 
 type Entry =
   | { kind: "user"; text: string }
@@ -125,10 +126,18 @@ export function AskChatSheet({ open, onOpenChange, departmentId, fallbackWeekSta
     onOpenChange(false);
   }
 
+  /** A question about my ride → "פתיחה": that ride's row on /my. */
+  function openMyRide(result: AskTurnResult, requestId: string) {
+    endedRef.current = true;
+    void finishAskConversation(result.conversation_id, "to_form").catch(() => {});
+    navigate(paths.my(requestId));
+    onOpenChange(false);
+  }
+
   const lastAnswerIndex = entries.map((e) => e.kind).lastIndexOf("answer");
   const latest = entries[lastAnswerIndex];
   const placeholder = entries.length === 0 || latest?.kind !== "answer" ? he.ask.placeholderEmpty
-    : latest.result.draft.intent === "find_ride" ? he.ask.placeholderFind : he.ask.placeholderCard;
+    : latest.result.draft.intent === "find_ride" || latest.result.draft.intent === "ride_info" ? he.ask.placeholderFind : he.ask.placeholderCard;
 
   return (
     <>
@@ -162,6 +171,7 @@ export function AskChatSheet({ open, onOpenChange, departmentId, fallbackWeekSta
               return (
                 <AnswerView key={index} entry={entry} active={index === lastAnswerIndex && !sending} travel={travel} departmentId={departmentId}
                   onOpenRide={(rideId, week, day) => openRide(entry.result, rideId, week, day)}
+                  onOpenMyRide={(requestId) => openMyRide(entry.result, requestId)}
                   thumbsDown={!!entry.result.turn_id && thumbs.has(entry.result.turn_id)}
                   onThumbsDown={() => {
                     const turnId = entry.result.turn_id;
@@ -209,12 +219,13 @@ export function AskChatSheet({ open, onOpenChange, departmentId, fallbackWeekSta
   );
 }
 
-function AnswerView({ entry, active, travel, departmentId, thumbsDown, onThumbsDown, onSend, onLocalChange, onToForm, onOpenRide, onCancelRide, onDiscard }: {
+function AnswerView({ entry, active, travel, departmentId, thumbsDown, onThumbsDown, onSend, onLocalChange, onToForm, onOpenRide, onOpenMyRide, onCancelRide, onDiscard }: {
   entry: Extract<Entry, { kind: "answer" }>;
   active: boolean;
   travel: TravelLookup;
   departmentId: string;
   onOpenRide: (rideId: string, weekStart: string, day: string) => void;
+  onOpenMyRide: (requestId: string) => void;
   thumbsDown: boolean;
   onThumbsDown: () => void;
   onSend: (message: string, override?: AskDraft) => void;
@@ -235,6 +246,10 @@ function AnswerView({ entry, active, travel, departmentId, thumbsDown, onThumbsD
       className={cn("text-xs text-muted-foreground underline-offset-2 hover:underline", thumbsDown && "font-semibold no-underline")}
       data-testid="ask-thumbs-down">{he.ask.thumbsDown}</button>
   ) : null;
+
+  if (draft.intent === "ride_info") {
+    return <AskRideInfoView draft={draft} rides={rides} refs={entry.result.refs} active={active} footer={thumbs} onOpen={onOpenMyRide} />;
+  }
 
   if (draft.intent === "find_ride" && draft.date) {
     return (

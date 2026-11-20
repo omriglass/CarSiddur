@@ -94,7 +94,8 @@ function scoreField(field, expected, actual) {
     case "origin": return placeMatches(expected, actual[field]);
     case "people":
     case "remove_people":
-    case "needs": return sameSet(expected, actual[field] ?? []);
+    case "needs":
+    case "ride_choices": return sameSet(expected, actual[field] ?? []);
     case "stops": return stopsMatch(expected, actual.stops);
     default: return (actual[field] ?? null) === expected;
   }

@@ -1,4 +1,5 @@
 import { carOwnerIds } from "@/lib/carOwners";
+import { AskChatButton } from "@/features/ask/components/AskChatButton";
 import { cancelRidePreview, editRidePreview, removeMePreview } from "@/features/rides/freedCarRequests";
 import { useFreedCarGate, useFreedCarLine } from "@/features/rides/useFreedCar";
 import { FreedCarConfirmDialog, KeepOutButton } from "@/features/rides/FreedCarConfirmDialog";
@@ -541,6 +542,7 @@ export function HomePage() {
         }
         actions={weekView ? undefined : (
           <div className="flex items-center gap-2">
+            <AskChatButton />
             {active.canSubmit && active.departmentId ? <LongRangeMenu departmentId={active.departmentId} /> : null}
             <MyWeekDisplayMenu
               view="list"

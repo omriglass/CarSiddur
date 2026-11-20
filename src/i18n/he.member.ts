@@ -450,8 +450,6 @@ export const heMember = {
     showEditorRides: "הצגת נסיעות של אנשים שנתנו לי הרשאת עריכה",
     /** Muted tag on a read-only ride that is a child's / another guardian's, not mine. */
     kidRideOf: "נסיעה של {{name}}",
-    /** One line under the week switcher: what the grid shows and how to ask for a ride. */
-    hint: "הנסיעות, הבקשות וההצעות שלי לפי יום. הקש/י פעמיים על מקום פנוי כדי לבקש נסיעה.",
     hintReadOnly: "שבוע שחלף: הנסיעות שלי בלבד, לצפייה.",
     noPastWeeks: "אין עדיין שבועות קודמים",
     /** `<car> · <route>` — a ride block carries its car because the columns are days. */
@@ -1869,6 +1867,10 @@ export const heMember = {
     fillForm: "מילוי טופס",
     fromChat: "💬 מולא מהשיחה: {{summary}}",
     rideChip: "{{day}} · {{hours}} · {{place}}",
+    infoRow: { car: "רכב", driver: "נהג/ת", with: "עם" },
+    infoNoCar: "עוד לא שובץ רכב",
+    infoNone: "לא מצאתי נסיעה שלך שמתאימה לשאלה",
+    infoOpen: "פתיחה",
     findJoinTitle: "נסיעות שאפשר להצטרף אליהן",
     findAround: "בסביבות {{time}}",
     freeCarTitle: "רכב פנוי",
