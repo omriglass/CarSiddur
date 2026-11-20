@@ -14,8 +14,10 @@ import { Button } from "@/components/ui/button";
 import { Sheet, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Textarea } from "@/components/ui/textarea";
 import { he } from "@/i18n/he";
+import { useDestinations } from "@/features/fleet/hooks";
 import { cn } from "@/lib/utils";
 
+import { withAssumedReturn, type TravelLookup } from "../assumedReturn";
 import { AskTurnError, finishAskConversation, markAskTurn, sendAskTurn, type AskOutcome } from "../api";
 import { buildDraftCard, rideChoices, rideLabel, type CardQuestion } from "../draftCard";
 import { weekStartOfDay } from "../draftToForm";
@@ -41,6 +43,8 @@ export function AskChatSheet({ open, onOpenChange, departmentId, fallbackWeekSta
   const linkProps = useRequestLinkProps();
   const access = useAskAccess();
   const ack = useAckAskDisclaimerMutation();
+  const destinations = useDestinations(departmentId);
+  const travel: TravelLookup = (name) => destinations.data?.find((d) => d.name === name)?.travel_minutes ?? null;
   const [entries, setEntries] = useState<Entry[]>([]);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [draft, setDraft] = useState<AskDraft | null>(null);
@@ -146,7 +150,7 @@ export function AskChatSheet({ open, onOpenChange, departmentId, fallbackWeekSta
                 );
               }
               return (
-                <AnswerView key={index} entry={entry} active={index === lastAnswerIndex && !sending}
+                <AnswerView key={index} entry={entry} active={index === lastAnswerIndex && !sending} travel={travel}
                   thumbsDown={!!entry.result.turn_id && thumbs.has(entry.result.turn_id)}
                   onThumbsDown={() => {
                     const turnId = entry.result.turn_id;
@@ -159,7 +163,7 @@ export function AskChatSheet({ open, onOpenChange, departmentId, fallbackWeekSta
                     setDraft(next);
                     setEntries((list) => list.map((e, i) => (i === index && e.kind === "answer" ? { ...e, previous: e.result.draft, result: { ...e.result, draft: next } } : e)));
                   }}
-                  onToForm={(summary) => toForm(entry.result, entry.result.draft, summary)}
+                  onToForm={(summary, shown) => toForm(entry.result, shown, summary)}
                   onCancelRide={(ref) => openCancel(entry.result, ref)}
                   onDiscard={() => close("cancelled")}
                 />
@@ -194,19 +198,23 @@ export function AskChatSheet({ open, onOpenChange, departmentId, fallbackWeekSta
   );
 }
 
-function AnswerView({ entry, active, thumbsDown, onThumbsDown, onSend, onLocalChange, onToForm, onCancelRide, onDiscard }: {
+function AnswerView({ entry, active, travel, thumbsDown, onThumbsDown, onSend, onLocalChange, onToForm, onCancelRide, onDiscard }: {
   entry: Extract<Entry, { kind: "answer" }>;
   active: boolean;
+  travel: TravelLookup;
   thumbsDown: boolean;
   onThumbsDown: () => void;
   onSend: (message: string, override?: AskDraft) => void;
   onLocalChange: (draft: AskDraft) => void;
-  onToForm: (summary: string) => void;
+  /** `shown`: the draft as the card shows it (with the estimated return), handed to the form. */
+  onToForm: (summary: string, shown: AskDraft) => void;
   onCancelRide: (ref: string) => void;
   onDiscard: () => void;
 }) {
   const { draft, rides } = entry.result;
-  const card = buildDraftCard(draft, entry.previous, rides);
+  const shown = withAssumedReturn(draft, travel);
+  const shownPrevious = entry.previous ? withAssumedReturn(entry.previous, travel) : null;
+  const card = buildDraftCard(shown.draft, shownPrevious?.draft ?? null, rides, { draft: shown.assumed, previous: shownPrevious?.assumed });
   const choices = rideChoices(draft, rides);
   const question: CardQuestion | null = card?.question ?? (choices.length ? "which_ride" : null);
   const thumbs = entry.result.turn_id ? (
@@ -248,7 +256,7 @@ function AnswerView({ entry, active, thumbsDown, onThumbsDown, onSend, onLocalCh
           ))}
         </div>
       ) : null}
-      {active && question === "when_back" ? (
+      {active && shown.assumed && !question ? (
         <div className="flex flex-wrap gap-2">
           <Button type="button" size="sm" variant="outline" onClick={() => onLocalChange({ ...draft, trip_type: "one_way", return_time: null })}>{he.ask.oneWayOnly}</Button>
           <Button type="button" size="sm" variant="outline" onClick={() => onLocalChange({ ...draft, trip_type: "drop_off", return_time: null })}>{he.ask.dropOffOnly}</Button>
@@ -256,10 +264,10 @@ function AnswerView({ entry, active, thumbsDown, onThumbsDown, onSend, onLocalCh
       ) : null}
       {active && card ? (
         <div className="flex flex-wrap items-center gap-2">
-          <Button type="button" size="sm" variant={card.complete ? "default" : "outline"} onClick={() => onToForm(card.summary)} data-testid="ask-to-form">
+          <Button type="button" size="sm" variant={card.complete ? "default" : "outline"} onClick={() => onToForm(card.summary, shown.draft)} data-testid="ask-to-form">
             {card.kind === "edit" ? he.ask.toEditForm : he.ask.toForm}
           </Button>
-          <Button type="button" size="sm" variant="ghost" onClick={onDiscard}>{he.ask.cancel}</Button>
+          <Button type="button" size="sm" variant="outline" onClick={onDiscard} data-testid="ask-discard">{he.ask.cancel}</Button>
           <span className="ms-auto">{thumbs}</span>
         </div>
       ) : thumbs}

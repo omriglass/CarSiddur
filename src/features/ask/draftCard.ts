@@ -6,7 +6,7 @@ import { formatDayDate } from "@/lib/dayLabels";
 
 import type { AskDraft, AskQuestion, AskRide } from "./types";
 
-export type CardQuestion = AskQuestion | "when_back";
+export type CardQuestion = AskQuestion;
 
 export interface CardRow {
   key: "ride" | "when" | "where" | "time" | "back" | "who" | "stops" | "needs";
@@ -44,7 +44,7 @@ function hasReturnLeg(draft: AskDraft): boolean {
   return !draft.trip_type || draft.trip_type === "round_trip";
 }
 
-function newRows(draft: AskDraft): Omit<CardRow, "changed">[] {
+function newRows(draft: AskDraft, assumedBack: boolean): Omit<CardRow, "changed">[] {
   const where = placeName(draft.destination);
   const origin = placeName(draft.origin);
   const rows: Omit<CardRow, "changed">[] = [
@@ -55,7 +55,10 @@ function newRows(draft: AskDraft): Omit<CardRow, "changed">[] {
     },
     { key: "time", label: he.ask.row.time, value: timeValue(draft) },
   ];
-  if (hasReturnLeg(draft) || draft.return_time) rows.push({ key: "back", label: he.ask.row.back, value: draft.return_time ?? null });
+  if (hasReturnLeg(draft) || draft.return_time) {
+    const back = draft.return_time && assumedBack ? tv("ask.backAssumed", { time: draft.return_time }) : draft.return_time ?? null;
+    rows.push({ key: "back", label: he.ask.row.back, value: back });
+  }
   const who = whoValue(draft);
   if (who) rows.push({ key: "who", label: he.ask.row.who, value: who });
   const stops = stopsValue(draft.stops);
@@ -99,15 +102,17 @@ export interface DraftCard {
   summary: string;
 }
 
-export function buildDraftCard(draft: AskDraft, previous: AskDraft | null, rides: readonly AskRide[]): DraftCard | null {
+/** `assumed`: the return time of `draft` / `previous` is the app's estimate (`withAssumedReturn`), shown as such. */
+export function buildDraftCard(draft: AskDraft, previous: AskDraft | null, rides: readonly AskRide[],
+  assumed: { draft?: boolean; previous?: boolean } = {}): DraftCard | null {
   const rideOf = (ref: string | null) => rides.find((r) => r.ref === ref);
   let kind: DraftCard["kind"];
   let rows: Omit<CardRow, "changed">[];
   let prevRows: Omit<CardRow, "changed">[] = [];
   if (draft.intent === "new_request") {
     kind = "new";
-    rows = newRows(draft);
-    if (previous?.intent === "new_request") prevRows = newRows(previous);
+    rows = newRows(draft, !!assumed.draft);
+    if (previous?.intent === "new_request") prevRows = newRows(previous, !!assumed.previous);
   } else if (draft.intent === "edit_request" && draft.target_ride) {
     kind = "edit";
     rows = editRows(draft, rideOf(draft.target_ride));
@@ -118,8 +123,8 @@ export function buildDraftCard(draft: AskDraft, previous: AskDraft | null, rides
   const before = new Map(prevRows.map((r) => [r.key, r.value]));
   const withChanges: CardRow[] = rows.map((r) => ({ ...r, changed: !!previous && r.value !== null && before.get(r.key) !== r.value }));
 
-  let question: CardQuestion | null = draft.ask ?? null;
-  if (!question && kind === "new" && draft.date && draft.destination && draft.time && hasReturnLeg(draft) && !draft.return_time) question = "when_back";
+  // never "when are you back?" (owner 2026-11-20): the return is estimated instead (`withAssumedReturn`)
+  const question: CardQuestion | null = draft.ask ?? null;
   const missing = withChanges.some((r) => r.value === null && r.key !== "back");
   const complete = !question && !missing;
   const summary = withChanges.filter((r) => r.value !== null && r.key !== "ride").map((r) => r.value).join(" · ");

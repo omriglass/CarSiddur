@@ -79,6 +79,8 @@ begin
   perform set_config('request.jwt.claims',jsonb_build_object('sub',member_id,'role','authenticated')::text,true);
   suggestion:=public.suggest_destination(source_dept,'Local proposed destination');
   assert (select department_id=source_dept and not is_approved from public.destinations where id=suggestion),'suggestion ownership missing';
+  -- saving the same typed place again (an edit) returns the same row, never a duplicate-name error (2026-11-20)
+  assert public.suggest_destination(source_dept,'Local proposed destination')=suggestion,'repeated suggestion is not idempotent';
   begin
     perform public.suggest_destination(target.id,'Unauthorized destination');
     raise exception 'member suggested in another department';

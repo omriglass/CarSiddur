@@ -74,8 +74,9 @@ test.describe("ask in words", { tag: ["@ask-in-words", "@request-form"] }, () =>
     await chat.getByTestId("ask-send").click();
     const card = chat.getByTestId("ask-draft-card");
     await expect(card.getByTestId("ask-row-time")).toContainText("להגיע עד 10:00");
-    await expect(card.getByTestId("ask-row-back")).toContainText(he.ask.missing);
-    await expect(chat.getByTestId("ask-question")).toHaveText(he.ask.question.when_back);
+    // No "when are you back?" (owner 2026-11-20): an estimated return, marked as such.
+    await expect(card.getByTestId("ask-row-back")).toContainText(he.ask.backAssumed.replace("{{time}}", "").trim());
+    await expect(chat.getByTestId("ask-question")).toHaveCount(0);
 
     // "רק הלוך" is the app's own chip: the draft changes here, no new turn.
     await chat.getByRole("button", { name: he.ask.oneWayOnly }).click();

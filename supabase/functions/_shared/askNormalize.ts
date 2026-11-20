@@ -33,6 +33,8 @@ export interface AskModelAnswer {
   start_shift_minutes?: number | null;
   end_shift_minutes?: number | null;
   duration_minutes?: number | null;
+  /** The member goes shopping: the app's estimated return allows a shopping stop (owner 2026-11-20). */
+  errand?: "shopping" | null;
   ask?: AskQuestion | null;
 }
 
@@ -44,7 +46,7 @@ export interface AskDraft extends Omit<AskModelAnswer, "matching_rides"> {
   flags: string[];
 }
 
-const SCALARS = ["date", "time_mode", "time", "return_time", "trip_type", "destination", "origin", "extra_adults"] as const;
+const SCALARS = ["date", "time_mode", "time", "return_time", "trip_type", "destination", "origin", "extra_adults", "errand"] as const;
 const LISTS = ["people", "remove_people", "stops", "needs"] as const;
 
 /** A follow-up answer completed from the previous draft (same intent; an "unclear" answer keeps the draft's intent). */
@@ -113,6 +115,7 @@ export function normalizeAnswer(modelAnswer: AskModelAnswer, context: AskContext
     people: answer.people ?? [],
     remove_people: answer.remove_people ?? [],
     needs: answer.needs ?? [],
+    errand: answer.errand === "shopping" ? "shopping" : null,
     ask: answer.ask ?? null,
     target_ride: null,
     ride_choices: [],

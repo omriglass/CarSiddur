@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 
+import { tv } from "@/i18n/he";
+
 import { buildDraftCard, rideChoices, rideLabel } from "./draftCard";
 import type { AskDraft, AskRide } from "./types";
 
@@ -20,11 +22,14 @@ describe("buildDraftCard", () => {
     expect(card.complete).toBe(false);
   });
 
-  it("asks when they come back once day, place and time are known, and highlights what the turn changed", () => {
+  it("never asks when they come back, shows an estimated return as such, and highlights what the turn changed", () => {
     const first = draft({ date: "2026-11-23", destination: { text: "בנימינה", list_name: "בנימינה" }, time: "10:00", time_mode: "arrive_by" });
     const card = buildDraftCard(first, null, rides)!;
-    expect(card.question).toBe("when_back");
+    expect(card.question).toBeNull();
     expect(card.rows.find((r) => r.key === "time")?.value).toBe("להגיע עד 10:00");
+    const estimated = buildDraftCard({ ...first, return_time: "13:00" }, null, rides, { draft: true })!;
+    expect(estimated.rows.find((r) => r.key === "back")?.value).toBe(tv("ask.backAssumed", { time: "13:00" }));
+    expect(estimated.complete).toBe(true);
     const second = buildDraftCard({ ...first, return_time: "14:00" }, first, rides)!;
     expect(second.question).toBeNull();
     expect(second.complete).toBe(true);

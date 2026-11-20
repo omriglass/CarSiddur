@@ -864,6 +864,62 @@
         "time": "09:00",
         "destination": "בנימינה"
       }
+    },
+    {
+      "id": "shop-in-unlisted-town",
+      "text": "תן לי רכב גדול בשבת בבוקר ב-9 לי ולחבר לקפוץ לטמבוריה בבאקה",
+      "expect": {
+        "intent": "new_request",
+        "date": "2026-11-21",
+        "time": "09:00",
+        "destination": {
+          "list_name": null,
+          "text_contains": "באקה"
+        },
+        "errand": "shopping",
+        "extra_adults": 1,
+        "needs": [
+          "large_trunk"
+        ],
+        "return_time": null
+      }
+    },
+    {
+      "id": "supermarket-in-listed-town",
+      "text": "סופר בפרדס חנה מחר ב-17",
+      "expect": {
+        "intent": "new_request",
+        "date": "2026-11-19",
+        "time": "17:00",
+        "destination": "פרדס חנה",
+        "errand": "shopping",
+        "return_time": null
+      }
+    },
+    {
+      "id": "place-ad-time-is-arrive-by",
+      "text": "בנימינה מחר עד 10",
+      "expect": {
+        "intent": "new_request",
+        "date": "2026-11-19",
+        "time_mode": "arrive_by",
+        "time": "10:00",
+        "destination": "בנימינה",
+        "return_time": null
+      }
+    },
+    {
+      "id": "no-return-no-question",
+      "text": "לחיפה ביום ראשון ב-8",
+      "expect": {
+        "intent": "new_request",
+        "date": "2026-11-22",
+        "time": "08:00",
+        "destination": "חיפה",
+        "return_time": null,
+        "ask": null,
+        "errand": null
+      }
     }
   ]
 }

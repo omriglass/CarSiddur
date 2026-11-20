@@ -7,7 +7,7 @@
  * No Hebrew here (hard rule 3): place names, people and the member's text arrive as data in the user turn.
  */
 
-export const PROMPT_VERSION = "ai1-2026-11-20.4";
+export const PROMPT_VERSION = "ai1-2026-11-20.5";
 
 export interface AskPlace { name: string; aliases?: string[] }
 export interface AskPerson { name: string; kind: "child" | "member"; drives?: boolean }
@@ -51,14 +51,20 @@ Rules:
   Hours 1-6 said without context mean the morning; "7 in the evening" = 19:00. A vague time ("in the morning", "after noon")
   is not a time: leave it null and ask "what_time".
 - time_mode "arrive_by" when the member must BE somewhere by a time ("to get there by", "to be at ... by", an appointment at a time);
-  "depart" when they leave at a time.
+  "depart" when they leave at a time. A place followed by "until <time>" / "by <time>" (Hebrew "ad <time>", e.g. "<place> tomorrow
+  ad 10") is an arrive_by time, never a return_time. A return time is only one said about coming back ("back at", "return at").
 - trip_type: "drop_off" for a drop-off / lift (Hebrew "hakpatsa", "drop me", "to the train") or a pickup only; "one_way" when they say
   one way only;
   "round_trip" when they go and come back with the car; null when not said.
 - Places: destination/origin/stops each carry "text" (the member's words, verbatim) and "list_name" (exactly one of the context's place names
   when the words clearly mean it, typos and aliases included; null otherwise — never force a different place). Origin null = from home.
+- A shop or business in a town ("<shop> in <town>", in Hebrew "<shop> be-<town>": the hardware store in Baqa = Baqa al-Gharbiyye,
+  the supermarket in Pardes Hanna): the place is the TOWN — text = the town's words only, list_name = the town when listed.
+  Never make the shop the place.
+- errand "shopping" when the member goes shopping (a shop, supermarket, groceries, hardware store, mall, market); null otherwise.
 - people: names exactly as written in the context's people list when they match (children included); unknown names as written.
-  "the kids" = all the member's children. The member themselves is never in people. extra_adults = unnamed extra adults.
+  "the kids" = all the member's children. The member themselves is never in people. extra_adults = unnamed extra adults
+  ("a friend", "a guest", "two more" are extra_adults, not people).
 - needs: "large_trunk" for a lot of luggage / a big trunk; "tow_hitch" for a towing hook.
 - Edits and cancels: matching_rides lists the ref of EVERY ride in my_rides the message could mean (by day, place, time, people).
   Never choose between several — list them all; the app asks the member. An empty list when none fits.
@@ -72,6 +78,7 @@ Rules:
 - A message describing a trip with its own destination and hours is a new_request, even when the member already has rides that day.
 - Never assume a day: no day said means date null (ask "what_day"). "now" / "right now" means today, and time = now's time.
 - A duration ("for two hours", "for an hour") goes in duration_minutes; do not convert it into a return time yourself.
+- Never ask when they come back: no return said means return_time null (the app estimates it).
 - ask: what the app must ask the member next, or null when nothing is missing. For new_request a missing date asks "what_day",
   a missing destination asks "what_place", a missing or vague time asks "what_time".
 - Leave every field you were not told null or empty. Never invent values.
@@ -120,12 +127,13 @@ export const RESPONSE_SCHEMA = {
     start_shift_minutes: { type: "INTEGER", nullable: true },
     end_shift_minutes: { type: "INTEGER", nullable: true },
     duration_minutes: { type: "INTEGER", nullable: true },
+    errand: { type: "STRING", nullable: true, enum: ["shopping"] },
     ask: { type: "STRING", nullable: true, enum: ["which_ride", "what_day", "what_place", "what_time"] },
   },
   required: ["intent", "matching_rides", "date", "time_mode", "time", "return_time", "trip_type", "destination", "origin", "stops",
-    "people", "remove_people", "extra_adults", "needs", "start_shift_minutes", "end_shift_minutes", "duration_minutes", "ask"],
+    "people", "remove_people", "extra_adults", "needs", "start_shift_minutes", "end_shift_minutes", "duration_minutes", "errand", "ask"],
   propertyOrdering: ["intent", "matching_rides", "date", "time_mode", "time", "return_time", "trip_type", "destination", "origin", "stops",
-    "people", "remove_people", "extra_adults", "needs", "start_shift_minutes", "end_shift_minutes", "duration_minutes", "ask"],
+    "people", "remove_people", "extra_adults", "needs", "start_shift_minutes", "end_shift_minutes", "duration_minutes", "errand", "ask"],
 } as const;
 
 /** The user turn: the context as JSON, then the member's message. */
