@@ -1,0 +1,128 @@
+/**
+ * AI1 (docs/TODO.md "Ask in words", owner 2026-11-20): the system prompt and the structured-output schema for the
+ * "ask in words" box. One generative call returns one JSON object; our code validates every field afterwards (the
+ * model proposes, the member decides). Kept free of Deno/Node specifics so the evaluation runner
+ * (`scripts/ai-eval/run.mjs`, Node type stripping; lives in `_shared` until the `ask` function exists) measures exactly what the edge function will send.
+ *
+ * No Hebrew here (hard rule 3): place names, people and the member's text arrive as data in the user turn.
+ */
+
+export const PROMPT_VERSION = "ai1-2026-11-20.1";
+
+export interface AskPlace { name: string; aliases?: string[] }
+export interface AskPerson { name: string; kind: "child" | "member"; drives?: boolean }
+export interface AskRide {
+  ref: string;            // RIDE_1, RIDE_2, … — never a database id
+  date: string;           // YYYY-MM-DD
+  weekday: string;        // English weekday name
+  start: string;          // HH:MM, departure
+  end: string | null;     // HH:MM, back home / pickup; null for a one-way
+  trip_type: "round_trip" | "one_way" | "drop_off";
+  origin: string;
+  destination: string;
+  stops: { leg: "out" | "return"; place: string }[];
+  people: string[];       // everyone besides the member
+}
+export interface AskContext {
+  now: string;            // YYYY-MM-DDTHH:MM, Asia/Jerusalem wall clock
+  weekday: string;        // today's English weekday
+  calendar: { date: string; weekday: string }[];  // the next 14 days, so dates are looked up, not computed
+  home: string;           // the department's home place
+  places: AskPlace[];
+  people: AskPerson[];    // the member's children and the people they usually ride with
+  my_rides: AskRide[];    // the member's own upcoming rides
+}
+
+export const SYSTEM_PROMPT = `You read one short message from a member of a kibbutz car-sharing app and turn it into one JSON object.
+Messages are usually Hebrew, sometimes English, often informal or misspelled. Never chat; only fill the schema.
+
+Intents:
+- "new_request": the member wants a new ride (a car for themselves, or a drop-off / pickup).
+- "find_ride": the member asks who they can join, whether someone is going somewhere, or whether a car is free.
+- "edit_request": the member changes one of their own upcoming rides listed in my_rides.
+- "cancel_request": the member no longer needs one of their rides in my_rides.
+- "unclear": anything else (small talk, questions the app cannot answer, messages to the coordinator, several rides at once).
+
+Rules:
+- Dates: look the day up in the calendar given in the context; never compute it. "today"/"tomorrow" are relative to "now".
+  A bare weekday means its next occurrence after today (today itself only when said "today"). "next <weekday>" (in Hebrew the weekday
+  followed by the word for "next") means that weekday in the following week when it would otherwise fall within the next 6 days.
+- Times are 24-hour HH:MM. Spoken Hebrew times count: "at eight" = 08:00, "quarter to ten" = 09:45, "and a half" = :30.
+  Hours 1-6 said without context mean the morning; "7 in the evening" = 19:00. A vague time ("in the morning", "after noon")
+  is not a time: leave it null and ask "what_time".
+- time_mode "arrive_by" when the member must BE somewhere by a time ("to get there by", "to be at ... by", an appointment at a time);
+  "depart" when they leave at a time.
+- trip_type: "drop_off" for a drop-off / lift (Hebrew "hakpatsa", "drop me", "to the train") or a pickup only; "one_way" when they say
+  one way only;
+  "round_trip" when they go and come back with the car; null when not said.
+- Places: destination/origin/stops each carry "text" (the member's words, verbatim) and "list_name" (exactly one of the context's place names
+  when the words clearly mean it, typos and aliases included; null otherwise — never force a different place). Origin null = from home.
+- people: names exactly as written in the context's people list when they match (children included); unknown names as written.
+  "the kids" = all the member's children. The member themselves is never in people. extra_adults = unnamed extra adults.
+- needs: "large_trunk" for a lot of luggage / a big trunk; "tow_hitch" for a towing hook.
+- Edits and cancels: target_ride is the ref of exactly one ride in my_rides that the message clearly identifies.
+  If more than one ride fits, or none, set target_ride null and ask "which_ride". For an edit fill ONLY what changes:
+  a new departure or return time in time / return_time, a relative change in start_shift_minutes / end_shift_minutes (an hour later = 60),
+  added stops in stops, added people in people, removed people in remove_people, a new trip type in trip_type.
+- ask: what the app must ask the member next, or null when nothing is missing. For new_request a missing date asks "what_day",
+  a missing destination asks "what_place", a missing or vague time asks "what_time".
+- Leave every field you were not told null or empty. Never invent values.`;
+
+const placeRef = {
+  type: "OBJECT",
+  nullable: true,
+  properties: {
+    text: { type: "STRING" },
+    list_name: { type: "STRING", nullable: true },
+  },
+  required: ["text", "list_name"],
+} as const;
+
+/** Gemini `responseSchema` (OpenAPI subset). */
+export const RESPONSE_SCHEMA = {
+  type: "OBJECT",
+  properties: {
+    intent: { type: "STRING", enum: ["new_request", "find_ride", "edit_request", "cancel_request", "unclear"] },
+    target_ride: { type: "STRING", nullable: true },
+    date: { type: "STRING", nullable: true, description: "YYYY-MM-DD" },
+    time_mode: { type: "STRING", nullable: true, enum: ["depart", "arrive_by"] },
+    time: { type: "STRING", nullable: true, description: "HH:MM" },
+    return_time: { type: "STRING", nullable: true, description: "HH:MM" },
+    trip_type: { type: "STRING", nullable: true, enum: ["round_trip", "one_way", "drop_off"] },
+    destination: placeRef,
+    origin: placeRef,
+    stops: {
+      type: "ARRAY",
+      items: {
+        type: "OBJECT",
+        properties: { leg: { type: "STRING", enum: ["out", "return"] }, text: { type: "STRING" }, list_name: { type: "STRING", nullable: true } },
+        required: ["leg", "text", "list_name"],
+      },
+    },
+    people: { type: "ARRAY", items: { type: "STRING" } },
+    remove_people: { type: "ARRAY", items: { type: "STRING" } },
+    extra_adults: { type: "INTEGER", nullable: true },
+    needs: { type: "ARRAY", items: { type: "STRING", enum: ["large_trunk", "tow_hitch"] } },
+    start_shift_minutes: { type: "INTEGER", nullable: true },
+    end_shift_minutes: { type: "INTEGER", nullable: true },
+    ask: { type: "STRING", nullable: true, enum: ["which_ride", "what_day", "what_place", "what_time"] },
+  },
+  required: ["intent", "target_ride", "date", "time_mode", "time", "return_time", "trip_type", "destination", "origin", "stops",
+    "people", "remove_people", "extra_adults", "needs", "start_shift_minutes", "end_shift_minutes", "ask"],
+  propertyOrdering: ["intent", "target_ride", "date", "time_mode", "time", "return_time", "trip_type", "destination", "origin", "stops",
+    "people", "remove_people", "extra_adults", "needs", "start_shift_minutes", "end_shift_minutes", "ask"],
+} as const;
+
+/** The user turn: the context as JSON, then the member's message. */
+export function buildUserTurn(context: AskContext, message: string): string {
+  return `Context:\n${JSON.stringify(context)}\n\nMessage:\n${message}`;
+}
+
+/** The `generateContent` request body (REST, v1beta). */
+export function buildGenerateRequest(context: AskContext, message: string) {
+  return {
+    systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
+    contents: [{ role: "user", parts: [{ text: buildUserTurn(context, message) }] }],
+    generationConfig: { temperature: 0, responseMimeType: "application/json", responseSchema: RESPONSE_SCHEMA },
+  };
+}

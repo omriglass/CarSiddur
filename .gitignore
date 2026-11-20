@@ -49,3 +49,6 @@ user-guides/
 
 # scripts/perf: production load snapshots (TODO PF1) — never commit
 .perf/
+
+# AI1 evaluation results (member-like phrasings, model answers)
+.ai-eval/
