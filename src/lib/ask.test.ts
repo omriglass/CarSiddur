@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { AskError, handleAsk, type AskDependencies } from '../../supabase/functions/ask/handler';
+import { AskError, handleAsk, resetProbeCache, type AskDependencies } from '../../supabase/functions/ask/handler';
 import { buildAskContext, jerusalemWallClock, type AskContextRow } from '../../supabase/functions/_shared/askContext';
 import { normalizeAnswer, type AskModelAnswer } from '../../supabase/functions/_shared/askNormalize';
 import { buildUserTurn } from '../../supabase/functions/_shared/askPrompt';
@@ -181,5 +181,43 @@ describe('ask edge function', () => {
     const res = await handleAsk(request(), setup({ recordTurn: vi.fn().mockRejectedValue(new Error('db down')) }));
     expect(res.status).toBe(200);
     expect((await res.json()).turn_id).toBeNull();
+  });
+});
+
+describe('ask probe (the app greys the option out before anyone types)', () => {
+  it('answers without a key, without calling Google', async () => {
+    resetProbeCache();
+    const deps = setup({ apiKey: '' });
+    const res = await handleAsk(request({ probe: true }), deps);
+    expect(await res.json()).toEqual({ available: false, code: 'ask_not_configured' });
+    expect(deps.fetch).not.toHaveBeenCalled();
+  });
+
+  it('checks the key with the model lookup (no generation) and remembers the result', async () => {
+    resetProbeCache();
+    const deps = setup({ fetch: vi.fn().mockResolvedValue(Response.json({ name: 'models/test-model' })) });
+    expect(await (await handleAsk(request({ probe: true }), deps)).json()).toEqual({ available: true });
+    expect(await (await handleAsk(request({ probe: true }), deps)).json()).toEqual({ available: true });
+    expect(deps.fetch).toHaveBeenCalledTimes(1);
+    expect(String(vi.mocked(deps.fetch).mock.calls[0]?.[0])).not.toContain('generateContent');
+    expect(deps.loadContext).not.toHaveBeenCalled();
+    expect(deps.recordTurn).not.toHaveBeenCalled();
+  });
+
+  it('a rejected key, the quota or a network failure is not available', async () => {
+    for (const [fetchImpl, code] of [
+      [vi.fn().mockResolvedValue(new Response('{}', { status: 400 })), 'ask_not_configured'],
+      [vi.fn().mockResolvedValue(new Response('{}', { status: 429 })), 'quota'],
+      [vi.fn().mockRejectedValue(new Error('down')), 'unavailable'],
+    ] as const) {
+      resetProbeCache();
+      expect(await (await handleAsk(request({ probe: true }), setup({ fetch: fetchImpl }))).json()).toEqual({ available: false, code });
+    }
+  });
+
+  it('still needs a session', async () => {
+    resetProbeCache();
+    const res = await handleAsk(request({ probe: true }), setup({ authenticate: vi.fn().mockResolvedValue(null) }));
+    expect(res.status).toBe(401);
   });
 });

@@ -1965,6 +1965,7 @@ Owner: type "אני צריכה להיות בבנימינה עד 10 מחר" and g
 - **Disclaimer (owner 2026-11-20):** shown once on first open with "הבנתי" to continue, then a small permanent line under the box: conversations are saved to improve the service, and the text is processed by Google (whose free tier may use it to improve its models). Wording to approve.
 
 **AI1 — my own rides (first):**
+- **No key, no chat (owner 2026-11-20):** verify before sending — the `ask` function's probe (`{probe:true}`, built in step 3) answers `available` without generating; the + sheet greys "לכתוב במילים" out when it is not (UX_FLOWS §3.4b, wording "לא זמין כרגע" to approve). Step 4 wires it.
 - Intents: new request · find a ride or a free car · edit one of my rides (hours, stops, trip type, passengers, children) · cancel one of my rides · anything else → "לא הבנתי" + examples.
 - New request / edit → a draft card in the chat (below), confirmed with "אישור" or continued in the existing form (sentence form, or the request's edit form with the change applied); either way it goes through the normal server path, so every rule stays (an edit never costs the car, REQ §13.158; the overlap question; release to the waiting list; held board notices).
 - Find a ride → our ranking (`joinable_rides_for_request`-style: radius, time, free seat) with "+ נוסעים", **plus a free shared car when one is free then** (the siddur's free-car logic, `waitlist_group_holds()` respected; for a non-driver only when someone on the ride drives) → "request the free car" prefills the form.
@@ -2015,3 +2016,15 @@ Owner report: next week's Monday ride בנימינה → מצר shows ~20 minute
 - **Reach:** the times shown (form, stops "~" hours, ride sheet) **and the solver's input** (`place_travel_for_week` → merges, detour limits, chauffeur-ride lengths, board). Pairs with a stored route or with home at one end are unaffected — so it shows only between two non-home places. `haversine_km()` (join radius) is correct; the solver has no formula of its own.
 - **Fix:** one migration rewriting both functions in full with the factor 2 + a SQL test pinning a known pair against `haversine_km() * 1.3`. Expect side effects once released: estimated pairs double, some merges now within the detour limit get refused, chauffeur rides between such places get longer — next week's board may show new warnings. Release timing: owner.
 - **Data note (not the bug):** the place "בנימינה וחריש" has Harish's coordinates (1.5 km from מצר), so times from it are short too.
+
+## Who goes where on a ride is hard to read — too many names (owner 2026-11-20, RP1) — not built yet
+
+Owner: in the siddur (and the board) it is still hard to see who goes where. Two changes:
+
+- **Passengers by leg, not marked per name.** Instead of "נוסעים נוספים: דנה, ענבר (הלוך), נגה (חזור)…" (REQ §13.178 `ridePublicDetails.legMark` / `legMarkedName()` in `features/rides/ridePeople.ts`, `ridePublicDetails.companions` on `/my` rows), two lines:
+  - "הלוך: דנה, ענבר, יעל"
+  - "חזור: דנה, נגה"
+  
+  (one line when everyone rides both ways). Applies wherever the per-name "(הלוך)/(חזור)" marks show today. Wording to approve.
+- **Bring back the one-sentence summary** — e.g. "דנה לבנימינה, משאירה שם את ענבר; בחזור אוספת את נגה…". It still exists (`RideSummaryLine` / `rideSummaryText()`, LT1 2026-11-16, `rideSummary.*` strings) but **only on the siddur's ride sheet, and only when the route has places in the middle** (`routeHasIntermediates`) — a ride whose people get on/off only at the start and the end gets the plain label, and the board's ride sheet has no summary at all. Likely what the owner misses: extend it to rides without middle places (who is dropped/picked at the destination, who rides only one way) and show it on the board's sheet too. Check with the owner which surface they looked at.
+

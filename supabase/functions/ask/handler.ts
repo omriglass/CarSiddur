@@ -6,6 +6,10 @@
  *   → 200 { conversation_id, turn_id, draft, refs }       refs: RIDE_n → request id (the draft names rides by ref)
  *   → 4xx/503 { error: { code }, conversation_id? }        codes only, no Hebrew (the app words them)
  *
+ *   POST { probe: true } → 200 { available, code? }   (owner 2026-11-20: the app greys "לכתוב במילים" out before the
+ *   member types anything) — no key → `ask_not_configured`; otherwise the key and model are checked with Google's
+ *   model lookup (no generation quota spent), remembered 10 minutes when fine and 1 minute when not.
+ *
  * `draft` lets the app send the draft after a local change (a tapped "which ride?" chip); it is re-checked like any
  * model answer. Every turn — also a failed one — is recorded through the service-role RPCs (ask_begin_turn /
  * ask_record_turn); the context is read as the member (`ask_context`, refused unless the admin opted them in).
@@ -49,6 +53,33 @@ function failure(code: string, status: number, extra: Record<string, unknown> = 
 }
 const codeOf = (e: unknown) => (e instanceof AskError ? e.message : null);
 
+const probeCache = new Map<string, { available: boolean; code?: string; until: number }>();
+/** Tests only: forget remembered probe results. */
+export function resetProbeCache() { probeCache.clear(); }
+
+/** Is the service usable right now? Never calls the generation endpoint. */
+async function probe(deps: AskDependencies): Promise<{ available: boolean; code?: string }> {
+  if (!deps.apiKey) return { available: false, code: "ask_not_configured" };
+  const key = `${deps.apiKey.slice(-6)}:${deps.model}`;
+  const now = Date.now();
+  const hit = probeCache.get(key);
+  if (hit && hit.until > now) return hit.code ? { available: hit.available, code: hit.code } : { available: hit.available };
+  let result: { available: boolean; code?: string };
+  try {
+    const res = await deps.fetch(`${GEMINI}/${encodeURIComponent(deps.model)}`, {
+      headers: { "x-goog-api-key": deps.apiKey }, signal: AbortSignal.timeout(5_000),
+    });
+    result = res.ok ? { available: true }
+      : res.status === 429 ? { available: false, code: "quota" }
+      : res.status === 400 || res.status === 401 || res.status === 403 || res.status === 404 ? { available: false, code: "ask_not_configured" }
+      : { available: false, code: "unavailable" };
+  } catch {
+    result = { available: false, code: "unavailable" };
+  }
+  probeCache.set(key, { ...result, until: now + (result.available ? 600_000 : 60_000) });
+  return result;
+}
+
 /** The model call: a machine code on failure (quota = Google's 429, the free tier's daily limit). */
 async function callModel(deps: AskDependencies, body: unknown): Promise<{ answer: AskModelAnswer; raw: unknown } | { error: string }> {
   let res: Response;
@@ -84,6 +115,7 @@ export async function handleAsk(req: Request, deps: AskDependencies): Promise<Re
 
   let body: Record<string, unknown>;
   try { body = await req.json(); } catch { return failure("invalid_request", 400); }
+  if (body?.probe === true) return response(await probe(deps));
   const departmentId = body?.department_id;
   const conversationId = body?.conversation_id ?? null;
   const message = typeof body?.message === "string" ? body.message.trim() : "";

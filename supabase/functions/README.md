@@ -58,7 +58,9 @@ timeline) — noted here per the task instead of stubbed.
   Reads `ask_context()` as the member (refused unless opted in), `ask_begin_turn()` / `ask_record_turn()` with the
   service role (12 turns a conversation, 60 a day), Gemini with `GEMINI_API_KEY` / `ASK_MODEL`. Errors are codes:
   `not_authorized`, `invalid_request`, `daily_limit`, `conversation_too_long`, `conversation_ended`, `not_found`,
-  `quota`, `timeout`, `unavailable`, `bad_answer`, `ask_not_configured`. Writes nothing in the siddur. Locally:
+  `quota`, `timeout`, `unavailable`, `bad_answer`, `ask_not_configured`. `POST { probe: true }` → `{ available,
+  code? }`: the app asks before showing "לכתוב במילים" as usable — no key → `ask_not_configured`, else Google's model
+  lookup checks the key and model (no generation quota; remembered 10 min when fine, 1 min when not). Writes nothing in the siddur. Locally:
   `GEMINI_API_KEY` in `supabase/functions/.env` (gitignored); tests use a fake Gemini, CI never calls Google.
 
 ## How the DB invokes them

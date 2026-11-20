@@ -433,7 +433,7 @@ STAGE 1 — the sentence                      STAGE 2 — the modifiers
 
 ### 3.4b Ask in words — the chat (REQ item 258, AI1; mockups 2026-11-20)
 
-**Entry.** The "+" button (`AddRideFab` / `NewRequestButton`) for an opted-in member who has not hidden it opens a bottom sheet (`AskOrFormSheet`) with two rows: 📝 **"מילוי טופס"** / "הבקשה הרגילה, כמו היום" and 💬 **"לכתוב במילים"** / "למשל: ״בנימינה מחר עד 10״", and under them "אפשר להסתיר את האפשרות הזו בפרופיל". Anyone else: "+" opens the form directly, as today.
+**Entry.** The "+" button (`AddRideFab` / `NewRequestButton`) for an opted-in member who has not hidden it opens a bottom sheet (`AskOrFormSheet`) with two rows: 📝 **"מילוי טופס"** / "הבקשה הרגילה, כמו היום" and 💬 **"לכתוב במילים"** / "למשל: ״בנימינה מחר עד 10״", and under them "אפשר להסתיר את האפשרות הזו בפרופיל". Anyone else: "+" opens the form directly, as today. **The service is checked before anyone types (owner 2026-11-20):** when the sheet opens the app asks the `ask` function's probe (no key, a key Google rejects, the quota used up, Google unreachable → not available; the answer is cached for the session's next opens of the sheet). Not available: the "לכתוב במילים" row is greyed out and not tappable, its second line reads **"לא זמין כרגע"** *(to approve)*; "מילוי טופס" works as usual. While the probe is still loading the row shows normally and the check repeats when it is tapped.
 
 **First open only:** a dialog over the chat — **"לפני שמתחילים"**: "כותבים מה צריך, והאפליקציה ממלאת בשבילך את הטופס. שום דבר לא נשלח בלי שתאשר/י." · "השיחות נשמרות כדי לשפר את השירות." · "הטקסט מעובד על ידי Google, שעשויה להשתמש בו לשיפור המודלים שלה." · "הערות לסדרן/ית לא נשלחות לעולם." — button **"הבנתי"** (remembered per member on the server).
 
