@@ -536,7 +536,13 @@ declare
     -- REQ §13.168: both refuse unless can_manage_week() of the offer's own department/week (as approve_claim).
     'award_freed_option:inspected', 'discuss_freed_candidates:inspected',
     -- QA run 17 R17B5: refuses unless can_manage_week() of the offer's own department/week.
-    'refresh_freed_offer:inspected'
+    'refresh_freed_offer:inspected',
+    -- REQ item 258 (AI1): opt-in and evaluation cases are admin-only; the rest touch only the caller's own
+    -- ask_access row / turns / conversation. finish_ask_conversation also refuses a request outside the
+    -- conversation's own department or one the caller is not related to (ask_semantics.sql (5)).
+    'admin_set_ask_access:admin-global', 'set_ask_eval_case:admin-global',
+    'set_my_ask_hidden:self-only', 'ack_ask_disclaimer:self-only', 'mark_ask_turn:self-only',
+    'finish_ask_conversation:inspected'
   ];
   v_exempt_names text[];
   v_uncovered text;

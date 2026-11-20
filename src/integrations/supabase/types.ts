@@ -98,6 +98,211 @@ export type Database = {
           },
         ]
       }
+      ask_access: {
+        Row: {
+          created_at: string
+          disclaimer_ack_at: string | null
+          granted_by: string | null
+          hidden: boolean
+          profile_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          disclaimer_ack_at?: string | null
+          granted_by?: string | null
+          hidden?: boolean
+          profile_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          disclaimer_ack_at?: string | null
+          granted_by?: string | null
+          hidden?: boolean
+          profile_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ask_access_granted_by_fkey"
+            columns: ["granted_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ask_access_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: true
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ask_conversations: {
+        Row: {
+          created_at: string
+          department_id: string
+          diff: Json | null
+          ended_at: string | null
+          id: string
+          outcome: string
+          profile_id: string
+          result_request_id: string | null
+          sent: Json | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          department_id: string
+          diff?: Json | null
+          ended_at?: string | null
+          id?: string
+          outcome?: string
+          profile_id: string
+          result_request_id?: string | null
+          sent?: Json | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          department_id?: string
+          diff?: Json | null
+          ended_at?: string | null
+          id?: string
+          outcome?: string
+          profile_id?: string
+          result_request_id?: string | null
+          sent?: Json | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ask_conversations_department_id_fkey"
+            columns: ["department_id"]
+            isOneToOne: false
+            referencedRelation: "departments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ask_conversations_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ask_conversations_result_request_id_fkey"
+            columns: ["result_request_id"]
+            isOneToOne: false
+            referencedRelation: "requests"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ask_conversations_result_request_id_fkey"
+            columns: ["result_request_id"]
+            isOneToOne: false
+            referencedRelation: "v_my_requests"
+            referencedColumns: ["request_id"]
+          },
+        ]
+      }
+      ask_turns: {
+        Row: {
+          conversation_id: string
+          created_at: string
+          department_id: string
+          draft: Json | null
+          draft_in: Json | null
+          error: string | null
+          eval_added_at: string | null
+          eval_added_by: string | null
+          eval_expect: Json | null
+          flags: string[]
+          id: string
+          latency_ms: number | null
+          model: string
+          position: number
+          profile_id: string
+          prompt_version: string
+          raw_answer: Json | null
+          thumbs_down: boolean
+          user_text: string
+        }
+        Insert: {
+          conversation_id: string
+          created_at?: string
+          department_id: string
+          draft?: Json | null
+          draft_in?: Json | null
+          error?: string | null
+          eval_added_at?: string | null
+          eval_added_by?: string | null
+          eval_expect?: Json | null
+          flags?: string[]
+          id?: string
+          latency_ms?: number | null
+          model: string
+          position: number
+          profile_id: string
+          prompt_version: string
+          raw_answer?: Json | null
+          thumbs_down?: boolean
+          user_text: string
+        }
+        Update: {
+          conversation_id?: string
+          created_at?: string
+          department_id?: string
+          draft?: Json | null
+          draft_in?: Json | null
+          error?: string | null
+          eval_added_at?: string | null
+          eval_added_by?: string | null
+          eval_expect?: Json | null
+          flags?: string[]
+          id?: string
+          latency_ms?: number | null
+          model?: string
+          position?: number
+          profile_id?: string
+          prompt_version?: string
+          raw_answer?: Json | null
+          thumbs_down?: boolean
+          user_text?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ask_turns_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "ask_conversations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ask_turns_department_id_fkey"
+            columns: ["department_id"]
+            isOneToOne: false
+            referencedRelation: "departments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ask_turns_eval_added_by_fkey"
+            columns: ["eval_added_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ask_turns_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       audit_log: {
         Row: {
           action: Database["public"]["Enums"]["audit_action"]
@@ -6905,6 +7110,7 @@ export type Database = {
         Returns: undefined
       }
       _window_text: { Args: { _dep: string; _ret: string }; Returns: string }
+      ack_ask_disclaimer: { Args: never; Returns: undefined }
       add_car_owner: {
         Args: { p_car_id: string; p_profile_id: string }
         Returns: undefined
@@ -6919,6 +7125,10 @@ export type Database = {
       }
       admin_approve_member: {
         Args: { p_department_id: string; p_profile_id: string }
+        Returns: undefined
+      }
+      admin_set_ask_access: {
+        Args: { p_enabled: boolean; p_profile_id: string }
         Returns: undefined
       }
       admin_set_car_admin: {
@@ -7476,6 +7686,16 @@ export type Database = {
           profile_id: string
         }[]
       }
+      finish_ask_conversation: {
+        Args: {
+          p_conversation_id: string
+          p_diff?: Json
+          p_outcome: string
+          p_request_id?: string
+          p_sent?: Json
+        }
+        Returns: undefined
+      }
       flag_car_chain_breaks: {
         Args: { p_car: string; p_week: string }
         Returns: number
@@ -7656,6 +7876,10 @@ export type Database = {
       log_car_kilometrage: {
         Args: { p_car_id: string; p_km: number }
         Returns: string
+      }
+      mark_ask_turn: {
+        Args: { p_thumbs_down: boolean; p_turn_id: string }
+        Returns: undefined
       }
       mark_board_seen: {
         Args: { p_department_id: string; p_week_start: string }
@@ -8605,6 +8829,10 @@ export type Database = {
         Returns: Json
       }
       send_test_notification: { Args: never; Returns: Json }
+      set_ask_eval_case: {
+        Args: { p_expect: Json; p_turn_id: string }
+        Returns: undefined
+      }
       set_car_kilometrage: {
         Args: { p_car_id: string; p_km: number; p_note?: string }
         Returns: string
@@ -8617,6 +8845,7 @@ export type Database = {
         Args: { p_reason: string; p_request_id: string; p_value: number }
         Returns: undefined
       }
+      set_my_ask_hidden: { Args: { p_hidden: boolean }; Returns: undefined }
       set_my_default_origin: {
         Args: { p_department_id: string; p_origin_id: string }
         Returns: undefined

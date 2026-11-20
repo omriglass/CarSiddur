@@ -441,15 +441,15 @@ STAGE 1 — the sentence                      STAGE 2 — the modifiers
 
 - **Draft card — new request** ("בקשה חדשה", tag "טיוטה" / "טיוטה · עודכנה"): rows מתי / לאן (+ trip type) / שעה ("להגיע עד 10:00" / "יציאה ב־") / חזרה / מי / עצירות / צרכים; a missing detail reads **"? חסר"** (amber); a detail the last turn changed is highlighted (green). Under the card the app's question when one is open — **"מתי חוזרים?"** (chips "רק הלוך", "הקפצה בלבד"), "לאן?", "באיזה יום?", "באיזו שעה?" — and the buttons **"אישור ← לטופס"** (primary) and **"ביטול"**; small **"👎 לא הבין"**. A new turn updates the same draft and shows the card again.
 - **The form opened from the chat:** the regular sentence form (`RequestForm`, prefilled through the same prefill path as a slot / `?day=`), with a line on top **"💬 מולא מהשיחה: …"** (the card's summary in one line). Everything is editable as usual; sending is the form's own.
-- **Find a ride:** a heading line (day · place · part of day), a card **"נסיעות שאפשר להצטרף אליהן"** — per ride: driver/owner, hours, route, free seats, chip **"+ נוסעים"** (the siddur's add-passengers flow) — and, when a shared car is free then, a card **"רכב פנוי"** (tag "משותף"): "<car> פנויה <from–to>", button **"בקשה על הרכב הפנוי"** (prefills the form with that car's time). No ride and no car: "לא מצאתי נסיעה או רכב פנוי בזמן הזה" + "בקשה חדשה" (to approve).
+- **Find a ride:** a heading line (day · place · part of day), a card **"נסיעות שאפשר להצטרף אליהן"** — per ride: driver/owner, hours, route, free seats, chip **"+ נוסעים"** (the siddur's add-passengers flow) — and, when a shared car is free then, a card **"רכב פנוי"** (tag "משותף"): "<car> פנויה <from–to>", button **"בקשה על הרכב הפנוי"** (prefills the form with that car's time). No ride and no car: "לא מצאתי נסיעה או רכב פנוי בזמן הזה" + "בקשה חדשה".
 - **Edit:** when the message fits more than one of my rides, **"לאיזו נסיעה?"** with one chip per ride ("א׳ 22.11 · 08:00–12:00 · חיפה"); then the card **"שינוי בנסיעה"** (tag "טיוטה"): נסיעה / the changed rows as old (struck through) ← new (highlighted); a stop not on the place list notes "· לא ברשימה, ייכתב כטקסט"; buttons **"אישור ← לטופס העריכה"** / "ביטול".
 - **Cancel:** "לאיזו נסיעה?" when needed, then the existing cancel confirmation of that request.
-- **Not understood:** **"לא הבנתי. אפשר לכתוב למשל:"** + three example chips (to approve).
-- **Out of quota / the service is down:** "אי אפשר לכתוב במילים כרגע. אפשר למלא טופס." + "מילוי טופס" (to approve).
+- **Not understood:** **"לא הבנתי. אפשר לכתוב למשל:"** + three example chips.
+- **Out of quota / the service is down:** "אי אפשר לכתוב במילים כרגע. אפשר למלא טופס." + "מילוי טופס".
 
-**Profile.** For an opted-in member, under the existing device/display settings: switch **"לכתוב במילים בכפתור +"** (on by default; off = "+" opens the form) (to approve).
+**Profile.** For an opted-in member, under the existing device/display settings: switch **"לכתוב במילים בכפתור +"** (on by default; off = "+" opens the form).
 
-**Admin.** Members editor (`/admin/members`, member dialog): switch **"גישה ל״לכתוב במילים״"** (to approve). **Review screen** `/admin/ask` ("שיחות ״לכתוב במילים״", to approve): turns of the last month, problems first — filters "תוקן בטופס" / "👎" / "ננטש" / "סומן בבדיקה" / "הכול"; each row: date, member, the text, the card as understood, what was finally sent (diff), the flags; actions "פתיחת השיחה" and **"הוספה לסט הבדיקה"** (copies the turn as an evaluation case with its right answer for `scripts/ai-eval/cases.json`).
+**Admin.** Members editor (`/admin/members`, member dialog): switch **"גישה ל״לכתוב במילים״"**. **Review screen** `/admin/ask` ("שיחות ״לכתוב במילים״"): turns of the last month, problems first — filters "תוקן בטופס" / "👎" / "ננטש" / "סומן בבדיקה" / "הכול"; each row: date, member, the text, the card as understood, what was finally sent (diff), the flags; actions "פתיחת השיחה" and **"הוספה לסט הבדיקה"** (copies the turn as an evaluation case with its right answer for `scripts/ai-eval/cases.json`).
 
 ### 3.5 Published siddur (`/siddur`, tab הסידור)
 

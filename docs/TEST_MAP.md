@@ -748,6 +748,24 @@ migrations matching `*maintenance*`; `supabase/tests/scheduled_maintenance.sql`;
 6. A request the Sadran closed with a reason: the member's "מה קרה?" shows the reason; the note to the Sadran
    never appears.
 
+### ask-in-words — Ask in words (AI1): opt-in, the chat, the ask edge function, the conversation record
+
+**Paths**: `supabase/functions/_shared/askPrompt.ts`, `askNormalize.ts`, `supabase/functions/ask/**`,
+`scripts/ai-eval/**`, `src/features/ask/**`; migrations `*_ask_*`; `supabase/tests/ask_semantics.sql` (REQ item 258).
+
+**Automated**:
+- SQL: `ask_semantics.sql` (only an admin opts in; hide switch and disclaimer need access; 👎 and closing only on
+  one's own conversation; a closing request must be the member's own, in the conversation's department; evaluation
+  cases admin-only; housekeeping deletes after one month; RLS own rows / admin all, no direct writes),
+  `department_isolation.sql`, `rls_smoke.sql`
+- Prompt quality (not CI, calls Google): `node scripts/ai-eval/run.mjs --model <id>`
+
+**QA script**:
+1. As admin open a member in `/admin/members` and turn on "גישה ל״לכתוב במילים״". Expected: as that member "+"
+   offers "מילוי טופס" / "לכתוב במילים".
+2. As that member turn off "לכתוב במילים בכפתור +" in the profile. Expected: "+" opens the form directly again.
+3. A member the admin did not opt in sees only the form; the `ask` edge function refuses them.
+
 ## Known coverage gaps (do not silently "fix" — flag to QA as manual-only)
 
 Carried over from `docs/E2E_AUDIT_2026-09-14.md`, still true as of this writing:

@@ -1757,6 +1757,34 @@
         "/my -> היסטוריה: \"בקשות שנסגרו\" by week on top, past rides below, each with \"מה קרה?\"",
         "A request closed by the Sadran with a reason: the member's \"מה קרה?\" shows the reason; the private note to the Sadran never appears"
       ]
+    },
+    {
+      "id": "ask-in-words",
+      "title": "Ask in words (AI1): opt-in, the chat, the ask edge function, the conversation record",
+      "paths": [
+        "supabase/functions/_shared/askPrompt.ts",
+        "supabase/functions/_shared/askNormalize.ts",
+        "supabase/functions/ask/**",
+        "scripts/ai-eval/**",
+        "src/features/ask/**",
+        "supabase/migrations/**/*_ask_*",
+        "supabase/tests/ask_semantics.sql"
+      ],
+      "vitest": [],
+      "sql": [
+        "ask_semantics.sql",
+        "department_isolation.sql",
+        "rls_smoke.sql"
+      ],
+      "playwrightTags": [],
+      "reqRefs": [
+        "258"
+      ],
+      "qaChecklist": [
+        "As admin open a member in /admin/members and turn on \"גישה ל״לכתוב במילים״\"; as that member \"+\" now offers \"מילוי טופס\" / \"לכתוב במילים\"",
+        "As that member turn off \"לכתוב במילים בכפתור +\" in the profile: \"+\" opens the form directly again",
+        "A member the admin did not opt in sees only the form; the ask edge function refuses them"
+      ]
     }
   ],
   "migrationContentRules": [

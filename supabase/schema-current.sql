@@ -8044,6 +8044,19 @@ $$;
 ALTER FUNCTION "public"."_window_text"("_dep" timestamp with time zone, "_ret" timestamp with time zone) OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."ack_ask_disclaimer"() RETURNS "void"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+begin
+  update public.ask_access set disclaimer_ack_at = coalesce(disclaimer_ack_at, now()) where profile_id = auth.uid();
+  if not found then raise exception 'not_authorized' using errcode = 'P0001'; end if;
+end $$;
+
+
+ALTER FUNCTION "public"."ack_ask_disclaimer"() OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."add_car_owner"("p_car_id" "uuid", "p_profile_id" "uuid") RETURNS "void"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -8420,6 +8433,27 @@ $$;
 
 
 ALTER FUNCTION "public"."admin_approve_member"("p_profile_id" "uuid", "p_department_id" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."admin_set_ask_access"("p_profile_id" "uuid", "p_enabled" boolean) RETURNS "void"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+begin
+  if not public.is_admin() then raise exception 'not_authorized' using errcode = 'P0001'; end if;
+  if p_enabled is null then raise exception 'invalid_input' using errcode = 'P0001'; end if;
+  perform 1 from public.profiles where id = p_profile_id;
+  if not found then raise exception 'member_not_found' using errcode = 'P0001'; end if;
+  if p_enabled then
+    insert into public.ask_access (profile_id, granted_by) values (p_profile_id, auth.uid())
+    on conflict (profile_id) do nothing;
+  else
+    delete from public.ask_access where profile_id = p_profile_id;
+  end if;
+end $$;
+
+
+ALTER FUNCTION "public"."admin_set_ask_access"("p_profile_id" "uuid", "p_enabled" boolean) OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."admin_set_car_admin"("p_department_id" "uuid", "p_profile_id" "uuid", "p_is_car_admin" boolean) RETURNS "void"
@@ -13813,6 +13847,37 @@ $$;
 ALTER FUNCTION "public"."fairness_stats"("p_department_id" "uuid", "p_week_start" "date", "p_lookback_weeks" integer) OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."finish_ask_conversation"("p_conversation_id" "uuid", "p_outcome" "text", "p_request_id" "uuid" DEFAULT NULL::"uuid", "p_sent" "jsonb" DEFAULT NULL::"jsonb", "p_diff" "jsonb" DEFAULT NULL::"jsonb") RETURNS "void"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare v_conv public.ask_conversations;
+begin
+  if p_outcome is null or p_outcome not in ('to_form', 'done', 'cancelled', 'closed') then
+    raise exception 'invalid_input' using errcode = 'P0001';
+  end if;
+  select * into v_conv from public.ask_conversations where id = p_conversation_id and profile_id = auth.uid() for update;
+  if not found then raise exception 'not_found' using errcode = 'P0001'; end if;
+  if v_conv.outcome not in ('open', 'to_form') then raise exception 'conversation_ended' using errcode = 'P0001'; end if;
+  if p_request_id is not null and not exists (
+    select 1 from public.requests r
+    where r.id = p_request_id and r.department_id = v_conv.department_id and public.request_related(r.id, auth.uid())
+  ) then
+    raise exception 'not_authorized' using errcode = 'P0001';
+  end if;
+  update public.ask_conversations
+  set outcome = p_outcome,
+      result_request_id = coalesce(p_request_id, result_request_id),
+      sent = coalesce(p_sent, sent),
+      diff = coalesce(p_diff, diff),
+      ended_at = case when p_outcome = 'to_form' then null else now() end
+  where id = p_conversation_id;
+end $$;
+
+
+ALTER FUNCTION "public"."finish_ask_conversation"("p_conversation_id" "uuid", "p_outcome" "text", "p_request_id" "uuid", "p_sent" "jsonb", "p_diff" "jsonb") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."flag_car_chain_breaks"("p_car" "uuid", "p_week" "date") RETURNS integer
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -14623,6 +14688,7 @@ begin
       delete from public.notifications where created_at < p_now - interval '90 days';
       delete from public.push_outbox where status in ('sent', 'dead') and created_at < p_now - interval '30 days';
       delete from public.client_errors where created_at < p_now - interval '90 days';
+      delete from public.ask_conversations where created_at < p_now - interval '1 month';
       delete from public.push_subscriptions where last_used_at < p_now - interval '180 days';
       -- token_hash cannot be null (unique not-null column); scramble it instead so old links die (once per row).
       update public.proposal_parties pp set token_hash = 'scrambled:' || gen_random_uuid()::text
@@ -15715,6 +15781,20 @@ end $$;
 
 
 ALTER FUNCTION "public"."maintenance_refresh_flags"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."mark_ask_turn"("p_turn_id" "uuid", "p_thumbs_down" boolean) RETURNS "void"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+begin
+  if p_thumbs_down is null then raise exception 'invalid_input' using errcode = 'P0001'; end if;
+  update public.ask_turns set thumbs_down = p_thumbs_down where id = p_turn_id and profile_id = auth.uid();
+  if not found then raise exception 'not_found' using errcode = 'P0001'; end if;
+end $$;
+
+
+ALTER FUNCTION "public"."mark_ask_turn"("p_turn_id" "uuid", "p_thumbs_down" boolean) OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."mark_board_seen"("p_department_id" "uuid", "p_week_start" "date") RETURNS bigint
@@ -25252,6 +25332,25 @@ $$;
 ALTER FUNCTION "public"."send_test_notification"() OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."set_ask_eval_case"("p_turn_id" "uuid", "p_expect" "jsonb") RETURNS "void"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+begin
+  if not public.is_admin() then raise exception 'not_authorized' using errcode = 'P0001'; end if;
+  if p_expect is not null and jsonb_typeof(p_expect) <> 'object' then raise exception 'invalid_input' using errcode = 'P0001'; end if;
+  update public.ask_turns
+  set eval_expect = p_expect,
+      eval_added_by = case when p_expect is null then null else auth.uid() end,
+      eval_added_at = case when p_expect is null then null else now() end
+  where id = p_turn_id;
+  if not found then raise exception 'not_found' using errcode = 'P0001'; end if;
+end $$;
+
+
+ALTER FUNCTION "public"."set_ask_eval_case"("p_turn_id" "uuid", "p_expect" "jsonb") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."set_car_kilometrage"("p_car_id" "uuid", "p_km" integer, "p_note" "text" DEFAULT NULL::"text") RETURNS "uuid"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -25317,6 +25416,20 @@ $$;
 
 
 ALTER FUNCTION "public"."set_manual_boost"("p_request_id" "uuid", "p_value" numeric, "p_reason" "text") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."set_my_ask_hidden"("p_hidden" boolean) RETURNS "void"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+begin
+  if p_hidden is null then raise exception 'invalid_input' using errcode = 'P0001'; end if;
+  update public.ask_access set hidden = p_hidden where profile_id = auth.uid();
+  if not found then raise exception 'not_authorized' using errcode = 'P0001'; end if;
+end $$;
+
+
+ALTER FUNCTION "public"."set_my_ask_hidden"("p_hidden" boolean) OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."set_my_default_origin"("p_department_id" "uuid", "p_origin_id" "uuid") RETURNS "void"
@@ -30895,6 +31008,71 @@ ALTER TABLE ONLY "public"."app_settings" FORCE ROW LEVEL SECURITY;
 ALTER TABLE "public"."app_settings" OWNER TO "postgres";
 
 
+CREATE TABLE IF NOT EXISTS "public"."ask_access" (
+    "profile_id" "uuid" NOT NULL,
+    "granted_by" "uuid",
+    "hidden" boolean DEFAULT false NOT NULL,
+    "disclaimer_ack_at" timestamp with time zone,
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL
+);
+
+ALTER TABLE ONLY "public"."ask_access" FORCE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."ask_access" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."ask_conversations" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "profile_id" "uuid" NOT NULL,
+    "department_id" "uuid" NOT NULL,
+    "outcome" "text" DEFAULT 'open'::"text" NOT NULL,
+    "result_request_id" "uuid",
+    "sent" "jsonb",
+    "diff" "jsonb",
+    "ended_at" timestamp with time zone,
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    CONSTRAINT "ask_conversations_outcome_ck" CHECK (("outcome" = ANY (ARRAY['open'::"text", 'to_form'::"text", 'done'::"text", 'cancelled'::"text", 'closed'::"text"])))
+);
+
+ALTER TABLE ONLY "public"."ask_conversations" FORCE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."ask_conversations" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."ask_turns" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "conversation_id" "uuid" NOT NULL,
+    "profile_id" "uuid" NOT NULL,
+    "department_id" "uuid" NOT NULL,
+    "position" smallint NOT NULL,
+    "user_text" "text" NOT NULL,
+    "draft_in" "jsonb",
+    "raw_answer" "jsonb",
+    "draft" "jsonb",
+    "flags" "text"[] DEFAULT '{}'::"text"[] NOT NULL,
+    "error" "text",
+    "prompt_version" "text" NOT NULL,
+    "model" "text" NOT NULL,
+    "latency_ms" integer,
+    "thumbs_down" boolean DEFAULT false NOT NULL,
+    "eval_expect" "jsonb",
+    "eval_added_by" "uuid",
+    "eval_added_at" timestamp with time zone,
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    CONSTRAINT "ask_turns_position_ck" CHECK (("position" >= 1)),
+    CONSTRAINT "ask_turns_text_ck" CHECK ((("char_length"("user_text") >= 1) AND ("char_length"("user_text") <= 1000)))
+);
+
+ALTER TABLE ONLY "public"."ask_turns" FORCE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."ask_turns" OWNER TO "postgres";
+
+
 CREATE TABLE IF NOT EXISTS "public"."audit_log" (
     "id" bigint NOT NULL,
     "at" timestamp with time zone DEFAULT "now"() NOT NULL,
@@ -33219,6 +33397,26 @@ ALTER TABLE ONLY "public"."app_settings"
 
 
 
+ALTER TABLE ONLY "public"."ask_access"
+    ADD CONSTRAINT "ask_access_pkey" PRIMARY KEY ("profile_id");
+
+
+
+ALTER TABLE ONLY "public"."ask_conversations"
+    ADD CONSTRAINT "ask_conversations_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."ask_turns"
+    ADD CONSTRAINT "ask_turns_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."ask_turns"
+    ADD CONSTRAINT "ask_turns_position_uq" UNIQUE ("conversation_id", "position");
+
+
+
 ALTER TABLE ONLY "public"."audit_log"
     ADD CONSTRAINT "audit_log_pkey" PRIMARY KEY ("id");
 
@@ -33721,6 +33919,18 @@ ALTER TABLE ONLY "public"."weekday_labels"
 
 ALTER TABLE ONLY "public"."weeks"
     ADD CONSTRAINT "weeks_pkey" PRIMARY KEY ("department_id", "week_start");
+
+
+
+CREATE INDEX "ask_conversations_created_idx" ON "public"."ask_conversations" USING "btree" ("created_at");
+
+
+
+CREATE INDEX "ask_conversations_profile_idx" ON "public"."ask_conversations" USING "btree" ("profile_id", "created_at" DESC);
+
+
+
+CREATE INDEX "ask_turns_profile_idx" ON "public"."ask_turns" USING "btree" ("profile_id");
 
 
 
@@ -34582,6 +34792,14 @@ CREATE OR REPLACE VIEW "public"."v_waitlist_groups" WITH ("security_invoker"='tr
      LEFT JOIN "public"."waitlist_group_members" "m" ON (("m"."group_id" = "g"."id")))
      LEFT JOIN "public"."profiles" "p" ON (("p"."id" = "m"."profile_id")))
   GROUP BY "g"."id";
+
+
+
+CREATE OR REPLACE TRIGGER "ask_access_updated_at" BEFORE UPDATE ON "public"."ask_access" FOR EACH ROW EXECUTE FUNCTION "public"."set_updated_at"();
+
+
+
+CREATE OR REPLACE TRIGGER "ask_conversations_updated_at" BEFORE UPDATE ON "public"."ask_conversations" FOR EACH ROW EXECUTE FUNCTION "public"."set_updated_at"();
 
 
 
@@ -35691,6 +35909,51 @@ ALTER TABLE ONLY "public"."app_settings"
 
 
 
+ALTER TABLE ONLY "public"."ask_access"
+    ADD CONSTRAINT "ask_access_granted_by_fkey" FOREIGN KEY ("granted_by") REFERENCES "public"."profiles"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."ask_access"
+    ADD CONSTRAINT "ask_access_profile_id_fkey" FOREIGN KEY ("profile_id") REFERENCES "public"."profiles"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."ask_conversations"
+    ADD CONSTRAINT "ask_conversations_department_id_fkey" FOREIGN KEY ("department_id") REFERENCES "public"."departments"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."ask_conversations"
+    ADD CONSTRAINT "ask_conversations_profile_id_fkey" FOREIGN KEY ("profile_id") REFERENCES "public"."profiles"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."ask_conversations"
+    ADD CONSTRAINT "ask_conversations_result_request_id_fkey" FOREIGN KEY ("result_request_id") REFERENCES "public"."requests"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."ask_turns"
+    ADD CONSTRAINT "ask_turns_conversation_id_fkey" FOREIGN KEY ("conversation_id") REFERENCES "public"."ask_conversations"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."ask_turns"
+    ADD CONSTRAINT "ask_turns_department_id_fkey" FOREIGN KEY ("department_id") REFERENCES "public"."departments"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."ask_turns"
+    ADD CONSTRAINT "ask_turns_eval_added_by_fkey" FOREIGN KEY ("eval_added_by") REFERENCES "public"."profiles"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."ask_turns"
+    ADD CONSTRAINT "ask_turns_profile_id_fkey" FOREIGN KEY ("profile_id") REFERENCES "public"."profiles"("id") ON DELETE CASCADE;
+
+
+
 ALTER TABLE ONLY "public"."audit_log"
     ADD CONSTRAINT "audit_log_actor_id_fkey" FOREIGN KEY ("actor_id") REFERENCES "public"."profiles"("id") ON DELETE SET NULL;
 
@@ -36755,6 +37018,27 @@ CREATE POLICY "app_settings_select" ON "public"."app_settings" FOR SELECT TO "au
 
 
 CREATE POLICY "app_settings_update" ON "public"."app_settings" FOR UPDATE TO "authenticated" USING (( SELECT "public"."is_admin"() AS "is_admin")) WITH CHECK (( SELECT "public"."is_admin"() AS "is_admin"));
+
+
+
+ALTER TABLE "public"."ask_access" ENABLE ROW LEVEL SECURITY;
+
+
+CREATE POLICY "ask_access_select" ON "public"."ask_access" FOR SELECT TO "authenticated" USING ((("profile_id" = ( SELECT "auth"."uid"() AS "uid")) OR ( SELECT "public"."is_admin"() AS "is_admin")));
+
+
+
+ALTER TABLE "public"."ask_conversations" ENABLE ROW LEVEL SECURITY;
+
+
+CREATE POLICY "ask_conversations_select" ON "public"."ask_conversations" FOR SELECT TO "authenticated" USING ((("profile_id" = ( SELECT "auth"."uid"() AS "uid")) OR ( SELECT "public"."is_admin"() AS "is_admin")));
+
+
+
+ALTER TABLE "public"."ask_turns" ENABLE ROW LEVEL SECURITY;
+
+
+CREATE POLICY "ask_turns_select" ON "public"."ask_turns" FOR SELECT TO "authenticated" USING ((("profile_id" = ( SELECT "auth"."uid"() AS "uid")) OR ( SELECT "public"."is_admin"() AS "is_admin")));
 
 
 
@@ -39055,6 +39339,12 @@ GRANT ALL ON FUNCTION "public"."_window_text"("_dep" timestamp with time zone, "
 
 
 
+REVOKE ALL ON FUNCTION "public"."ack_ask_disclaimer"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."ack_ask_disclaimer"() TO "service_role";
+GRANT ALL ON FUNCTION "public"."ack_ask_disclaimer"() TO "authenticated";
+
+
+
 REVOKE ALL ON FUNCTION "public"."add_car_owner"("p_car_id" "uuid", "p_profile_id" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."add_car_owner"("p_car_id" "uuid", "p_profile_id" "uuid") TO "service_role";
 GRANT ALL ON FUNCTION "public"."add_car_owner"("p_car_id" "uuid", "p_profile_id" "uuid") TO "authenticated";
@@ -39070,6 +39360,12 @@ GRANT ALL ON FUNCTION "public"."add_ride_passengers"("p_ride_id" "uuid", "p_expe
 REVOKE ALL ON FUNCTION "public"."admin_approve_member"("p_profile_id" "uuid", "p_department_id" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."admin_approve_member"("p_profile_id" "uuid", "p_department_id" "uuid") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."admin_approve_member"("p_profile_id" "uuid", "p_department_id" "uuid") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."admin_set_ask_access"("p_profile_id" "uuid", "p_enabled" boolean) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."admin_set_ask_access"("p_profile_id" "uuid", "p_enabled" boolean) TO "service_role";
+GRANT ALL ON FUNCTION "public"."admin_set_ask_access"("p_profile_id" "uuid", "p_enabled" boolean) TO "authenticated";
 
 
 
@@ -39744,6 +40040,12 @@ GRANT ALL ON FUNCTION "public"."fairness_stats"("p_department_id" "uuid", "p_wee
 
 
 
+REVOKE ALL ON FUNCTION "public"."finish_ask_conversation"("p_conversation_id" "uuid", "p_outcome" "text", "p_request_id" "uuid", "p_sent" "jsonb", "p_diff" "jsonb") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."finish_ask_conversation"("p_conversation_id" "uuid", "p_outcome" "text", "p_request_id" "uuid", "p_sent" "jsonb", "p_diff" "jsonb") TO "service_role";
+GRANT ALL ON FUNCTION "public"."finish_ask_conversation"("p_conversation_id" "uuid", "p_outcome" "text", "p_request_id" "uuid", "p_sent" "jsonb", "p_diff" "jsonb") TO "authenticated";
+
+
+
 REVOKE ALL ON FUNCTION "public"."flag_car_chain_breaks"("p_car" "uuid", "p_week" "date") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."flag_car_chain_breaks"("p_car" "uuid", "p_week" "date") TO "service_role";
 
@@ -40033,6 +40335,12 @@ GRANT ALL ON FUNCTION "public"."log_car_kilometrage"("p_car_id" "uuid", "p_km" i
 
 REVOKE ALL ON FUNCTION "public"."maintenance_refresh_flags"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."maintenance_refresh_flags"() TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."mark_ask_turn"("p_turn_id" "uuid", "p_thumbs_down" boolean) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."mark_ask_turn"("p_turn_id" "uuid", "p_thumbs_down" boolean) TO "service_role";
+GRANT ALL ON FUNCTION "public"."mark_ask_turn"("p_turn_id" "uuid", "p_thumbs_down" boolean) TO "authenticated";
 
 
 
@@ -41316,6 +41624,12 @@ GRANT ALL ON FUNCTION "public"."send_test_notification"() TO "authenticated";
 
 
 
+REVOKE ALL ON FUNCTION "public"."set_ask_eval_case"("p_turn_id" "uuid", "p_expect" "jsonb") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."set_ask_eval_case"("p_turn_id" "uuid", "p_expect" "jsonb") TO "service_role";
+GRANT ALL ON FUNCTION "public"."set_ask_eval_case"("p_turn_id" "uuid", "p_expect" "jsonb") TO "authenticated";
+
+
+
 REVOKE ALL ON FUNCTION "public"."set_car_kilometrage"("p_car_id" "uuid", "p_km" integer, "p_note" "text") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."set_car_kilometrage"("p_car_id" "uuid", "p_km" integer, "p_note" "text") TO "service_role";
 GRANT ALL ON FUNCTION "public"."set_car_kilometrage"("p_car_id" "uuid", "p_km" integer, "p_note" "text") TO "authenticated";
@@ -41331,6 +41645,12 @@ GRANT ALL ON FUNCTION "public"."set_freed_slot_opt_out"("p_request_id" "uuid", "
 REVOKE ALL ON FUNCTION "public"."set_manual_boost"("p_request_id" "uuid", "p_value" numeric, "p_reason" "text") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."set_manual_boost"("p_request_id" "uuid", "p_value" numeric, "p_reason" "text") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."set_manual_boost"("p_request_id" "uuid", "p_value" numeric, "p_reason" "text") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."set_my_ask_hidden"("p_hidden" boolean) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."set_my_ask_hidden"("p_hidden" boolean) TO "service_role";
+GRANT ALL ON FUNCTION "public"."set_my_ask_hidden"("p_hidden" boolean) TO "authenticated";
 
 
 
@@ -41775,6 +42095,21 @@ GRANT ALL ON TABLE "public"."app_secrets" TO "service_role";
 
 GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE "public"."app_settings" TO "authenticated";
 GRANT ALL ON TABLE "public"."app_settings" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."ask_access" TO "service_role";
+GRANT SELECT ON TABLE "public"."ask_access" TO "authenticated";
+
+
+
+GRANT ALL ON TABLE "public"."ask_conversations" TO "service_role";
+GRANT SELECT ON TABLE "public"."ask_conversations" TO "authenticated";
+
+
+
+GRANT ALL ON TABLE "public"."ask_turns" TO "service_role";
+GRANT SELECT ON TABLE "public"."ask_turns" TO "authenticated";
 
 
 
