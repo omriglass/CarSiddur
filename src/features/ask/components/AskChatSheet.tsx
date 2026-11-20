@@ -24,6 +24,7 @@ import { weekStartOfDay } from "../draftToForm";
 import { useAckAskDisclaimerMutation, useAskAccess } from "../hooks";
 import type { AskDraft, AskFormHandoff, AskTurnResult } from "../types";
 import { AskDraftCardView } from "./AskDraftCardView";
+import { AskFindView } from "./AskFindView";
 
 type Entry =
   | { kind: "user"; text: string }
@@ -116,9 +117,18 @@ export function AskChatSheet({ open, onOpenChange, departmentId, fallbackWeekSta
     onOpenChange(false);
   }
 
+  /** Find a ride → "+ נוסע/ת": that ride on the siddur, where the member adds themselves. */
+  function openRide(result: AskTurnResult, rideId: string, week: string, day: string) {
+    endedRef.current = true;
+    void finishAskConversation(result.conversation_id, "to_form").catch(() => {});
+    navigate(paths.siddur({ dept: departmentId, week, rideId, day }));
+    onOpenChange(false);
+  }
+
   const lastAnswerIndex = entries.map((e) => e.kind).lastIndexOf("answer");
   const latest = entries[lastAnswerIndex];
-  const placeholder = entries.length === 0 || latest?.kind !== "answer" ? he.ask.placeholderEmpty : he.ask.placeholderCard;
+  const placeholder = entries.length === 0 || latest?.kind !== "answer" ? he.ask.placeholderEmpty
+    : latest.result.draft.intent === "find_ride" ? he.ask.placeholderFind : he.ask.placeholderCard;
 
   return (
     <>
@@ -150,7 +160,8 @@ export function AskChatSheet({ open, onOpenChange, departmentId, fallbackWeekSta
                 );
               }
               return (
-                <AnswerView key={index} entry={entry} active={index === lastAnswerIndex && !sending} travel={travel}
+                <AnswerView key={index} entry={entry} active={index === lastAnswerIndex && !sending} travel={travel} departmentId={departmentId}
+                  onOpenRide={(rideId, week, day) => openRide(entry.result, rideId, week, day)}
                   thumbsDown={!!entry.result.turn_id && thumbs.has(entry.result.turn_id)}
                   onThumbsDown={() => {
                     const turnId = entry.result.turn_id;
@@ -198,10 +209,12 @@ export function AskChatSheet({ open, onOpenChange, departmentId, fallbackWeekSta
   );
 }
 
-function AnswerView({ entry, active, travel, thumbsDown, onThumbsDown, onSend, onLocalChange, onToForm, onCancelRide, onDiscard }: {
+function AnswerView({ entry, active, travel, departmentId, thumbsDown, onThumbsDown, onSend, onLocalChange, onToForm, onOpenRide, onCancelRide, onDiscard }: {
   entry: Extract<Entry, { kind: "answer" }>;
   active: boolean;
   travel: TravelLookup;
+  departmentId: string;
+  onOpenRide: (rideId: string, weekStart: string, day: string) => void;
   thumbsDown: boolean;
   onThumbsDown: () => void;
   onSend: (message: string, override?: AskDraft) => void;
@@ -223,8 +236,17 @@ function AnswerView({ entry, active, travel, thumbsDown, onThumbsDown, onSend, o
       data-testid="ask-thumbs-down">{he.ask.thumbsDown}</button>
   ) : null;
 
+  if (draft.intent === "find_ride" && draft.date) {
+    return (
+      <AskFindView draft={draft} departmentId={departmentId} travel={travel} active={active} footer={thumbs} onOpenRide={onOpenRide}
+        onRequest={(next) => {
+          const filled = withAssumedReturn(next, travel);
+          onToForm(buildDraftCard(filled.draft, null, rides, { draft: filled.assumed })?.summary ?? "", filled.draft);
+        }} />
+    );
+  }
+
   if (!card && !choices.length) {
-    // "find a ride" is phase 4b; until then it reads as not understood, with examples
     return (
       <div className="space-y-2 rounded-lg border p-3 text-sm" data-testid="ask-not-understood">
         <p>{he.ask.notUnderstood}</p>
