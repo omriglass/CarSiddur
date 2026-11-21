@@ -46,3 +46,14 @@ describe("public ride details", () => {
     expect(result).not.toContain("Guest One");
   });
 });
+
+describe("ride public details by leg (RP1)", () => {
+  it("lists the other passengers as one line per leg when someone rides one way only", () => {
+    const entries = [
+      { requester: "Yael", leg: "both" as const, companions: [{ profile_id: "p1", name: "Inbar" }] },
+      { requester: "Noga", leg: "return" as const, guest_passenger_names: ["Dana"] },
+    ];
+    expect(ridePublicDetails(entries)).toBe("הלוך: Inbar\nחזור: Inbar, Dana");
+    expect(ridePublicDetails([{ requester: "Yael", leg: "both" as const, companions: [{ profile_id: "p1", name: "Inbar" }] }])).toBe("נוסעים נוספים: Inbar");
+  });
+});

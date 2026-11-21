@@ -12,6 +12,29 @@ export function rideCarriesBothLegs(servedLegs: readonly (RideLeg | null | undef
   return legs.length === 0 || legs.includes("both") || (legs.includes("out") && legs.includes("return"));
 }
 
+export interface LegName { name: string; leg: RideLeg | null | undefined }
+
+/**
+ * RP1 (owner 2026-11-20): on a ride that carries both directions with someone riding one way only, the names split by
+ * leg — everyone riding out, everyone riding back (a both-ways rider is on both). Null when nobody needs splitting: the
+ * names then read as one list, unmarked.
+ */
+export function namesByLeg(items: readonly LegName[], bothLegs: boolean): { out: string[]; ret: string[] } | null {
+  if (!bothLegs || !items.some((item) => item.leg === "out" || item.leg === "return")) return null;
+  return {
+    out: items.filter((item) => item.leg !== "return").map((item) => item.name),
+    ret: items.filter((item) => item.leg !== "out").map((item) => item.name),
+  };
+}
+
+/** "הלוך: א, ב" / "חזור: א, ג" — the lines with someone on them. */
+export function legLines(byLeg: { out: readonly string[]; ret: readonly string[] }, join: (names: readonly string[]) => string = (names) => names.join(", ")): string[] {
+  return [
+    ...(byLeg.out.length ? [tv("ridePublicDetails.legOutLine", { names: join(byLeg.out) })] : []),
+    ...(byLeg.ret.length ? [tv("ridePublicDetails.legReturnLine", { names: join(byLeg.ret) })] : []),
+  ];
+}
+
 /** "נגה (הלוך)" / "מעיין (חזור)" for a one-way rider on a ride that carries both directions, else the name as is. */
 export function withLegMark(name: string, leg: RideLeg | null | undefined, bothLegs: boolean): string {
   if (!bothLegs || !leg || leg === "both") return name;

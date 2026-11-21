@@ -15,7 +15,7 @@
 
 import { z } from "zod";
 
-import { rideCarriesBothLegs, withLegMark, type RideLeg } from "@/lib/rideLegMark";
+import { rideCarriesBothLegs, withLegMark, type LegName, type RideLeg } from "@/lib/rideLegMark";
 
 import type { BoardRide } from "./api";
 
@@ -86,9 +86,14 @@ export function legMarkedName(person: RidePerson, served: readonly LegEntry[]): 
 
 type LegEntry = { request_id: string | null; leg: RideLeg; ride_leg?: RideLeg };
 
-/** "+ נוסעים" names (`source: 'added'`), leg-marked — the `addedNames` option of the passenger summaries. */
-export function addedPeopleNames(ride: Pick<BoardRide, "people" | "served">, served: readonly LegEntry[]): string[] {
-  return peopleOf(ride).filter((person) => person.source === "added").map((person) => legMarkedName(person, served));
+/** "+ נוסעים" names (`source: 'added'`) with the leg each rides — the `addedNames` option of the passenger summaries. */
+export function addedPeopleNames(ride: Pick<BoardRide, "people" | "served">, served: readonly LegEntry[]): LegName[] {
+  return peopleOf(ride).filter((person) => person.source === "added").map((person) => ({ name: person.display_name.trim(), leg: personLeg(person, served) }));
+}
+
+function personLeg(person: RidePerson, served: readonly LegEntry[]): RideLeg | undefined {
+  const entry = person.request_id ? served.find((candidate) => candidate.request_id === person.request_id) : undefined;
+  return person.leg ?? entry?.ride_leg ?? entry?.leg;
 }
 
 export interface SeatLoad {

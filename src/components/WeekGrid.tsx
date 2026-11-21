@@ -405,7 +405,7 @@ function defaultRenderRide(ride: WeekGridRide) {
       {ride.seriesCount && ride.seriesCount > 1 ? (
         <span className="w-full shrink-0 truncate text-xs opacity-90">{tv("ride.seriesDay", { index: String(ride.seriesIndex ?? 1), count: String(ride.seriesCount) })}</span>
       ) : null}
-      {ride.passengerSummary ? <span className="w-full shrink-0 whitespace-normal break-words text-xs" title={ride.passengerSummary}>{ride.passengerSummary}</span> : null}
+      {ride.passengerSummary ? <span className="w-full shrink-0 whitespace-pre-line break-words text-xs" title={ride.passengerSummary}>{ride.passengerSummary}</span> : null}
       <RideDeltaLine view={ride.delta} />
       {/* Owner 2026-10-22: notes take whatever height the block leaves (they were cut at two lines); the click popup shows them whole. */}
       {ride.description || ride.coordinatorNotes ? (

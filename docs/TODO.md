@@ -2024,7 +2024,7 @@ Owner report: next week's Monday ride בנימינה → מצר shows ~20 minute
 - **Fix:** one migration rewriting both functions in full with the factor 2 + a SQL test pinning a known pair against `haversine_km() * 1.3`. Expect side effects once released: estimated pairs double, some merges now within the detour limit get refused, chauffeur rides between such places get longer — next week's board may show new warnings. Release timing: owner.
 - **Data note (not the bug):** the place "בנימינה וחריש" has Harish's coordinates (1.5 km from מצר), so times from it are short too.
 
-## Who goes where on a ride is hard to read — too many names (owner 2026-11-20, RP1) — not built yet
+## Who goes where on a ride is hard to read — too many names (owner 2026-11-20, RP1) — first bullet built 2026-11-21 (REQ §13.178 amended: summaries by leg, `namesByLeg`; the people list keeps per-row marks; wording to approve); summary sentence and per-stop editing open
 
 Owner: in the siddur (and the board) it is still hard to see who goes where. Two changes:
 
@@ -2041,6 +2041,6 @@ Owner: in the siddur (and the board) it is still hard to see who goes where. Two
 
 Owner: after a member answers a הצעה (accept / decline) on `/p/<token>` or the in-app proposal view, they stay on the proposal with no way out. After the answer: a toast (e.g. "התשובה נשלחה לסדרן/ית" — wording to approve) and back to `/notifications` (the inbox). And the proposal screen keeps the usual bottom navigation row instead of hiding it. Check both entries: signed in (full UI) and the no-sign-in token page (no inbox to go back to — there the toast + a link to sign in / the app).
 
-## A waiting-list column every day, even empty (owner 2026-11-21, WL1) — built 2026-11-21 (siddur table: `waitingLanes(…, minLanes)`, a published day from today on; the two-tap waiting-list request already existed, REQ §13.183 f). Column renamed "רשימת המתנה" (owner 2026-11-21). Not needed on /my (owner). Not done: the phone list view, the board
+## A waiting-list column every day, even empty (owner 2026-11-21, WL1) — built 2026-11-21 (siddur table: `waitingLanes(…, minLanes)`, a published day from today on; the two-tap waiting-list request already existed, REQ §13.183 f). Column renamed "רשימת המתנה" (owner 2026-11-21). Not needed on /my (owner). Not needed either: the phone list view, the board (owner 2026-11-21) — WL1 complete
 
 Owner: on this week's siddur a member should be able to put themselves on the רשימת המתנה for a day. Show the waiting-list column (REQ §13.182/183) as the last column of every day **even when nobody is in it**; tapping / double-tapping an empty spot in it opens a request for that day and hours **for no particular car** — straight into the waiting list (the existing `waitlist=1` flow, which still tries to place it first and says "car was free" when it could, consistency decision 24). Check: phone day list + desktop grid, /my week view, the board's own waiting-list column, and the column header wording.

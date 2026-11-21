@@ -32,12 +32,15 @@ describe("ride passenger summary", () => {
     expect(result).toContain("Guest One");
   });
 
-  it("marks one-way riders on a ride that carries both directions, and nobody on a one-leg ride (REQ §13.178)", () => {
+  it("splits the people by leg when someone rides one way on a ride that carries both directions, nobody on a one-leg ride (RP1)", () => {
     const host = { request_id: "h", role: "driver" as const, leg: "both" as const, requester: "Yael", adults: 1, child_seats: 0, boosters: 0 };
     const out = { request_id: "o", role: "passenger" as const, leg: "out" as const, requester: "Noga", adults: 1, child_seats: 0, boosters: 0 };
     const back = { request_id: "b", role: "passenger" as const, leg: "return" as const, requester: "Maayan", adults: 1, child_seats: 0, boosters: 0 };
-    expect(ridePassengerSummary([host, out, back])).toBe("נוסעים: Yael, Noga (הלוך) וMaayan (חזור)");
+    expect(ridePassengerSummary([host, out, back])).toBe("הלוך: Yael וNoga\nחזור: Yael וMaayan");
     expect(ridePassengerSummary([out])).toBe("נוסעים: Noga");
-    expect(ridePassengerSummary([{ ...out, requester: "Noga" }, { ...back, request_id: "b2" }])).toBe("נוסעים: Noga (הלוך) וMaayan (חזור)");
+    expect(ridePassengerSummary([{ ...out, requester: "Noga" }, { ...back, request_id: "b2" }])).toBe("הלוך: Noga\nחזור: Maayan");
+    expect(ridePassengerSummary([host, { ...out, adults: 2 }])).toBe("הלוך: Yael, Noga ומבוגר/ת 1\nחזור: Yael");
+    expect(ridePassengerSummary([host], null, { addedNames: [{ name: "Dana", leg: "return" }] })).toBe("הלוך: Yael\nחזור: Yael וDana");
+    expect(ridePassengerSummary([host], null, { addedNames: [{ name: "Dana", leg: "both" }] })).toBe("נוסעים: Yael וDana");
   });
 });

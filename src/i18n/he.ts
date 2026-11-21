@@ -277,6 +277,9 @@ export const he = {
     joinPassengers: "{{names}} ו{{last}}",
     /** REQ §13.178: a one-way rider on a ride that carries both directions ("נגה (הלוך)"). */
     legMark: "{{name}} ({{leg}})",
+    /** RP1 (owner 2026-11-20): when someone rides one way only, the ride's people as two lines, one per leg. */
+    legOutLine: "הלוך: {{names}}",
+    legReturnLine: "חזור: {{names}}",
     label: "מידע נוסף לכולם",
     help: "המידע יוצג לכל מי שצופה בנסיעה. אפשר לעדכן אותו כבעלי הנסיעה או כסדרן/ית.",
     saved: "המידע לנסיעה עודכן",

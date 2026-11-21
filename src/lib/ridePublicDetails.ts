@@ -1,6 +1,6 @@
 import { he } from "@/i18n/he";
 
-import { rideCarriesBothLegs, withLegMark, type RideLeg } from "./rideLegMark";
+import { namesByLeg, rideCarriesBothLegs, type LegName, type RideLeg } from "./rideLegMark";
 
 export interface RidePublicEntry {
   requester?: string | null;
@@ -22,7 +22,7 @@ export interface RidePublicDetailOptions {
   includeCompanions?: boolean;
   /** Directly `add_ride_passengers()`-added names (`v_board_rides.people`, `source: 'added'`, REQ §13.85) - not tied to
    * any one served request; they join the one "נוסעים נוספים" line. */
-  addedNames?: readonly string[];
+  addedNames?: readonly (string | LegName)[];
 }
 
 /**
@@ -38,21 +38,32 @@ export function ridePublicDetailLines(entries: readonly RidePublicEntry[], optio
     return [entries.length > 1 && entry.requester ? [{ text: `${entry.requester}:`, emphasis: true }, { text: ` ${text}` }] : [{ text }]];
   });
   if (options.includeCompanions === false) return lines;
-  const names = [
+  const names: LegName[] = [
     ...entries.flatMap((entry) => [
       ...(entry.companions ?? []).map((person) => person.name),
       ...(entry.guest_passenger_names ?? []),
       ...(entry.childNames ?? []),
-    ].map((name) => name.trim()).filter(Boolean).map((name) => withLegMark(name, entry.ride_leg ?? entry.leg, bothLegs))),
-    ...(options.addedNames ?? []).map((name) => name?.trim()).filter((name): name is string => !!name),
+    ].map((name) => name.trim()).filter(Boolean).map((name) => ({ name, leg: entry.ride_leg ?? entry.leg }))),
+    ...(options.addedNames ?? []).map((added) => (typeof added === "string" ? { name: added, leg: undefined } : added))
+      .map((item) => ({ ...item, name: item.name?.trim() ?? "" })).filter((item) => !!item.name),
   ];
-  if (names.length) lines.push(companionsLine(names));
+  // RP1: someone rides one way only — "הלוך: …" / "חזור: …" instead of a mark on each name.
+  const byLeg = namesByLeg(names, bothLegs);
+  if (byLeg) {
+    if (byLeg.out.length) lines.push(namesLine(he.ridePublicDetails.legOutLine, byLeg.out));
+    if (byLeg.ret.length) lines.push(namesLine(he.ridePublicDetails.legReturnLine, byLeg.ret));
+  } else if (names.length) lines.push(companionsLine(names.map((item) => item.name)));
   return lines;
 }
 
 /** "נוסעים נוספים: א, ב" with each name picked out. */
 export function companionsLine(names: readonly string[]): RichLine {
-  const [before = "", after = ""] = he.ridePublicDetails.companions.split("{{names}}");
+  return namesLine(he.ridePublicDetails.companions, names);
+}
+
+/** A "{{names}}" template with each name picked out. */
+function namesLine(template: string, names: readonly string[]): RichLine {
+  const [before = "", after = ""] = template.split("{{names}}");
   return [
     ...(before ? [{ text: before }] : []),
     ...names.flatMap((name, i) => [...(i ? [{ text: ", " }] : []), { text: name, emphasis: true }]),

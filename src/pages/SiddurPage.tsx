@@ -101,6 +101,7 @@ import { representativeRideTypeCode, servedOf } from "@/features/rides/servedOf"
 import { rideGridLabel } from "@/features/rides/rideGridLabel";
 import { isRideDayEditable } from "@/features/rides/rideDayEditable";
 import { addedPeopleNames, myRidePersonKey } from "@/features/rides/ridePeople";
+import type { LegName } from "@/lib/rideLegMark";
 import { resolveRideRealDestination } from "@/lib/rideLabel";
 import { he, t, tv } from "@/i18n/he";
 import { fromZonedTime } from "date-fns-tz";
@@ -133,7 +134,7 @@ function resolveSiddurWeek(weeks: readonly Week[]): Week | null {
 /** Directly `add_ride_passengers()`-added names (`people`, `source: 'added'`) — not tied to
  * any one served request, so `ridePassengerSummary`/`ridePublicDetails` take them as a
  * separate list rather than folding them into a particular requester's companions. */
-function addedNamesOf(ride: BoardRide): string[] {
+function addedNamesOf(ride: BoardRide): LegName[] {
   return addedPeopleNames(ride, servedOf(ride));
 }
 

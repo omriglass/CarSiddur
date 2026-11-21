@@ -1,3 +1,4 @@
+import type { LegName } from "@/lib/rideLegMark";
 import { fromZonedTime } from "date-fns-tz";
 
 import { he, tv } from "@/i18n/he";
@@ -53,8 +54,15 @@ function weekDayKeys(weekStart: string): string[] {
 interface Block { ride: BoardRide; carId: string; day: number; start: number; end: number; lane: number }
 
 /** Same people wording as the /my cards ("דני כהן ועוד מבוגר/ת"); empty when nobody is listed. */
-function whoLine(ride: BoardRide, served: ReturnType<typeof servedOf>, addedNames: string[]): string {
-  const { names, adults, children } = ridePassengerParts(served, ride.needs_driver ? null : ride.driver_name, { addedNames });
+function whoLine(ride: BoardRide, served: ReturnType<typeof servedOf>, addedNames: LegName[]): string {
+  const { names, adults, children, byLeg } = ridePassengerParts(served, ride.needs_driver ? null : ride.driver_name, { addedNames });
+  // RP1: someone rides one way only — one part per leg ("הלוך: … · חזור: …").
+  if (byLeg) {
+    return [
+      ...(byLeg.out.names.length || byLeg.out.adults || byLeg.out.children ? [tv("ridePublicDetails.legOutLine", { names: whoText(byLeg.out.names, byLeg.out.adults, byLeg.out.children) })] : []),
+      ...(byLeg.ret.names.length || byLeg.ret.adults || byLeg.ret.children ? [tv("ridePublicDetails.legReturnLine", { names: whoText(byLeg.ret.names, byLeg.ret.adults, byLeg.ret.children) })] : []),
+    ].join(" · ");
+  }
   return names.length || adults || children ? whoText(names, adults, children) : "";
 }
 
