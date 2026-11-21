@@ -411,9 +411,9 @@ begin
   assert (pv->>'ok')::boolean, format('an admin may merge over a maintenance block, got %s',pv);
   perform set_config('request.jwt.claims',jsonb_build_object('sub',manager,'role','authenticated')::text,true);
   delete from public.car_maintenance_blocks where car_id=car1 and reason='merge fixture';
-  -- a block that ends before the grown start does not matter
+  -- a block that ends before the grown start does not matter (TE1: the grown start is 45 min earlier with the real distance)
   insert into public.car_maintenance_blocks(car_id, starts_at, ends_at, reason, created_by)
-    values (car1, d0-interval '5 hours', d0-interval '30 minutes', 'merge fixture', manager);
+    values (car1, d0-interval '5 hours', d0-interval '1 hour', 'merge fixture', manager);
   pv:=public.merge_preview(rA,g2,'out');
   assert (pv->>'ok')::boolean, format('a block clear of the grown window is fine, got %s',pv);
   delete from public.car_maintenance_blocks where car_id=car1 and reason='merge fixture';

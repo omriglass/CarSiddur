@@ -2015,7 +2015,7 @@ Owner: each car needs "How do I…" guides for common actions (resetting the tir
 - **Who edits:** the car's responsible person, car admins (shared cars), admins — the same as the car's other details (`can_manage_car`); everyone who sees the car reads them.
 - **Open:** data model (department `car_guide_topics` + per-car `car_guides` with ordered steps, or steps as one ordered text list); whether a car may have extra guides beyond the department's topics (likely yes); copy-from-another-car; the exact wordings (owner approval). A REQUIREMENTS item first.
 
-## Estimated travel times between two non-home places are half the real ones — bug (owner 2026-11-20, TE1) — not fixed yet
+## Estimated travel times between two non-home places are half the real ones — bug (owner 2026-11-20, TE1) — fixed 2026-11-21 (`20261121120000`, pinned in `origins_schema.sql`; `merged_rides.sql` maintenance fixture moved — the merge now grows 45 min, not ~20); unreleased
 
 Owner report: next week's Monday ride בנימינה → מצר shows ~20 minutes although the travel margin was raised. Production check (SELECT only, 2026-11-20): neither place is home and no `place_distances` route is stored, so `place_travel()` falls back to the straight-line estimate — and it returns **8 km / 8 min** where the straight line alone is ~12.3 km (should be ~16 km / 16 min at ×1.3, 60 km/h). The department's 15% margin and the morning rush (+30%) then stretch the halved number to ~20 (REQ item 249 b/c work as designed).
 

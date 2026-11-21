@@ -4733,7 +4733,7 @@ begin
              exists(select 1 from public.departments d where d.id = p.f_dept and d.home_destination_id = p.from_id) as home_from,
              exists(select 1 from public.departments d where d.id = p.t_dept and d.home_destination_id = p.to_id) as home_to,
              case when p.f_lat is not null and p.f_lng is not null and p.t_lat is not null and p.t_lng is not null then
-               (6371 * asin(sqrt(
+               (6371 * 2 * asin(sqrt(
                    power(sin(radians(p.t_lat - p.f_lat) / 2), 2)
                    + cos(radians(p.f_lat)) * cos(radians(p.t_lat)) * power(sin(radians(p.t_lng - p.f_lng) / 2), 2)
                  ))) * 1.3
@@ -18405,7 +18405,7 @@ begin
   end if;
 
   if v_from.lat is not null and v_from.lng is not null and v_to.lat is not null and v_to.lng is not null then
-    v_km := (6371 * asin(sqrt(
+    v_km := (6371 * 2 * asin(sqrt(
         power(sin(radians(v_to.lat - v_from.lat) / 2), 2)
         + cos(radians(v_from.lat)) * cos(radians(v_to.lat)) * power(sin(radians(v_to.lng - v_from.lng) / 2), 2)
       ))) * 1.3;

@@ -23,7 +23,7 @@ declare
   v_result jsonb;
   v_req record;
   v_origin_check uuid;
-  v_dist numeric; v_mins int; v_src text;
+  v_dist numeric; v_mins int; v_src text; v_est numeric;
 begin
   insert into public.weeks(department_id, week_start, phase, open_at, close_at, publish_at)
   values (dept, w, 'open', now() - interval '1 day', now() + interval '2 days', now() + interval '3 days');
@@ -165,6 +165,12 @@ begin
   select distance_km, travel_minutes, source into v_dist, v_mins, v_src
     from public.place_travel('00000000-0000-0000-0000-000000000013', '00000000-0000-0000-0000-000000000012'); -- זכרון יעקב <-> בנימינה, both have lat/lng
   assert v_src = 'estimate' and v_dist > 0, 'place_travel did not fall back to a haversine estimate';
+  -- TE1 (2026-11-20): the estimate is the straight line × 1.3 (km = minutes at 60 km/h), never half of it.
+  select round((public.haversine_km(a.lat, a.lng, b.lat, b.lng) * 1.3)::numeric, 1) into v_est
+    from public.destinations a, public.destinations b
+   where a.id = '00000000-0000-0000-0000-000000000013' and b.id = '00000000-0000-0000-0000-000000000012';
+  assert abs(v_dist - v_est) <= 0.2 and abs(v_mins - v_est) <= 1,
+    format('place_travel estimate %s km / %s min, expected ~%s (haversine_km × 1.3)', v_dist, v_mins, v_est);
 
   insert into public.destinations (id, department_id, name, zone, is_approved)
     values ('50805000-0000-0000-0000-000000000002', dept, 'Origins suite no-coord A', 'unknown', true),
