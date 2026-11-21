@@ -95,8 +95,8 @@ test("the stops view and the people summary; the Sadran makes a passenger 'only 
   try {
     const page = sadran.page;
     await openRide(page, WEEK, ride.id);
-    // the summary says the place in the middle in words
-    await expect(page.getByTestId("ride-summary")).toContainText(tv("rideSummary.via", { place: "זכרון יעקב" }));
+    // the summary says who rides from where to where (RP1)
+    await expect(page.getByTestId("ride-summary")).toContainText(tv("rideSummary.to", { names: "גל", to: "זכרון יעקב" }));
     await tab(page, "details");
     const school = page.getByTestId("ride-stop-out-1");
     await expect(school).toContainText(tv("rideStops.off", { names: "גל" }));

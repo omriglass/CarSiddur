@@ -20,13 +20,13 @@ const person = (key: string, source: RidePerson["source"], name: string): RidePe
 const people = [person("driver:d", "driver", "דנה"), person("added:a", "added", "ענבר"), person("added:n", "added", "נגה")];
 
 describe("RideSummaryLine (RP1)", () => {
-  it("a round trip without places in the middle says who stays and who is picked up", () => {
+  it("a round trip without places in the middle says who rides which way", () => {
     stretches.data = {
       out: { spans: { "driver:d": [0, 1], "added:a": [0, 1] }, absent: [], free: [2] },
       return: { spans: { "driver:d": [0, 1], "added:n": [0, 1] }, absent: [], free: [2] },
     };
-    render(<RideSummaryLine rideId="r1" version={1} route={route} people={people} lead="דנה לבנימינה" />);
-    expect(screen.getByTestId("ride-summary")).toHaveTextContent("דנה לבנימינה, משאירים שם את ענבר. בחזור אוספים שם את נגה.");
+    render(<RideSummaryLine rideId="r1" version={1} route={route} people={people} lead="דנה לבנימינה" homeId="נבו" />);
+    expect(screen.getByTestId("ride-summary")).toHaveTextContent("דנה וענבר לבנימינה. בחזור: דנה ונגה מבנימינה הביתה.");
   });
 
   it("onlyWhenMore: nothing when the sentence is just the label", () => {

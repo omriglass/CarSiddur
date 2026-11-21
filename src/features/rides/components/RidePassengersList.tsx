@@ -5,11 +5,11 @@ import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Button } from "@/components/ui/button";
 import { he, tv } from "@/i18n/he";
-import { parseRideRoute, routeHasIntermediates } from "@/lib/rideRoute";
+import { parseRideRoute } from "@/lib/rideRoute";
 import { formatTime } from "@/lib/time";
 
 import { canRemoveRidePerson, legMarkedName, type RidePerson } from "../ridePeople";
-import { baseRequestId, personDialogSetup, personWhereParts, rideLegs, type SummaryWords } from "../rideStretches";
+import { baseRequestId, personDialogSetup, personWhereParts, rideLegs, rideNeedsStretches, type SummaryWords } from "../rideStretches";
 import type { ServedEntry } from "../servedOf";
 import { useLeaveRideAsGuestMutation, useRemoveRidePassengerMutation, useRideStretchesQuery } from "../hooks";
 import { RidePersonDialog } from "./RidePersonDialog";
@@ -62,9 +62,10 @@ const EDITABLE = new Set<RidePerson["source"]>(["companion", "child", "guest", "
 export function RidePassengersList({ rideId, expectedVersion, people, served, canManagePeople = false, rideCancelled = false, departmentId, weekStart, requestRowsLocked = false, route, viewerId }: RidePassengersListProps) {
   const mutation = useRemoveRidePassengerMutation();
   const points = parseRideRoute(route);
-  const hasMiddle = routeHasIntermediates(points);
-  const stretchesQuery = useRideStretchesQuery(rideId, expectedVersion, hasMiddle);
-  const stretches = hasMiddle ? stretchesQuery.data : undefined;
+  // RP1 (owner 2026-11-21): also a round trip with no stop, so a one-way rider says "רק הלוך" / "רק חזור".
+  const needsStretches = rideNeedsStretches(points);
+  const stretchesQuery = useRideStretchesQuery(rideId, expectedVersion, needsStretches);
+  const stretches = needsStretches ? stretchesQuery.data : undefined;
   const [editing, setEditing] = useState<RidePerson | null>(null);
   const [leaving, setLeaving] = useState<RidePerson | null>(null);
   const leave = useLeaveRideAsGuestMutation();

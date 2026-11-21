@@ -317,7 +317,7 @@ export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenCha
 
                   {/* RP1 (owner 2026-11-21): the siddur sheet's summary sentence, when it says more than the ride's label. */}
                   {blockLabel && !reservation ? (
-                    <RideSummaryLine rideId={ride.id} version={ride.version} route={ride.route} people={peopleOf(ride)} lead={blockLabel} onlyWhenMore />
+                    <RideSummaryLine rideId={ride.id} version={ride.version} route={ride.route} people={peopleOf(ride)} lead={blockLabel} homeId={homeDestinationId} onlyWhenMore />
                   ) : null}
 
                   {/* One line per served request (owner 2026-11-08: no repeated information, normal text colour). */}

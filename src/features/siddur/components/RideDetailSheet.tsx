@@ -232,7 +232,7 @@ export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = 
                   <RideCarHandover ride={ride} />
                   {/* REQ item 150 b: this ride's car tasks for me, inside its window only (member surfaces; the board has its own sheet). */}
                   {ride.id ? <MyCarTasksCard rideId={ride.id} /> : null}
-                  <RideSummaryLine rideId={ride.id} version={ride.version} route={ride.route} people={peopleOf(ride)} lead={headerLabel(ride, served, homeDestinationId, weekRides)} />
+                  <RideSummaryLine rideId={ride.id} version={ride.version} route={ride.route} people={peopleOf(ride)} lead={headerLabel(ride, served, homeDestinationId, weekRides)} homeId={homeDestinationId} />
 
                   {ride.series_count && ride.series_count > 1 ? (
                     <p className="text-sm text-muted-foreground">

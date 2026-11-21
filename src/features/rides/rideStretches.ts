@@ -49,6 +49,15 @@ export function withStatedHours(points: readonly RoutePoint[], stretches: RideSt
   return { points: [...points], kept, missed };
 }
 
+/**
+ * RP1 (owner 2026-11-21): the ride sheet reads who rides which part (`ride_stretches`) for a ride with places in the
+ * middle or one that goes both ways - a one-way rider on a round trip is "רק הלוך" even with no stop.
+ */
+export function rideNeedsStretches(points: readonly Pick<RoutePoint, "kind" | "leg">[]): boolean {
+  return points.some((p) => p.kind === "stop" || p.kind === "board" || p.kind === "alight")
+    || (points.some((p) => p.leg === "out") && points.some((p) => p.leg === "return"));
+}
+
 /** Route points of one leg, in order (positions of `v_board_rides.route`). */
 export function legPoints(points: readonly RoutePoint[], leg: RouteLeg): RoutePoint[] {
   return points.filter((p) => p.leg === leg).sort((a, b) => a.position - b.position);
