@@ -1,4 +1,5 @@
 import { CarFront } from "lucide-react";
+import { useState } from "react";
 import { Link } from "react-router-dom";
 
 import { paths } from "@/app/routes";
@@ -10,6 +11,7 @@ import { RequestLink } from "@/features/requests/components/RequestLink";
 import { he, tv } from "@/i18n/he";
 import type { CarFuelType } from "@/lib/enums";
 
+import { CarGuidesDialog } from "../guides/components/CarGuidesBody";
 import { activeCarCode } from "../lib/relevantCars";
 import { CarFuelChip } from "./CarFuelChip";
 import { formatPlate } from "@/lib/plate";
@@ -20,7 +22,7 @@ import { formatPlate } from "@/lib/plate";
  * directly, a shared car is a preferred car under the normal rules) and the car's own page
  * (owner 2026-11-03, REQ §13.182).
  */
-export function HomeCarCard({ car, addRideTo, checklistPrompt }: {
+export function HomeCarCard({ car, addRideTo, checklistPrompt, hasGuides, missingGuides }: {
   /** MC1 (REQ item 218): name, licence plate, fuel type and the code to type, when the viewer may read them. */
   car: Pick<Car, "id" | "name" | "license_plate" | "status"> & {
     fuel_type?: CarFuelType | null;
@@ -31,9 +33,15 @@ export function HomeCarCard({ car, addRideTo, checklistPrompt }: {
   /** `paths.requests.new(...)` with the car; omitted when the member cannot file requests. */
   addRideTo?: string;
   checklistPrompt?: boolean;
+  /** REQ item 259: the car has "איך עושים…" guides — one more menu entry. */
+  hasGuides?: boolean;
+  /** REQ item 259: the required guide topics not written for this car (the responsible person's prompt). */
+  missingGuides?: readonly string[];
 }) {
   const code = activeCarCode(car);
+  const [guidesOpen, setGuidesOpen] = useState(false);
   return (
+    <>
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <button type="button" className="block w-full text-start" aria-label={tv("carPage.homeCarMenuLabel", { name: car.name })} data-testid={`home-car-${car.id}`}>
@@ -57,6 +65,11 @@ export function HomeCarCard({ car, addRideTo, checklistPrompt }: {
                   {checklistPrompt ? (
                     <p className="text-xs font-medium text-primary" data-testid="home-checklist-prompt">{he.carChecklist.promptCard}</p>
                   ) : null}
+                  {missingGuides?.length ? (
+                    <p className="text-xs font-medium text-primary" data-testid="home-guides-missing">
+                      {tv("carGuides.missing", { topics: missingGuides.join(", ") })}
+                    </p>
+                  ) : null}
                 </div>
               </div>
               <StatusBadge kind="car" status={car.status} />
@@ -70,10 +83,17 @@ export function HomeCarCard({ car, addRideTo, checklistPrompt }: {
             <RequestLink to={addRideTo}>{he.carPage.homeCarAddRide}</RequestLink>
           </DropdownMenuItem>
         ) : null}
+        {hasGuides ? (
+          <DropdownMenuItem onSelect={() => setGuidesOpen(true)} data-testid="home-car-guides">
+            {he.carGuides.entryTitle}
+          </DropdownMenuItem>
+        ) : null}
         <DropdownMenuItem asChild>
           <Link to={paths.car(car.id)}>{he.carPage.homeCarOpenPage}</Link>
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
+    {hasGuides ? <CarGuidesDialog carId={car.id} open={guidesOpen} onOpenChange={setGuidesOpen} /> : null}
+    </>
   );
 }

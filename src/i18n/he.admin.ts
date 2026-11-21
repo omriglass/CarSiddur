@@ -199,6 +199,7 @@ export const heAdmin = {
     fieldPlate: "מספר רישוי",
     /** CR1 (REQ item 257): free text; the names already used on any car are suggested. */
     fieldCorporation: "תאגיד",
+    fieldModel: "דגם",
     fieldTirePressure: "לחץ אוויר רצוי בגלגלים (PSI)",
     tireFront: "קדמיים",
     tireRear: "אחוריים",

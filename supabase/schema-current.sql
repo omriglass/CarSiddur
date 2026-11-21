@@ -12409,6 +12409,40 @@ $$;
 ALTER FUNCTION "public"."delete_car_checklist_item"("p_item_id" "uuid") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."delete_car_guide"("p_guide_id" "uuid") RETURNS "void"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare v_car uuid;
+begin
+  select car_id into v_car from public.car_guides where id = p_guide_id for update;
+  if v_car is null then raise exception 'not_found' using errcode = 'P0001'; end if;
+  if not public.can_manage_car(v_car) then raise exception 'not_authorized' using errcode = 'P0001'; end if;
+  delete from public.car_guides where id = p_guide_id;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."delete_car_guide"("p_guide_id" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."delete_car_guide_topic"("p_topic_id" "uuid") RETURNS "void"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare v_dept uuid;
+begin
+  select department_id into v_dept from public.car_guide_topics where id = p_topic_id for update;
+  if v_dept is null then raise exception 'not_found' using errcode = 'P0001'; end if;
+  if not public.can_define_car_checklist(v_dept) then raise exception 'not_authorized' using errcode = 'P0001'; end if;
+  delete from public.car_guide_topics where id = p_topic_id;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."delete_car_guide_topic"("p_topic_id" "uuid") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."delete_car_maintenance"("p_block_id" "uuid") RETURNS "void"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -16493,6 +16527,41 @@ $$;
 
 
 ALTER FUNCTION "public"."move_car_checklist_item"("p_item_id" "uuid", "p_direction" integer) OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."move_car_guide_topic"("p_topic_id" "uuid", "p_direction" integer) RETURNS "void"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  v_item public.car_guide_topics%rowtype;
+  v_other public.car_guide_topics%rowtype;
+begin
+  select * into v_item from public.car_guide_topics where id = p_topic_id for update;
+  if v_item.id is null then raise exception 'not_found' using errcode = 'P0001'; end if;
+  if not public.can_define_car_checklist(v_item.department_id) then raise exception 'not_authorized' using errcode = 'P0001'; end if;
+  if p_direction not in (-1, 1) then raise exception 'invalid_input' using errcode = 'P0001'; end if;
+  select * into v_other from public.car_guide_topics
+  where department_id = v_item.department_id and id <> v_item.id
+    and ((p_direction = -1 and (position, id) < (v_item.position, v_item.id))
+      or (p_direction = 1 and (position, id) > (v_item.position, v_item.id)))
+  order by case when p_direction = -1 then position end desc, case when p_direction = -1 then id end desc,
+           case when p_direction = 1 then position end asc, case when p_direction = 1 then id end asc
+  limit 1 for update;
+  if v_other.id is null then return; end if;
+  with ordered as (
+    select id, row_number() over (order by position, id) - 1 as rn
+    from public.car_guide_topics where department_id = v_item.department_id)
+  update public.car_guide_topics i set position = ordered.rn from ordered where i.id = ordered.id;
+  select * into v_item from public.car_guide_topics where id = p_topic_id;
+  select * into v_other from public.car_guide_topics where id = v_other.id;
+  update public.car_guide_topics set position = v_other.position where id = v_item.id;
+  update public.car_guide_topics set position = v_item.position where id = v_other.id;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."move_car_guide_topic"("p_topic_id" "uuid", "p_direction" integer) OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."move_series"("p_series_id" "uuid", "p_new_car_id" "uuid", "p_expected_version" integer DEFAULT NULL::integer) RETURNS "jsonb"
@@ -24815,6 +24884,67 @@ $$;
 ALTER FUNCTION "public"."sadranim_of"("_dept" "uuid", "_week" "date") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."save_car_guide"("p_car_id" "uuid", "p_guide_id" "uuid", "p_topic_id" "uuid", "p_title" "text", "p_steps" "jsonb") RETURNS "uuid"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  v_car public.cars%rowtype;
+  v_guide public.car_guides%rowtype;
+  v_topic public.car_guide_topics%rowtype;
+  v_title text := trim(coalesce(p_title, ''));
+  v_steps jsonb := '[]'::jsonb;
+  v_step jsonb;
+  v_text text;
+  v_id uuid;
+begin
+  if p_guide_id is not null then
+    select * into v_guide from public.car_guides where id = p_guide_id for update;
+    if v_guide.id is null then raise exception 'not_found' using errcode = 'P0001'; end if;
+    p_car_id := v_guide.car_id;
+    p_topic_id := v_guide.topic_id;
+  end if;
+  select * into v_car from public.cars where id = p_car_id;
+  if v_car.id is null then raise exception 'not_found' using errcode = 'P0001'; end if;
+  if not public.can_manage_car(v_car.id) then raise exception 'not_authorized' using errcode = 'P0001'; end if;
+
+  if p_topic_id is not null then
+    select * into v_topic from public.car_guide_topics where id = p_topic_id;
+    if v_topic.id is null or v_topic.department_id <> v_car.department_id then
+      raise exception 'invalid_input' using errcode = 'P0001';
+    end if;
+    v_title := v_topic.title;
+    if p_guide_id is null then
+      select * into v_guide from public.car_guides where car_id = v_car.id and topic_id = v_topic.id for update;
+    end if;
+  end if;
+  if length(v_title) = 0 or length(v_title) > 120 then raise exception 'invalid_input' using errcode = 'P0001'; end if;
+
+  if p_steps is null or jsonb_typeof(p_steps) <> 'array' then raise exception 'invalid_input' using errcode = 'P0001'; end if;
+  for v_step in select value from jsonb_array_elements(p_steps) loop
+    v_text := trim(case jsonb_typeof(v_step) when 'string' then v_step #>> '{}' when 'object' then coalesce(v_step ->> 'text', '') else '' end);
+    if length(v_text) = 0 then continue; end if;
+    if length(v_text) > 1000 then raise exception 'invalid_input' using errcode = 'P0001'; end if;
+    v_steps := v_steps || jsonb_build_array(jsonb_build_object('text', v_text));
+  end loop;
+  if jsonb_array_length(v_steps) not between 1 and 30 then raise exception 'invalid_input' using errcode = 'P0001'; end if;
+
+  if v_guide.id is null then
+    insert into public.car_guides (department_id, car_id, topic_id, title, steps, updated_by)
+    values (v_car.department_id, v_car.id, v_topic.id, v_title, v_steps, (select auth.uid()))
+    returning id into v_id;
+  else
+    update public.car_guides set title = v_title, steps = v_steps, updated_by = (select auth.uid())
+    where id = v_guide.id returning id into v_id;
+  end if;
+  return v_id;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."save_car_guide"("p_car_id" "uuid", "p_guide_id" "uuid", "p_topic_id" "uuid", "p_title" "text", "p_steps" "jsonb") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."save_request_template"("p_request_id" "uuid", "p_every_weeks" smallint DEFAULT NULL::smallint) RETURNS "uuid"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -29994,6 +30124,43 @@ $$;
 ALTER FUNCTION "public"."upsert_car_checklist_item"("p_department_id" "uuid", "p_item_id" "uuid", "p_label" "text", "p_kind" "public"."car_checklist_item_kind", "p_required" boolean, "p_remind_days_before" integer, "p_active" boolean) OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."upsert_car_guide_topic"("p_department_id" "uuid", "p_topic_id" "uuid", "p_title" "text", "p_required" boolean, "p_active" boolean DEFAULT true) RETURNS "uuid"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  v_id uuid;
+  v_dept uuid;
+  v_title text := trim(coalesce(p_title, ''));
+begin
+  if p_topic_id is not null then
+    select department_id into v_dept from public.car_guide_topics where id = p_topic_id for update;
+    if v_dept is null then raise exception 'not_found' using errcode = 'P0001'; end if;
+    p_department_id := v_dept;
+  end if;
+  if p_department_id is null then raise exception 'invalid_input' using errcode = 'P0001'; end if;
+  if not public.can_define_car_checklist(p_department_id) then raise exception 'not_authorized' using errcode = 'P0001'; end if;
+  if length(v_title) = 0 or length(v_title) > 120 then raise exception 'invalid_input' using errcode = 'P0001'; end if;
+  if p_topic_id is null then
+    insert into public.car_guide_topics (department_id, position, title, required, active)
+    values (p_department_id,
+            coalesce((select max(position) + 1 from public.car_guide_topics where department_id = p_department_id), 0),
+            v_title, coalesce(p_required, true), coalesce(p_active, true))
+    returning id into v_id;
+  else
+    update public.car_guide_topics set title = v_title, required = coalesce(p_required, true), active = coalesce(p_active, true)
+    where id = p_topic_id returning id into v_id;
+    -- A topic's guides carry its title.
+    update public.car_guides set title = v_title where topic_id = v_id and title is distinct from v_title;
+  end if;
+  return v_id;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."upsert_car_guide_topic"("p_department_id" "uuid", "p_topic_id" "uuid", "p_title" "text", "p_required" boolean, "p_active" boolean) OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."validate_policy_rules"("_rules" "jsonb") RETURNS boolean
     LANGUAGE "sql" IMMUTABLE
     AS $$
@@ -31467,6 +31634,96 @@ CREATE OR REPLACE VIEW "public"."car_current_km" WITH ("security_invoker"='true'
 ALTER VIEW "public"."car_current_km" OWNER TO "postgres";
 
 
+CREATE TABLE IF NOT EXISTS "public"."car_guide_topics" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "department_id" "uuid" NOT NULL,
+    "position" integer DEFAULT 0 NOT NULL,
+    "title" "text" NOT NULL,
+    "required" boolean DEFAULT true NOT NULL,
+    "active" boolean DEFAULT true NOT NULL,
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    CONSTRAINT "car_guide_topics_title_ck" CHECK ((("length"(TRIM(BOTH FROM "title")) >= 1) AND ("length"(TRIM(BOTH FROM "title")) <= 120)))
+);
+
+ALTER TABLE ONLY "public"."car_guide_topics" FORCE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."car_guide_topics" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."car_guides" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "department_id" "uuid" NOT NULL,
+    "car_id" "uuid" NOT NULL,
+    "topic_id" "uuid",
+    "title" "text" NOT NULL,
+    "steps" "jsonb" NOT NULL,
+    "updated_by" "uuid",
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    CONSTRAINT "car_guides_steps_ck" CHECK ((("jsonb_typeof"("steps") = 'array'::"text") AND (("jsonb_array_length"("steps") >= 1) AND ("jsonb_array_length"("steps") <= 30)))),
+    CONSTRAINT "car_guides_title_ck" CHECK ((("length"(TRIM(BOTH FROM "title")) >= 1) AND ("length"(TRIM(BOTH FROM "title")) <= 120)))
+);
+
+ALTER TABLE ONLY "public"."car_guides" FORCE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."car_guides" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."cars" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "department_id" "uuid" NOT NULL,
+    "name" "text" NOT NULL,
+    "license_plate" "text" NOT NULL,
+    "type" "public"."car_type" DEFAULT 'shared'::"public"."car_type" NOT NULL,
+    "status" "public"."car_status" DEFAULT 'active'::"public"."car_status" NOT NULL,
+    "owner_id" "uuid",
+    "features" "text"[] DEFAULT '{}'::"text"[] NOT NULL,
+    "notes" "text",
+    "built_in_child_seats" smallint DEFAULT 0 NOT NULL,
+    "built_in_boosters" smallint DEFAULT 0 NOT NULL,
+    "retired_at" timestamp with time zone,
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "responsible_id" "uuid",
+    "base_location_id" "uuid",
+    "fuel_type" "public"."car_fuel_type",
+    "corporation" "text",
+    "tire_pressure_front_psi" smallint,
+    "tire_pressure_rear_psi" smallint,
+    "model" "text",
+    CONSTRAINT "cars_built_in_boosters_ck" CHECK (("built_in_boosters" >= 0)),
+    CONSTRAINT "cars_built_in_child_seats_ck" CHECK (("built_in_child_seats" >= 0)),
+    CONSTRAINT "cars_corporation_ck" CHECK ((("corporation" IS NULL) OR (("length"(TRIM(BOTH FROM "corporation")) >= 1) AND ("length"(TRIM(BOTH FROM "corporation")) <= 80)))),
+    CONSTRAINT "cars_model_ck" CHECK ((("model" IS NULL) OR (("length"(TRIM(BOTH FROM "model")) >= 1) AND ("length"(TRIM(BOTH FROM "model")) <= 80)))),
+    CONSTRAINT "cars_temporary_owner_ck" CHECK ((("type" = 'temporary'::"public"."car_type") OR ("owner_id" IS NULL))),
+    CONSTRAINT "cars_tire_pressure_ck" CHECK (((("tire_pressure_front_psi" IS NULL) OR (("tire_pressure_front_psi" >= 10) AND ("tire_pressure_front_psi" <= 99))) AND (("tire_pressure_rear_psi" IS NULL) OR (("tire_pressure_rear_psi" >= 10) AND ("tire_pressure_rear_psi" <= 99)))))
+);
+
+ALTER TABLE ONLY "public"."cars" FORCE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."cars" OWNER TO "postgres";
+
+
+CREATE OR REPLACE VIEW "public"."car_guide_missing" WITH ("security_invoker"='true') AS
+ SELECT "c"."id" AS "car_id",
+    "c"."department_id",
+    "t"."id" AS "topic_id",
+    "t"."title",
+    "t"."position"
+   FROM ("public"."cars" "c"
+     JOIN "public"."car_guide_topics" "t" ON ((("t"."department_id" = "c"."department_id") AND "t"."active" AND "t"."required")))
+  WHERE (("c"."type" = 'shared'::"public"."car_type") AND ("c"."retired_at" IS NULL) AND (NOT (EXISTS ( SELECT 1
+           FROM "public"."car_guides" "g"
+          WHERE (("g"."car_id" = "c"."id") AND ("g"."topic_id" = "t"."id"))))));
+
+
+ALTER VIEW "public"."car_guide_missing" OWNER TO "postgres";
+
+
 CREATE TABLE IF NOT EXISTS "public"."car_issues" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "car_id" "uuid" NOT NULL,
@@ -31583,40 +31840,6 @@ ALTER TABLE ONLY "public"."car_tasks" FORCE ROW LEVEL SECURITY;
 
 
 ALTER TABLE "public"."car_tasks" OWNER TO "postgres";
-
-
-CREATE TABLE IF NOT EXISTS "public"."cars" (
-    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
-    "department_id" "uuid" NOT NULL,
-    "name" "text" NOT NULL,
-    "license_plate" "text" NOT NULL,
-    "type" "public"."car_type" DEFAULT 'shared'::"public"."car_type" NOT NULL,
-    "status" "public"."car_status" DEFAULT 'active'::"public"."car_status" NOT NULL,
-    "owner_id" "uuid",
-    "features" "text"[] DEFAULT '{}'::"text"[] NOT NULL,
-    "notes" "text",
-    "built_in_child_seats" smallint DEFAULT 0 NOT NULL,
-    "built_in_boosters" smallint DEFAULT 0 NOT NULL,
-    "retired_at" timestamp with time zone,
-    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
-    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
-    "responsible_id" "uuid",
-    "base_location_id" "uuid",
-    "fuel_type" "public"."car_fuel_type",
-    "corporation" "text",
-    "tire_pressure_front_psi" smallint,
-    "tire_pressure_rear_psi" smallint,
-    CONSTRAINT "cars_built_in_boosters_ck" CHECK (("built_in_boosters" >= 0)),
-    CONSTRAINT "cars_built_in_child_seats_ck" CHECK (("built_in_child_seats" >= 0)),
-    CONSTRAINT "cars_corporation_ck" CHECK ((("corporation" IS NULL) OR (("length"(TRIM(BOTH FROM "corporation")) >= 1) AND ("length"(TRIM(BOTH FROM "corporation")) <= 80)))),
-    CONSTRAINT "cars_temporary_owner_ck" CHECK ((("type" = 'temporary'::"public"."car_type") OR ("owner_id" IS NULL))),
-    CONSTRAINT "cars_tire_pressure_ck" CHECK (((("tire_pressure_front_psi" IS NULL) OR (("tire_pressure_front_psi" >= 10) AND ("tire_pressure_front_psi" <= 99))) AND (("tire_pressure_rear_psi" IS NULL) OR (("tire_pressure_rear_psi" >= 10) AND ("tire_pressure_rear_psi" <= 99)))))
-);
-
-ALTER TABLE ONLY "public"."cars" FORCE ROW LEVEL SECURITY;
-
-
-ALTER TABLE "public"."cars" OWNER TO "postgres";
 
 
 CREATE TABLE IF NOT EXISTS "public"."child_guardians" (
@@ -33626,6 +33849,16 @@ ALTER TABLE ONLY "public"."car_checklists"
 
 
 
+ALTER TABLE ONLY "public"."car_guide_topics"
+    ADD CONSTRAINT "car_guide_topics_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."car_guides"
+    ADD CONSTRAINT "car_guides_pkey" PRIMARY KEY ("id");
+
+
+
 ALTER TABLE ONLY "public"."car_issues"
     ADD CONSTRAINT "car_issues_pkey" PRIMARY KEY ("id");
 
@@ -34146,6 +34379,26 @@ CREATE INDEX "car_checklists_car_idx" ON "public"."car_checklists" USING "btree"
 
 
 CREATE INDEX "car_checklists_department_idx" ON "public"."car_checklists" USING "btree" ("department_id");
+
+
+
+CREATE INDEX "car_guide_topics_department_idx" ON "public"."car_guide_topics" USING "btree" ("department_id", "position", "id");
+
+
+
+CREATE INDEX "car_guides_car_idx" ON "public"."car_guides" USING "btree" ("car_id");
+
+
+
+CREATE UNIQUE INDEX "car_guides_car_topic_key" ON "public"."car_guides" USING "btree" ("car_id", "topic_id") WHERE ("topic_id" IS NOT NULL);
+
+
+
+CREATE INDEX "car_guides_department_idx" ON "public"."car_guides" USING "btree" ("department_id");
+
+
+
+CREATE INDEX "car_guides_topic_idx" ON "public"."car_guides" USING "btree" ("topic_id");
 
 
 
@@ -35602,6 +35855,14 @@ CREATE OR REPLACE TRIGGER "set_updated_at" BEFORE UPDATE ON "public"."car_checkl
 
 
 
+CREATE OR REPLACE TRIGGER "set_updated_at" BEFORE UPDATE ON "public"."car_guide_topics" FOR EACH ROW EXECUTE FUNCTION "public"."set_updated_at"();
+
+
+
+CREATE OR REPLACE TRIGGER "set_updated_at" BEFORE UPDATE ON "public"."car_guides" FOR EACH ROW EXECUTE FUNCTION "public"."set_updated_at"();
+
+
+
 CREATE OR REPLACE TRIGGER "set_updated_at" BEFORE UPDATE ON "public"."car_odometer_readings" FOR EACH ROW EXECUTE FUNCTION "public"."set_updated_at"();
 
 
@@ -36220,6 +36481,31 @@ ALTER TABLE ONLY "public"."car_checklists"
 
 ALTER TABLE ONLY "public"."car_checklists"
     ADD CONSTRAINT "car_checklists_department_id_fkey" FOREIGN KEY ("department_id") REFERENCES "public"."departments"("id");
+
+
+
+ALTER TABLE ONLY "public"."car_guide_topics"
+    ADD CONSTRAINT "car_guide_topics_department_id_fkey" FOREIGN KEY ("department_id") REFERENCES "public"."departments"("id");
+
+
+
+ALTER TABLE ONLY "public"."car_guides"
+    ADD CONSTRAINT "car_guides_car_id_fkey" FOREIGN KEY ("car_id") REFERENCES "public"."cars"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."car_guides"
+    ADD CONSTRAINT "car_guides_department_id_fkey" FOREIGN KEY ("department_id") REFERENCES "public"."departments"("id");
+
+
+
+ALTER TABLE ONLY "public"."car_guides"
+    ADD CONSTRAINT "car_guides_topic_id_fkey" FOREIGN KEY ("topic_id") REFERENCES "public"."car_guide_topics"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."car_guides"
+    ADD CONSTRAINT "car_guides_updated_by_fkey" FOREIGN KEY ("updated_by") REFERENCES "public"."profiles"("id") ON DELETE SET NULL;
 
 
 
@@ -37285,6 +37571,22 @@ ALTER TABLE "public"."car_checklists" ENABLE ROW LEVEL SECURITY;
 
 
 CREATE POLICY "car_checklists_select" ON "public"."car_checklists" FOR SELECT TO "authenticated" USING ((("department_id" IN ( SELECT "d"."d"
+   FROM "public"."my_department_ids"() "d"("d"))) OR ( SELECT "public"."is_admin"() AS "is_admin")));
+
+
+
+ALTER TABLE "public"."car_guide_topics" ENABLE ROW LEVEL SECURITY;
+
+
+CREATE POLICY "car_guide_topics_select" ON "public"."car_guide_topics" FOR SELECT TO "authenticated" USING ((("department_id" IN ( SELECT "d"."d"
+   FROM "public"."my_department_ids"() "d"("d"))) OR ( SELECT "public"."is_admin"() AS "is_admin")));
+
+
+
+ALTER TABLE "public"."car_guides" ENABLE ROW LEVEL SECURITY;
+
+
+CREATE POLICY "car_guides_select" ON "public"."car_guides" FOR SELECT TO "authenticated" USING ((("department_id" IN ( SELECT "d"."d"
    FROM "public"."my_department_ids"() "d"("d"))) OR ( SELECT "public"."is_admin"() AS "is_admin")));
 
 
@@ -40069,6 +40371,18 @@ GRANT ALL ON FUNCTION "public"."delete_car_checklist_item"("p_item_id" "uuid") T
 
 
 
+REVOKE ALL ON FUNCTION "public"."delete_car_guide"("p_guide_id" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."delete_car_guide"("p_guide_id" "uuid") TO "service_role";
+GRANT ALL ON FUNCTION "public"."delete_car_guide"("p_guide_id" "uuid") TO "authenticated";
+
+
+
+REVOKE ALL ON FUNCTION "public"."delete_car_guide_topic"("p_topic_id" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."delete_car_guide_topic"("p_topic_id" "uuid") TO "service_role";
+GRANT ALL ON FUNCTION "public"."delete_car_guide_topic"("p_topic_id" "uuid") TO "authenticated";
+
+
+
 REVOKE ALL ON FUNCTION "public"."delete_car_maintenance"("p_block_id" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."delete_car_maintenance"("p_block_id" "uuid") TO "service_role";
 GRANT ALL ON FUNCTION "public"."delete_car_maintenance"("p_block_id" "uuid") TO "authenticated";
@@ -40605,6 +40919,12 @@ GRANT ALL ON FUNCTION "public"."merge_short_drop_off_rides"("_car" "uuid", "_wee
 REVOKE ALL ON FUNCTION "public"."move_car_checklist_item"("p_item_id" "uuid", "p_direction" integer) FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."move_car_checklist_item"("p_item_id" "uuid", "p_direction" integer) TO "service_role";
 GRANT ALL ON FUNCTION "public"."move_car_checklist_item"("p_item_id" "uuid", "p_direction" integer) TO "authenticated";
+
+
+
+REVOKE ALL ON FUNCTION "public"."move_car_guide_topic"("p_topic_id" "uuid", "p_direction" integer) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."move_car_guide_topic"("p_topic_id" "uuid", "p_direction" integer) TO "service_role";
+GRANT ALL ON FUNCTION "public"."move_car_guide_topic"("p_topic_id" "uuid", "p_direction" integer) TO "authenticated";
 
 
 
@@ -41743,6 +42063,12 @@ GRANT ALL ON FUNCTION "public"."sadranim_of"("_dept" "uuid", "_week" "date") TO 
 
 
 
+REVOKE ALL ON FUNCTION "public"."save_car_guide"("p_car_id" "uuid", "p_guide_id" "uuid", "p_topic_id" "uuid", "p_title" "text", "p_steps" "jsonb") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."save_car_guide"("p_car_id" "uuid", "p_guide_id" "uuid", "p_topic_id" "uuid", "p_title" "text", "p_steps" "jsonb") TO "service_role";
+GRANT ALL ON FUNCTION "public"."save_car_guide"("p_car_id" "uuid", "p_guide_id" "uuid", "p_topic_id" "uuid", "p_title" "text", "p_steps" "jsonb") TO "authenticated";
+
+
+
 REVOKE ALL ON FUNCTION "public"."save_request_template"("p_request_id" "uuid", "p_every_weeks" smallint) FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."save_request_template"("p_request_id" "uuid", "p_every_weeks" smallint) TO "service_role";
 GRANT ALL ON FUNCTION "public"."save_request_template"("p_request_id" "uuid", "p_every_weeks" smallint) TO "authenticated";
@@ -42094,6 +42420,12 @@ GRANT ALL ON FUNCTION "public"."upsert_car_checklist_item"("p_department_id" "uu
 
 
 
+REVOKE ALL ON FUNCTION "public"."upsert_car_guide_topic"("p_department_id" "uuid", "p_topic_id" "uuid", "p_title" "text", "p_required" boolean, "p_active" boolean) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."upsert_car_guide_topic"("p_department_id" "uuid", "p_topic_id" "uuid", "p_title" "text", "p_required" boolean, "p_active" boolean) TO "service_role";
+GRANT ALL ON FUNCTION "public"."upsert_car_guide_topic"("p_department_id" "uuid", "p_topic_id" "uuid", "p_title" "text", "p_required" boolean, "p_active" boolean) TO "authenticated";
+
+
+
 REVOKE ALL ON FUNCTION "public"."validate_policy_rules"("_rules" "jsonb") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."validate_policy_rules"("_rules" "jsonb") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."validate_policy_rules"("_rules" "jsonb") TO "service_role";
@@ -42354,6 +42686,26 @@ GRANT ALL ON TABLE "public"."car_current_km" TO "service_role";
 
 
 
+GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE "public"."car_guide_topics" TO "authenticated";
+GRANT ALL ON TABLE "public"."car_guide_topics" TO "service_role";
+
+
+
+GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE "public"."car_guides" TO "authenticated";
+GRANT ALL ON TABLE "public"."car_guides" TO "service_role";
+
+
+
+GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE "public"."cars" TO "authenticated";
+GRANT ALL ON TABLE "public"."cars" TO "service_role";
+
+
+
+GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE "public"."car_guide_missing" TO "authenticated";
+GRANT ALL ON TABLE "public"."car_guide_missing" TO "service_role";
+
+
+
 GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE "public"."car_issues" TO "authenticated";
 GRANT ALL ON TABLE "public"."car_issues" TO "service_role";
 
@@ -42381,11 +42733,6 @@ GRANT ALL ON TABLE "public"."car_task_notices" TO "service_role";
 
 GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE "public"."car_tasks" TO "authenticated";
 GRANT ALL ON TABLE "public"."car_tasks" TO "service_role";
-
-
-
-GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE "public"."cars" TO "authenticated";
-GRANT ALL ON TABLE "public"."cars" TO "service_role";
 
 
 

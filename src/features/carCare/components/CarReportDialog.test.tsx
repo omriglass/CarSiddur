@@ -12,6 +12,12 @@ const mocks = vi.hoisted(() => ({
   currentKm: { data: null as null | { km: number; recorded_at: string }, isLoading: false },
   car: { data: { fuel_type: null as null | string, tire_pressure_front_psi: null as null | number, tire_pressure_rear_psi: null as null | number } },
   openIssues: { data: [] as { id: string; car_id: string; description: string; is_unsafe: boolean; created_at: string }[] },
+  guides: { data: [] as { id: string; car_id: string; department_id: string; topic_id: string | null; title: string; steps: { text: string }[]; updated_at: string }[], isLoading: false },
+}));
+
+vi.mock("@/features/cars/guides/hooks", () => ({
+  useCarGuidesQuery: () => mocks.guides,
+  useGuideTopicsQuery: () => ({ data: [] }),
 }));
 
 vi.mock("../hooks", () => ({
@@ -35,6 +41,7 @@ beforeEach(() => {
   mocks.currentKm.data = null;
   mocks.car.data = { fuel_type: null, tire_pressure_front_psi: null, tire_pressure_rear_psi: null };
   mocks.openIssues.data = [];
+  mocks.guides.data = [];
 });
 
 function show(onOpenChange = vi.fn()) {
@@ -190,5 +197,24 @@ describe("CarReportDialog", () => {
     fireEvent.click(screen.getByRole("button", { name: he.common.back }));
     fireEvent.click(screen.getByText(he.carCare.homeTireFillTitle));
     expect(screen.getByTestId("tire-recommended").textContent).toBe(tv("carCare.tireRecommended", { front: "32", rear: "30" }));
+  });
+
+  it("CG1 (REQ item 259): offers 'איך עושים…' only when the car has guides; a guide opens step by step", () => {
+    const { unmount } = show();
+    expect(screen.queryByTestId("car-menu-guides")).toBeNull();
+    unmount();
+    mocks.guides.data = [{ id: "g1", car_id: "car-1", department_id: "d1", topic_id: null, title: "כיסא בטיחות", steps: [{ text: "צעד א" }, { text: "צעד ב" }], updated_at: "" }];
+    show();
+    fireEvent.click(screen.getByTestId("car-menu-guides"));
+    fireEvent.click(screen.getByText("כיסא בטיחות"));
+    expect(screen.getByTestId("guide-step-of").textContent).toBe(tv("carGuides.stepOf", { n: "1", total: "2" }));
+    expect(screen.getByTestId("guide-step").textContent).toBe("צעד א");
+    fireEvent.click(screen.getByTestId("guide-step"));
+    expect(screen.getByTestId("guide-step").textContent).toBe("צעד ב");
+    fireEvent.click(screen.getByTestId("guide-prev"));
+    expect(screen.getByTestId("guide-step").textContent).toBe("צעד א");
+    fireEvent.keyDown(screen.getByTestId("guide-step"), { key: "ArrowLeft" });
+    fireEvent.click(screen.getByTestId("guide-done"));
+    expect(screen.getByTestId("car-guides-list")).toBeInTheDocument();
   });
 });

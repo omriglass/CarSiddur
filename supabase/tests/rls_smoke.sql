@@ -649,6 +649,7 @@ begin
     ('cars', 'corporation', 'public'),
     ('cars', 'tire_pressure_front_psi', 'public'),
     ('cars', 'tire_pressure_rear_psi', 'public'),
+    ('cars', 'model', 'public'),
     ('departments', 'id', 'public'),
     ('departments', 'name', 'public'),
     ('departments', 'slug', 'public'),

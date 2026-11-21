@@ -39,6 +39,7 @@ const ROUTE_PATTERNS = [
   "/cars",
   "/cars/:carId",
   "/cars/checklist/:dept",
+  "/cars/guides/:dept",
   "/stats/:dept",
   "/policy/:dept",
   "/plan/:dept",
@@ -203,6 +204,13 @@ describe("paths.cars", () => {
   it("matches /cars", () => {
     expectRoutable(paths.cars());
     expect(paths.cars()).toBe("/cars");
+  });
+});
+
+describe("paths.carGuideTopics", () => {
+  it("matches /cars/guides/:dept", () => {
+    expectRoutable(paths.carGuideTopics("dept-1"));
+    expect(paths.carGuideTopics("dept-1")).toBe("/cars/guides/dept-1");
   });
 });
 

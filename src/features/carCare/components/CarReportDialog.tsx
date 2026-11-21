@@ -1,5 +1,5 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { AlertTriangle, Droplets, Fuel, Gauge, Route } from "lucide-react";
+import { AlertTriangle, BookOpen, Droplets, Fuel, Gauge, Route } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
@@ -14,6 +14,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { useScrollToFirstError } from "@/components/useScrollToFirstError";
 import { useCarCurrentKmQuery, useCarQuery, useOpenCarIssuesQuery } from "@/features/cars/hooks";
 import { CarOpenIssues } from "@/features/cars/components/CarOpenIssues";
+import { CarGuidesBody } from "@/features/cars/guides/components/CarGuidesBody";
+import { useCarGuidesQuery } from "@/features/cars/guides/hooks";
 import { tirePressureLabel } from "@/features/cars/lib/carDetails";
 import { he, tv } from "@/i18n/he";
 import { formatKm, parseKm } from "@/features/cars/lib/kilometrage";
@@ -32,7 +34,7 @@ import { UreaCelebration, UreaGame } from "./UreaGame";
 import { WashCelebration, WashGame } from "./WashGame";
 import { useTapLock } from "@/components/useTapLock";
 
-type View = "home" | "problem" | "tires" | "wash" | "urea" | "km" | "tiresDone" | "washDone" | "ureaDone";
+type View = "home" | "guides" | "problem" | "tires" | "wash" | "urea" | "km" | "tiresDone" | "washDone" | "ureaDone";
 
 /** How long the wash/tire-fill celebration shows before the dialog auto-closes. */
 const CELEBRATION_MS = 3500;
@@ -70,6 +72,7 @@ export function CarReportDialog({ carId, carName, open, onOpenChange, initialVie
   // report — whoever sees it fills it.
   const carRow = useCarQuery(open ? carId : undefined).data;
   const isDiesel = carRow?.fuel_type === "diesel";
+  const guidesQuery = useCarGuidesQuery(open ? carId : undefined);
   // CR1 (REQ item 257): the known open issues before a new report; the recommended pressure above the tires.
   const openIssues = useOpenCarIssuesQuery(open && view === "problem" ? [carId] : []).data ?? [];
   const recommendedPressure = carRow && tirePressureLabel(carRow.tire_pressure_front_psi, carRow.tire_pressure_rear_psi)
@@ -211,8 +214,25 @@ export function CarReportDialog({ carId, carName, open, onOpenChange, initialVie
               <Route className="size-6 shrink-0 text-primary" aria-hidden="true" />
               <span className="font-medium">{he.carCare.homeKilometrageTitle}</span>
             </button>
+            {/* REQ item 259: "איך עושים…" — only when the car has guides. */}
+            {guidesQuery.data?.length ? (
+              <button
+                type="button"
+                onClick={() => setView("guides")}
+                data-testid="car-menu-guides"
+                className="flex min-h-16 items-center gap-3 rounded-lg border p-4 text-start transition-smooth hover:bg-accent/40"
+              >
+                <BookOpen className="size-6 shrink-0 text-primary" aria-hidden="true" />
+                <span>
+                  <span className="block font-medium">{he.carGuides.entryTitle}</span>
+                  <span className="block text-xs text-muted-foreground">{he.carGuides.entryHint}</span>
+                </span>
+              </button>
+            ) : null}
           </div>
         ) : null}
+
+        {view === "guides" ? <CarGuidesBody carId={carId} onBack={() => setView("home")} /> : null}
 
         {view === "problem" ? (
           <Form {...form}>

@@ -112,6 +112,7 @@ import { cn } from "@/lib/utils";
 import { paths } from "@/app/routes";
 import { useOpenCarIssuesQuery } from "@/features/cars/hooks";
 import { countByCar } from "@/features/cars/lib/openIssues";
+import { useCarsWithGuidesQuery, useMissingGuidesQuery } from "@/features/cars/guides/hooks";
 
 import { isAwaitingAnswer } from "@/features/requests/pendingProposal";
 import { hasRideTodayOrTomorrow, resolveHomeWeek } from "./homeWeek";
@@ -159,6 +160,12 @@ export function HomePage() {
   const myCarsQuery = useMyResponsibleCarsQuery();
   // REQ item 150 (d): cars I became responsible for and have not yet completed a checklist for.
   const checklistPromptCarIds = new Set((useMyChecklistPromptsQuery().data ?? []).map((prompt) => prompt.car_id));
+  // REQ item 259: which of my cars (rides, responsible) have "איך עושים…" guides; the required ones still missing.
+  const { data: carsWithGuides } = useCarsWithGuidesQuery([...new Set([
+    ...(upcomingRidesQuery.data ?? []).flatMap((ride) => (ride.car_id ? [ride.car_id] : [])),
+    ...(myCarsQuery.data ?? []).map((car) => car.id),
+  ])]);
+  const missingGuidesQuery = useMissingGuidesQuery(active.departmentId);
   const freedOffersQuery = useMyFreedSlotOffers();
 
   const defaultDepartmentId =
@@ -376,6 +383,8 @@ export function HomePage() {
   const tripWeeks = buildTripWeeks(toDisplayRows(requests.filter((r) => !unservedIds.has(r.id))), unserved, listedRides, rideRequestIds);
   const unservedRides = ridesByRequestRow(unserved, upcomingRides, rideRequestIds);
   const openIssuesByCar = countByCar(openCarIssuesQuery.data ?? []);
+  const missingGuidesByCar = new Map<string, string[]>();
+  for (const row of missingGuidesQuery.data ?? []) missingGuidesByCar.set(row.car_id, [...(missingGuidesByCar.get(row.car_id) ?? []), row.title]);
   const rideCardOf = (ride: (typeof upcomingRides)[number]) => {
     const related = ride.id ? relatedByRide.get(ride.id) : undefined;
     const card = myRideCard(ride, requests, rideTypesQuery.data ?? [], {
@@ -389,7 +398,9 @@ export function HomePage() {
     // CR1 (REQ item 257): the car's open issues, on every ride of mine.
     const openIssues = ride.car_id && !related ? openIssuesByCar.get(ride.car_id) : undefined;
     if (!card) return card;
-    return { ...card, ...(seatsShort ? { seatsShort } : {}), ...(openIssues ? { openIssues } : {}) };
+    // REQ item 259: the car's "איך עושים…" guides, one tap away.
+    const hasGuides = !!ride.car_id && !related && !!carsWithGuides?.has(ride.car_id);
+    return { ...card, ...(seatsShort ? { seatsShort } : {}), ...(openIssues ? { openIssues } : {}), ...(hasGuides ? { hasGuides } : {}) };
   };
   const rideCardsOf = (rides: readonly (typeof upcomingRides)[number][] | undefined) =>
     (rides ?? []).flatMap((ride) => { const data = rideCardOf(ride); return data ? [data] : []; });
@@ -571,6 +582,8 @@ export function HomePage() {
                 key={car.id}
                 car={car}
                 checklistPrompt={checklistPromptCarIds.has(car.id)}
+                hasGuides={!!carsWithGuides?.has(car.id)}
+                missingGuides={missingGuidesByCar.get(car.id)}
                 addRideTo={active.canSubmit ? paths.requests.new({ ...addRideWeek, car: car.id }) : undefined}
               />
             ))}
@@ -582,7 +595,7 @@ export function HomePage() {
         <section className="space-y-2" data-testid="home-relevant-cars">
           <h2 className="text-sm font-semibold text-muted-foreground">{he.carPage.homeRelevantCarsTitle}</h2>
           <div className="space-y-2">
-            {relevantCars.map((car) => <HomeCarCard key={car.id} car={car} />)}
+            {relevantCars.map((car) => <HomeCarCard key={car.id} car={car} hasGuides={!!carsWithGuides?.has(car.id)} />)}
           </div>
         </section>
       ) : null}

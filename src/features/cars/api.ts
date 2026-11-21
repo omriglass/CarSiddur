@@ -164,6 +164,13 @@ export async function fetchCarCorporations(): Promise<string[]> {
   return [...new Set((data ?? []).map((row) => (row.corporation ?? "").trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, "he"));
 }
 
+/** CG1 (REQ item 259): every model name already used on a car, for the "דגם" suggestions (no list table). */
+export async function fetchCarModels(): Promise<string[]> {
+  const { data, error } = await supabase.from("cars").select("model").not("model", "is", null);
+  if (error) throw toAppError(error);
+  return [...new Set((data ?? []).map((row) => (row.model ?? "").trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, "he"));
+}
+
 /** CR2 (REQ item 257 b): mark an open issue taken care of, or reword it (`update_car_issue`; no notification). */
 export async function updateCarIssue(issueId: string, action: "resolve" | "edit", description?: string): Promise<void> {
   await rpc("update_car_issue", { p_issue_id: issueId, p_action: action, ...(description !== undefined ? { p_description: description } : {}) });

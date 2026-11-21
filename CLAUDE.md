@@ -181,6 +181,7 @@ e2e/
   board-mobile.spec.ts           board mobile header: title/week switcher, eye menu, kebab menu, undo/redo, policy chip
   car-handover.spec.ts           "!" be-back-on-time note and its mirror on /my and the ride sheet; none for a wide gap (REQ §13.108 f)
   car-care.spec.ts               report/tire-fill/wash, responsible person sees it in History, export
+  car-guides.spec.ts             "איך עושים…" (REQ item 259): a required topic flagged on the car page, written in place, read step by step from the car menu
   car-swap.spec.ts               swap two cars' rides for a day: siddur header menu (member), board drag (Sadran), seats blocker
   department-context.spec.ts     department selector; catalogs/Maps estimates; read-only department switching
   destinations-drop-points.spec.ts  /admin/destinations "נקודת הקפצה" switch + badge column, admin and Sadran (REQ §13.112)

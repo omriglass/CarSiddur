@@ -18,5 +18,6 @@ export const carKeys = {
   openIssuesAll: () => [...carKeys.all, "openIssues"] as const,
   openIssues: (carIds: readonly string[]) => [...carKeys.openIssuesAll(), [...carIds].sort().join(",")] as const,
   corporations: () => [...carKeys.all, "corporations"] as const,
+  models: () => [...carKeys.all, "models"] as const,
   byIds: (carIds: readonly string[]) => [...carKeys.all, "byIds", [...carIds].sort().join(",")] as const,
 };

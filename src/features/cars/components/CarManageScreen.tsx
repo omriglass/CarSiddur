@@ -33,6 +33,7 @@ import { CarMoodCard } from "./CarMoodCard";
 import { CarOwnersCard } from "./CarOwnersCard";
 import { CarKilometrageCard } from "./CarKilometrageCard";
 import { CarChecklistCard } from "../checklist/components/CarChecklistCard";
+import { CarGuidesCard } from "../guides/components/CarGuidesCard";
 import { CarFactsCard } from "./CarFactsCard";
 import { CarIssueSheet, type IssueTarget } from "./CarIssueSheet";
 import { CarOpenIssues } from "./CarOpenIssues";
@@ -288,6 +289,8 @@ export function CarManageScreen({ car, isAdmin, canEdit, canManageCar, canDefine
         codeVisible={codeVisible}
       />
       <CarOwnersCard car={car} canManageOwners={canManageOwners} />
+      {/* REQ item 259: "איך עושים…" — the car's step-by-step guides. */}
+      <CarGuidesCard car={car} canManage={canManageCar} canDefine={canDefineChecklist} />
       <CarMoodCard
         lastWashAt={merged.find((entry) => entry.kind === "wash")?.createdAt ?? null}
         onLogWash={() => setLogView("wash")}

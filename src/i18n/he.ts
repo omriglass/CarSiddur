@@ -12,6 +12,7 @@
  */
 import { heAdmin } from "./he.admin";
 import { heCarChecklist } from "./he.carChecklist";
+import { heCarGuides } from "./he.carGuides";
 import { heCarsOverview } from "./he.carsOverview";
 import { heCarTasks } from "./he.carTasks";
 import { hePlanning } from "./he.planning";
@@ -264,6 +265,7 @@ export const he = {
   ...heCarTasks,
   ...hePlanning,
   ...heCarChecklist,
+  ...heCarGuides,
   ...heCarsOverview,
   ...heAdmin,
   ...heSadran,

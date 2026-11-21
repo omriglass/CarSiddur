@@ -13,6 +13,7 @@ import { lazy } from "react";
  * behavior (eslint.config.js react-refresh cleanup, 2026-09-14).
  */
 export const CarChecklistEditorPage = lazy(() => import("@/pages/CarChecklistEditorPage").then((m) => ({ default: m.CarChecklistEditorPage })));
+export const CarGuideTopicsPage = lazy(() => import("@/pages/CarGuideTopicsPage").then((m) => ({ default: m.CarGuideTopicsPage })));
 export const CarPage = lazy(() => import("@/pages/CarPage").then((m) => ({ default: m.CarPage })));
 export const CarsOverviewPage = lazy(() => import("@/pages/CarsOverviewPage").then((m) => ({ default: m.CarsOverviewPage })));
 export const EditRequestPage = lazy(() => import("@/pages/EditRequestPage").then((m) => ({ default: m.EditRequestPage })));

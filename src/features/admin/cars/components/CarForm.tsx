@@ -10,7 +10,7 @@ import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, For
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { useCarCorporationsQuery } from "@/features/cars/hooks";
+import { useCarCorporationsQuery, useCarModelsQuery } from "@/features/cars/hooks";
 import { useDestinations } from "@/features/fleet/hooks";
 import { he } from "@/i18n/he";
 import { CAR_FUEL_TYPES } from "@/lib/enums";
@@ -73,6 +73,7 @@ export function CarForm({
   const updateMutation = useUpdateCarMutation();
   const seatConfigsQuery = useSeatConfigs(car?.id);
   const corporationsQuery = useCarCorporationsQuery(!readOnly);
+  const modelsQuery = useCarModelsQuery(!readOnly);
   const replaceSeatConfigsMutation = useReplaceSeatConfigsMutation();
   const [pendingSeatConfigs, setPendingSeatConfigs] = useState<Passengers[] | null>(null);
 
@@ -94,6 +95,7 @@ export function CarForm({
       responsible_id: car?.responsible_id ?? null,
       base_location_id: car?.base_location_id ?? null,
       corporation: car?.corporation ?? null,
+      model: car?.model ?? null,
       tire_pressure_front_psi: car?.tire_pressure_front_psi ?? null,
       tire_pressure_rear_psi: car?.tire_pressure_rear_psi ?? null,
     },
@@ -108,7 +110,7 @@ export function CarForm({
 
   async function onSubmit(values: CarFormValues) {
     try {
-      const payload = { ...values, corporation: values.corporation || null, access_code: values.access_code || null, replacement_code: values.is_replaced ? values.replacement_code : null };
+      const payload = { ...values, corporation: values.corporation || null, model: values.model || null, access_code: values.access_code || null, replacement_code: values.is_replaced ? values.replacement_code : null };
       let carId = car?.id;
       if (car) {
         await updateMutation.mutateAsync({ id: car.id, patch: payload });
@@ -404,6 +406,20 @@ export function CarForm({
                 <Input {...field} list="car-corporations" value={field.value ?? ""} />
               </FormControl>
               <datalist id="car-corporations">{(corporationsQuery.data ?? []).map((name) => <option key={name} value={name} />)}</datalist>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+        <FormField
+          control={form.control}
+          name="model"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>{he.adminCars.fieldModel}</FormLabel>
+              <FormControl>
+                <Input {...field} list="car-models" value={field.value ?? ""} data-testid="car-form-model" />
+              </FormControl>
+              <datalist id="car-models">{(modelsQuery.data ?? []).map((name) => <option key={name} value={name} />)}</datalist>
               <FormMessage />
             </FormItem>
           )}

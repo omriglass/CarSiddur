@@ -443,6 +443,13 @@ export type Database = {
             foreignKeyName: "car_access_codes_car_id_fkey"
             columns: ["car_id"]
             isOneToOne: true
+            referencedRelation: "car_guide_missing"
+            referencedColumns: ["car_id"]
+          },
+          {
+            foreignKeyName: "car_access_codes_car_id_fkey"
+            columns: ["car_id"]
+            isOneToOne: true
             referencedRelation: "cars"
             referencedColumns: ["id"]
           },
@@ -490,6 +497,13 @@ export type Database = {
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "car_care_events_car_id_fkey"
+            columns: ["car_id"]
+            isOneToOne: false
+            referencedRelation: "car_guide_missing"
+            referencedColumns: ["car_id"]
+          },
           {
             foreignKeyName: "car_care_events_car_id_fkey"
             columns: ["car_id"]
@@ -573,6 +587,13 @@ export type Database = {
             foreignKeyName: "car_checklist_answers_car_id_fkey"
             columns: ["car_id"]
             isOneToOne: false
+            referencedRelation: "car_guide_missing"
+            referencedColumns: ["car_id"]
+          },
+          {
+            foreignKeyName: "car_checklist_answers_car_id_fkey"
+            columns: ["car_id"]
+            isOneToOne: false
             referencedRelation: "cars"
             referencedColumns: ["id"]
           },
@@ -629,6 +650,13 @@ export type Database = {
           sent_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "car_checklist_date_reminders_car_id_fkey"
+            columns: ["car_id"]
+            isOneToOne: false
+            referencedRelation: "car_guide_missing"
+            referencedColumns: ["car_id"]
+          },
           {
             foreignKeyName: "car_checklist_date_reminders_car_id_fkey"
             columns: ["car_id"]
@@ -732,6 +760,13 @@ export type Database = {
             foreignKeyName: "car_checklist_prompts_car_id_fkey"
             columns: ["car_id"]
             isOneToOne: true
+            referencedRelation: "car_guide_missing"
+            referencedColumns: ["car_id"]
+          },
+          {
+            foreignKeyName: "car_checklist_prompts_car_id_fkey"
+            columns: ["car_id"]
+            isOneToOne: true
             referencedRelation: "cars"
             referencedColumns: ["id"]
           },
@@ -790,6 +825,13 @@ export type Database = {
             foreignKeyName: "car_checklists_car_id_fkey"
             columns: ["car_id"]
             isOneToOne: false
+            referencedRelation: "car_guide_missing"
+            referencedColumns: ["car_id"]
+          },
+          {
+            foreignKeyName: "car_checklists_car_id_fkey"
+            columns: ["car_id"]
+            isOneToOne: false
             referencedRelation: "cars"
             referencedColumns: ["id"]
           },
@@ -805,6 +847,126 @@ export type Database = {
             columns: ["department_id"]
             isOneToOne: false
             referencedRelation: "departments"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      car_guide_topics: {
+        Row: {
+          active: boolean
+          created_at: string
+          department_id: string
+          id: string
+          position: number
+          required: boolean
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          department_id: string
+          id?: string
+          position?: number
+          required?: boolean
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          department_id?: string
+          id?: string
+          position?: number
+          required?: boolean
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "car_guide_topics_department_id_fkey"
+            columns: ["department_id"]
+            isOneToOne: false
+            referencedRelation: "departments"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      car_guides: {
+        Row: {
+          car_id: string
+          created_at: string
+          department_id: string
+          id: string
+          steps: Json
+          title: string
+          topic_id: string | null
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          car_id: string
+          created_at?: string
+          department_id: string
+          id?: string
+          steps: Json
+          title: string
+          topic_id?: string | null
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          car_id?: string
+          created_at?: string
+          department_id?: string
+          id?: string
+          steps?: Json
+          title?: string
+          topic_id?: string | null
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "car_guides_car_id_fkey"
+            columns: ["car_id"]
+            isOneToOne: false
+            referencedRelation: "car_guide_missing"
+            referencedColumns: ["car_id"]
+          },
+          {
+            foreignKeyName: "car_guides_car_id_fkey"
+            columns: ["car_id"]
+            isOneToOne: false
+            referencedRelation: "cars"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "car_guides_department_id_fkey"
+            columns: ["department_id"]
+            isOneToOne: false
+            referencedRelation: "departments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "car_guides_topic_id_fkey"
+            columns: ["topic_id"]
+            isOneToOne: false
+            referencedRelation: "car_guide_missing"
+            referencedColumns: ["topic_id"]
+          },
+          {
+            foreignKeyName: "car_guides_topic_id_fkey"
+            columns: ["topic_id"]
+            isOneToOne: false
+            referencedRelation: "car_guide_topics"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "car_guides_updated_by_fkey"
+            columns: ["updated_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
         ]
@@ -853,6 +1015,13 @@ export type Database = {
           status?: Database["public"]["Enums"]["car_issue_status"]
         }
         Relationships: [
+          {
+            foreignKeyName: "car_issues_car_id_fkey"
+            columns: ["car_id"]
+            isOneToOne: false
+            referencedRelation: "car_guide_missing"
+            referencedColumns: ["car_id"]
+          },
           {
             foreignKeyName: "car_issues_car_id_fkey"
             columns: ["car_id"]
@@ -919,6 +1088,13 @@ export type Database = {
             foreignKeyName: "car_maintenance_blocks_car_id_fkey"
             columns: ["car_id"]
             isOneToOne: false
+            referencedRelation: "car_guide_missing"
+            referencedColumns: ["car_id"]
+          },
+          {
+            foreignKeyName: "car_maintenance_blocks_car_id_fkey"
+            columns: ["car_id"]
+            isOneToOne: false
             referencedRelation: "cars"
             referencedColumns: ["id"]
           },
@@ -976,6 +1152,13 @@ export type Database = {
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "car_odometer_readings_car_id_fkey"
+            columns: ["car_id"]
+            isOneToOne: false
+            referencedRelation: "car_guide_missing"
+            referencedColumns: ["car_id"]
+          },
           {
             foreignKeyName: "car_odometer_readings_car_id_fkey"
             columns: ["car_id"]
@@ -1039,6 +1222,13 @@ export type Database = {
             foreignKeyName: "car_owners_car_id_fkey"
             columns: ["car_id"]
             isOneToOne: false
+            referencedRelation: "car_guide_missing"
+            referencedColumns: ["car_id"]
+          },
+          {
+            foreignKeyName: "car_owners_car_id_fkey"
+            columns: ["car_id"]
+            isOneToOne: false
             referencedRelation: "cars"
             referencedColumns: ["id"]
           },
@@ -1081,6 +1271,13 @@ export type Database = {
           id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "car_seat_configs_car_id_fkey"
+            columns: ["car_id"]
+            isOneToOne: false
+            referencedRelation: "car_guide_missing"
+            referencedColumns: ["car_id"]
+          },
           {
             foreignKeyName: "car_seat_configs_car_id_fkey"
             columns: ["car_id"]
@@ -1235,6 +1432,13 @@ export type Database = {
             foreignKeyName: "car_tasks_car_id_fkey"
             columns: ["car_id"]
             isOneToOne: false
+            referencedRelation: "car_guide_missing"
+            referencedColumns: ["car_id"]
+          },
+          {
+            foreignKeyName: "car_tasks_car_id_fkey"
+            columns: ["car_id"]
+            isOneToOne: false
             referencedRelation: "cars"
             referencedColumns: ["id"]
           },
@@ -1294,6 +1498,7 @@ export type Database = {
           fuel_type: Database["public"]["Enums"]["car_fuel_type"] | null
           id: string
           license_plate: string
+          model: string | null
           name: string
           notes: string | null
           owner_id: string | null
@@ -1316,6 +1521,7 @@ export type Database = {
           fuel_type?: Database["public"]["Enums"]["car_fuel_type"] | null
           id?: string
           license_plate: string
+          model?: string | null
           name: string
           notes?: string | null
           owner_id?: string | null
@@ -1338,6 +1544,7 @@ export type Database = {
           fuel_type?: Database["public"]["Enums"]["car_fuel_type"] | null
           id?: string
           license_plate?: string
+          model?: string | null
           name?: string
           notes?: string | null
           owner_id?: string | null
@@ -1608,6 +1815,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "departments"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "department_members_preferred_car_id_fkey"
+            columns: ["preferred_car_id"]
+            isOneToOne: false
+            referencedRelation: "car_guide_missing"
+            referencedColumns: ["car_id"]
           },
           {
             foreignKeyName: "department_members_preferred_car_id_fkey"
@@ -2058,6 +2272,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "v_ride_car_neighbours"
             referencedColumns: ["ride_id"]
+          },
+          {
+            foreignKeyName: "freed_slot_offers_car_id_fkey"
+            columns: ["car_id"]
+            isOneToOne: false
+            referencedRelation: "car_guide_missing"
+            referencedColumns: ["car_id"]
           },
           {
             foreignKeyName: "freed_slot_offers_car_id_fkey"
@@ -3614,6 +3835,13 @@ export type Database = {
             foreignKeyName: "request_templates_preferred_car_id_fkey"
             columns: ["preferred_car_id"]
             isOneToOne: false
+            referencedRelation: "car_guide_missing"
+            referencedColumns: ["car_id"]
+          },
+          {
+            foreignKeyName: "request_templates_preferred_car_id_fkey"
+            columns: ["preferred_car_id"]
+            isOneToOne: false
             referencedRelation: "cars"
             referencedColumns: ["id"]
           },
@@ -3930,6 +4158,13 @@ export type Database = {
             foreignKeyName: "requests_preferred_car_id_fkey"
             columns: ["preferred_car_id"]
             isOneToOne: false
+            referencedRelation: "car_guide_missing"
+            referencedColumns: ["car_id"]
+          },
+          {
+            foreignKeyName: "requests_preferred_car_id_fkey"
+            columns: ["preferred_car_id"]
+            isOneToOne: false
             referencedRelation: "cars"
             referencedColumns: ["id"]
           },
@@ -4144,6 +4379,13 @@ export type Database = {
           week_start?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "ride_change_requests_car_id_fkey"
+            columns: ["car_id"]
+            isOneToOne: false
+            referencedRelation: "car_guide_missing"
+            referencedColumns: ["car_id"]
+          },
           {
             foreignKeyName: "ride_change_requests_car_id_fkey"
             columns: ["car_id"]
@@ -4719,6 +4961,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "rides_car_id_fkey"
+            columns: ["car_id"]
+            isOneToOne: false
+            referencedRelation: "car_guide_missing"
+            referencedColumns: ["car_id"]
           },
           {
             foreignKeyName: "rides_car_id_fkey"
@@ -5545,6 +5794,13 @@ export type Database = {
             foreignKeyName: "car_checklists_car_id_fkey"
             columns: ["car_id"]
             isOneToOne: false
+            referencedRelation: "car_guide_missing"
+            referencedColumns: ["car_id"]
+          },
+          {
+            foreignKeyName: "car_checklists_car_id_fkey"
+            columns: ["car_id"]
+            isOneToOne: false
             referencedRelation: "cars"
             referencedColumns: ["id"]
           },
@@ -5578,6 +5834,13 @@ export type Database = {
             foreignKeyName: "car_odometer_readings_car_id_fkey"
             columns: ["car_id"]
             isOneToOne: false
+            referencedRelation: "car_guide_missing"
+            referencedColumns: ["car_id"]
+          },
+          {
+            foreignKeyName: "car_odometer_readings_car_id_fkey"
+            columns: ["car_id"]
+            isOneToOne: false
             referencedRelation: "cars"
             referencedColumns: ["id"]
           },
@@ -5593,6 +5856,24 @@ export type Database = {
             columns: ["recorded_by"]
             isOneToOne: false
             referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      car_guide_missing: {
+        Row: {
+          car_id: string | null
+          department_id: string | null
+          position: number | null
+          title: string | null
+          topic_id: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cars_department_id_fkey"
+            columns: ["department_id"]
+            isOneToOne: false
+            referencedRelation: "departments"
             referencedColumns: ["id"]
           },
         ]
@@ -5634,6 +5915,13 @@ export type Database = {
           week_start: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "rides_car_id_fkey"
+            columns: ["car_id"]
+            isOneToOne: false
+            referencedRelation: "car_guide_missing"
+            referencedColumns: ["car_id"]
+          },
           {
             foreignKeyName: "rides_car_id_fkey"
             columns: ["car_id"]
@@ -5691,6 +5979,13 @@ export type Database = {
           week_start: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "rides_car_id_fkey"
+            columns: ["car_id"]
+            isOneToOne: false
+            referencedRelation: "car_guide_missing"
+            referencedColumns: ["car_id"]
+          },
           {
             foreignKeyName: "rides_car_id_fkey"
             columns: ["car_id"]
@@ -5779,6 +6074,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "destinations"
             referencedColumns: ["department_id", "id"]
+          },
+          {
+            foreignKeyName: "requests_preferred_car_id_fkey"
+            columns: ["preferred_car_id"]
+            isOneToOne: false
+            referencedRelation: "car_guide_missing"
+            referencedColumns: ["car_id"]
           },
           {
             foreignKeyName: "requests_preferred_car_id_fkey"
@@ -5874,6 +6176,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "destinations"
             referencedColumns: ["department_id", "id"]
+          },
+          {
+            foreignKeyName: "request_templates_preferred_car_id_fkey"
+            columns: ["preferred_car_id"]
+            isOneToOne: false
+            referencedRelation: "car_guide_missing"
+            referencedColumns: ["car_id"]
           },
           {
             foreignKeyName: "request_templates_preferred_car_id_fkey"
@@ -7621,6 +7930,11 @@ export type Database = {
         Args: { p_item_id: string }
         Returns: undefined
       }
+      delete_car_guide: { Args: { p_guide_id: string }; Returns: undefined }
+      delete_car_guide_topic: {
+        Args: { p_topic_id: string }
+        Returns: undefined
+      }
       delete_car_maintenance: {
         Args: { p_block_id: string }
         Returns: undefined
@@ -7970,6 +8284,10 @@ export type Database = {
       }
       move_car_checklist_item: {
         Args: { p_direction: number; p_item_id: string }
+        Returns: undefined
+      }
+      move_car_guide_topic: {
+        Args: { p_direction: number; p_topic_id: string }
         Returns: undefined
       }
       move_series: {
@@ -8797,6 +9115,16 @@ export type Database = {
         }[]
       }
       sadranim_of: { Args: { _dept: string; _week: string }; Returns: string[] }
+      save_car_guide: {
+        Args: {
+          p_car_id: string
+          p_guide_id: string
+          p_steps: Json
+          p_title: string
+          p_topic_id: string
+        }
+        Returns: string
+      }
       save_request_template: {
         Args: { p_every_weeks?: number; p_request_id: string }
         Returns: string
@@ -9113,6 +9441,16 @@ export type Database = {
           p_label: string
           p_remind_days_before: number
           p_required: boolean
+        }
+        Returns: string
+      }
+      upsert_car_guide_topic: {
+        Args: {
+          p_active?: boolean
+          p_department_id: string
+          p_required: boolean
+          p_title: string
+          p_topic_id: string
         }
         Returns: string
       }

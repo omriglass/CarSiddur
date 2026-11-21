@@ -554,12 +554,12 @@ local replay stack and comparing it with the production solve — scripts/replay
 **Paths**: `src/features/carCare/**`, `src/features/cars/**`; `src/i18n/he.member.ts` (`carCare.*`,
 `carPage.*`), `he.admin.ts`; migrations matching `*car_care*`, `*car_issue*`, `*car_responsible*`,
 `*car_admin*`, `*can_manage_car*`, `*car_odometer*` (REQ item 150 a/c), `*car_task*` (b); `src/features/carTasks/**`, `src/i18n/he.carTasks.ts`; `src/features/carsOverview/**`, `src/i18n/he.carsOverview.ts`, `src/pages/CarsOverviewPage.tsx` (all-cars dashboard `/cars`, REQ item 150 e); `src/features/admin/members/**`;
-`e2e/car-care.spec.ts`, `e2e/car-page-details.spec.ts` (car page by relevance, in-place edits, handling an open issue, REQ item 257; with `src/lib/plate.ts`, `*car_corporation*` / `*update_car_issue*` migrations, `supabase/tests/car_issue_manage.sql`), `e2e/car-admin.spec.ts`, `e2e/car-tasks.spec.ts`, `e2e/cars-overview.spec.ts`, `e2e/car-checklist.spec.ts` (handover checklist, `*car_checklist*` migrations, `src/i18n/he.carChecklist.ts`, `src/pages/CarChecklistEditorPage.tsx`); private car owners (REQ item 227): `*car_owner*` migrations, `src/lib/carOwners.ts`, `supabase/tests/car_owners.sql`, `e2e/car-owners.spec.ts`.
+`e2e/car-care.spec.ts`, `e2e/car-page-details.spec.ts` (car page by relevance, in-place edits, handling an open issue, REQ item 257; with `src/lib/plate.ts`, `*car_corporation*` / `*update_car_issue*` migrations, `supabase/tests/car_issue_manage.sql`), `e2e/car-admin.spec.ts`, `e2e/car-tasks.spec.ts`, `e2e/cars-overview.spec.ts`, `e2e/car-checklist.spec.ts` (handover checklist, `*car_checklist*` migrations, `src/i18n/he.carChecklist.ts`, `src/pages/CarChecklistEditorPage.tsx`); `e2e/car-guides.spec.ts` ("איך עושים…" guides, REQ item 259: `*car_guides*` migrations, `supabase/tests/car_guides.sql`, `src/i18n/he.carGuides.ts`, `src/pages/CarGuideTopicsPage.tsx`); private car owners (REQ item 227): `*car_owner*` migrations, `src/lib/carOwners.ts`, `supabase/tests/car_owners.sql`, `e2e/car-owners.spec.ts`.
 
 **Automated**:
 - Vitest: `npx vitest run src/features/carCare src/features/cars src/features/carTasks src/features/carsOverview src/lib/plate.test.ts`
-- SQL: `car_care_semantics.sql`, `car_administration.sql`, `car_tasks.sql`, `car_checklists.sql`, `car_owners.sql`, `car_issue_manage.sql`, `department_isolation.sql`
-- Playwright: `npx playwright test --grep "@car-care|@car-admin|@car-tasks|@car-checklist|@car-owners|@car-page"`
+- SQL: `car_care_semantics.sql`, `car_administration.sql`, `car_tasks.sql`, `car_checklists.sql`, `car_guides.sql`, `car_owners.sql`, `car_issue_manage.sql`, `department_isolation.sql`
+- Playwright: `npx playwright test --grep "@car-care|@car-admin|@car-tasks|@car-checklist|@car-guides|@car-owners|@car-page"`
 
 **QA script**:
 1. As `member1`, from a car's page report a problem ("דיווח על תקלה"), choosing a category (אור
@@ -578,8 +578,12 @@ local replay stack and comparing it with the production solve — scripts/replay
 6. Open a car's report dialog → "קריאת קילומטראז׳": the last reading shows; save a higher number; a
    lower one is refused ("הקילומטראז׳ נמוך מהקריאה האחרונה…"). The history tab lists readings and
    corrections; the Excel export has a "קילומטראז׳" sheet.
+7. Guides (REQ item 259): as a car admin add a required topic on `/cars/guides/<dept>`; the car page
+   and `/cars` say "לא הוזן מדריך: …". As the car's responsible person write it on the car page ("כתיבה",
+   "+ שלב", ↑↓, "העתקה מרכב אחר" with the same "דגם" first). As a member open it from the car menu and
+   from the "איך עושים…" chip on `/my`: tap, swipe and buttons move one step; "הצגה כרשימה"; "סיום".
 
-**REQ**: §13.69, §13.70, §13.71, §13.72, §13.73, item 150 (a), (c), item 257.
+**REQ**: §13.69, §13.70, §13.71, §13.72, §13.73, item 150 (a), (c), item 257, item 259.
 
 ### maintenance — Scheduled car maintenance
 

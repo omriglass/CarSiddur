@@ -125,6 +125,9 @@ export const paths = {
   /** `/cars/checklist/:dept` — the department's handover checklist editor for car administrators and admins (REQ item 150 d, UX_FLOWS.md §5.15). */
   carChecklist: (dept: string): string => `/cars/checklist/${dept}`,
 
+  /** `/cars/guides/:dept` — the department's guide topics ("איך עושים…") for car administrators and admins (REQ item 259, UX_FLOWS.md §5.16). */
+  carGuideTopics: (dept: string): string => `/cars/guides/${dept}`,
+
   admin: {
     /** `/admin/errors` — admin-only list of browser errors from `client_errors` (E1, UX_FLOWS.md §5.13). */
     errors: (): string => "/admin/errors",

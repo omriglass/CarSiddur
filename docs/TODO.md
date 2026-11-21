@@ -2002,7 +2002,7 @@ Owner: type "אני צריכה להיות בבנימינה עד 10 מחר" and g
 - Further ideas, not decided: example chips under the box; voice input (browser speech recognition, Hebrew quality varies); the box remembers nothing between sessions.
 - A REQUIREMENTS item first, then a UX_FLOWS design pass (phone width).
 
-## "איך עושים…" — step-by-step guides per car (owner 2026-11-20, CG1) — not built yet
+## "איך עושים…" — step-by-step guides per car (owner 2026-11-20, CG1) — built 2026-11-21 (REQ item 259, `20261121140000`; owner 2026-11-21: copy from any car with the same "דגם" first — new `cars.model`; no notice for a missing guide; a car may have its own extra guides; build first, wordings to approve after — `src/i18n/he.carGuides.ts`, `adminCars.fieldModel`); unreleased
 
 Owner: each car needs "How do I…" guides for common actions (resetting the tire-pressure warning, turning off the passenger airbag, …).
 

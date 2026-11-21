@@ -15,7 +15,7 @@ import { showErrorToast } from "@/lib/rpc";
 
 import type { Passengers } from "@/solver";
 
-import { useCarCorporationsQuery, useSaveCarFieldsMutation } from "../hooks";
+import { useCarCorporationsQuery, useCarModelsQuery, useSaveCarFieldsMutation } from "../hooks";
 import { seatConfigSummary } from "../lib/carDetails";
 import { CarPrivateSwitch } from "./CarPrivateSwitch";
 import { DetailRow, EditableRow } from "./EditableRow";
@@ -40,6 +40,7 @@ export function CarRegistrationCard({ car, canEdit, canEditSeatConfigs }: Props)
   const save = useSaveCarFieldsMutation();
   const patch = (fields: CarUpdate) => save.mutateAsync({ carId: car.id, patch: fields }).then(() => undefined);
   const corporations = useCarCorporationsQuery(canEdit);
+  const models = useCarModelsQuery(canEdit);
   const seatConfigsQuery = useSeatConfigs(car.id);
   const replaceSeatConfigs = useReplaceSeatConfigsMutation();
   const [seatsOpen, setSeatsOpen] = useState(false);
@@ -118,6 +119,24 @@ export function CarRegistrationCard({ car, canEdit, canEditSeatConfigs }: Props)
               );
             }}
             onSave={(text) => patch({ corporation: text.trim() || null })}
+          />
+          <EditableRow<string>
+            label={he.adminCars.fieldModel}
+            testId="car-reg-model"
+            value={car.model || muted("—")}
+            editable={canEdit}
+            initial={car.model ?? ""}
+            validate={(text) => (text.trim().length > 80 ? he.adminCommon.errorGeneric : null)}
+            editor={({ draft, setDraft, inputId }) => {
+              const listId = `${inputId}-list`;
+              return (
+                <>
+                  <Input id={inputId} autoFocus list={listId} value={draft} onChange={(e) => setDraft(e.target.value)} data-testid="car-model-input" />
+                  <datalist id={listId}>{(models.data ?? []).map((name) => <option key={name} value={name} />)}</datalist>
+                </>
+              );
+            }}
+            onSave={(text) => patch({ model: text.trim() || null })}
           />
           {canEdit ? (
             <EditableRow<Car["status"]>

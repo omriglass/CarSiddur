@@ -21,6 +21,7 @@ import { useCanViewCarsOverview, useCarsOverviewQuery } from "../hooks";
 import type { TireState } from "@/lib/enums";
 import type { CarOverviewRow, ChecklistStatus } from "../rows";
 import { formatPlate } from "@/lib/plate";
+import { useMissingGuidesQuery } from "@/features/cars/guides/hooks";
 
 const t = he.carsOverview;
 
@@ -80,7 +81,7 @@ function ChecklistCell({ checklist }: { checklist: ChecklistStatus | null }) {
   );
 }
 
-function CarRow({ row }: { row: CarOverviewRow }) {
+function CarRow({ row, missingGuides }: { row: CarOverviewRow; missingGuides?: readonly string[] }) {
   const navigate = useNavigate();
   const open = () => navigate(paths.car(row.id));
   return (
@@ -96,6 +97,12 @@ function CarRow({ row }: { row: CarOverviewRow }) {
         <span className="font-medium">{row.name}</span>
         <span dir="ltr" className="text-xs text-muted-foreground">{formatPlate(row.licensePlate)}</span>
         {row.isReplacement ? <Badge variant="secondary" data-testid="car-overview-replacement">{t.replacement}</Badge> : null}
+        {/* REQ item 259: a required guide topic this car has no guide for. */}
+        {missingGuides?.length ? (
+          <span className="w-full text-xs font-medium text-amber-700 dark:text-amber-300" data-testid="car-overview-guides-missing">
+            ⚠ {tv("carGuides.missing", { topics: missingGuides.join(", ") })}
+          </span>
+        ) : null}
       </div>
       <Cell label={t.colKm} testId="car-overview-km">
         {row.km ? (
@@ -133,6 +140,9 @@ function CarRow({ row }: { row: CarOverviewRow }) {
 export function CarsOverviewScreen() {
   const access = useCanViewCarsOverview();
   const query = useCarsOverviewQuery(access.allowed ? access.departmentId : undefined);
+  const missingQuery = useMissingGuidesQuery(access.allowed ? access.departmentId : undefined);
+  const missingByCar = new Map<string, string[]>();
+  for (const m of missingQuery.data ?? []) missingByCar.set(m.car_id, [...(missingByCar.get(m.car_id) ?? []), m.title]);
 
   if (access.isLoading) {
     return <div className="mx-auto max-w-5xl space-y-4 p-4"><PageHeader title={t.title} /><CardListSkeleton count={4} /></div>;
@@ -168,7 +178,7 @@ export function CarsOverviewScreen() {
             <span>{t.colWash}</span>
             <span className="justify-self-end">{t.colStatus}</span>
           </div>
-          {query.rows.map((row) => <CarRow key={row.id} row={row} />)}
+          {query.rows.map((row) => <CarRow key={row.id} row={row} missingGuides={missingByCar.get(row.id)} />)}
         </div>
       )}
     </div>

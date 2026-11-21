@@ -279,6 +279,14 @@ begin
   perform pg_temp.expect_refused('cars.upsert_car_checklist_item', format('select public.upsert_car_checklist_item(%L, null, ''x'', ''yes_no'', true, null, true)', dept_b));
   perform pg_temp.expect_refused('cars.move_car_checklist_item', format('select public.move_car_checklist_item(%L, 1)', (select id from public.car_checklist_items where department_id = dept_b limit 1)));
   perform pg_temp.expect_refused('cars.delete_car_checklist_item', format('select public.delete_car_checklist_item(%L)', (select id from public.car_checklist_items where department_id = dept_b limit 1)));
+  -- REQ 259: guides of department B.
+  insert into public.car_guide_topics (department_id, title) values (dept_b, 'iso topic');
+  insert into public.car_guides (department_id, car_id, title, steps) values (dept_b, car_b, 'iso guide', '[{"text":"a"}]');
+  perform pg_temp.expect_refused('cars.upsert_car_guide_topic', format('select public.upsert_car_guide_topic(%L, null, ''x'', true, true)', dept_b));
+  perform pg_temp.expect_refused('cars.move_car_guide_topic', format('select public.move_car_guide_topic(%L, 1)', (select id from public.car_guide_topics where department_id = dept_b limit 1)));
+  perform pg_temp.expect_refused('cars.delete_car_guide_topic', format('select public.delete_car_guide_topic(%L)', (select id from public.car_guide_topics where department_id = dept_b limit 1)));
+  perform pg_temp.expect_refused('cars.save_car_guide', format('select public.save_car_guide(%L, null, null, ''x'', ''["a"]''::jsonb)', car_b));
+  perform pg_temp.expect_refused('cars.delete_car_guide', format('select public.delete_car_guide(%L)', (select id from public.car_guides where car_id = car_b limit 1)));
   -- REQ 150 (b): tasks for the next user of department B's car.
   perform pg_temp.expect_refused('cars.request_car_tasks', format('select public.request_car_tasks(%L, array[''wash'']::public.car_task_kind[])', car_b));
   insert into public.car_tasks (department_id, car_id, kind, requested_by) values (dept_b, car_b, 'wash', member_b) returning id into task_b;
@@ -462,7 +470,7 @@ declare
     'set_request_companions','withdraw_all_requests','submit_series_request','enter_waiting_list','apply_solver_result',
     'edit_ride','cancel_ride','unassign_ride','restore_removed_reservation','board_changes_since','board_live_events','mark_board_seen','undo_board_change','unmerge_request','split_ride_companion','merge_preview','merge_previews','set_request_trip_type','switch_request_plan','ride_route','request_ride_change','request_ride_shorten','ride_shorten_options','ride_shorten_options_for_request','set_ride_editors','ride_editor_withdraw_request','ride_editor_cancel_ride','respond_ride_change','cancel_ride_change',
     'update_ride_public_notes','add_ride_passengers','set_ride_passengers','remove_ride_person','set_ride_person_part','leave_ride_as_guest',
-    'log_car_care','report_car_issue','log_car_kilometrage','set_car_kilometrage','submit_car_checklist','upsert_car_checklist_item','move_car_checklist_item','delete_car_checklist_item','request_car_tasks','withdraw_car_task','complete_car_task','merge_destination','suggest_destination','car_mileage_totals',
+    'log_car_care','report_car_issue','log_car_kilometrage','set_car_kilometrage','submit_car_checklist','upsert_car_checklist_item','move_car_checklist_item','delete_car_checklist_item','upsert_car_guide_topic','move_car_guide_topic','delete_car_guide_topic','save_car_guide','delete_car_guide','request_car_tasks','withdraw_car_task','complete_car_task','merge_destination','suggest_destination','car_mileage_totals',
     'admin_approve_member','admin_update_member','admin_set_sadran_assignments',
     'create_proposal','send_proposal','send_draft_proposals','flush_held_notices','preview_send_all','send_all_board_changes','agree_proposal_offline','agree_proposals_offline','proposal_car_conflicts','discard_proposal','withdraw_proposal','apply_proposal','record_answer_on_behalf','proposal_party_texts',
     'open_week','reopen_week','set_week_phase','set_week_close_at','close_week_requests','ensure_department_weeks',
