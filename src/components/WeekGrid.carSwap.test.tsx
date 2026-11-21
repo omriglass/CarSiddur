@@ -3,6 +3,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { he, tv } from "@/i18n/he";
 import { WeekGrid } from "./WeekGrid";
 
+const guideMocks = vi.hoisted(() => ({ byCar: {} as Record<string, { id: string; title: string; steps: { text: string }[] }[]> }));
+vi.mock("@/features/cars/guides/hooks", () => ({
+  useCarGuidesQuery: (carId: string | undefined) => ({ data: carId ? guideMocks.byCar[carId] ?? [] : [], isLoading: false }),
+  useGuideTopicsQuery: () => ({ data: [] }),
+}));
+
 const cars = [
   { id: "a", name: "Car A" },
   { id: "b", name: "Car B" },
@@ -92,6 +98,18 @@ describe("WeekGrid car-swap header drag", () => {
     expect(screen.getByRole("menuitem", { name: he.carSwap.carReportItem })).toBeTruthy();
     fireEvent.click(screen.getByRole("menuitem", { name: he.carSwap.carPageItem }));
     expect(onOpenCarPage).toHaveBeenCalledWith("a");
+  });
+
+  it("CG1 (REQ item 259): 'איך עושים…' in the car menu only when the car has guides; it opens them", () => {
+    guideMocks.byCar = { a: [{ id: "g1", title: "Guide one", steps: [{ text: "Step" }] }] };
+    const { container } = render(<WeekGrid cars={cars} rides={[]} enableCarReport onOpenCarPage={vi.fn()} />);
+    fireEvent.click(container.querySelector(`[aria-label="${tv("carSwap.carMenuLabel", { car: "Car B" })}"]`)!);
+    expect(screen.queryByTestId("car-guides-menu-item")).toBeNull();
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
+    fireEvent.click(container.querySelector(`[aria-label="${tv("carSwap.carMenuLabel", { car: "Car A" })}"]`)!);
+    fireEvent.click(screen.getByTestId("car-guides-menu-item"));
+    expect(screen.getByText("Guide one")).toBeTruthy();
+    guideMocks.byCar = {};
   });
 
   it("without swap, only the page item shows and a tap on the name opens the menu", () => {

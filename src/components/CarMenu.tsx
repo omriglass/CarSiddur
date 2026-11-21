@@ -9,6 +9,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { CarGuidesDialog } from "@/features/cars/guides/components/CarGuidesBody";
+import { useCarGuidesQuery } from "@/features/cars/guides/hooks";
 import { he, tv } from "@/i18n/he";
 import { cn } from "@/lib/utils";
 
@@ -33,14 +35,17 @@ export interface CarMenuProps {
 }
 
 /**
- * The car-name menu (REQ §13.122 e, item 226 c): the car at a glance, "החלפה עם…", "דיווח / טיפול ברכב", "דף הרכב".
+ * The car-name menu (REQ §13.122 e, item 226 c): the car at a glance, "החלפה עם…", "דיווח / טיפול ברכב", "איך עושים…"
+ * (REQ item 259, when the car has guides), "דף הרכב".
  * One component for the table's car header and the card view's car row (R20U2, QA run 20). "החלפה עם…" opens its list
  * inside the menu (R20U1): a side submenu next to the menu does not fit at phone width.
  */
 export function CarMenu({ car, open, onOpenChange, children, glance, swapTargets = [], onSwap, onReport, onOpenCarPage }: CarMenuProps) {
   const [swapListOpen, setSwapListOpen] = useState(false);
+  const [guidesOpen, setGuidesOpen] = useState(false);
   const canSwap = swapTargets.length > 0 && !!onSwap;
   return (
+    <>
     <DropdownMenu open={open} onOpenChange={(next) => { if (!next) setSwapListOpen(false); onOpenChange(next); }}>
       <DropdownMenuTrigger asChild>{children}</DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="min-w-56 max-w-[calc(100vw-2rem)]">
@@ -80,6 +85,7 @@ export function CarMenu({ car, open, onOpenChange, children, glance, swapTargets
             {he.carSwap.carReportItem}
           </DropdownMenuItem>
         ) : null}
+        {onReport ? <CarGuidesMenuItem carId={car.id} onOpen={() => setGuidesOpen(true)} /> : null}
         {onOpenCarPage ? (
           <DropdownMenuItem data-testid="car-page-menu-item" onSelect={() => onOpenCarPage(car.id)}>
             {he.carSwap.carPageItem}
@@ -87,5 +93,18 @@ export function CarMenu({ car, open, onOpenChange, children, glance, swapTargets
         ) : null}
       </DropdownMenuContent>
     </DropdownMenu>
+    {guidesOpen ? <CarGuidesDialog carId={car.id} open onOpenChange={setGuidesOpen} /> : null}
+    </>
+  );
+}
+
+/** REQ item 259: "איך עושים…" in the car menu, only when the car has guides (asked only while the menu is open). */
+function CarGuidesMenuItem({ carId, onOpen }: { carId: string; onOpen: () => void }) {
+  const guides = useCarGuidesQuery(carId).data ?? [];
+  if (!guides.length) return null;
+  return (
+    <DropdownMenuItem data-testid="car-guides-menu-item" onSelect={onOpen}>
+      {he.carGuides.entryTitle}
+    </DropdownMenuItem>
   );
 }
