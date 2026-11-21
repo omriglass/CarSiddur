@@ -6514,6 +6514,10 @@ export type Database = {
           window_starts_at: string
         }[]
       }
+      _chain_variant: {
+        Args: { p_chained: string; p_route: Json; p_side: string }
+        Returns: Json
+      }
       _clear_riders_off_route: {
         Args: { p_list: Json; p_request_id: string }
         Returns: undefined
@@ -8320,6 +8324,7 @@ export type Database = {
           p_agreed?: boolean
           p_allow_long_detour?: boolean
           p_allow_small_trunk?: boolean
+          p_chain_via?: boolean
           p_expected_version: number
           p_request_id: string
           p_ride_id: string

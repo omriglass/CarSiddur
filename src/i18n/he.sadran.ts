@@ -944,6 +944,17 @@ export const heSadran = {
     resultPickup: "{{place}} (איסוף {{name}})",
     /** CM1 phase 2 (REQ item 260 b): two trips one after the other merge into one ride (wording to approve). */
     chainRoute: "הנסיעות יתחברו לנסיעה אחת: {{route}}",
+    // CM1 phase 3 (REQ item 260 c): the people on one of the two trips only (wordings to approve)
+    chainAskBefore: "{{names}} רק בנסיעה השנייה — מתי לאסוף?",
+    chainAskAfter: "{{names}} רק בנסיעה הראשונה — מתי להוריד?",
+    chainWhole: "לכל הנסיעה — {{route}}",
+    chainPickUp: "לאסוף מ{{place}} — {{route}}",
+    chainRideOn: "ממשיכים בנסיעה — {{route}}",
+    chainDropOff: "להוריד ב{{place}} בדרך — {{route}}",
+    chainTimeBefore: "יוצאים ב-{{time}} (במקום {{was}})",
+    chainTimeAfter: "חוזרים ל{{place}} ב-{{time}} (במקום {{was}})",
+    chainMore: "{{count}} נוספים",
+    chainTooLong: "עיקוף ארוך מדי",
     resultWho: "{{name}}:",
     /** REQ §13.95 (H1): a merge is refused - toast text. */
     invalid: {

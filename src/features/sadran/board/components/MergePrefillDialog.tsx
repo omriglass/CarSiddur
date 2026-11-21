@@ -8,6 +8,7 @@ import { DIALOG_FIT, DialogBody } from "@/components/DialogBody";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { he, tv } from "@/i18n/he";
+import { ChainOneTripChoice } from "@/features/rides/ChainOneTripChoice";
 import { chainRouteText } from "@/features/rides/mergeChain";
 import { formatTime } from "@/lib/time";
 import { cn } from "@/lib/utils";
@@ -73,6 +74,9 @@ export interface MergePrefillDialogProps {
   onDraft: () => void;
   busy?: boolean;
   onCancel: () => void;
+  /** CM1 phase 3: a chain with people on one trip only - pass the start place again for them. */
+  chainVia?: boolean;
+  onChainViaChange?: (via: boolean) => void;
 }
 
 const LEG_LABEL: Record<MergeLeg, string> = {
@@ -150,7 +154,7 @@ const hoursOf = (start: string, end: string) => `${formatTime(new Date(start))}โ
 const timeOf = (iso: string) => formatTime(new Date(iso));
 
 /** The one result block: car + driver, the route with the guest's pickup, each person's old -> new hours. */
-function ResultBlock({ carName, hostDriverName, hostLabel, hostStartsAt, hostEndsAt, request, preview, split }: Pick<MergePrefillDialogProps, "carName" | "hostDriverName" | "hostLabel" | "hostStartsAt" | "hostEndsAt" | "request" | "preview"> & { split?: boolean }) {
+function ResultBlock({ carName, hostDriverName, hostLabel, hostStartsAt, hostEndsAt, request, preview, split, chainVia, onChainViaChange }: Pick<MergePrefillDialogProps, "carName" | "hostDriverName" | "hostLabel" | "hostStartsAt" | "hostEndsAt" | "request" | "preview" | "chainVia" | "onChainViaChange"> & { split?: boolean }) {
   if (!preview?.valid || split) return null;
   const guestName = request?.requester_full_name ?? "";
   const legPoints = preview.route.filter((point) => point.leg === (preview.boardLeg ?? "out"));
@@ -161,8 +165,10 @@ function ResultBlock({ carName, hostDriverName, hostLabel, hostStartsAt, hostEnd
       <p className="text-xs text-muted-foreground">{he.mergedRide.resultHeading}</p>
       {carName ? <p className="font-medium" data-testid="merge-result-car">{tv("mergedRide.resultCar", { car: carName, driver: hostDriverName ?? hostLabel ?? "" })}</p> : null}
       {/* CM1 phase 2 (REQ item 260 b): two trips one after the other become one ride - its places in order. */}
-      {preview.chain ? <p className="font-medium" data-testid="merge-result-chain">{tv("mergedRide.chainRoute", { route: chainRouteText(preview.chain) })}</p>
+      {preview.chain ? <p className="font-medium" data-testid="merge-result-chain">{tv("mergedRide.chainRoute", { route: chainRouteText(preview.chain.oneTrip ? (chainVia ? preview.chain.oneTrip.via : preview.chain.oneTrip.plain) : preview.chain) })}</p>
         : routeText ? <p data-testid="merge-result-route">{routeText}</p> : null}
+      {/* CM1 phase 3 (REQ item 260 c): the people on one trip only - the whole ride, or pass the start again for them */}
+      {preview.chain?.oneTrip && onChainViaChange ? <ChainOneTripChoice chain={{ side: preview.chain.side, oneTrip: preview.chain.oneTrip }} via={!!chainVia} onChange={onChainViaChange} /> : null}
       {/* REQ ยง13.175 (c): which way the guest rides, in words. */}
       {preview.joinerOutAt ? <p data-testid="merge-result-leg-out">{tv("mergedRide.resultLegOut", { name: guestName, place: request?.destination_resolved_name ?? "", time: timeOf(preview.joinerOutAt) })}</p> : null}
       {preview.joinerReturnAt ? <p data-testid="merge-result-leg-return">{tv("mergedRide.resultLegReturn", { name: guestName, place: request?.destination_resolved_name ?? "", time: timeOf(preview.joinerReturnAt) })}</p> : null}
@@ -172,7 +178,7 @@ function ResultBlock({ carName, hostDriverName, hostLabel, hostStartsAt, hostEnd
   );
 }
 
-export function MergePrefillDialog({ prefill, carName, hostDriverName, hostLabel, hostStartsAt, hostEndsAt, request, hostRequest, pair, requestRoute, leg, onLegChange, anchorLeg, legVerdicts, verdict, split, draftNote, preview, partyNames, onAgree, onConfirm, onDraft, busy, onCancel }: MergePrefillDialogProps) {
+export function MergePrefillDialog({ prefill, carName, hostDriverName, hostLabel, hostStartsAt, hostEndsAt, request, hostRequest, pair, requestRoute, leg, onLegChange, anchorLeg, legVerdicts, verdict, split, draftNote, preview, partyNames, onAgree, onConfirm, onDraft, busy, onCancel, chainVia, onChainViaChange }: MergePrefillDialogProps) {
   const options = request && !split ? mergeLegOptions(request, anchorLeg) : null;
   // The server decides; without a verdict (no host/request to ask about) the TS twin's validity is the fallback.
   const blocked = verdict ? verdict.status !== "ok" : (!!preview && !preview.valid) || (!!pair?.preview && !pair.preview.valid);
@@ -188,7 +194,7 @@ export function MergePrefillDialog({ prefill, carName, hostDriverName, hostLabel
           <div className="space-y-3 rounded-md border p-3 text-sm">
             {draftNote ? <p className="text-xs font-semibold text-maintenance" data-testid="merge-draft-note">{draftNote === "extends" ? he.mergedRide.draftExtends : he.mergedRide.draftReplaces}</p> : null}
             {split ? <p className="text-xs text-muted-foreground" data-testid="merge-split-note">{he.mergedRide.splitNote}</p> : null}
-            <ResultBlock carName={carName} hostDriverName={hostDriverName} hostLabel={hostLabel} hostStartsAt={hostStartsAt} hostEndsAt={hostEndsAt} request={request} preview={preview} split={split} />
+            <ResultBlock carName={carName} hostDriverName={hostDriverName} hostLabel={hostLabel} hostStartsAt={hostStartsAt} hostEndsAt={hostEndsAt} request={request} preview={preview} split={split} chainVia={chainVia} onChainViaChange={onChainViaChange} />
             <RideBlock testId="merge-base" heading={split ? he.mergedRide.splitHeadingOut : he.mergedRide.base} label={hostLabel} startsAt={hostStartsAt} endsAt={hostEndsAt} preview={preview} flex={hostRequest} />
             {pair ? (
               <RideBlock testId="merge-pair" heading={split ? he.mergedRide.splitHeadingReturn : he.mergedRide.pairHeading} label={pair.label} startsAt={pair.startsAt} endsAt={pair.endsAt} preview={pair.preview} />

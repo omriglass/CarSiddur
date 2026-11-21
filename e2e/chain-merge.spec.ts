@@ -15,6 +15,7 @@ import { publishedFixtureWeek } from "./published-week";
 test.use({ actionTimeout: 15_000 });
 
 const MEMBER1 = "00000000-0000-0000-0000-000000000103";
+const MEMBER2 = "00000000-0000-0000-0000-000000000104";
 const HOME = "00000000-0000-0000-0000-000000000010";
 const BINYAMINA = "00000000-0000-0000-0000-000000000012";
 const PARDES_HANA = "00000000-0000-0000-0000-000000000017";
@@ -34,7 +35,7 @@ async function cleanup(service: SupabaseClient, week: string) {
 }
 
 /** The day trip on car 1 (member1 drives); the school run either unplaced or on car 2. */
-async function fixture(service: SupabaseClient, week: string, shortPlaced: boolean, status: "draft" | "confirmed") {
+async function fixture(service: SupabaseClient, week: string, shortPlaced: boolean, status: "draft" | "confirmed", withCompanion = false) {
   const at = (time: string) => `${week}T${time}:00+02:00`;
   const { data: cars } = await service.from("cars").select("id").eq("department_id", NEVO_DEPARTMENT_ID).eq("type", "shared").eq("status", "active").order("id").limit(2);
   const base = { department_id: NEVO_DEPARTMENT_ID, week_start: week, ride_type_id: TYPE, requester_id: MEMBER1, filed_by: MEMBER1, origin_id: HOME, trip_shape: "round_trip", trip_type: "round_trip" };
@@ -43,9 +44,14 @@ async function fixture(service: SupabaseClient, week: string, shortPlaced: boole
   ).select("id").single();
   if (error) throw error;
   const { data: day, error: dayError } = await service.from("requests").insert(
-    { ...base, destination_id: PARDES_HANA, depart_at: at("08:30"), return_at: at("14:00"), status: "assigned" },
+    { ...base, destination_id: PARDES_HANA, depart_at: at("08:30"), return_at: at("14:00"), status: "assigned", adults: withCompanion ? 2 : 1 },
   ).select("id").single();
   if (dayError) throw dayError;
+  if (withCompanion) {
+    // CM1 phase 3: member2 is on the day trip only
+    const { error: compError } = await service.from("request_companions").insert({ request_id: day.id, profile_id: MEMBER2 });
+    if (compError) throw compError;
+  }
   const ride = async (carId: string, from: string, to: string) => {
     const { data, error: rideError } = await service.from("rides").insert({
       department_id: NEVO_DEPARTMENT_ID, week_start: week, car_id: carId, created_by: MEMBER1, driver_id: MEMBER1, needs_driver: false,
@@ -91,16 +97,24 @@ async function dragOnto(page: Page, from: Locator, to: Locator) {
   await page.mouse.up();
 }
 
-async function expectChained(service: SupabaseClient, rideId: string, shortId: string, startsAt: string, endsAt: string) {
+async function expectChained(service: SupabaseClient, rideId: string, shortId: string, startsAt: string, endsAt: string, via = false) {
   await expect.poll(async () => (await service.from("ride_requests").select("chain").eq("ride_id", rideId).eq("request_id", shortId).maybeSingle()).data?.chain)
-    .toBe("before");
+    .toBe(via ? "before_via" : "before");
   const { data: ride } = await service.from("rides").select("starts_at,ends_at").eq("id", rideId).single();
   expect(Date.parse(ride!.starts_at)).toBe(Date.parse(startsAt));
   expect(Date.parse(ride!.ends_at)).toBe(Date.parse(endsAt));
   const { data: route } = await service.rpc("ride_route", { p_ride_id: rideId });
   const places = (route as { leg: string; position: number; place_id: string }[])
     .sort((x, y) => x.leg.localeCompare(y.leg) || x.position - y.position).map((p) => p.place_id);
-  expect(places).toEqual([HOME, BINYAMINA, PARDES_HANA, PARDES_HANA, HOME]);
+  expect(places).toEqual(via ? [HOME, BINYAMINA, HOME, PARDES_HANA, PARDES_HANA, HOME] : [HOME, BINYAMINA, PARDES_HANA, PARDES_HANA, HOME]);
+}
+
+async function boardWeek(service: SupabaseClient, week: string) {
+  const { data: existing } = await service.from("weeks").select("phase").eq("department_id", NEVO_DEPARTMENT_ID).eq("week_start", week).maybeSingle();
+  if (existing) return;
+  const day = (daysBefore: number) => new Date(Date.parse(`${week}T00:00:00Z`) - daysBefore * 86400000).toISOString();
+  const { error } = await service.from("weeks").insert({ department_id: NEVO_DEPARTMENT_ID, week_start: week, phase: "solving", open_at: day(7), close_at: day(3), publish_at: day(2) });
+  if (error) throw error;
 }
 
 test("the Sadran drops the school run on the day trip: one chained ride", { tag: ["@board"] }, async ({ browser }) => {
@@ -162,6 +176,61 @@ test("a member drags their school run onto their day trip in edit mode: one chai
     await expectChained(service, shortRide!, shortId, at("07:45"), at("14:00"));
     const { data: gone } = await service.from("rides").select("status").eq("id", dayRide).single();
     expect(gone!.status).toBe("cancelled");
+  } finally {
+    await member1.context.close().catch(() => undefined);
+    await cleanup(service, week);
+  }
+});
+
+// CM1 phase 3 (REQ item 260 c): member2 rides the day trip only - "לכל הנסיעה" is preselected, "לאסוף מ..." passes home again
+test("the Sadran chains with a pickup from home for the one on the day trip only", { tag: ["@board"] }, async ({ browser }) => {
+  test.slow();
+  const week = "2042-03-09";
+  const service = serviceRoleClient();
+  await boardWeek(service, week);
+  await cleanup(service, week);
+  const { carId, shortId, dayRide, at } = await fixture(service, week, false, "draft", true);
+  const sadran = await newSignedInPage(browser, SEEDED_USERS.sadran);
+  try {
+    const page = sadran.page;
+    await page.setViewportSize({ width: 1600, height: 1100 });
+    await page.goto(`/sadran/${NEVO_DEPARTMENT_ID}/${week}/board`);
+    await dragRequest(page, shortId, carId, 540);
+    const dialog = page.getByTestId("merge-dialog");
+    await expect(dialog.getByTestId("chain-one-trip")).toBeVisible();
+    await expect(dialog.getByTestId("chain-one-trip-plain")).toHaveAttribute("aria-checked", "true");
+    await dialog.getByTestId("chain-one-trip-via").click();
+    await expect(dialog.getByTestId("chain-one-trip-via")).toHaveAttribute("aria-checked", "true");
+    await dialog.getByTestId("merge-agreed").click();
+    await expectChained(service, dayRide, shortId, at("07:45"), at("14:00"), true);
+  } finally {
+    await sadran.context.close().catch(() => undefined);
+    await cleanup(service, week);
+  }
+});
+
+test("a member chains their two rides and has the one on the day trip picked up from home", { tag: ["@siddur"] }, async ({ browser }) => {
+  test.slow();
+  const week = "2041-03-10";
+  const service = serviceRoleClient();
+  const admin = await publishedFixtureWeek(week);
+  await admin.auth.signOut();
+  await cleanup(service, week);
+  const { shortId, dayRide, shortRide, at } = await fixture(service, week, true, "confirmed", true);
+  const member1 = await newSignedInPage(browser, SEEDED_USERS.member1);
+  try {
+    const page = member1.page;
+    await page.setViewportSize({ width: 1440, height: 1400 });
+    await page.goto(`/siddur/${NEVO_DEPARTMENT_ID}/${week}`);
+    const short = page.locator(`[data-ride-id="${shortRide}"]:visible`);
+    const day = page.locator(`[data-ride-id="${dayRide}"]:visible`);
+    await expect(short).toBeVisible();
+    await page.getByTestId("edit-mode-button").locator("visible=true").click();
+    await dragOnto(page, short, day);
+    const ask = page.getByRole("dialog").filter({ hasText: he.rideEditing.chainTitle });
+    await ask.getByTestId("chain-one-trip-via").click();
+    await ask.getByRole("button", { name: he.rideEditing.mergeConfirm }).click();
+    await expectChained(service, shortRide!, shortId, at("07:45"), at("14:00"), true);
   } finally {
     await member1.context.close().catch(() => undefined);
     await cleanup(service, week);

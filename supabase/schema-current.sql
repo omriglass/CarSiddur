@@ -1528,6 +1528,33 @@ $$;
 ALTER FUNCTION "public"."_car_tasks_for_profile"("p_profile_id" "uuid", "p_now" timestamp with time zone) OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."_chain_variant"("p_route" "jsonb", "p_side" "text", "p_chained" "uuid") RETURNS "jsonb"
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  select jsonb_build_object(
+    'side', p_side,
+    'minutes', (select coalesce(round(sum(x.m)), 0)::int from (
+        select extract(epoch from (max(r.eta) - min(r.eta))) / 60 as m
+          from jsonb_to_recordset(p_route) as r(leg public.ride_leg, eta timestamptz) group by r.leg) x),
+    'route', (select coalesce(jsonb_agg(jsonb_build_object('leg', r.leg, 'place_id', r.place_id,
+                 'name', coalesce(d.name, r.place_text), 'request_id', r.request_id, 'kind', r.kind, 'eta', r.eta)
+                 order by r.leg, r."position"), '[]'::jsonb)
+        from jsonb_to_recordset(p_route) as r(leg public.ride_leg, "position" integer, place_id uuid, place_text text, request_id uuid, kind text, eta timestamptz)
+        left join public.destinations d on d.id = r.place_id),
+    'at', case p_side
+        when 'before' then (select min(r.eta) from jsonb_to_recordset(p_route) as r(leg public.ride_leg, eta timestamptz) where r.leg = 'out')
+        when 'after' then (select max(r.eta) from jsonb_to_recordset(p_route) as r(leg public.ride_leg, eta timestamptz) where r.leg = 'return')
+        when 'before_via' then (select r.eta from jsonb_to_recordset(p_route) as r(leg public.ride_leg, "position" integer, request_id uuid, eta timestamptz)
+                                 where r.leg = 'out' and r.request_id = p_chained order by r."position" desc limit 1)
+        else (select r.eta from jsonb_to_recordset(p_route) as r(leg public.ride_leg, "position" integer, request_id uuid, eta timestamptz)
+               where r.leg = 'return' and r.request_id = p_chained order by r."position" limit 1) end);
+$$;
+
+
+ALTER FUNCTION "public"."_chain_variant"("p_route" "jsonb", "p_side" "text", "p_chained" "uuid") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."_clear_riders_off_route"("p_request_id" "uuid", "p_list" "jsonb") RETURNS "void"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -3730,6 +3757,8 @@ declare
   v_rb jsonb; v_ra jsonb; -- the ride's route without / with the guest (both legs), built once
   v_fixed jsonb;
   v_chain jsonb; v_chain_route jsonb; v_ch_after int; v_ch_before int; v_ch_guest int; v_ch_extra int;
+  v_base_req public.requests%rowtype; v_chained_keys text[]; v_names text[]; v_unnamed int; v_one jsonb; v_via_on boolean := false;
+  v_plain_side text; v_ra_alt jsonb; v_cur jsonb; v_alt jsonb; v_alt_extra int;
 begin
   select * into v_ride from public.rides where id = p_ride_id;
   if v_ride.id is null then return jsonb_build_object('ok', false, 'error', 'ride_not_found', 'code', 'ride_not_found'); end if;
@@ -3753,6 +3782,35 @@ begin
 
   -- CM1 phase 2 (REQ item 260 b): the same person's two trips one after the other chain into one ride
   if v_err is null then v_chain := public._merge_chain_plan(p_ride_id, p_request_id, p_leg); end if;
+  -- CM1 phase 3 (REQ item 260 c): the long trip's people who are not on the short trip ride the whole chained ride, or
+  -- the ride passes the start again for them (`_via`): asked in the popup (app.chain_via / the proposal's chain_via)
+  if v_chain is not null then
+    select * into v_base_req from public.requests where id = (v_chain ->> 'base_request_id')::uuid;
+    v_chained_keys := public._request_person_keys((v_chain ->> 'request_id')::uuid)
+      || case when nullif(v_chain ->> 'driver_id', '') is not null then array['p:' || (v_chain ->> 'driver_id')] else '{}'::text[] end;
+    select coalesce(array_agg(x.name order by x.ord, x.name), '{}') into v_names from (
+      select 0 as ord, p.full_name as name from public.profiles p
+       where p.id = v_base_req.requester_id and not (('p:' || p.id) = any (v_chained_keys))
+      union all
+      select 1, p.full_name from public.request_companions rc join public.profiles p on p.id = rc.profile_id
+       where rc.request_id = v_base_req.id and not (('p:' || rc.profile_id) = any (v_chained_keys))
+      union all
+      select 2, c.full_name from public.request_children ch join public.children c on c.id = ch.child_id
+       where ch.request_id = v_base_req.id and not (('c:' || ch.child_id) = any (v_chained_keys))) x;
+    v_unnamed := greatest(v_base_req.adults - 1
+      - (select count(*) from public.request_companions rc where rc.request_id = v_base_req.id)::int, 0);
+    if cardinality(v_names) > 0 or v_unnamed > 0 then
+      v_plain_side := v_chain ->> 'side';
+      v_via_on := coalesce(current_setting('app.chain_via', true), '') = 'on'
+        or exists (select 1 from public.proposals p where p.id::text = nullif(current_setting('app.applying_proposal', true), '')
+                   and coalesce((p.payload ->> 'chain_via')::boolean, false));
+      v_one := jsonb_build_object('names', to_jsonb(v_names), 'unnamed', v_unnamed,
+        'place', (select coalesce(d.name, v_base_req.origin_text) from (select 1) one left join public.destinations d on d.id = v_base_req.origin_id),
+        'was', case when v_plain_side = 'before' then v_base_req.depart_at else v_base_req.return_at end,
+        'via_chosen', v_via_on);
+      if v_via_on then v_chain := v_chain || jsonb_build_object('side', v_plain_side || '_via'); end if;
+    end if;
+  end if;
 
   -- REQ item 21 (2026-10-07): large luggage is a yes/no match - a large-luggage (ציוד רב) request
   -- rides only on a `large_trunk` car, and any number of them may share that car (no count cap).
@@ -3799,6 +3857,20 @@ begin
     end if;
     v_ix := case when v_chain ->> 'side' like 'before%' then 1 else 2 end;
     v_add_min[v_ix] := v_ch_extra;
+    if v_one is not null then
+      -- both answers, each with its route, the time those people get on / off, and whether its driving is within the limit
+      select coalesce(jsonb_agg(to_jsonb(r)), '[]'::jsonb) into v_ra_alt
+        from public._ride_route_with(p_ride_id, p_request_id, p_leg,
+               v_chain || jsonb_build_object('side', case when v_via_on then v_plain_side else v_plain_side || '_via' end)) r;
+      v_cur := public._chain_variant(v_ra, v_chain ->> 'side', (v_chain ->> 'request_id')::uuid);
+      v_alt := public._chain_variant(v_ra_alt, case when v_via_on then v_plain_side else v_plain_side || '_via' end, (v_chain ->> 'request_id')::uuid);
+      v_alt_extra := greatest(round((v_alt ->> 'minutes')::int - v_ch_before - v_ch_guest), 0)::int;
+      v_one := v_one || jsonb_build_object(
+        case when v_via_on then 'via' else 'plain' end,
+          jsonb_build_object('route', v_cur -> 'route', 'at', v_cur -> 'at', 'added_minutes', v_ch_extra, 'ok', v_ch_extra <= v_lim_min),
+        case when v_via_on then 'plain' else 'via' end,
+          jsonb_build_object('route', v_alt -> 'route', 'at', v_alt -> 'at', 'added_minutes', v_alt_extra, 'ok', v_alt_extra <= v_lim_min));
+    end if;
     -- the chained ride's places, in order (the way back starts where the way there ends)
     select coalesce(jsonb_agg(jsonb_build_object('leg', r.leg, 'place_id', r.place_id,
              'name', coalesce(d.name, r.place_text), 'request_id', r.request_id, 'kind', r.kind, 'eta', r.eta)
@@ -4019,7 +4091,7 @@ begin
     'detour_problem', v_detour_problem, 'detour_limit_minutes', v_lim_min, 'detour_limit_km', v_lim_km,
     'unknown_hops', (select coalesce(jsonb_agg(distinct h), '[]'::jsonb) from jsonb_array_elements(v_unknown_hops) h),
     'fixed_hour', v_fixed,
-    'chain', case when v_chain is not null then v_chain || jsonb_build_object('route', v_chain_route) end,
+    'chain', case when v_chain is not null then v_chain || jsonb_build_object('route', v_chain_route, 'one_trip', v_one) end,
     'starts_at', v_ride.starts_at, 'new_starts_at', v_start,
     'ends_at', v_ride.ends_at, 'new_ends_at', v_end);
 end;
@@ -5904,6 +5976,8 @@ declare
   v_key text;
   v_bid uuid; v_btext text; v_aid uuid; v_atext text;
   v_dup_a int; v_dup_c int;
+  v_chain_req uuid; v_chain_side text; v_via int; v_shared text[]; v_req_shared boolean; v_split jsonb; v_split_a int; v_split_c int;
+  v_rest int; v_vb int; v_va int; v_pk text;
 begin
   select coalesce(jsonb_agg(jsonb_build_object('place_id', r.place_id, 'place_text', r.place_text, 'request_id', r.request_id, 'kind', r.kind)
            order by r."position"), '[]'::jsonb)
@@ -5917,9 +5991,21 @@ begin
   select array_agg(e.i - 1 order by e.i) into v_base_idx
     from jsonb_array_elements(v_route) with ordinality e(v, i)
    where (e.v ->> 'request_id')::uuid = v_base and e.v ->> 'kind' in ('origin', 'stop', 'destination');
+  -- CM1 phase 3: a chain that passes the start place again on this leg - the base trip's people who are not on the
+  -- chained trip get on there (before_via, the way there) / off there (after_via, the way back)
+  select rr.request_id, rr.chain into v_chain_req, v_chain_side from public.ride_requests rr
+   where rr.ride_id = p_ride_id and rr.chain like '%\_via' order by rr.request_id limit 1;
+  if v_chain_req is not null and ((p_leg = 'out' and v_chain_side = 'before_via') or (p_leg = 'return' and v_chain_side = 'after_via')) then
+    select case when v_chain_side = 'before_via' then max(e.i - 1) else min(e.i - 1) end into v_via
+      from jsonb_array_elements(v_route) with ordinality e(v, i) where (e.v ->> 'request_id')::uuid = v_chain_req;
+    select public._request_person_keys(v_chain_req)
+           || coalesce((select array['p:' || r.driver_id] from public.rides r where r.id = p_ride_id and r.driver_id is not null), '{}'::text[])
+      into v_shared;
+    if v_via is null or v_via <= 0 or v_via >= v_n - 1 then v_via := null; end if;
+  end if;
 
   for q in
-    select x.id, x.adults, x.child_seats, x.boosters, x.origin_id, x.origin_text, x.destination_id, x.destination_text,
+    select x.id, x.requester_id, x.adults, x.child_seats, x.boosters, x.origin_id, x.origin_text, x.destination_id, x.destination_text,
            coalesce(cardinality(x.guest_passenger_names), 0) as gn,
            (select count(*) from public.request_companions rc where rc.request_id = x.id)::int as cn
       from public.requests x
@@ -5961,8 +6047,43 @@ begin
         from unnest(public._request_person_keys(q.id)) k where k = any (public._request_person_keys(v_base));
       v_less_a := least(v_less_a + v_dup_a, q.adults); v_less_c := least(v_less_c + v_dup_c, q.child_seats);
     end if;
-    v_riders := v_riders || jsonb_build_array(jsonb_build_object('adults', q.adults - v_less_a, 'childSeats', q.child_seats - v_less_c,
-      'boosters', q.boosters - v_less_b, 'board', v_from, 'alight', v_to, 'key', 'req:' || q.id));
+    -- CM1 phase 3: the base trip on a leg passing the start again - each of its people rides their own part: the
+    -- requester's part for the request's row, a row of its own for whoever is on the other part
+    v_split := '[]'::jsonb; v_split_a := 0; v_split_c := 0;
+    if q.id = v_base and v_via is not null then
+      v_req_shared := ('p:' || q.requester_id) = any (v_shared);
+      if v_chain_side = 'before_via' then v_vb := v_via; v_va := v_n - 1; else v_vb := 0; v_va := v_via; end if;
+      if not v_req_shared then v_from := v_vb; v_to := v_va; end if;
+      select coalesce(jsonb_agg(jsonb_build_object('adults', case when y.kind = 'comp' then 1 else 0 end,
+               'childSeats', case when y.kind = 'child' then 1 else 0 end, 'boosters', 0,
+               'board', case when v_req_shared then v_vb else 0 end, 'alight', case when v_req_shared then v_va else v_n - 1 end,
+               'key', y.kind || ':' || q.id || ':' || y.pid) order by y.kind, y.pid), '[]'::jsonb),
+             count(*) filter (where y.kind = 'comp')::int, count(*) filter (where y.kind = 'child')::int
+        into v_split, v_split_a, v_split_c
+        from (select 'comp' as kind, rc.profile_id::text as pid, 'p:' || rc.profile_id as pk, 'companion:' || rc.profile_id as rk
+                from public.request_companions rc where rc.request_id = q.id
+              union all
+              select 'child', ch.child_id::text, 'c:' || ch.child_id, 'child:' || ch.child_id
+                from public.request_children ch where ch.request_id = q.id) y
+       where (y.pk = any (v_shared)) <> v_req_shared
+         and not exists (select 1 from jsonb_array_elements(v_rows) r where r ->> 'rider_key' = y.rk);
+      v_split_a := least(v_split_a, greatest(q.adults - v_less_a, 0));
+      v_split_c := least(v_split_c, greatest(q.child_seats - v_less_c, 0));
+      if v_req_shared then
+        -- the unnamed adults are on this trip only
+        v_rest := greatest(q.adults - v_less_a - v_split_a - 1
+                    - (select count(*) from public.request_companions rc where rc.request_id = q.id
+                        and ('p:' || rc.profile_id) = any (v_shared)
+                        and not exists (select 1 from jsonb_array_elements(v_rows) r where r ->> 'rider_key' = 'companion:' || rc.profile_id))::int, 0);
+        if v_rest > 0 then
+          v_split := v_split || jsonb_build_array(jsonb_build_object('adults', v_rest, 'childSeats', 0, 'boosters', 0,
+            'board', v_vb, 'alight', v_va, 'key', 'rest:' || q.id));
+          v_split_a := v_split_a + v_rest;
+        end if;
+      end if;
+    end if;
+    v_riders := v_riders || jsonb_build_array(jsonb_build_object('adults', q.adults - v_less_a - v_split_a, 'childSeats', q.child_seats - v_less_c - v_split_c,
+      'boosters', q.boosters - v_less_b, 'board', v_from, 'alight', v_to, 'key', 'req:' || q.id)) || v_split;
 
     for s in select x as r from jsonb_array_elements(v_rows) x loop
       v_key := case split_part(s.r ->> 'rider_key', ':', 1)
@@ -5988,6 +6109,14 @@ begin
              or (s.r ->> 'alight_place_text' is not null and lower(pt.place_text) = lower(s.r ->> 'alight_place_text')));
         v_b := coalesce(v_base_idx[coalesce(v_b, 0) + 1], 0);
         v_a := coalesce(v_base_idx[coalesce(v_a, cardinality(v_base_idx) - 1) + 1], v_n - 1);
+        -- CM1 phase 3: someone on this trip only gets on (off) where the chain passes the start again
+        if v_via is not null then
+          v_pk := case split_part(s.r ->> 'rider_key', ':', 1) when 'companion' then 'p:' || split_part(s.r ->> 'rider_key', ':', 2)
+                    when 'child' then 'c:' || split_part(s.r ->> 'rider_key', ':', 2) end;
+          if v_pk is null or not (v_pk = any (v_shared)) then
+            if v_chain_side = 'before_via' then v_b := greatest(v_b, v_via); else v_a := least(v_a, v_via); end if;
+          end if;
+        end if;
       end if;
       v_riders := v_riders || jsonb_build_array(jsonb_build_object(
         'adults', case when s.r ->> 'seat_kind' = 'adult' then 1 else 0 end,
@@ -6314,13 +6443,22 @@ begin
     -- before: out = [start] ++ the chained trip's way there (its stops, its far end) ++ the base's way there;
     -- after: return = the base's way back without its end ++ the chained trip's way there and back after its start ++ [end].
     -- The shared start / end place stays the base's (both trips start from the same place).
+    -- CM1 phase 3: before_via also drives the chained trip's way back (to the start again, a stop of the chained trip)
+    -- before the base's way there; after_via drives from the base's far end to the start first (a stop), then the
+    -- chained trip's way there and back.
     if v_chain_req is not null and v_leg = 'out' and v_chain_side like 'before%' then
-      select coalesce(jsonb_agg(jsonb_build_object('place_id', p.place_id, 'place_text', p.place_text, 'request_id', v_chain_req,
-               'kind', case when p."position" = x.m then 'alight' else 'stop' end) order by p."position"), '[]'::jsonb)
-        into v_p
-        from public.request_leg_route_points(v_chain_req, 'out') p
-        cross join (select max(p2."position") as m from public.request_leg_route_points(v_chain_req, 'out') p2) x
-       where p."position" > 0;
+      select coalesce(jsonb_agg(y.e order by y.part, y.pos), '[]'::jsonb) into v_p from (
+        select 1 as part, p."position" as pos,
+               jsonb_build_object('place_id', p.place_id, 'place_text', p.place_text, 'request_id', v_chain_req,
+                 'kind', case when p."position" = x.m then 'alight' else 'stop' end) as e
+          from public.request_leg_route_points(v_chain_req, 'out') p
+          cross join (select max(p2."position") as m from public.request_leg_route_points(v_chain_req, 'out') p2) x
+         where p."position" > 0
+        union all
+        select 2, p."position",
+               jsonb_build_object('place_id', p.place_id, 'place_text', p.place_text, 'request_id', v_chain_req, 'kind', 'stop')
+          from public.request_leg_route_points(v_chain_req, 'return') p
+         where v_chain_side = 'before_via' and p."position" > 0) y;
       v_route := jsonb_build_array(v_route -> 0) || v_p || (v_route - 0);
     elsif v_chain_req is not null and v_leg = 'return' and v_chain_side like 'after%' then
       select coalesce(jsonb_agg(y.e order by y.part, y.pos), '[]'::jsonb) into v_p from (
@@ -6329,7 +6467,7 @@ begin
                  'kind', case when p."position" = x.m then 'board' else 'stop' end) as e
           from public.request_leg_route_points(v_chain_req, 'out') p
           cross join (select max(p2."position") as m from public.request_leg_route_points(v_chain_req, 'out') p2) x
-         where p."position" > 0
+         where p."position" > case when v_chain_side = 'after_via' then -1 else 0 end
         union all
         select 2, p."position",
                jsonb_build_object('place_id', p.place_id, 'place_text', p.place_text, 'request_id', v_chain_req, 'kind', 'stop')
@@ -16550,7 +16688,7 @@ end $$;
 ALTER FUNCTION "public"."member_merge_preview"("p_ride_id" "uuid", "p_source_ride_id" "uuid", "p_request_id" "uuid") OWNER TO "postgres";
 
 
-CREATE OR REPLACE FUNCTION "public"."member_merge_ride"("p_ride_id" "uuid", "p_source_ride_id" "uuid", "p_request_id" "uuid", "p_expected_version" integer, "p_wait" boolean DEFAULT false, "p_allow_long_detour" boolean DEFAULT false, "p_agreed" boolean DEFAULT false, "p_allow_small_trunk" boolean DEFAULT false) RETURNS "jsonb"
+CREATE OR REPLACE FUNCTION "public"."member_merge_ride"("p_ride_id" "uuid", "p_source_ride_id" "uuid", "p_request_id" "uuid", "p_expected_version" integer, "p_wait" boolean DEFAULT false, "p_allow_long_detour" boolean DEFAULT false, "p_agreed" boolean DEFAULT false, "p_allow_small_trunk" boolean DEFAULT false, "p_chain_via" boolean DEFAULT false) RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
@@ -16562,6 +16700,8 @@ begin
   perform 1 from public.rides where id in (p_ride_id, p_source_ride_id) order by id for update;
   select * into h from public.rides where id = p_ride_id;
   if h.id is not null and (p_expected_version is null or h.version <> p_expected_version) then perform public.raise_stale_version(); end if;
+  -- CM1 phase 3: the member's answer for the people on one trip only (pass the start again for them)
+  perform set_config('app.chain_via', case when coalesce(p_chain_via, false) then 'on' else '' end, true);
   v := public._member_merge_check(p_ride_id, p_source_ride_id, p_request_id);
   v_leg := (v ->> 'leg')::public.ride_leg;
   -- REQ §13.175 (d, g): the member may accept a long detour and, after "אני מודע/ת", a car without a large trunk
@@ -16615,6 +16755,7 @@ begin
   perform public.assert_ride_seats_fit(h.id);
   perform public.assert_car_chain(h.car_id, h.week_start);
   perform public._small_trunk_mode(false);
+  perform set_config('app.chain_via', '', true);
   update public.requests set status = 'merged', status_reason = 'MEMBER_MERGED' where id = p_request_id;
   perform set_config('app.system_status_transition', v_prev, true);
 
@@ -16626,7 +16767,7 @@ begin
 end $$;
 
 
-ALTER FUNCTION "public"."member_merge_ride"("p_ride_id" "uuid", "p_source_ride_id" "uuid", "p_request_id" "uuid", "p_expected_version" integer, "p_wait" boolean, "p_allow_long_detour" boolean, "p_agreed" boolean, "p_allow_small_trunk" boolean) OWNER TO "postgres";
+ALTER FUNCTION "public"."member_merge_ride"("p_ride_id" "uuid", "p_source_ride_id" "uuid", "p_request_id" "uuid", "p_expected_version" integer, "p_wait" boolean, "p_allow_long_detour" boolean, "p_agreed" boolean, "p_allow_small_trunk" boolean, "p_chain_via" boolean) OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."member_of"("_dept" "uuid") RETURNS boolean
@@ -39091,6 +39232,11 @@ GRANT ALL ON FUNCTION "public"."_car_tasks_for_profile"("p_profile_id" "uuid", "
 
 
 
+REVOKE ALL ON FUNCTION "public"."_chain_variant"("p_route" "jsonb", "p_side" "text", "p_chained" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_chain_variant"("p_route" "jsonb", "p_side" "text", "p_chained" "uuid") TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."_clear_riders_off_route"("p_request_id" "uuid", "p_list" "jsonb") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."_clear_riders_off_route"("p_request_id" "uuid", "p_list" "jsonb") TO "service_role";
 
@@ -41333,9 +41479,9 @@ GRANT ALL ON FUNCTION "public"."member_merge_preview"("p_ride_id" "uuid", "p_sou
 
 
 
-REVOKE ALL ON FUNCTION "public"."member_merge_ride"("p_ride_id" "uuid", "p_source_ride_id" "uuid", "p_request_id" "uuid", "p_expected_version" integer, "p_wait" boolean, "p_allow_long_detour" boolean, "p_agreed" boolean, "p_allow_small_trunk" boolean) FROM PUBLIC;
-GRANT ALL ON FUNCTION "public"."member_merge_ride"("p_ride_id" "uuid", "p_source_ride_id" "uuid", "p_request_id" "uuid", "p_expected_version" integer, "p_wait" boolean, "p_allow_long_detour" boolean, "p_agreed" boolean, "p_allow_small_trunk" boolean) TO "service_role";
-GRANT ALL ON FUNCTION "public"."member_merge_ride"("p_ride_id" "uuid", "p_source_ride_id" "uuid", "p_request_id" "uuid", "p_expected_version" integer, "p_wait" boolean, "p_allow_long_detour" boolean, "p_agreed" boolean, "p_allow_small_trunk" boolean) TO "authenticated";
+REVOKE ALL ON FUNCTION "public"."member_merge_ride"("p_ride_id" "uuid", "p_source_ride_id" "uuid", "p_request_id" "uuid", "p_expected_version" integer, "p_wait" boolean, "p_allow_long_detour" boolean, "p_agreed" boolean, "p_allow_small_trunk" boolean, "p_chain_via" boolean) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."member_merge_ride"("p_ride_id" "uuid", "p_source_ride_id" "uuid", "p_request_id" "uuid", "p_expected_version" integer, "p_wait" boolean, "p_allow_long_detour" boolean, "p_agreed" boolean, "p_allow_small_trunk" boolean, "p_chain_via" boolean) TO "service_role";
+GRANT ALL ON FUNCTION "public"."member_merge_ride"("p_ride_id" "uuid", "p_source_ride_id" "uuid", "p_request_id" "uuid", "p_expected_version" integer, "p_wait" boolean, "p_allow_long_detour" boolean, "p_agreed" boolean, "p_allow_small_trunk" boolean, "p_chain_via" boolean) TO "authenticated";
 
 
 

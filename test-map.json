@@ -185,6 +185,8 @@
         "supabase/tests/ride_people_parts.sql",
         "supabase/tests/seats_person_once.sql",
         "supabase/tests/chain_merge.sql",
+        "supabase/tests/chain_merge_via.sql",
+        "src/features/rides/ChainOneTripChoice.tsx",
         "supabase/migrations/**/*seats_person_once*",
         "supabase/migrations/**/*chain_merge*",
         "supabase/migrations/**/*ride_people_parts*",
@@ -232,6 +234,7 @@
         "ride_people_parts.sql",
         "seats_person_once.sql",
         "chain_merge.sql",
+        "chain_merge_via.sql",
         "riders_off_route.sql",
         "merge_fixed_hours.sql",
         "leave_ride_as_guest.sql"

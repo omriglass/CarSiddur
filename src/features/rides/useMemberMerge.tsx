@@ -15,6 +15,7 @@ import { formatTime } from "@/lib/time";
 import { memberMergePreview, memberMergeRide, type BoardRide, type MemberMergePreview } from "./api";
 import { MergeWaitDialog } from "./components/MergeWaitDialog";
 import { invalidateWeekData } from "./invalidateWeek";
+import { ChainOneTripChoice } from "./ChainOneTripChoice";
 import { chainRouteText } from "./mergeChain";
 import { memberMergeAgreeNames, memberMergeWaitChoice, type MemberMergeTarget } from "./memberMerge";
 import { longDetourText } from "./mergeQuestions";
@@ -28,6 +29,8 @@ interface Flow {
   preview: MemberMergePreview;
   step: Step;
   wait: boolean;
+  /** CM1 phase 3: a chain's people on one trip only - pass the start place again for them. */
+  chainVia: boolean;
 }
 
 /** Hebrew reason for a refused member merge (the board's codes, `he.mergedRide.invalid`). */
@@ -68,7 +71,7 @@ export function useMemberMerge({ departmentId, weekStart, onDone }: {
         toast.error(refusal(preview.code, preview.needs));
         return true;
       }
-      setFlow({ host, target, preview, step: "confirm", wait: false });
+      setFlow({ host, target, preview, step: "confirm", wait: false, chainVia: false });
     } catch (error) {
       if (target.own) return false;
       showErrorToast(error);
@@ -89,12 +92,13 @@ export function useMemberMerge({ departmentId, weekStart, onDone }: {
   }
 
   async function apply(current: Flow, agreed: boolean) {
-    const { host, target, preview, wait } = current;
+    const { host, target, preview, wait, chainVia } = current;
     if (!host.id || host.version == null || !target.ride.id || !departmentId || !weekStart) return;
     setBusy(true);
     try {
       await memberMergeRide({ rideId: host.id, sourceRideId: target.ride.id, requestId: target.requestId, expectedVersion: host.version,
-        wait, allowLongDetour: !!preview.longDetour, agreed, allowSmallTrunk: preview.luggageProblem });
+        wait, allowLongDetour: !!preview.longDetour, agreed, allowSmallTrunk: preview.luggageProblem,
+        chainVia: chainVia && !!preview.chain?.oneTrip });
       await invalidateWeekData(queryClient, departmentId, weekStart);
       toast.success(tv("rideEditing.mergeDone", { name: preview.guestName || target.name }));
       setFlow(null);
@@ -121,8 +125,15 @@ export function useMemberMerge({ departmentId, weekStart, onDone }: {
     <>
       <ConfirmDialog open={flow?.step === "confirm"} onOpenChange={(open) => { if (!open) close(); }}
         title={flow?.preview.chain ? he.rideEditing.chainTitle : tv("rideEditing.mergeTitle", { name: guest })}
-        description={flow?.preview.chain ? tv("mergedRide.chainRoute", { route: chainRouteText(flow.preview.chain) }) : legLine}
-        confirmLabel={he.rideEditing.mergeConfirm} loading={busy} onConfirm={() => { if (flow) next(flow, "confirm"); }} />
+        description={flow?.preview.chain ? tv("mergedRide.chainRoute", { route: chainRouteText(flow.preview.chain.oneTrip
+          ? (flow.chainVia ? flow.preview.chain.oneTrip.via : flow.preview.chain.oneTrip.plain) : flow.preview.chain) }) : legLine}
+        confirmLabel={he.rideEditing.mergeConfirm} loading={busy} onConfirm={() => { if (flow) next(flow, "confirm"); }}>
+        {/* CM1 phase 3 (REQ item 260 c): the people on one of my two trips only */}
+        {flow?.preview.chain?.oneTrip ? (
+          <ChainOneTripChoice chain={{ side: flow.preview.chain.side, oneTrip: flow.preview.chain.oneTrip }} via={flow.chainVia}
+            onChange={(via) => setFlow({ ...flow, chainVia: via })} />
+        ) : null}
+      </ConfirmDialog>
       {flow && waitChoice ? (
         <MergeWaitDialog choice={waitChoice} guest={guest} host={viewerName} place={destinationOf(flow.target)}
           onAnswer={(answer) => {

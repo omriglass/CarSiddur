@@ -116,6 +116,8 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
   const [timeFarAsk, setTimeFarAsk] = useState<{ text: string; title: string; confirm: string; resolve: (accepted: boolean) => void } | null>(null);
   // REQ §13.175: "the detour is long — merge anyway?" and "pick the guest up at another time, or stretch the ride?"
   const [detourAsk, setDetourAsk] = useState<{ text: string; resolve: (accepted: boolean) => void } | null>(null);
+  // CM1 phase 3: the merge popup's answer for a chain's people on one trip only (pass the start place again)
+  const [chainViaAnswer, setChainViaAnswer] = useState<{ key: string; via: boolean }>({ key: "", via: false });
   const [waitAsk, setWaitAsk] = useState<{ choice: MergeWaitChoice; resolve: (answer: "extend" | "keep" | null) => void } | null>(null);
 
   // Board queries + the pure derivation of the week-grid data (cars/rides/
@@ -130,6 +132,10 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
   // Interactive/drag-drop state + every handler that mutates rides/proposals
   // from the board — `useBoardDnd`.
   const dnd = useBoardDnd(departmentId, weekStart, board);
+  const mergeKey = `${dnd.mergePrefill?.requestId ?? ""}:${dnd.mergePrefill?.rideId ?? ""}`;
+  // the answer belongs to the merge it was given for (another drop starts from "the whole ride")
+  const chainVia = chainViaAnswer.key === mergeKey && chainViaAnswer.via;
+  const setChainVia = (via: boolean) => setChainViaAnswer({ key: mergeKey, via });
   // REQ §13.114: maintenance bands are drawn (and, for Sadranim/admins, draggable) from the full period rows.
   const maintenanceEditing = useMaintenanceGridEditing({ departmentId, blocks: board.maintenanceQuery.data ?? [], cars: board.weekGridCars, day: board.selectedDay, staff: true });
   // Destructured locally (not read off `dnd.` at the point of use) purely so
@@ -250,6 +256,7 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
   async function withMergeWaiver(next: (prefill: ComposerPrefill) => void | Promise<void>) {
     let prefill = dnd.mergePrefill;
     if (!prefill) return;
+    if (chainVia && mergePreview?.chain?.oneTrip) prefill = { ...prefill, payload: { ...prefill.payload, chain_via: true } };
     // REQ §13.175 (b): the ride reaches the guest at another time than asked - never silently: take the guest at the
     // ride's time, or stretch the host's ride to the guest's time (sent as the merge's explicit window).
     const wait = !mergePair && mergeRequest && mergeVerdictNow?.status === "ok" ? mergeWaitChoice(serverMergeHost.data, mergeRequest, mergeLeg) : null;
@@ -733,6 +740,8 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
         onDraft={() => { void withMergeWaiver(async (prefill) => { await dnd.afterSplit(async () => { await dnd.saveDraft(prefill); }); }); }}
         busy={dnd.draftPending}
         onCancel={() => dnd.setMergePrefill(null)}
+        chainVia={chainVia}
+        onChainViaChange={setChainVia}
       />
       <DropAskDialog ask={dnd.dropAsk} onAnswer={dnd.answerDropAsk} />
       {dnd.displacement ? (

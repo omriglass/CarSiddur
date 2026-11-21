@@ -362,10 +362,11 @@ export async function memberMergePreview(rideId: string, sourceRideId: string, r
   };
 }
 
-export async function memberMergeRide(input: { rideId: string; sourceRideId: string; requestId: string; expectedVersion: number; wait: boolean; allowLongDetour: boolean; agreed: boolean; allowSmallTrunk: boolean }): Promise<void> {
+export async function memberMergeRide(input: { rideId: string; sourceRideId: string; requestId: string; expectedVersion: number; wait: boolean; allowLongDetour: boolean; agreed: boolean; allowSmallTrunk: boolean; chainVia?: boolean }): Promise<void> {
   await rpc("member_merge_ride", {
     p_ride_id: input.rideId, p_source_ride_id: input.sourceRideId, p_request_id: input.requestId, p_expected_version: input.expectedVersion,
     p_wait: input.wait, p_allow_long_detour: input.allowLongDetour, p_agreed: input.agreed, p_allow_small_trunk: input.allowSmallTrunk,
+    p_chain_via: input.chainVia ?? false,
   });
 }
 
