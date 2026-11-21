@@ -721,13 +721,26 @@ export const heMember = {
   rideSummary: {
     tabs: { summary: "סיכום", details: "פרטים", history: "היסטוריה" },
     tabsLabel: "פרטי הנסיעה",
-    /** RP1 (owner 2026-11-21, wording to approve): who rides from where to where, each direction one sentence. */
-    to: "{{names}} ל{{to}}",
-    fromTo: "{{names}} מ{{from}} ל{{to}}",
-    home: "{{names}} הביתה",
-    fromHome: "{{names}} מ{{from}} הביתה",
-    via: "{{text}} דרך {{places}}",
+    /** RP1 (owner 2026-11-21, wording to approve): each way as a flow; "…One" when one person is in the car. */
+    leave: "{{names}} יוצאים מ{{from}}",
+    leaveOne: "{{names}} יוצא/ת מ{{from}}",
+    homeWord: "הבית",
+    to: "ל{{place}}",
+    toHome: "הביתה",
+    drop: "משאירים את {{names}} ב{{place}}",
+    dropOne: "משאיר/ה את {{names}} ב{{place}}",
+    pick: "אוספים את {{names}} מ{{place}}",
+    pickOne: "אוסף/ת את {{names}} מ{{place}}",
+    dropPick: "משאירים את {{off}} ב{{place}} ואוספים את {{on}}",
+    dropPickOne: "משאיר/ה את {{off}} ב{{place}} ואוסף/ת את {{on}}",
+    pass: "עוברים ב{{place}}",
+    passOne: "עובר/ת ב{{place}}",
+    goOn: "וממשיכים {{to}}",
+    goOnOne: "וממשיך/ה {{to}}",
     back: "בחזור: {{text}}",
+    /** A ride that goes one way only, said clearly. */
+    onlyOut: "{{text}} · הלוך בלבד",
+    onlyBack: "{{text}} · חזור בלבד",
     listAnd: "{{init}} ו{{last}}",
   },
   /** SD1 (REQ item 256, owner-approved 2026-11-19): the ride's time constraints, per person or per route. */

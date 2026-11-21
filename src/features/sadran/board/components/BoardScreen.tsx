@@ -49,10 +49,9 @@ import { TZ, dateKey, formatTime } from "@/lib/time";
 import { useWeeks } from "@/features/siddur/hooks";
 import { isPastWeek } from "@/lib/pastWeek";
 import { rideDescriptionFields } from "@/lib/ridePublicDetails";
-import { ridePassengerSummary } from "@/lib/ridePassengerSummary";
 import { rideCoordinatorNoteLines, rideCoordinatorNoteFields } from "@/lib/rideCoordinatorNotes";
 
-import { peopleNames, peopleOf } from "@/features/rides/ridePeople";
+import { addedPeopleNames, peopleNames, peopleOf } from "@/features/rides/ridePeople";
 import { resolveRideRealDestination } from "../rideLabel";
 import { duplicateChildRuns, groupDuplicateRuns } from "../duplicateChildRuns";
 import { connectedMateOf, unmetItemId } from "../unmetLegs";
@@ -624,8 +623,7 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
                 originName: r.origin_name ?? "",
                 // Same fix as the grid's `rideBlockLabel` (bug #3): a round
                 // trip's own `destination_name` is always home ("נבו").
-                ...rideDescriptionFields(servedOf(r).length ? r.notes : null, withChildNames(servedOf(r), board.requestsQuery.data ?? []), { includeCompanions: false }),
-                passengerSummary: ridePassengerSummary(withChildNames(servedOf(r), board.requestsQuery.data ?? []), r.needs_driver ? null : r.driver_name),
+                ...rideDescriptionFields(servedOf(r).length ? r.notes : null, withChildNames(servedOf(r), board.requestsQuery.data ?? []), { addedNames: addedPeopleNames(r, servedOf(r)), driverName: r.needs_driver ? null : r.driver_name }),
                 ...rideCoordinatorNoteFields(servedOf(r), board.requestsQuery.data ?? []),
                 label: board.weekGridRides.find((item) => item.id === r.id)?.label,
                 destinationName: (

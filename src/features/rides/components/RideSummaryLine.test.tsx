@@ -26,7 +26,7 @@ describe("RideSummaryLine (RP1)", () => {
       return: { spans: { "driver:d": [0, 1], "added:n": [0, 1] }, absent: [], free: [2] },
     };
     render(<RideSummaryLine rideId="r1" version={1} route={route} people={people} lead="דנה לבנימינה" homeId="נבו" />);
-    expect(screen.getByTestId("ride-summary")).toHaveTextContent("דנה וענבר לבנימינה. בחזור: דנה ונגה מבנימינה הביתה.");
+    expect(screen.getByTestId("ride-summary")).toHaveTextContent("דנה וענבר יוצאים מהבית לבנימינה. בחזור: דנה ונגה יוצאים מבנימינה הביתה.");
   });
 
   it("onlyWhenMore: nothing when the sentence is just the label", () => {
@@ -38,10 +38,10 @@ describe("RideSummaryLine (RP1)", () => {
     expect(screen.queryByTestId("ride-summary")).toBeNull();
   });
 
-  it("a one-way ride with nothing in the middle reads nothing", () => {
+  it("a one-way ride with nothing in the middle reads nothing and says it goes one way", () => {
     stretches.enabled = [];
     render(<RideSummaryLine rideId="r1" version={1} route={route.slice(0, 2)} people={people} lead="דנה לבנימינה" />);
     expect(stretches.enabled).toEqual([false]);
-    expect(screen.getByTestId("ride-summary")).toHaveTextContent("דנה לבנימינה");
+    expect(screen.getByTestId("ride-summary")).toHaveTextContent("דנה לבנימינה · הלוך בלבד");
   });
 });

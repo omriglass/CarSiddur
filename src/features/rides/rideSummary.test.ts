@@ -18,7 +18,7 @@ describe("rideSummaryText", () => {
     expect(namesList(["נועה", "עידו", "דנה"])).toBe("נועה, עידו ודנה");
   });
 
-  it("RP1: who rides from where to where, each way one sentence (the owner's example)", () => {
+  it("RP1: each way as a flow (the owner's example)", () => {
     const rows = [
       row("out", 0, "נבו", [], ["חבר ראשון", "ענבר"]),
       row("out", 1, "זכרון יעקב", [], []),
@@ -26,38 +26,48 @@ describe("rideSummaryText", () => {
       row("return", 0, "בנימינה", [], ["חבר ראשון", "נגה"]),
       row("return", 1, "נבו", ["חבר ראשון", "נגה"], []),
     ];
-    expect(rideSummaryText("חבר לבנימינה", rows, "נבו")).toBe("חבר וענבר לבנימינה דרך זכרון יעקב. בחזור: חבר ונגה מבנימינה הביתה.");
-    // without the home place: the way back says where it ends
-    expect(rideSummaryText("חבר לבנימינה", rows)).toBe("חבר וענבר לבנימינה דרך זכרון יעקב. בחזור: חבר ונגה מבנימינה לנבו.");
+    expect(rideSummaryText("חבר לבנימינה", rows, "נבו")).toBe(
+      "חבר וענבר יוצאים מהבית, עוברים בזכרון יעקב וממשיכים לבנימינה. בחזור: חבר ונגה יוצאים מבנימינה הביתה.");
+    // without the home place: its name
+    expect(rideSummaryText("חבר לבנימינה", rows)).toBe(
+      "חבר וענבר יוצאים מנבו, עוברים בזכרון יעקב וממשיכים לבנימינה. בחזור: חבר ונגה יוצאים מבנימינה לנבו.");
   });
 
-  it("people getting on / off in the middle each get their own part, the longest first", () => {
+  it("people left and picked up on the way", () => {
     const rows = [
-      row("out", 0, "נבו", [], ["חבר", "נועה", "עידו"]),
-      row("out", 1, "זכרון יעקב", ["נועה", "עידו"], ["דנה"]),
-      row("out", 2, "בנימינה", ["חבר", "דנה"], []),
-      row("return", 0, "בנימינה", [], ["חבר", "דנה"]),
-      row("return", 1, "זכרון יעקב", [], ["נועה", "עידו"]),
-      row("return", 2, "נבו", ["חבר", "דנה", "נועה", "עידו"], []),
+      row("out", 0, "נבו", [], ["חבר", "טל", "גל"]),
+      row("out", 1, "זכרון יעקב", ["גל"], []),
+      row("out", 2, "בנימינה", ["חבר", "טל"], []),
+      row("return", 0, "בנימינה", [], ["חבר", "טל"]),
+      row("return", 1, "זכרון יעקב", [], ["גל"]),
+      row("return", 2, "נבו", ["חבר", "טל", "גל"], []),
     ];
-    expect(rideSummaryText("חבר וסדרן לבנימינה", rows, "נבו")).toBe(
-      "חבר לבנימינה דרך זכרון יעקב; נועה ועידו לזכרון יעקב; דנה מזכרון יעקב לבנימינה. "
-      + "בחזור: חבר ודנה מבנימינה הביתה דרך זכרון יעקב; נועה ועידו מזכרון יעקב הביתה.");
+    expect(rideSummaryText("חבר לבנימינה", rows, "נבו")).toBe(
+      "חבר, טל וגל יוצאים מהבית, משאירים את גל בזכרון יעקב וממשיכים לבנימינה. "
+      + "בחזור: חבר וטל יוצאים מבנימינה, אוספים את גל מזכרון יעקב וממשיכים הביתה.");
+    const swap = [
+      row("out", 0, "נבו", [], ["חבר", "נועה"]),
+      row("out", 1, "זכרון יעקב", ["נועה"], ["דנה"]),
+      row("out", 2, "בנימינה", ["חבר", "דנה"], []),
+    ];
+    expect(rideSummaryText("x", swap, "נבו", "out")).toBe(
+      "חבר ונועה יוצאים מהבית, משאירים את נועה בזכרון יעקב ואוספים את דנה וממשיכים לבנימינה · הלוך בלבד.");
   });
 
-  it("nothing to explain keeps the label; a way back only; two people with one first name", () => {
+  it("a simple ride keeps its label; one way says so; one person; two people with one first name", () => {
     const same = [
       row("out", 0, "נבו", [], ["דנה"]), row("out", 1, "בנימינה", ["דנה"], []),
       row("return", 0, "בנימינה", [], ["דנה"]), row("return", 1, "נבו", ["דנה"], []),
     ];
     expect(rideSummaryText("דנה לבנימינה", same, "נבו")).toBe("דנה לבנימינה");
     expect(rideSummaryText("סדרן לחיפה", [], "נבו")).toBe("סדרן לחיפה");
+    expect(rideSummaryText("סדרן לחיפה", [], "נבו", "out")).toBe("סדרן לחיפה · הלוך בלבד");
     const back = [row("return", 0, "חיפה", [], ["סדרן"]), row("return", 1, "קיסריה", [], []), row("return", 2, "נבו", ["סדרן"], [])];
-    expect(rideSummaryText("סדרן מחיפה", back, "נבו")).toBe("סדרן מחיפה הביתה דרך קיסריה.");
+    expect(rideSummaryText("סדרן מחיפה", back, "נבו", "return")).toBe("סדרן יוצא/ת מחיפה, עובר/ת בקיסריה וממשיך/ה הביתה · חזור בלבד.");
     const twins = [
       row("out", 0, "נבו", [], ["דנה כהן", "דנה לוי"]), row("out", 1, "בנימינה", ["דנה כהן", "דנה לוי"], []),
       row("return", 0, "בנימינה", [], ["דנה כהן"]), row("return", 1, "נבו", ["דנה כהן"], []),
     ];
-    expect(rideSummaryText("x", twins, "נבו")).toBe("דנה כהן ודנה לוי לבנימינה. בחזור: דנה כהן מבנימינה הביתה.");
+    expect(rideSummaryText("x", twins, "נבו")).toBe("דנה כהן ודנה לוי יוצאים מהבית לבנימינה. בחזור: דנה כהן יוצא/ת מבנימינה הביתה.");
   });
 });

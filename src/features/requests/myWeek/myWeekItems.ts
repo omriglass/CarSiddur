@@ -132,7 +132,7 @@ export function rideBlocks(
         })
       : [];
     const descriptionLines = [...[...new Set(myDetails)].map((text): RichLine => [{ text }]),
-      ...(rideDescriptionLines(served.length ? ride.notes : null, served, { includeCompanions: true, addedNames: addedPeopleNames(ride, served) }) ?? [])];
+      ...(rideDescriptionLines(served.length ? ride.notes : null, served, { includeCompanions: true, addedNames: addedPeopleNames(ride, served), driverName: ride.needs_driver ? null : ride.driver_name }) ?? [])];
     const description = richLinesText(descriptionLines) || undefined;
     segments.forEach((segment, index) => {
       out.push({

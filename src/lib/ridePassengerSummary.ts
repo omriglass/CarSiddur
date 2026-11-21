@@ -32,7 +32,7 @@ export function ridePassengerSummary(
   return tv("ridePublicDetails.passengers", { summary: joinParts(parts) });
 }
 
-function unnamedParts(adults: number, children: number): string[] {
+export function unnamedParts(adults: number, children: number): string[] {
   return [
     ...(adults ? [tv(adults === 1 ? "ridePublicDetails.unnamedAdult" : "ridePublicDetails.unnamedAdults", { count: String(adults) })] : []),
     ...(children ? [tv(children === 1 ? "ridePublicDetails.unnamedChild" : "ridePublicDetails.unnamedChildren", { count: String(children) })] : []),
@@ -40,7 +40,7 @@ function unnamedParts(adults: number, children: number): string[] {
 }
 
 /** "א, ב וג". */
-function joinParts(parts: readonly string[]): string {
+export function joinParts(parts: readonly string[]): string {
   return parts.length === 1 ? parts[0]! : tv("ridePublicDetails.joinPassengers", { names: parts.slice(0, -1).join(", "), last: parts.at(-1)! });
 }
 

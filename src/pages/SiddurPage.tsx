@@ -58,7 +58,6 @@ import { RequestDeadlineNote } from "@/features/requests/components/RequestDeadl
 import { CarNowButton } from "@/features/requests/components/CarNowButton";
 import { QuickRequestSheet } from "@/features/requests/components/QuickRequestSheet";
 import { rideDescriptionFields } from "@/lib/ridePublicDetails";
-import { ridePassengerSummary } from "@/lib/ridePassengerSummary";
 import { rideCoordinatorNoteLines, rideCoordinatorNoteFields } from "@/lib/rideCoordinatorNotes";
 import { siddurCarName } from "@/lib/siddurCarName";
 import { VolunteerDriverChange } from "@/features/rides/components/VolunteerDriverChange";
@@ -508,8 +507,7 @@ export function SiddurPage() {
       // ride actually serves a request with stops (same marker as the Sadran board).
       label: rideGridLabel(r, homeDestinationId),
       rideTypeCode: representativeRideTypeCode(servedOf(r)),
-      ...rideDescriptionFields(servedOf(r).length ? r.notes : null, servedOf(r), { includeCompanions: !isSadran, addedNames: addedNamesOf(r) }),
-      passengerSummary: isSadran ? ridePassengerSummary(servedOf(r), r.needs_driver ? null : r.driver_name, { addedNames: addedNamesOf(r) }) : undefined,
+      ...rideDescriptionFields(servedOf(r).length ? r.notes : null, servedOf(r), { addedNames: addedNamesOf(r), driverName: r.needs_driver ? null : r.driver_name }),
       ...rideCoordinatorNoteFields(servedOf(r), coordinatorRequests),
       shadowed: shadowedRideIds.has(r.id as string),
       needsDriver: !!r.needs_driver,
@@ -728,8 +726,7 @@ export function SiddurPage() {
                     originName: r.origin_name ?? "",
                     destinationName,
                     label: weekGridRides.find((item) => item.id === r.id)?.label,
-                    ...rideDescriptionFields(servedOf(r).length ? r.notes : null, servedOf(r), { includeCompanions: !isSadran, addedNames: addedNamesOf(r) }),
-                    passengerSummary: isSadran ? ridePassengerSummary(servedOf(r), r.needs_driver ? null : r.driver_name, { addedNames: addedNamesOf(r) }) : undefined,
+                    ...rideDescriptionFields(servedOf(r).length ? r.notes : null, servedOf(r), { addedNames: addedNamesOf(r), driverName: r.needs_driver ? null : r.driver_name }),
                     ...rideCoordinatorNoteFields(servedOf(r), coordinatorRequests),
                     driverName: r.driver_name,
                     isChauffeur: !!r.is_chauffeur,

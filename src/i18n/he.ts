@@ -290,6 +290,8 @@ export const he = {
     add: "הוספת מידע לכולם",
     editAria: "עריכת המידע לכולם",
     companions: "נוסעים נוספים: {{names}}",
+    /** RP1 (owner 2026-11-21): the ride's one people line, everyone on it (the driver too). */
+    peopleLine: "נוסעים: {{names}}",
     invalidDescription: "אפשר להוסיף עד 1,000 תווים לתיאור הנסיעה",
     invalidGuestNames: "יש להזין שם בכל שורה, עד 100 תווים לשם ועד 20 שמות",
     invalidCompanions: "יש לבחור נוסעים מאושרים מהמחלקה, בלי לבחור את עצמך או את אותו אדם פעמיים",

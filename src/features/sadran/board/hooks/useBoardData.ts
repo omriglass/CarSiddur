@@ -14,6 +14,7 @@ import { luggageMarker, towMarker } from "@/lib/luggageWaiver";
 import { TZ, dateKey, formatTime } from "@/lib/time";
 import { rideDescriptionFields } from "@/lib/ridePublicDetails";
 import { ridePassengerSummary } from "@/lib/ridePassengerSummary";
+import { addedPeopleNames } from "@/features/rides/ridePeople";
 import { fetchCarSeatConfigs } from "@/features/fleet/api";
 import { useDestinations, useRideTypes } from "@/features/fleet/hooks";
 import { buildWeek } from "@/features/solverBridge/buildSolverInput";
@@ -774,8 +775,7 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
       // alone is always the department's own name ("נבו") for the common
       // case — `rideBlockLabel` composes "<driver> ו<passengers> ל<real
       // destination>" from `served` instead (see `rideLabel.ts`).
-      ...rideDescriptionFields(servedOf(r).length ? r.notes : null, withChildNames(servedOf(r), requestsQuery.data ?? []), { includeCompanions: false }),
-      passengerSummary: ridePassengerSummary(withChildNames(servedOf(r), requestsQuery.data ?? []), r.needs_driver ? null : r.driver_name),
+      ...rideDescriptionFields(servedOf(r).length ? r.notes : null, withChildNames(servedOf(r), requestsQuery.data ?? []), { addedNames: addedPeopleNames(r, servedOf(r)), driverName: r.needs_driver ? null : r.driver_name }),
       ...rideCoordinatorNoteFields(servedOf(r), requestsQuery.data ?? []),
       // REQUIREMENTS §13.93 "Multi-stop rides" Display: "· דרך: פתח תקווה, תל אביב" — the stops by
       // name (owner 2026-10-05: not a count), only when the ride passes any (`rideViaNames`).
