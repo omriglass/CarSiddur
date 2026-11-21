@@ -2,6 +2,7 @@
 // drag paths and the suggestion path so they all build the SAME payload: legs only - the host
 // keeps its start and its end grows by the added driving (computed by `apply_proposal` from the
 // ride route; `src/lib/rideRoute.ts` is the TS twin used to preview it). No React, no Supabase.
+import { parseChain, type MergeChain } from "@/features/rides/mergeChain";
 import { he, tv } from "@/i18n/he";
 import { isTightSchedule, parseLongDetour, type LongDetour, type MergeWaitChoice } from "@/features/rides/mergeQuestions";
 import { parseFlexInterval } from "@/features/solverBridge/buildSolverInput";
@@ -108,6 +109,8 @@ export interface MergePreview extends MergedRoute {
   /** R4B5/R4U3: the joiner's own estimated boarding time per leg (15-minute grid), `null` when they do not ride that leg. */
   joinerOutAt: string | null;
   joinerReturnAt: string | null;
+  /** CM1 phase 2 (REQ item 260 b): the merge joins two trips one after the other into one ride (from `merge_preview`). */
+  chain?: MergeChain | null;
 }
 
 /** The host ride as it would be once `request` joins on `leg`. */
@@ -194,6 +197,8 @@ export interface ServerMergePreview {
   timeFar?: TimeFar | null;
   /** REQ item 246 g: a stop's stated hour moves - shown as "לו״ז צפוף", never refused. */
   tight?: boolean;
+  /** CM1 phase 2 (REQ item 260 b): the merge chains the two trips into one ride. */
+  chain?: MergeChain | null;
 }
 
 /** R13B9 far from the guest's time; R19B1 `kind: "order"` = the leg lands on the wrong side of the guest's other leg. */
@@ -218,6 +223,7 @@ export function parseServerMergePreview(raw: unknown): ServerMergePreview | null
     needs: Array.isArray(r.needs) ? r.needs.filter((n): n is "large_trunk" | "tow_hitch" => n === "large_trunk" || n === "tow_hitch") : undefined,
     longDetour: parseLongDetour(r),
     tight: isTightSchedule(r),
+    chain: parseChain(r.chain),
     waitWindow: isoOrNull(r.wait_ends_at) || isoOrNull(r.wait_starts_at)
       ? { startsAt: isoOrNull(r.wait_starts_at), endsAt: isoOrNull(r.wait_ends_at) } : null,
     personOverlaps: Array.isArray(r.person_overlaps)
@@ -271,6 +277,7 @@ export function applyServerMergeTimes(preview: MergePreview | null, server: Serv
     endsAt: server.newEndsAt ?? preview.endsAt,
     boardEta, requestedAt: requestedAt ?? null, timeChanges,
     joinerOutAt: server.joinerDepartAt, joinerReturnAt: server.joinerReturnAt,
+    chain: server.chain ?? null,
   };
 }
 

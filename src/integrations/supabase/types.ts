@@ -4713,6 +4713,7 @@ export type Database = {
       ride_requests: {
         Row: {
           car_mode: Database["public"]["Enums"]["leg_car_mode"]
+          chain: string | null
           covers_out: boolean
           covers_return: boolean
           created_at: string
@@ -4724,6 +4725,7 @@ export type Database = {
         }
         Insert: {
           car_mode: Database["public"]["Enums"]["leg_car_mode"]
+          chain?: string | null
           covers_out?: boolean
           covers_return?: boolean
           created_at?: string
@@ -4735,6 +4737,7 @@ export type Database = {
         }
         Update: {
           car_mode?: Database["public"]["Enums"]["leg_car_mode"]
+          chain?: string | null
           covers_out?: boolean
           covers_return?: boolean
           created_at?: string
@@ -6337,6 +6340,10 @@ export type Database = {
       }
       _and_list: { Args: { p_items: string[] }; Returns: string }
       _apply_alternative: { Args: { p_proposal_id: string }; Returns: string }
+      _apply_chain: {
+        Args: { p_plan: Json; p_ride_id: string }
+        Returns: undefined
+      }
       _apply_or_wait: {
         Args: { p_proposal_id: string; p_silent?: boolean }
         Returns: Json
@@ -6810,6 +6817,14 @@ export type Database = {
         }
         Returns: Json
       }
+      _merge_chain_plan: {
+        Args: {
+          p_leg?: Database["public"]["Enums"]["ride_leg"]
+          p_request_id: string
+          p_ride_id: string
+        }
+        Returns: Json
+      }
       _merge_check: {
         Args: {
           p_leg?: Database["public"]["Enums"]["ride_leg"]
@@ -7014,6 +7029,10 @@ export type Database = {
         Args: { p_request: string; p_ride: string }
         Returns: boolean
       }
+      _request_person_keys: {
+        Args: { p_request_id: string }
+        Returns: string[]
+      }
       _request_riders_json: { Args: { p_request_id: string }; Returns: Json }
       _request_save_unchanged: {
         Args: {
@@ -7114,23 +7133,42 @@ export type Database = {
         }[]
       }
       _ride_route_visible: { Args: { p_ride_id: string }; Returns: boolean }
-      _ride_route_with: {
-        Args: {
-          p_extra_leg?: Database["public"]["Enums"]["ride_leg"]
-          p_extra_request?: string
-          p_ride_id: string
-        }
-        Returns: {
-          eta: string
-          kind: string
-          leg: Database["public"]["Enums"]["ride_leg"]
-          place_id: string
-          place_text: string
-          position: number
-          refused: string
-          request_id: string
-        }[]
-      }
+      _ride_route_with:
+        | {
+            Args: {
+              p_extra_leg?: Database["public"]["Enums"]["ride_leg"]
+              p_extra_request?: string
+              p_ride_id: string
+            }
+            Returns: {
+              eta: string
+              kind: string
+              leg: Database["public"]["Enums"]["ride_leg"]
+              place_id: string
+              place_text: string
+              position: number
+              refused: string
+              request_id: string
+            }[]
+          }
+        | {
+            Args: {
+              p_chain: Json
+              p_extra_leg: Database["public"]["Enums"]["ride_leg"]
+              p_extra_request: string
+              p_ride_id: string
+            }
+            Returns: {
+              eta: string
+              kind: string
+              leg: Database["public"]["Enums"]["ride_leg"]
+              place_id: string
+              place_text: string
+              position: number
+              refused: string
+              request_id: string
+            }[]
+          }
       _ride_seat_dupes: {
         Args: {
           p_guests?: Json
@@ -7304,6 +7342,15 @@ export type Database = {
       _route_hop_minutes: {
         Args: { p_from: string; p_to: string }
         Returns: number
+      }
+      _rr_on_leg: {
+        Args: {
+          p_chain: string
+          p_covers_out: boolean
+          p_covers_return: boolean
+          p_leg: string
+        }
+        Returns: boolean
       }
       _run_as_owner: {
         Args: { p_owner: string; p_sql: string }

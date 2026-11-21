@@ -122,8 +122,9 @@ export function useMemberRideMoves({ departmentId, weekStart, week, profileId, m
     if (ownsEditableRide(move.rideId)) {
       const conflicts = conflictingRides(move, rides, turnaroundMinutes);
       const target = memberMergeTarget(conflicts, profileId);
-      if (target) {
-        void memberMerge.start(ride, target);
+      // CM1 phase 2: onto another ride of mine - one chained ride when the server says so, else the ordinary move
+      if (target && (!target.own || (await memberMerge.start(ride, target)))) {
+        if (!target.own) void memberMerge.start(ride, target);
         return;
       }
       // REQ §13.190 (two-sided, PR3): only a turnaround is in the way — go ahead after "סיכמת עם X שנוסע/ת לפניך?" /

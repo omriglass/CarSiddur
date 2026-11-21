@@ -11,6 +11,8 @@ export interface MemberMergeTarget {
   ride: BoardRide;
   requestId: string;
   name: string;
+  /** CM1 phase 2 (REQ item 260 b): the other ride is my own trip - a merge only when the server chains the two. */
+  own?: boolean;
 }
 
 /**
@@ -24,7 +26,10 @@ export function memberMergeTarget(conflicts: readonly BoardRide[], viewerId: str
   const riders = new Set(servedOf(ride).filter((entry) => entry.role !== "driver" && entry.request_id).map((entry) => entry.request_id));
   const guest = peopleOf(ride).find((person) => person.source === "requester" && !!person.request_id && riders.has(person.request_id)
     && person.person_id !== viewerId);
-  return guest?.request_id ? { ride, requestId: guest.request_id, name: guest.display_name } : null;
+  if (guest?.request_id) return { ride, requestId: guest.request_id, name: guest.display_name };
+  // CM1 phase 2: my own trip that I drive - offered only as a chain (the server decides)
+  const mine = peopleOf(ride).find((person) => person.source === "driver" && person.person_id === viewerId && !!person.request_id);
+  return mine?.request_id ? { ride, requestId: mine.request_id, name: mine.display_name, own: true } : null;
 }
 
 /** The ride would reach the guest at another time than asked, and stretching it would keep the guest's own time. */

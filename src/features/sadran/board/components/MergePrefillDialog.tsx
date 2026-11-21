@@ -8,6 +8,7 @@ import { DIALOG_FIT, DialogBody } from "@/components/DialogBody";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { he, tv } from "@/i18n/he";
+import { chainRouteText } from "@/features/rides/mergeChain";
 import { formatTime } from "@/lib/time";
 import { cn } from "@/lib/utils";
 
@@ -159,7 +160,9 @@ function ResultBlock({ carName, hostDriverName, hostLabel, hostStartsAt, hostEnd
     <div className="space-y-1" data-testid="merge-result">
       <p className="text-xs text-muted-foreground">{he.mergedRide.resultHeading}</p>
       {carName ? <p className="font-medium" data-testid="merge-result-car">{tv("mergedRide.resultCar", { car: carName, driver: hostDriverName ?? hostLabel ?? "" })}</p> : null}
-      {routeText ? <p data-testid="merge-result-route">{routeText}</p> : null}
+      {/* CM1 phase 2 (REQ item 260 b): two trips one after the other become one ride - its places in order. */}
+      {preview.chain ? <p className="font-medium" data-testid="merge-result-chain">{tv("mergedRide.chainRoute", { route: chainRouteText(preview.chain) })}</p>
+        : routeText ? <p data-testid="merge-result-route">{routeText}</p> : null}
       {/* REQ §13.175 (c): which way the guest rides, in words. */}
       {preview.joinerOutAt ? <p data-testid="merge-result-leg-out">{tv("mergedRide.resultLegOut", { name: guestName, place: request?.destination_resolved_name ?? "", time: timeOf(preview.joinerOutAt) })}</p> : null}
       {preview.joinerReturnAt ? <p data-testid="merge-result-leg-return">{tv("mergedRide.resultLegReturn", { name: guestName, place: request?.destination_resolved_name ?? "", time: timeOf(preview.joinerReturnAt) })}</p> : null}

@@ -596,6 +596,38 @@ end $$;
 ALTER FUNCTION "public"."_apply_alternative"("p_proposal_id" "uuid") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."_apply_chain"("p_ride_id" "uuid", "p_plan" "jsonb") RETURNS "void"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  v_chained uuid; v_base uuid; v_driver uuid; v_ride public.rides%rowtype; v_first timestamptz;
+begin
+  if p_plan is null or jsonb_typeof(p_plan) <> 'object' then return; end if;
+  v_chained := (p_plan ->> 'request_id')::uuid; v_base := (p_plan ->> 'base_request_id')::uuid;
+  v_driver := nullif(p_plan ->> 'driver_id', '')::uuid;
+  select * into v_ride from public.rides where id = p_ride_id;
+  update public.ride_requests set chain = p_plan ->> 'side' where ride_id = p_ride_id and request_id = v_chained;
+  update public.ride_requests set role = 'passenger', car_mode = 'passenger'
+   where ride_id = p_ride_id and role = 'driver' and request_id <> v_base;
+  if v_driver is not null and v_driver is distinct from v_ride.driver_id then
+    update public.rides set driver_id = v_driver where id = p_ride_id;
+  end if;
+  if exists (select 1 from public.requests q where q.id = v_base and q.requester_id = coalesce(v_driver, v_ride.driver_id)) then
+    update public.ride_requests set role = 'driver', car_mode = 'keep'
+     where ride_id = p_ride_id and request_id = v_base and role <> 'driver';
+  end if;
+  select min(created_at) into v_first from public.ride_requests where ride_id = p_ride_id and request_id <> v_base;
+  if v_first is not null then
+    update public.ride_requests set created_at = v_first - interval '1 millisecond'
+     where ride_id = p_ride_id and request_id = v_base and created_at >= v_first;
+  end if;
+end $$;
+
+
+ALTER FUNCTION "public"."_apply_chain"("p_ride_id" "uuid", "p_plan" "jsonb") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."_apply_or_wait"("p_proposal_id" "uuid", "p_silent" boolean DEFAULT false) RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -3556,8 +3588,11 @@ begin
   select bool_or(rr.covers_out), bool_or(rr.covers_return) into v_out, v_ret
   from public.ride_requests rr where rr.ride_id = src.id and rr.request_id = p_request_id;
   if q.id is null or v_out is null then raise exception 'request_not_on_ride' using errcode = 'P0001'; end if;
-  if q.requester_id = v_me then raise exception 'merge_already_on_ride' using errcode = 'P0001'; end if;
   v_leg := case when v_out and v_ret then 'both' when v_out then 'out' else 'return' end::public.ride_leg;
+  -- CM1 phase 2: my own two rides merge only as a chain (one after the other)
+  if q.requester_id = v_me and public._merge_chain_plan(p_ride_id, p_request_id, v_leg) is null then
+    raise exception 'merge_already_on_ride' using errcode = 'P0001';
+  end if;
 
   v := public._merge_preview_core(p_ride_id, p_request_id, v_leg);
   -- REQ §13.179 (c): a reversed one-way (a pickup from the ride's destination back to its start, R6B5) rides the way
@@ -3596,6 +3631,85 @@ end $$;
 ALTER FUNCTION "public"."_member_merge_check"("p_ride_id" "uuid", "p_source_ride_id" "uuid", "p_request_id" "uuid") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."_merge_chain_plan"("p_ride_id" "uuid", "p_request_id" "uuid", "p_leg" "public"."ride_leg" DEFAULT 'both'::"public"."ride_leg") RETURNS "jsonb"
+    LANGUAGE "plpgsql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  h public.rides%rowtype; g public.requests%rowtype; b public.requests%rowtype; v_gride public.rides%rowtype;
+  v_base uuid; v_host_keys text[]; v_guest_keys text[]; v_shared text[];
+  v_g_first boolean; v_turn int; v_drive int; v_first_ret timestamptz; v_second_dep timestamptz;
+  v_first_dest uuid; v_second_dest uuid; v_base_is_guest boolean; v_chained uuid; v_side text;
+  v_first_driver uuid; v_base_driver uuid; v_driver uuid;
+begin
+  if p_leg is distinct from 'both' then return null; end if;
+  select * into h from public.rides where id = p_ride_id;
+  select * into g from public.requests where id = p_request_id;
+  if h.id is null or g.id is null or h.status = 'cancelled' then return null; end if;
+  -- one chain per ride, and the request is not on the ride yet
+  if exists (select 1 from public.ride_requests rr where rr.ride_id = h.id and (rr.chain is not null or rr.request_id = g.id)) then
+    return null;
+  end if;
+  select rr.request_id into v_base from public.ride_requests rr where rr.ride_id = h.id
+   order by (rr.role = 'driver') desc, rr.created_at, rr.request_id limit 1;
+  if v_base is null then return null; end if;
+  select * into b from public.requests where id = v_base;
+  if g.trip_type <> 'round_trip' or b.trip_type <> 'round_trip'
+     or g.depart_at is null or g.return_at is null or b.depart_at is null or b.return_at is null
+     or g.origin_id is null or g.origin_id is distinct from b.origin_id
+     or g.destination_id is null or b.destination_id is null or g.destination_id = b.destination_id
+     or g.destination_id = g.origin_id or b.destination_id = b.origin_id
+     or g.duration_locked or b.duration_locked or g.series_id is not null or b.series_id is not null
+     or not exists (select 1 from public.ride_requests rr where rr.ride_id = h.id and rr.request_id = v_base and rr.leg = 'both') then
+    return null;
+  end if;
+
+  -- a person on both trips
+  select coalesce(array_agg(distinct x.k), '{}'::text[]) into v_host_keys from (
+    select unnest(public._request_person_keys(rr.request_id)) as k from public.ride_requests rr where rr.ride_id = h.id
+    union all select 'p:' || h.driver_id where h.driver_id is not null) x;
+  select rd.* into v_gride from public.rides rd
+   where rd.status <> 'cancelled' and rd.id <> h.id
+     and rd.id in (select rr.ride_id from public.ride_requests rr where rr.request_id = g.id)
+   order by rd.starts_at, rd.id limit 1;
+  v_guest_keys := public._request_person_keys(g.id)
+    || case when v_gride.driver_id is not null then array['p:' || v_gride.driver_id] else '{}'::text[] end;
+  select coalesce(array_agg(distinct k), '{}'::text[]) into v_shared from unnest(v_guest_keys) k where k = any (v_host_keys);
+  if cardinality(v_shared) = 0 then return null; end if;
+
+  -- in sequence
+  v_g_first := g.depart_at < b.depart_at or (g.depart_at = b.depart_at and g.return_at < b.return_at);
+  if v_g_first then
+    v_first_ret := g.return_at; v_second_dep := b.depart_at; v_first_dest := g.destination_id; v_second_dest := b.destination_id;
+  else
+    v_first_ret := b.return_at; v_second_dep := g.depart_at; v_first_dest := b.destination_id; v_second_dest := g.destination_id;
+  end if;
+  v_turn := coalesce(public.required_turnaround_minutes(h.department_id, h.week_start), 30);
+  v_drive := coalesce((select pt.travel_minutes from public.place_travel(v_first_dest, v_second_dest) pt), 60);
+  if v_first_ret > v_second_dep + make_interval(mins => v_turn + v_drive)
+     or v_second_dep - v_first_ret > interval '2 hours' then
+    return null;
+  end if;
+
+  -- the base is the longer stay (a tie: the ride dropped onto); the side is by time
+  v_base_is_guest := (g.return_at - g.depart_at) > (b.return_at - b.depart_at);
+  v_chained := case when v_base_is_guest then b.id else g.id end;
+  v_side := case when (v_chained = g.id) = v_g_first then 'before' else 'after' end;
+  -- the driver: trip 1's driver when on both trips, else the base trip's driver (the Sadran can change it)
+  v_first_driver := case when v_g_first then v_gride.driver_id else h.driver_id end;
+  v_base_driver := case when v_base_is_guest then v_gride.driver_id else h.driver_id end;
+  v_driver := case when v_first_driver is not null and ('p:' || v_first_driver) = any (v_shared) then v_first_driver
+                   else coalesce(v_base_driver, h.driver_id) end;
+  return jsonb_build_object('side', v_side, 'request_id', v_chained,
+    'base_request_id', case when v_base_is_guest then g.id else b.id end,
+    'starts_at', least(h.starts_at, g.depart_at), 'ends_at', greatest(h.ends_at, g.return_at),
+    'driver_id', v_driver);
+end $$;
+
+
+ALTER FUNCTION "public"."_merge_chain_plan"("p_ride_id" "uuid", "p_request_id" "uuid", "p_leg" "public"."ride_leg") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."_merge_check"("p_ride_id" "uuid", "p_request_id" "uuid", "p_leg" "public"."ride_leg" DEFAULT 'both'::"public"."ride_leg") RETURNS "jsonb"
     LANGUAGE "plpgsql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -3615,6 +3729,7 @@ declare
   v_detour_problem boolean := false; v_unknown_hops jsonb := '[]'::jsonb; v_hops jsonb;
   v_rb jsonb; v_ra jsonb; -- the ride's route without / with the guest (both legs), built once
   v_fixed jsonb;
+  v_chain jsonb; v_chain_route jsonb; v_ch_after int; v_ch_before int; v_ch_guest int; v_ch_extra int;
 begin
   select * into v_ride from public.rides where id = p_ride_id;
   if v_ride.id is null then return jsonb_build_object('ok', false, 'error', 'ride_not_found', 'code', 'ride_not_found'); end if;
@@ -3635,6 +3750,9 @@ begin
     or (p_leg = 'return' and q.return_at is null))) then
     v_err := 'merge_leg_missing';
   end if;
+
+  -- CM1 phase 2 (REQ item 260 b): the same person's two trips one after the other chain into one ride
+  if v_err is null then v_chain := public._merge_chain_plan(p_ride_id, p_request_id, p_leg); end if;
 
   -- REQ item 21 (2026-10-07): large luggage is a yes/no match - a large-luggage (ציוד רב) request
   -- rides only on a `large_trunk` car, and any number of them may share that car (no count cap).
@@ -3660,8 +3778,35 @@ begin
   end if;
 
   select coalesce(jsonb_agg(to_jsonb(r)), '[]'::jsonb) into v_rb from public._ride_route_with(p_ride_id, null, 'both') r;
-  select coalesce(jsonb_agg(to_jsonb(r)), '[]'::jsonb) into v_ra from public._ride_route_with(p_ride_id, p_request_id, p_leg) r;
+  select coalesce(jsonb_agg(to_jsonb(r)), '[]'::jsonb) into v_ra from public._ride_route_with(p_ride_id, p_request_id, p_leg, v_chain) r;
 
+  if v_chain is not null then
+    -- a chain drops a leg of each trip, so it is compared with the two trips driven apart: the added driving (seldom
+    -- any) against the detour limits; the window is the chain's own (below), never stretched by it.
+    select coalesce(sum(x.m), 0) into v_ch_after from (
+      select extract(epoch from (max(r.eta) - min(r.eta))) / 60 as m
+        from jsonb_to_recordset(v_ra) as r(leg public.ride_leg, eta timestamptz) group by r.leg) x;
+    select coalesce(sum(x.m), 0) into v_ch_before from (
+      select extract(epoch from (max(r.eta) - min(r.eta))) / 60 as m
+        from jsonb_to_recordset(v_rb) as r(leg public.ride_leg, eta timestamptz) group by r.leg) x;
+    v_ch_guest := coalesce(public.request_leg_route_minutes(p_request_id, 'out'), 0) + coalesce(public.request_leg_route_minutes(p_request_id, 'return'), 0);
+    v_ch_extra := greatest(round(v_ch_after - v_ch_before - v_ch_guest), 0)::int;
+    select max(r.refused) into v_refused from jsonb_to_recordset(v_ra) as r(refused text);
+    if v_refused is not null then v_err := coalesce(v_err, v_refused); end if;
+    if v_ch_extra > v_lim_min then
+      if coalesce(current_setting('app.long_detour', true), '') = 'allow' then v_detour_problem := true;
+      elsif v_err is null then v_err := 'merge_detour_too_long'; end if;
+    end if;
+    v_ix := case when v_chain ->> 'side' like 'before%' then 1 else 2 end;
+    v_add_min[v_ix] := v_ch_extra;
+    -- the chained ride's places, in order (the way back starts where the way there ends)
+    select coalesce(jsonb_agg(jsonb_build_object('leg', r.leg, 'place_id', r.place_id,
+             'name', coalesce(d.name, r.place_text), 'request_id', r.request_id, 'kind', r.kind, 'eta', r.eta)
+             order by r.leg, r."position"), '[]'::jsonb)
+      into v_chain_route
+      from jsonb_to_recordset(v_ra) as r(leg public.ride_leg, "position" integer, place_id uuid, place_text text, request_id uuid, kind text, eta timestamptz)
+      left join public.destinations d on d.id = r.place_id;
+  else
   foreach v_leg in array array['out', 'return'] loop
     -- every leg is priced: a reversed one-way guest (R6B5) adds driving on the host's return leg although it joins as 'out'.
     v_ix := case when v_leg = 'out' then 1 else 2 end;
@@ -3707,10 +3852,11 @@ begin
       end if;
     end if;
   end loop;
+  end if;
 
   -- REQ §13.112 (c): a ride that serves a window request ("N hours between A and B") keeps its length, so a merge that adds
   -- driving (and so grows the block) is refused; a merge that adds none still goes through.
-  if v_err is null and (v_add_min[1] > 0 or v_add_min[2] > 0) and exists(
+  if v_err is null and v_chain is null and (v_add_min[1] > 0 or v_add_min[2] > 0) and exists(
        select 1 from public.ride_requests rr join public.requests q on q.id = rr.request_id
        where rr.ride_id = p_ride_id and q.duration_locked) then
     v_err := 'merge_window_locked';
@@ -3721,7 +3867,8 @@ begin
   -- whose own time is hours away from the ride's estimated time at the boarding point is a "window" refusal
   -- (tolerance: the guest's own flexibility, at least 2 hours); a free-text boarding place has no estimate.
   select * into v_guest from public.requests where id = p_request_id;
-  if v_err is null and v_guest.id is not null
+  -- (a chain keeps both trips' own hours: its window is theirs)
+  if v_err is null and v_guest.id is not null and v_chain is null
      and exists(select 1 from public.ride_requests rb where rb.ride_id = p_ride_id and rb.request_id <> p_request_id) then
     v_swap := public._merge_guest_swapped(p_ride_id, p_request_id);
     -- the route legs the guest rides: a reversed one-way rides the host's RETURN leg (see _ride_route_with)
@@ -3783,6 +3930,10 @@ begin
   v_end := v_ride.ends_at;
   if (v_end at time zone 'Asia/Jerusalem')::time = time '23:59' and v_add_min[2] > 0 then v_end := v_end + interval '1 minute'; end if;
   v_end := v_end + make_interval(mins => (ceil(v_add_min[2] / 15.0) * 15)::int);
+  if v_chain is not null then
+    -- the chained ride leaves at the first trip's start and is back at the last trip's end
+    v_start := (v_chain ->> 'starts_at')::timestamptz; v_end := (v_chain ->> 'ends_at')::timestamptz;
+  end if;
   if v_err is null and (((v_start at time zone 'Asia/Jerusalem')::date <> v_day)
       or (((v_end - interval '1 minute') at time zone 'Asia/Jerusalem')::date <> v_day)) then
     v_err := 'ride_request_day_mismatch';
@@ -3792,7 +3943,7 @@ begin
   end if;
 
   -- REQ item 246 g (LT1 phase 2c): a stated hour of the ride never moves beyond its flexibility for a guest
-  if v_err is null and (v_add_min[1] > 0 or v_add_min[2] > 0) then
+  if v_err is null and v_chain is null and (v_add_min[1] > 0 or v_add_min[2] > 0) then
     v_fixed := public._merge_fixed_hour_break(p_ride_id, v_rb, v_ra);
     -- like the detour limit: refused, unless the Sadran merges anyway ("לאחד בכל זאת", app.long_detour = 'allow') - then reported
   end if;
@@ -3817,8 +3968,13 @@ begin
   if v_err is null then
     -- PF1 (2026-11-11): the seat check reads; it no longer writes the guests and rolls back. Same verdicts
     -- (ride_seats_verdict mirrors assert_ride_seats_fit over the ride's rows plus the proposed guests).
+    -- a chain: the chained trip seats its own leg only (the ride's row of it, when it is the host's trip, is replaced)
     v_seat := public.ride_seats_verdict(p_ride_id,
-      jsonb_build_array(jsonb_build_object('request_id', p_request_id, 'leg', p_leg))
+      case when v_chain is null then jsonb_build_array(jsonb_build_object('request_id', p_request_id, 'leg', p_leg))
+           when (v_chain ->> 'request_id')::uuid = p_request_id
+             then jsonb_build_array(jsonb_build_object('request_id', p_request_id, 'leg', 'both', 'chain', v_chain ->> 'side'))
+           else jsonb_build_array(jsonb_build_object('request_id', p_request_id, 'leg', 'both'),
+                  jsonb_build_object('request_id', (v_chain ->> 'request_id')::uuid, 'leg', 'both', 'chain', v_chain ->> 'side')) end
       || coalesce((
         select jsonb_agg(jsonb_build_object('request_id', o.request_id, 'leg', o.leg) order by o.request_id)
         from (
@@ -3851,6 +4007,8 @@ begin
                       where rr.ride_id = r.id and rq.requester_id = v_guest.requester_id and rq.id <> p_request_id)
            or exists (select 1 from public.ride_passengers rp where rp.ride_id = r.id and rp.person_id = v_guest.requester_id))
       and tstzrange(r.starts_at, r.ends_at, '[)') && tstzrange(v_start, v_end, '[)')
+      -- a chain: the guest's own trip is the one joining
+      and not (v_chain is not null and exists (select 1 from public.ride_requests rx where rx.ride_id = r.id and rx.request_id = p_request_id))
   ) x;
 
   return jsonb_build_object('ok', v_err is null, 'error', v_err, 'code', public._merge_error_code(v_err),
@@ -3861,6 +4019,7 @@ begin
     'detour_problem', v_detour_problem, 'detour_limit_minutes', v_lim_min, 'detour_limit_km', v_lim_km,
     'unknown_hops', (select coalesce(jsonb_agg(distinct h), '[]'::jsonb) from jsonb_array_elements(v_unknown_hops) h),
     'fixed_hour', v_fixed,
+    'chain', case when v_chain is not null then v_chain || jsonb_build_object('route', v_chain_route) end,
     'starts_at', v_ride.starts_at, 'new_starts_at', v_start,
     'ends_at', v_ride.ends_at, 'new_ends_at', v_end);
 end;
@@ -4010,7 +4169,12 @@ begin
   v_err := v ->> 'error';
   v_lug := coalesce((v ->> 'luggage_problem')::boolean, false);
   v_det := coalesce((v ->> 'detour_problem')::boolean, false);
-  select jt.dep, jt.ret into v_jd, v_jr from public._joiner_times(p_ride_id, p_request_id, p_leg) jt;
+  if jsonb_typeof(v -> 'chain') = 'object' then
+    -- CM1 phase 2: a chained trip keeps its own hours (the chain's window is both trips')
+    v_jd := v_req.depart_at; v_jr := v_req.return_at;
+  else
+    select jt.dep, jt.ret into v_jd, v_jr from public._joiner_times(p_ride_id, p_request_id, p_leg) jt;
+  end if;
   if v_err is null and coalesce((v ->> 'turnaround_conflict')::boolean, false) then v_err := 'merge_turnaround_conflict'; end if;
   if v_err is null then
     begin
@@ -4028,7 +4192,9 @@ begin
   -- time, the host's ride may stretch to the guest's own time: later on the way back (wait_ends_at - the return leg's
   -- times count back from the ride's end), earlier on the way out (wait_starts_at). Quarter-hour grid, same day only.
   v_day := (v_ride.starts_at at time zone 'Asia/Jerusalem')::date;
-  if p_leg in ('return', 'both') and v_jr is not null and v_req.return_at is not null and v_req.return_at > v_jr + interval '5 minutes' then
+  if jsonb_typeof(v -> 'chain') = 'object' then
+    null;   -- nothing to wait for
+  elsif p_leg in ('return', 'both') and v_jr is not null and v_req.return_at is not null and v_req.return_at > v_jr + interval '5 minutes' then
     v_wait_end := to_timestamp(round(extract(epoch from ((v ->> 'new_ends_at')::timestamptz + (v_req.return_at - v_jr))) / 900) * 900);
     if ((v_wait_end - interval '1 minute') at time zone 'Asia/Jerusalem')::date <> v_day then v_wait_end := null; end if;
   end if;
@@ -4038,7 +4204,7 @@ begin
     v_wait_end := to_timestamp(round(extract(epoch from ((v ->> 'new_ends_at')::timestamptz + (v_req.depart_at - v_jd))) / 900) * 900);
     if ((v_wait_end - interval '1 minute') at time zone 'Asia/Jerusalem')::date <> v_day then v_wait_end := null; end if;
   end if;
-  if p_leg in ('out', 'both') and not v_swap and v_jd is not null and v_req.depart_at is not null and v_req.depart_at < v_jd - interval '5 minutes' then
+  if jsonb_typeof(v -> 'chain') is distinct from 'object' and p_leg in ('out', 'both') and not v_swap and v_jd is not null and v_req.depart_at is not null and v_req.depart_at < v_jd - interval '5 minutes' then
     v_wait_start := to_timestamp(round(extract(epoch from ((v ->> 'new_starts_at')::timestamptz - (v_jd - v_req.depart_at))) / 900) * 900);
     if (v_wait_start at time zone 'Asia/Jerusalem')::date <> v_day then v_wait_start := null; end if;
   end if;
@@ -5117,6 +5283,20 @@ $$;
 ALTER FUNCTION "public"."_request_is_ride_guest"("p_request" "uuid", "p_ride" "uuid") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."_request_person_keys"("p_request_id" "uuid") RETURNS "text"[]
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  select coalesce(array_agg(distinct x.k), '{}'::text[]) from (
+    select 'p:' || q.requester_id as k from public.requests q where q.id = p_request_id
+    union all select 'p:' || rc.profile_id from public.request_companions rc where rc.request_id = p_request_id
+    union all select 'c:' || ch.child_id from public.request_children ch where ch.request_id = p_request_id) x;
+$$;
+
+
+ALTER FUNCTION "public"."_request_person_keys"("p_request_id" "uuid") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."_request_riders_json"("p_request_id" "uuid") RETURNS "jsonb"
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -5723,6 +5903,7 @@ declare
   v_less_a int; v_less_c int; v_less_b int;
   v_key text;
   v_bid uuid; v_btext text; v_aid uuid; v_atext text;
+  v_dup_a int; v_dup_c int;
 begin
   select coalesce(jsonb_agg(jsonb_build_object('place_id', r.place_id, 'place_text', r.place_text, 'request_id', r.request_id, 'kind', r.kind)
            order by r."position"), '[]'::jsonb)
@@ -5743,7 +5924,7 @@ begin
            (select count(*) from public.request_companions rc where rc.request_id = x.id)::int as cn
       from public.requests x
      where x.id in (select rr.request_id from public.ride_requests rr where rr.ride_id = p_ride_id
-                     and ((p_leg = 'out' and rr.covers_out) or (p_leg = 'return' and rr.covers_return)))
+                     and public._rr_on_leg(p_leg::text, rr.covers_out, rr.covers_return, rr.chain))   -- CM1: a chained trip, its own leg only
      order by x.id
   loop
     -- this request's span on the ride route
@@ -5774,6 +5955,12 @@ begin
            least(coalesce(sum(case when x ->> 'seat_kind' = 'booster' then 1 else 0 end), 0)::int, q.boosters)
       into v_less_a, v_less_c, v_less_b
       from jsonb_array_elements(v_rows) x;
+    -- CM1 phase 2: a chained trip's people who are on the base trip too are counted there (one person, one seat)
+    if exists (select 1 from public.ride_requests rr where rr.ride_id = p_ride_id and rr.request_id = q.id and rr.chain is not null) then
+      select count(*) filter (where k like 'p:%'), count(*) filter (where k like 'c:%') into v_dup_a, v_dup_c
+        from unnest(public._request_person_keys(q.id)) k where k = any (public._request_person_keys(v_base));
+      v_less_a := least(v_less_a + v_dup_a, q.adults); v_less_c := least(v_less_c + v_dup_c, q.child_seats);
+    end if;
     v_riders := v_riders || jsonb_build_array(jsonb_build_object('adults', q.adults - v_less_a, 'childSeats', q.child_seats - v_less_c,
       'boosters', q.boosters - v_less_b, 'board', v_from, 'alight', v_to, 'key', 'req:' || q.id));
 
@@ -5980,7 +6167,7 @@ begin
   foreach l in array array['out', 'return']::public.ride_leg[] loop
     select coalesce(sum(q.adults), 0), coalesce(sum(q.child_seats), 0), coalesce(sum(q.boosters), 0) into v_a, v_c, v_b
       from public.ride_requests rr join public.requests q on q.id = rr.request_id
-     where rr.ride_id = p_ride_id and ((l = 'out' and rr.covers_out) or (l = 'return' and rr.covers_return));
+     where rr.ride_id = p_ride_id and public._rr_on_leg(l::text, rr.covers_out, rr.covers_return, rr.chain);   -- CM1: a chained trip, its own leg only
     select v_a + count(*) filter (where rp.seat_kind = 'adult'), v_c + count(*) filter (where rp.seat_kind = 'child_seat'),
            v_b + count(*) filter (where rp.seat_kind = 'booster')
       into v_a, v_c, v_b
@@ -6050,6 +6237,20 @@ CREATE OR REPLACE FUNCTION "public"."_ride_route_with"("p_ride_id" "uuid", "p_ex
     LANGUAGE "plpgsql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
+begin
+  return query select r.leg, r."position", r.place_id, r.place_text, r.request_id, r.kind, r.eta, r.refused
+    from public._ride_route_with(p_ride_id, p_extra_request, p_extra_leg, null::jsonb) r;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."_ride_route_with"("p_ride_id" "uuid", "p_extra_request" "uuid", "p_extra_leg" "public"."ride_leg") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."_ride_route_with"("p_ride_id" "uuid", "p_extra_request" "uuid", "p_extra_leg" "public"."ride_leg", "p_chain" "jsonb") RETURNS TABLE("leg" "public"."ride_leg", "position" integer, "place_id" "uuid", "place_text" "text", "request_id" "uuid", "kind" "text", "eta" timestamp with time zone, "refused" "text")
+    LANGUAGE "plpgsql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
 #variable_conflict use_column
 declare
   v_ride public.rides%rowtype;
@@ -6060,14 +6261,31 @@ declare
   v_board int; v_tmp record; v_refused text;
   v_n int; i int; v_t timestamptz; v_e jsonb; v_prev_id uuid; v_cur_id uuid;
   v_b_id uuid; v_b_text text; v_a_id uuid; v_a_text text; v_covers boolean; v_swap boolean; v_fwd boolean;
+  v_chain_req uuid; v_chain_side text; v_p jsonb;
 begin
   select * into v_ride from public.rides r where r.id = p_ride_id;
   if v_ride.id is null then return; end if;
   select coalesce(ds.stop_minutes, 5) into v_stop_min from public.department_settings ds where ds.department_id = v_ride.department_id;
   v_stop_min := coalesce(v_stop_min, 5);
 
-  select rr.request_id into v_base from public.ride_requests rr where rr.ride_id = p_ride_id
-  order by (rr.role = 'driver') desc, rr.created_at, rr.request_id limit 1;
+  -- CM1 phase 2: a chained ride - the base trip's route with the chained (short) trip joined before or after it
+  if p_chain is not null and jsonb_typeof(p_chain) = 'object' then
+    v_chain_req := (p_chain ->> 'request_id')::uuid; v_chain_side := p_chain ->> 'side';
+    v_base := (p_chain ->> 'base_request_id')::uuid;
+    v_ride.starts_at := coalesce((p_chain ->> 'starts_at')::timestamptz, v_ride.starts_at);
+    v_ride.ends_at := coalesce((p_chain ->> 'ends_at')::timestamptz, v_ride.ends_at);
+  else
+    select rr.request_id, rr.chain into v_chain_req, v_chain_side from public.ride_requests rr
+     where rr.ride_id = p_ride_id and rr.chain is not null order by rr.request_id limit 1;
+    select rr.request_id into v_base from public.ride_requests rr
+     where rr.ride_id = p_ride_id and rr.request_id is distinct from v_chain_req
+     order by (rr.role = 'driver') desc, rr.created_at, rr.request_id limit 1;
+    if v_base is null then
+      v_chain_req := null; v_chain_side := null;
+      select rr.request_id into v_base from public.ride_requests rr where rr.ride_id = p_ride_id
+      order by (rr.role = 'driver') desc, rr.created_at, rr.request_id limit 1;
+    end if;
+  end if;
 
   if v_base is null then
     leg := 'out'; "position" := 0; place_id := v_ride.origin_id; place_text := null; request_id := null; kind := 'origin'; eta := v_ride.starts_at; refused := null;
@@ -6079,6 +6297,7 @@ begin
 
   select coalesce(bool_or(rr.covers_out), false), coalesce(bool_or(rr.covers_return), false) into v_out, v_ret
   from public.ride_requests rr where rr.ride_id = p_ride_id and rr.request_id = v_base;
+  if v_chain_req is not null then v_out := true; v_ret := true; end if;   -- a chain's base rides both ways
 
   foreach v_leg in array array['out', 'return'] loop
     if (v_leg = 'out' and not v_out) or (v_leg = 'return' and not v_ret) then continue; end if;
@@ -6092,18 +6311,46 @@ begin
     from public.request_leg_route_points(v_base, v_leg::public.ride_leg) p;
     if jsonb_array_length(v_route) < 2 then continue; end if;
 
+    -- before: out = [start] ++ the chained trip's way there (its stops, its far end) ++ the base's way there;
+    -- after: return = the base's way back without its end ++ the chained trip's way there and back after its start ++ [end].
+    -- The shared start / end place stays the base's (both trips start from the same place).
+    if v_chain_req is not null and v_leg = 'out' and v_chain_side like 'before%' then
+      select coalesce(jsonb_agg(jsonb_build_object('place_id', p.place_id, 'place_text', p.place_text, 'request_id', v_chain_req,
+               'kind', case when p."position" = x.m then 'alight' else 'stop' end) order by p."position"), '[]'::jsonb)
+        into v_p
+        from public.request_leg_route_points(v_chain_req, 'out') p
+        cross join (select max(p2."position") as m from public.request_leg_route_points(v_chain_req, 'out') p2) x
+       where p."position" > 0;
+      v_route := jsonb_build_array(v_route -> 0) || v_p || (v_route - 0);
+    elsif v_chain_req is not null and v_leg = 'return' and v_chain_side like 'after%' then
+      select coalesce(jsonb_agg(y.e order by y.part, y.pos), '[]'::jsonb) into v_p from (
+        select 1 as part, p."position" as pos,
+               jsonb_build_object('place_id', p.place_id, 'place_text', p.place_text, 'request_id', v_chain_req,
+                 'kind', case when p."position" = x.m then 'board' else 'stop' end) as e
+          from public.request_leg_route_points(v_chain_req, 'out') p
+          cross join (select max(p2."position") as m from public.request_leg_route_points(v_chain_req, 'out') p2) x
+         where p."position" > 0
+        union all
+        select 2, p."position",
+               jsonb_build_object('place_id', p.place_id, 'place_text', p.place_text, 'request_id', v_chain_req, 'kind', 'stop')
+          from public.request_leg_route_points(v_chain_req, 'return') p
+          cross join (select max(p2."position") as m from public.request_leg_route_points(v_chain_req, 'return') p2) x
+         where p."position" > 0 and p."position" < x.m) y;
+      v_route := (v_route - (-1)) || v_p || jsonb_build_array(v_route -> (-1));
+    end if;
+
     v_refused := null;
     for g in
       select q.id, q.origin_id, q.origin_text, q.destination_id, q.destination_text,
              bool_or(rr.covers_out) as c_out, bool_or(rr.covers_return) as c_ret, min(rr.created_at) as first_at
       from public.ride_requests rr join public.requests q on q.id = rr.request_id
-      where rr.ride_id = p_ride_id and rr.request_id <> v_base
+      where rr.ride_id = p_ride_id and rr.request_id <> v_base and rr.request_id is distinct from v_chain_req
       group by q.id, q.origin_id, q.origin_text, q.destination_id, q.destination_text
       union all
       select q.id, q.origin_id, q.origin_text, q.destination_id, q.destination_text,
              (p_extra_leg in ('out', 'both')), (p_extra_leg in ('return', 'both')), 'infinity'::timestamptz
       from public.requests q
-      where q.id = p_extra_request and q.id <> v_base
+      where q.id = p_extra_request and q.id <> v_base and q.id is distinct from v_chain_req
         and not exists (select 1 from public.ride_requests rx where rx.ride_id = p_ride_id and rx.request_id = q.id)
       order by first_at, id
     loop
@@ -6165,7 +6412,7 @@ end;
 $$;
 
 
-ALTER FUNCTION "public"."_ride_route_with"("p_ride_id" "uuid", "p_extra_request" "uuid", "p_extra_leg" "public"."ride_leg") OWNER TO "postgres";
+ALTER FUNCTION "public"."_ride_route_with"("p_ride_id" "uuid", "p_extra_request" "uuid", "p_extra_leg" "public"."ride_leg", "p_chain" "jsonb") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."_ride_seat_dupes"("p_ride_id" "uuid", "p_leg" "public"."ride_leg", "p_guests" "jsonb" DEFAULT '[]'::"jsonb") RETURNS "jsonb"
@@ -6176,12 +6423,18 @@ declare v jsonb;
 begin
   -- the requests seated on the leg (null = the whole ride), the proposed guests [{request_id, leg}] included
   with seated as (
+    -- CM1 phase 2: a chained row seats its own leg only; a guest entry with `chain` replaces the ride's row (a preview)
     select rr.request_id from public.ride_requests rr
      where rr.ride_id = p_ride_id
-       and (p_leg is null or (p_leg = 'out' and rr.covers_out) or (p_leg = 'return' and rr.covers_return))
+       and (p_leg is null or public._rr_on_leg(p_leg::text, rr.covers_out, rr.covers_return, rr.chain))
+       and not exists (select 1 from jsonb_array_elements(coalesce(p_guests, '[]'::jsonb)) e
+                        where (e ->> 'request_id')::uuid = rr.request_id and e ? 'chain')
     union
     select (e ->> 'request_id')::uuid from jsonb_array_elements(coalesce(p_guests, '[]'::jsonb)) e
-     where p_leg is null or coalesce(e ->> 'leg', 'both') in (p_leg::text, 'both')
+     where p_leg is null
+        or (e ? 'chain' and public._rr_on_leg(p_leg::text, coalesce(e ->> 'leg', 'both') in ('out', 'both'),
+                                              coalesce(e ->> 'leg', 'both') in ('return', 'both'), e ->> 'chain'))
+        or (not e ? 'chain' and coalesce(e ->> 'leg', 'both') in (p_leg::text, 'both'))
   ),
   -- every named person once per request that seats them, with the seat they take there
   occ as (
@@ -6795,6 +7048,18 @@ $$;
 
 
 ALTER FUNCTION "public"."_route_hop_minutes"("p_from" "uuid", "p_to" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."_rr_on_leg"("p_leg" "text", "p_covers_out" boolean, "p_covers_return" boolean, "p_chain" "text") RETURNS boolean
+    LANGUAGE "sql" IMMUTABLE
+    AS $$
+  select case p_leg when 'out' then p_covers_out and coalesce(p_chain, '') not like 'after%'
+                    when 'return' then p_covers_return and coalesce(p_chain, '') not like 'before%'
+                    else false end;
+$$;
+
+
+ALTER FUNCTION "public"."_rr_on_leg"("p_leg" "text", "p_covers_out" boolean, "p_covers_return" boolean, "p_chain" "text") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."_run_as_owner"("p_owner" "uuid", "p_sql" "text") RETURNS "void"
@@ -7814,6 +8079,7 @@ declare
   v_base uuid; v_base_return timestamptz; v_base_depart timestamptz;
   v_before int; v_after int; v_delta int; v_b_out int; v_a_out int; v_b_ret int; v_a_ret int;
   v_start timestamptz; v_end timestamptz; v_prev_sys text; v_new_window boolean;
+  v_chain text;
 begin
   select * into v_ride from public.rides where id = p_ride_id;
   select * into v_guest from public.requests q where q.id = p_request_id;
@@ -7824,9 +8090,11 @@ begin
 
   select rr.request_id into v_base from public.ride_requests rr where rr.ride_id = p_ride_id
   order by (rr.role = 'driver') desc, rr.created_at, rr.request_id limit 1;
-  if v_base = p_request_id
+  -- CM1 phase 2: a chained trip comes out even when its person drives (the base trip stays, with its driver)
+  select max(rr.chain) into v_chain from public.ride_requests rr where rr.ride_id = p_ride_id and rr.request_id = p_request_id;
+  if v_chain is null and (v_base = p_request_id
      or exists (select 1 from public.ride_requests rr where rr.ride_id = p_ride_id and rr.request_id = p_request_id and rr.role = 'driver')
-     or v_ride.driver_id is not distinct from v_guest.requester_id then
+     or v_ride.driver_id is not distinct from v_guest.requester_id) then
     raise exception 'unmerge_base_request' using errcode = 'P0001';
   end if;
 
@@ -7845,7 +8113,12 @@ begin
 
   v_start := v_ride.starts_at; v_end := v_ride.ends_at;
   v_new_window := v_base_depart is not null and v_ride.starts_at < v_base_depart;
-  if v_new_window then
+  if v_chain is not null then
+    -- the base trip's own hours again: it left later (the chained trip rode first) / was back earlier (it rode last)
+    if v_chain like 'before%' and v_base_depart is not null then v_start := greatest(v_ride.starts_at, v_base_depart); end if;
+    if v_chain like 'after%' and v_base_return is not null then v_end := least(v_ride.ends_at, public._round_up_ride_end(v_start, v_base_return)); end if;
+    v_new_window := false; v_delta := 0;
+  elsif v_new_window then
     if greatest(coalesce(v_b_out, 0) - coalesce(v_a_out, 0), 0) > 0 then
       v_start := least(v_ride.starts_at + make_interval(mins => (ceil(greatest(v_b_out - v_a_out, 0) / 15.0) * 15)::int), v_base_depart);
     end if;
@@ -8907,6 +9180,7 @@ declare
   required_party uuid;
   combined_start timestamptz;combined_end timestamptz;
   route_before jsonb:='{}'::jsonb;
+  v_chain_plans jsonb:='{}'::jsonb;
   v_has_places boolean; route_old int; route_new int; shift_start timestamptz; shift_end timestamptz;
   gap_override smallint;
   v_origin_result jsonb;
@@ -9118,6 +9392,10 @@ begin
          or (r.version is distinct from expected.value::int
              and (not (v_src_fp ? expected.key)
                   or not public._ride_fp_matches(r.id, v_src_fp->expected.key->>'fp')))) then perform public.raise_stale_version(); end if;
+    -- CM1 phase 2: a chain's plan (its driver) is read while the guest is still on its own ride
+    for host in select * from public.rides where id in(select (value->>'ride_id')::uuid from jsonb_array_elements(coalesce(v_prop.payload->'legs','[]')) where coalesce(value->>'leg','both')='both') order by id loop
+      v_chain_plans:=v_chain_plans||jsonb_build_object(host.id::text,public._merge_chain_plan(host.id,v_req.id,'both'));
+    end loop;
     -- Replace the request's prior solo assignment; do not leave a duplicate driver leg.
     select coalesce(bool_or(coalesce(l->>'leg','both') in ('out','both')),false), coalesce(bool_or(coalesce(l->>'leg','both') in ('return','both')),false)
       into v_merge_out, v_merge_ret from jsonb_array_elements(coalesce(v_prop.payload->'legs','[]')) l;
@@ -9161,6 +9439,13 @@ begin
       update public.rides set is_pinned = true, pin_reason = 'PROPOSAL_APPLIED' where id = v_ride_id;
       if (v_leg ->> 'role') = 'driver' then
         v_has_driver_leg := true;
+      end if;
+    end loop;
+    -- CM1 phase 2: a chained merge writes its chain (the short trip's row, the driver, the long trip as the route base)
+    for host in select * from public.rides where id in(select (value->>'ride_id')::uuid from jsonb_array_elements(coalesce(v_prop.payload->'legs','[]'))) order by id loop
+      if jsonb_typeof(route_before->host.id::text->'chain')='object' then
+        perform public._apply_chain(host.id,(route_before->host.id::text->'chain')-'route'
+          ||jsonb_build_object('driver_id',coalesce(v_chain_plans->host.id::text->>'driver_id',route_before->host.id::text->'chain'->>'driver_id')));
       end if;
     end loop;
     for host in select * from public.rides where id in(select (value->>'ride_id')::uuid from jsonb_array_elements(coalesce(v_prop.payload->'legs','[]'))) order by id for update loop
@@ -9978,13 +10263,13 @@ begin
     join public.rides rd on rd.id = rr.ride_id
     cross join lateral (values ('out'), ('return')) as legs(leg_side)
     where rr.ride_id = v_ride and rd.status <> 'cancelled'
-      and ((legs.leg_side = 'out' and rr.covers_out) or (legs.leg_side = 'return' and rr.covers_return))
+      and public._rr_on_leg(legs.leg_side, rr.covers_out, rr.covers_return, rr.chain)   -- CM1: a chained trip, its own leg only
     group by leg_side, rd.car_id
   loop
     v_bonus := 0;
     if not exists (select 1 from public.ride_requests x where x.ride_id = v_ride and x.role = 'driver')
       and not exists (select 1 from public.ride_requests x join public.requests q on q.id=x.request_id join public.rides rd on rd.id=x.ride_id
-        where x.ride_id=v_ride and q.requester_id=rd.driver_id and ((r.leg_side='out' and x.covers_out) or (r.leg_side='return' and x.covers_return))) then
+        where x.ride_id=v_ride and q.requester_id=rd.driver_id and public._rr_on_leg(r.leg_side, x.covers_out, x.covers_return, x.chain)) then
       r.a := r.a + 1; v_bonus := 1;   -- chauffeur ride: the volunteer has no request of their own (§5.2)
     end if;
     -- REQ item 246 h: the per-leg sum first; only when it does not fit, and someone on the ride gets on / off midway,
@@ -10005,12 +10290,12 @@ begin
       select q.id into v_holder
       from public.ride_requests rr join public.requests q on q.id = rr.request_id
       where rr.ride_id = v_ride and q.needs_tow_hitch and q.luggage_waived_at is null
-        and ((r.leg_side = 'out' and rr.covers_out) or (r.leg_side = 'return' and rr.covers_return))
+        and public._rr_on_leg(r.leg_side, rr.covers_out, rr.covers_return, rr.chain)
       order by rr.created_at, q.id limit 1;
       select array_agg(distinct q.id order by q.id) into v_ids
       from public.ride_requests rr join public.requests q on q.id = rr.request_id
       where rr.ride_id = v_ride and q.luggage_waived_at is null
-        and ((r.leg_side = 'out' and rr.covers_out) or (r.leg_side = 'return' and rr.covers_return))
+        and public._rr_on_leg(r.leg_side, rr.covers_out, rr.covers_return, rr.chain)
         and ((q.has_luggage and not v_lug_ok)
              or (q.needs_tow_hitch and not v_private and (not v_hitch or q.id is distinct from v_holder)));
       if v_mode = 'allow' then
@@ -16272,6 +16557,7 @@ CREATE OR REPLACE FUNCTION "public"."member_merge_ride"("p_ride_id" "uuid", "p_s
 declare
   h public.rides%rowtype; src public.rides%rowtype; v jsonb; c jsonb; v_leg public.ride_leg;
   v_direct boolean; v_before jsonb := '{}'::jsonb; r record; v_prev text; v_start timestamptz; v_end timestamptz;
+  v_plan jsonb;
 begin
   perform 1 from public.rides where id in (p_ride_id, p_source_ride_id) order by id for update;
   select * into h from public.rides where id = p_ride_id;
@@ -16293,6 +16579,8 @@ begin
     v_before := v_before || jsonb_build_object(r.request_id::text, public._ride_edit_snapshot(r.request_id));
   end loop;
 
+  -- CM1 phase 2: a chain's plan (its driver) is read while the guest is still on its own ride
+  v_plan := public._merge_chain_plan(h.id, p_request_id, v_leg);
   perform set_config('app.audit_reason', 'member_merge_ride', true);
   v_prev := coalesce(nullif(current_setting('app.system_status_transition', true), ''), 'off');
   perform set_config('app.system_status_transition', 'on', true);
@@ -16316,6 +16604,10 @@ begin
   insert into public.ride_requests (ride_id, request_id, role, leg, car_mode, detour_minutes)
   values (h.id, p_request_id, 'passenger', v_leg, 'passenger',
     greatest(coalesce((c ->> 'added_out_minutes')::int, 0), coalesce((c ->> 'added_return_minutes')::int, 0)));
+  if jsonb_typeof(c -> 'chain') = 'object' then
+    perform public._apply_chain(h.id, (c -> 'chain') - 'route'
+      || jsonb_build_object('driver_id', coalesce(v_plan ->> 'driver_id', c -> 'chain' ->> 'driver_id')));
+  end if;
   v_start := least(h.starts_at, (c ->> 'new_starts_at')::timestamptz, case when p_wait then (v ->> 'wait_starts_at')::timestamptz end);
   v_end := greatest(h.ends_at, (c ->> 'new_ends_at')::timestamptz, case when p_wait then (v ->> 'wait_ends_at')::timestamptz end);
   update public.rides set starts_at = v_start, ends_at = v_end, is_pinned = true, pin_reason = coalesce(pin_reason, 'MEMBER_EDIT') where id = h.id;
@@ -23512,6 +23804,30 @@ $$;
 ALTER FUNCTION "public"."ride_request_ride_leg"("p_ride_id" "uuid", "p_request_id" "uuid") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."ride_requests_chain_cleanup"() RETURNS "trigger"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare v_was_base uuid;
+begin
+  if old.chain is not null then return null; end if;
+  if not exists (select 1 from public.ride_requests rr where rr.ride_id = old.ride_id and rr.chain is not null) then return null; end if;
+  if exists (select 1 from public.ride_requests rr where rr.ride_id = old.ride_id and rr.request_id = old.request_id) then return null; end if;
+  select y.request_id into v_was_base from (
+      select rr.request_id, rr.role, rr.created_at from public.ride_requests rr where rr.ride_id = old.ride_id and rr.chain is null
+      union all select old.request_id, old.role, old.created_at) y
+   order by (y.role = 'driver') desc, y.created_at, y.request_id limit 1;
+  if v_was_base = old.request_id
+     or not exists (select 1 from public.ride_requests rr where rr.ride_id = old.ride_id and rr.chain is null) then
+    update public.ride_requests set chain = null where ride_id = old.ride_id and chain is not null;
+  end if;
+  return null;
+end $$;
+
+
+ALTER FUNCTION "public"."ride_requests_chain_cleanup"() OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."ride_requests_dept_week_match"() RETURNS "trigger"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -23931,16 +24247,20 @@ begin
       select rd.id, rd.car_id, rd.driver_id from public.rides rd where rd.id = p_ride_id and rd.status <> 'cancelled'
     ),
     seated as (
-      select rr.request_id, rr.role::text as role, rr.covers_out, rr.covers_return
+      -- CM1 phase 2: a chained row seats its own leg only; a guest entry with `chain` replaces the ride's row (a preview)
+      select rr.request_id, rr.role::text as role, rr.covers_out, rr.covers_return, rr.chain
       from public.ride_requests rr where rr.ride_id = p_ride_id
+        and not exists (select 1 from jsonb_array_elements(coalesce(p_guests, '[]'::jsonb)) e
+                         where (e->>'request_id')::uuid = rr.request_id and e ? 'chain')
       union all
-      select g.request_id, 'passenger', g.leg in ('out', 'both'), g.leg in ('return', 'both')
+      select g.request_id, 'passenger', g.leg in ('out', 'both'), g.leg in ('return', 'both'), g.chain
       from (
-        select distinct on ((e->>'request_id')::uuid) (e->>'request_id')::uuid as request_id, coalesce(e->>'leg', 'both') as leg
+        select distinct on ((e->>'request_id')::uuid) (e->>'request_id')::uuid as request_id, coalesce(e->>'leg', 'both') as leg,
+               e->>'chain' as chain
         from jsonb_array_elements(coalesce(p_guests, '[]'::jsonb)) e
         order by (e->>'request_id')::uuid
       ) g
-      where not exists (select 1 from public.ride_requests x where x.ride_id = p_ride_id and x.request_id = g.request_id)
+      where (g.chain is not null or not exists (select 1 from public.ride_requests x where x.ride_id = p_ride_id and x.request_id = g.request_id))
         and exists (select 1 from public.requests q where q.id = g.request_id)
     )
     select legs.leg_side, ride.car_id,
@@ -23952,7 +24272,7 @@ begin
            count(*) filter (where q.needs_tow_hitch and q.luggage_waived_at is null) as tow
     from ride
     cross join (values ('out'), ('return')) as legs(leg_side)
-    join seated s on (legs.leg_side = 'out' and s.covers_out) or (legs.leg_side = 'return' and s.covers_return)
+    join seated s on public._rr_on_leg(legs.leg_side, s.covers_out, s.covers_return, s.chain)
     join public.requests q on q.id = s.request_id
     group by legs.leg_side, ride.car_id
     order by legs.leg_side
@@ -23976,7 +24296,7 @@ begin
                  'childSeats', r.c - coalesce(sum(q.child_seats), 0) - g.child_seats, 'boosters', r.b - coalesce(sum(q.boosters), 0) - g.boosters))
                from public.requests g
                left join public.ride_requests rr on rr.ride_id = p_ride_id
-                 and ((r.leg_side = 'out' and rr.covers_out) or (r.leg_side = 'return' and rr.covers_return))
+                 and public._rr_on_leg(r.leg_side, rr.covers_out, rr.covers_return, rr.chain)
                left join public.requests q on q.id = rr.request_id
               where g.id = v_guest group by g.adults, g.child_seats, g.boosters)) then
           return 'seat_config_violation';
@@ -23987,7 +24307,7 @@ begin
                  'childSeats', r.c - coalesce(sum(q.child_seats), 0), 'boosters', r.b - coalesce(sum(q.boosters), 0)))
                from public.ride_requests rr join public.requests q on q.id = rr.request_id
               where rr.ride_id = p_ride_id
-                and ((r.leg_side = 'out' and rr.covers_out) or (r.leg_side = 'return' and rr.covers_return)))) then
+                and public._rr_on_leg(r.leg_side, rr.covers_out, rr.covers_return, rr.chain))) then
         return 'seat_config_violation';
       end if;
     end if;
@@ -32760,6 +33080,8 @@ CREATE TABLE IF NOT EXISTS "public"."ride_requests" (
     "covers_return" boolean GENERATED ALWAYS AS (("leg" = ANY (ARRAY['return'::"public"."ride_leg", 'both'::"public"."ride_leg"]))) STORED NOT NULL,
     "detour_minutes" smallint DEFAULT 0 NOT NULL,
     "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "chain" "text",
+    CONSTRAINT "ride_requests_chain_check" CHECK (("chain" = ANY (ARRAY['before'::"text", 'before_via'::"text", 'after'::"text", 'after_via'::"text"]))),
     CONSTRAINT "ride_requests_detour_ck" CHECK (("detour_minutes" >= 0)),
     CONSTRAINT "ride_requests_leg_mode_ck" CHECK ((("leg" = 'both'::"public"."ride_leg") OR ("car_mode" <> 'keep'::"public"."leg_car_mode"))),
     CONSTRAINT "ride_requests_role_mode_ck" CHECK ((("role" = 'driver'::"public"."ride_role") = ("car_mode" = ANY (ARRAY['keep'::"public"."leg_car_mode", 'relay'::"public"."leg_car_mode"]))))
@@ -32769,6 +33091,10 @@ ALTER TABLE ONLY "public"."ride_requests" FORCE ROW LEVEL SECURITY;
 
 
 ALTER TABLE "public"."ride_requests" OWNER TO "postgres";
+
+
+COMMENT ON COLUMN "public"."ride_requests"."chain" IS 'CM1 (REQ item 260 b): this request is chained to the ride''s base trip - before (rides first, its way back dropped) or after (rides last, its way out dropped); _via = passes the shared start place again (phase 3). Null = an ordinary row.';
+
 
 
 CREATE TABLE IF NOT EXISTS "public"."ride_types" (
@@ -35771,6 +36097,10 @@ CREATE OR REPLACE TRIGGER "ride_passengers_notify_private_car_owners" AFTER INSE
 
 
 
+CREATE OR REPLACE TRIGGER "ride_requests_chain_cleanup" AFTER DELETE ON "public"."ride_requests" FOR EACH ROW EXECUTE FUNCTION "public"."ride_requests_chain_cleanup"();
+
+
+
 CREATE CONSTRAINT TRIGGER "ride_requests_day" AFTER INSERT OR UPDATE ON "public"."ride_requests" DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION "public"."check_ride_request_day"();
 
 
@@ -38646,6 +38976,11 @@ GRANT ALL ON FUNCTION "public"."_apply_alternative"("p_proposal_id" "uuid") TO "
 
 
 
+REVOKE ALL ON FUNCTION "public"."_apply_chain"("p_ride_id" "uuid", "p_plan" "jsonb") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_apply_chain"("p_ride_id" "uuid", "p_plan" "jsonb") TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."_apply_or_wait"("p_proposal_id" "uuid", "p_silent" boolean) FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."_apply_or_wait"("p_proposal_id" "uuid", "p_silent" boolean) TO "service_role";
 
@@ -39076,6 +39411,11 @@ GRANT ALL ON FUNCTION "public"."_member_merge_check"("p_ride_id" "uuid", "p_sour
 
 
 
+REVOKE ALL ON FUNCTION "public"."_merge_chain_plan"("p_ride_id" "uuid", "p_request_id" "uuid", "p_leg" "public"."ride_leg") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_merge_chain_plan"("p_ride_id" "uuid", "p_request_id" "uuid", "p_leg" "public"."ride_leg") TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."_merge_check"("p_ride_id" "uuid", "p_request_id" "uuid", "p_leg" "public"."ride_leg") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."_merge_check"("p_ride_id" "uuid", "p_request_id" "uuid", "p_leg" "public"."ride_leg") TO "service_role";
 
@@ -39267,6 +39607,11 @@ GRANT ALL ON FUNCTION "public"."_request_is_ride_guest"("p_request" "uuid", "p_r
 
 
 
+REVOKE ALL ON FUNCTION "public"."_request_person_keys"("p_request_id" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_request_person_keys"("p_request_id" "uuid") TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."_request_riders_json"("p_request_id" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."_request_riders_json"("p_request_id" "uuid") TO "service_role";
 
@@ -39396,6 +39741,11 @@ GRANT ALL ON FUNCTION "public"."_ride_route_visible"("p_ride_id" "uuid") TO "ser
 
 REVOKE ALL ON FUNCTION "public"."_ride_route_with"("p_ride_id" "uuid", "p_extra_request" "uuid", "p_extra_leg" "public"."ride_leg") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."_ride_route_with"("p_ride_id" "uuid", "p_extra_request" "uuid", "p_extra_leg" "public"."ride_leg") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."_ride_route_with"("p_ride_id" "uuid", "p_extra_request" "uuid", "p_extra_leg" "public"."ride_leg", "p_chain" "jsonb") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_ride_route_with"("p_ride_id" "uuid", "p_extra_request" "uuid", "p_extra_leg" "public"."ride_leg", "p_chain" "jsonb") TO "service_role";
 
 
 
@@ -39739,6 +40089,11 @@ GRANT ALL ON FUNCTION "public"."_route_eta_shown_if_middle"("p_route" "jsonb", "
 
 REVOKE ALL ON FUNCTION "public"."_route_hop_minutes"("p_from" "uuid", "p_to" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."_route_hop_minutes"("p_from" "uuid", "p_to" "uuid") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."_rr_on_leg"("p_leg" "text", "p_covers_out" boolean, "p_covers_return" boolean, "p_chain" "text") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_rr_on_leg"("p_leg" "text", "p_covers_out" boolean, "p_covers_return" boolean, "p_chain" "text") TO "service_role";
 
 
 
@@ -41935,6 +42290,11 @@ GRANT ALL ON FUNCTION "public"."ride_related"("p_ride" "uuid", "p_actor" "uuid")
 REVOKE ALL ON FUNCTION "public"."ride_request_ride_leg"("p_ride_id" "uuid", "p_request_id" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."ride_request_ride_leg"("p_ride_id" "uuid", "p_request_id" "uuid") TO "service_role";
 GRANT ALL ON FUNCTION "public"."ride_request_ride_leg"("p_ride_id" "uuid", "p_request_id" "uuid") TO "authenticated";
+
+
+
+REVOKE ALL ON FUNCTION "public"."ride_requests_chain_cleanup"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."ride_requests_chain_cleanup"() TO "service_role";
 
 
 

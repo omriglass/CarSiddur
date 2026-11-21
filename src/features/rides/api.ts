@@ -9,6 +9,7 @@ import type { Database, Json } from "@/integrations/supabase/types";
 import type { CarNeighbourRow } from "./carHandover";
 import { parseLongDetour, type LongDetour } from "./mergeQuestions";
 import { rideStretchesSchema, type RideStretches } from "./rideStretches";
+import { parseChain, type MergeChain } from "./mergeChain";
 
 /**
  * Shared ride-level pieces the `siddur` and `sadran` features both need (moved out of
@@ -331,6 +332,8 @@ export interface MemberMergePreview {
   otherRiders: string[];
   /** R19B1 (REQ item 220): the merged leg lands on the wrong side of the guest's other leg — asked, never refused. */
   order: { eta: string; wanted: string; leg: "out" | "return" } | null;
+  /** CM1 phase 2 (REQ item 260 b): my two trips one after the other join into one ride. */
+  chain: MergeChain | null;
 }
 
 const isoOr = (value: unknown): string | null => (typeof value === "string" && value ? value : null);
@@ -355,6 +358,7 @@ export async function memberMergePreview(rideId: string, sourceRideId: string, r
     otherRiders: Array.isArray(raw.other_riders) ? raw.other_riders.filter((name): name is string => typeof name === "string") : [],
     order: raw.time_far_kind === "order" && typeof raw.time_far_eta === "string" && typeof raw.time_far_wanted === "string"
       ? { eta: raw.time_far_eta, wanted: raw.time_far_wanted, leg: raw.time_far_leg === "out" ? "out" : "return" } : null,
+    chain: parseChain(raw.chain),
   };
 }
 

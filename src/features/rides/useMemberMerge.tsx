@@ -15,6 +15,7 @@ import { formatTime } from "@/lib/time";
 import { memberMergePreview, memberMergeRide, type BoardRide, type MemberMergePreview } from "./api";
 import { MergeWaitDialog } from "./components/MergeWaitDialog";
 import { invalidateWeekData } from "./invalidateWeek";
+import { chainRouteText } from "./mergeChain";
 import { memberMergeAgreeNames, memberMergeWaitChoice, type MemberMergeTarget } from "./memberMerge";
 import { longDetourText } from "./mergeQuestions";
 import { servedOf } from "./servedOf";
@@ -57,18 +58,22 @@ export function useMemberMerge({ departmentId, weekStart, onDone }: {
   const [flow, setFlow] = useState<Flow | null>(null);
   const [busy, setBusy] = useState(false);
 
-  async function start(host: BoardRide, target: MemberMergeTarget) {
-    if (!host.id || !target.ride.id) return;
+  /** Asks the server; `false` = my own other ride that does not chain (the caller goes on with the ordinary move). */
+  async function start(host: BoardRide, target: MemberMergeTarget): Promise<boolean> {
+    if (!host.id || !target.ride.id) return false;
     try {
       const preview = await memberMergePreview(host.id, target.ride.id, target.requestId);
+      if (target.own && !preview.chain) return false;
       if (!preview.ok && !preview.waivable) {
         toast.error(refusal(preview.code, preview.needs));
-        return;
+        return true;
       }
       setFlow({ host, target, preview, step: "confirm", wait: false });
     } catch (error) {
+      if (target.own) return false;
       showErrorToast(error);
     }
+    return true;
   }
 
   function next(current: Flow, after: Step) {
@@ -115,7 +120,8 @@ export function useMemberMerge({ departmentId, weekStart, onDone }: {
   const element = (
     <>
       <ConfirmDialog open={flow?.step === "confirm"} onOpenChange={(open) => { if (!open) close(); }}
-        title={tv("rideEditing.mergeTitle", { name: guest })} description={legLine}
+        title={flow?.preview.chain ? he.rideEditing.chainTitle : tv("rideEditing.mergeTitle", { name: guest })}
+        description={flow?.preview.chain ? tv("mergedRide.chainRoute", { route: chainRouteText(flow.preview.chain) }) : legLine}
         confirmLabel={he.rideEditing.mergeConfirm} loading={busy} onConfirm={() => { if (flow) next(flow, "confirm"); }} />
       {flow && waitChoice ? (
         <MergeWaitDialog choice={waitChoice} guest={guest} host={viewerName} place={destinationOf(flow.target)}

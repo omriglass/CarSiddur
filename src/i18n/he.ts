@@ -391,6 +391,8 @@ export const he = {
     collisionTitle: "כבר קיימת נסיעה בזמן הזה",
     /** REQ §13.175 (d): my ride dragged onto someone's pickup / drop-off - take them along. */
     mergeTitle: "לצרף את {{name}} לנסיעה שלך?",
+    /** CM1 phase 2 (REQ item 260 b): two of my rides, one after the other, become one (wording to approve). */
+    chainTitle: "לחבר את שתי הנסיעות שלך לנסיעה אחת?",
     mergeConfirm: "לצרף",
     mergeDone: "{{name}} צורף/ה לנסיעה שלך",
     mergeTalkedTitle: "דיברת עם {{names}} על השינוי?",

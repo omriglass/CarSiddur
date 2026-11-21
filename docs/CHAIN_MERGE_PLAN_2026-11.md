@@ -1,6 +1,6 @@
 # CM1 — merging rides into one chained trip (plan, 2026-11-21)
 
-Owner request 2026-11-18 (docs/TODO.md "Merging rides into one chained trip", CM1 + (a)/(b)/(c)). Status: **plan approved 2026-11-21** (answers at the end); REQUIREMENTS item 260.
+Owner request 2026-11-18 (docs/TODO.md "Merging rides into one chained trip", CM1 + (a)/(b)/(c)). Status: **plan approved 2026-11-21** (answers at the end); phase 1 built 2026-11-21, phase 2 built 2026-11-21 (`20261121200000_chain_merge.sql`, suite `chain_merge.sql`); REQUIREMENTS item 260.
 
 ## The problem today
 

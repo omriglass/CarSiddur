@@ -942,6 +942,8 @@ export const heSadran = {
     resultHeading: "התוצאה",
     resultCar: "{{car}} · {{driver}} נוהג/ת",
     resultPickup: "{{place}} (איסוף {{name}})",
+    /** CM1 phase 2 (REQ item 260 b): two trips one after the other merge into one ride (wording to approve). */
+    chainRoute: "הנסיעות יתחברו לנסיעה אחת: {{route}}",
     resultWho: "{{name}}:",
     /** REQ §13.95 (H1): a merge is refused - toast text. */
     invalid: {

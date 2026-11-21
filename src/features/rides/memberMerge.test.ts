@@ -21,7 +21,7 @@ const preview: MemberMergePreview = {
   ok: false, code: "detour", waivable: true, leg: "return", guestName: "אלי", longDetour: { outMinutes: 0, returnMinutes: 66, unknownHops: [] }, luggageProblem: false, needs: [],
   joinerDepartAt: null, joinerReturnAt: "2026-11-03T12:27:00Z", wantedDepartAt: null, wantedReturnAt: "2026-11-03T13:30:00Z",
   waitStartsAt: null, waitEndsAt: "2026-11-03T13:45:00Z", timeKept: false, waitKeepsTime: true, direct: false, directWithWait: true,
-  sourceDriverName: null, otherRiders: [], order: null,
+  sourceDriverName: null, otherRiders: [], order: null, chain: null,
 };
 
 describe("memberMergeTarget (REQ §13.175 d)", () => {
@@ -33,6 +33,9 @@ describe("memberMergeTarget (REQ §13.175 d)", () => {
     expect(memberMergeTarget([ride()], "eli")).toBeNull();
     expect(memberMergeTarget([ride({ served: [{ request_id: "qd", role: "driver", leg: "both", car_mode: "keep" }], people: [person("dan", "דן", "qd", "driver")] } as unknown as Partial<BoardRide>)], "shai")).toBeNull();
     expect(memberMergeTarget([ride({ served: [], people: [] } as unknown as Partial<BoardRide>)], "shai")).toBeNull();
+    // CM1 phase 2 (REQ item 260 b): my own trip that I drive - a chain candidate the server decides about
+    expect(memberMergeTarget([ride({ served: [{ request_id: "qd", role: "driver", leg: "both", car_mode: "keep" }], people: [person("dan", "דן", "qd", "driver")] } as unknown as Partial<BoardRide>)], "dan"))
+      .toMatchObject({ requestId: "qd", own: true });
   });
 });
 
