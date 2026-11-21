@@ -337,6 +337,9 @@ Dominance is strictly component-wise; no substitutions are inferred (a booster c
 
 **Seats per stretch (REQ item 246 h, LT1 phase 2a).** `stretchLoads(points, riders)` / `fitsAlong(car, points, riders)` count a leg's seats on each stretch between its route places — a rider takes seats from `board` up to, not including, `alight` (null = start / end; clamped; board ≥ alight = the whole leg) and each stretch may use a different configuration. Twin of SQL `_stretch_loads()`, shared cases `supabase/tests/fixtures/stretch_load_cases.json` (`__tests__/stretchLoads.test.ts`). The placement and merge paths still use whole-leg loads — the stretch loads never exceed them, so the solver can only be stricter than the server (it never proposes what the server would refuse); merges onto a ride whose people get off midway are LT1 phase 2c.
 
+
+**One person counts once (CM1, REQ item 260 a, 2026-11-21)** is a database and board rule (`_ride_seat_dupes` / `mergedSeatNeed`): the same named person on two requests of one ride takes one seat. The solver keeps summing per request — its `Request` carries no companion or child ids, and the pools it builds join different people — so it can only over-count (never seat too many).
+
 ### 3.4 Hard-constraint predicate
 
 ```ts

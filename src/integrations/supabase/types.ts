@@ -7131,6 +7131,14 @@ export type Database = {
           request_id: string
         }[]
       }
+      _ride_seat_dupes: {
+        Args: {
+          p_guests?: Json
+          p_leg: Database["public"]["Enums"]["ride_leg"]
+          p_ride_id: string
+        }
+        Returns: Json
+      }
       _ride_shorten_car_fits: {
         Args: { p_car_id: string; p_request_id: string }
         Returns: boolean
@@ -7304,6 +7312,19 @@ export type Database = {
       _save_request_alternative: {
         Args: { p_old_depart: string; p_payload: Json; p_request_id: string }
         Returns: undefined
+      }
+      _seats_fit_once: {
+        Args: {
+          p_adults: number
+          p_bonus: number
+          p_boosters: number
+          p_car_id: string
+          p_child_seats: number
+          p_guests?: Json
+          p_leg: Database["public"]["Enums"]["ride_leg"]
+          p_ride_id: string
+        }
+        Returns: boolean
       }
       _send_board_changes: {
         Args: {

@@ -183,6 +183,8 @@
         "scripts/test-stretch-load-parity.mjs",
         "supabase/migrations/**/*rider_stretches*",
         "supabase/tests/ride_people_parts.sql",
+        "supabase/tests/seats_person_once.sql",
+        "supabase/migrations/**/*seats_person_once*",
         "supabase/migrations/**/*ride_people_parts*",
         "supabase/tests/riders_off_route.sql",
         "supabase/migrations/**/*riders_off_route*",
@@ -226,6 +228,7 @@
         "travel_times.sql",
         "rider_stretches.sql",
         "ride_people_parts.sql",
+        "seats_person_once.sql",
         "riders_off_route.sql",
         "merge_fixed_hours.sql",
         "leave_ride_as_guest.sql"

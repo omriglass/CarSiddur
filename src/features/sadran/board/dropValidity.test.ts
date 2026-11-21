@@ -6,6 +6,7 @@ import {
   connectsOtherLeg,
   isDropTargetValid,
   isUnmetDropValid,
+  mergedSeatNeed,
   originMismatch,
   seatsFit,
   strandsNextRide,
@@ -58,6 +59,18 @@ function baseContext(overrides: Partial<BoardDropContext> = {}): BoardDropContex
     ...overrides,
   };
 }
+
+describe("mergedSeatNeed - one person counts once (CM1, REQ item 260 a)", () => {
+  const host = ride({ id: "h", car_id: "car1", driver_id: "me", served: [{ request_id: "a", role: "driver", leg: "both", adults: 4, child_seats: 0, boosters: 0 }],
+    people: [{ key: "driver:me", source: "driver", request_id: null, ride_passenger_id: null, person_id: "me", child_id: null, display_name: "x", seat_kind: "adult", added_by: null, removable: false }] } as Partial<BoardRide> & { id: string; car_id: string });
+  it("the driver's own second request takes no second seat", () => {
+    expect(mergedSeatNeed(host, request({ id: "b", requester_id: "me", adults: 2 })).adults).toBe(5);
+  });
+  it("a companion already on the ride takes no second seat; someone else does", () => {
+    expect(mergedSeatNeed(host, request({ id: "c", requester_id: "dana", adults: 2, companions: [{ profile_id: "me", name: "x" }] })).adults).toBe(5);
+    expect(mergedSeatNeed(host, request({ id: "d", requester_id: "dana", adults: 2 })).adults).toBe(6);
+  });
+});
 
 describe("seatsFit", () => {
   it("refuses a car with no seat configuration on record (SQL car_fits / solver fits, REQ item 108 D3)", () => {

@@ -5986,6 +5986,8 @@ begin
       into v_a, v_c, v_b
       from public.ride_passengers rp where rp.ride_id = p_ride_id and (rp.leg = 'both' or rp.leg = l);
     if not public.car_fits(v_car, v_a + v_bonus, v_c, v_b)
+       -- CM1 (REQ item 260 a): one person on two of the ride's requests counts once
+       and not public._seats_fit_once(v_car, p_ride_id, l, v_a + v_bonus, v_c, v_b, v_bonus)
        and not public._ride_leg_fits_along(p_ride_id, l, v_car, jsonb_build_array(jsonb_build_object('adults', v_bonus)), true) then
       return false;
     end if;
@@ -6164,6 +6166,55 @@ $$;
 
 
 ALTER FUNCTION "public"."_ride_route_with"("p_ride_id" "uuid", "p_extra_request" "uuid", "p_extra_leg" "public"."ride_leg") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."_ride_seat_dupes"("p_ride_id" "uuid", "p_leg" "public"."ride_leg", "p_guests" "jsonb" DEFAULT '[]'::"jsonb") RETURNS "jsonb"
+    LANGUAGE "plpgsql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare v jsonb;
+begin
+  -- the requests seated on the leg (null = the whole ride), the proposed guests [{request_id, leg}] included
+  with seated as (
+    select rr.request_id from public.ride_requests rr
+     where rr.ride_id = p_ride_id
+       and (p_leg is null or (p_leg = 'out' and rr.covers_out) or (p_leg = 'return' and rr.covers_return))
+    union
+    select (e ->> 'request_id')::uuid from jsonb_array_elements(coalesce(p_guests, '[]'::jsonb)) e
+     where p_leg is null or coalesce(e ->> 'leg', 'both') in (p_leg::text, 'both')
+  ),
+  -- every named person once per request that seats them, with the seat they take there
+  occ as (
+    select 'p:' || q.requester_id as k, 'adult' as kind, false as companion
+      from seated s join public.requests q on q.id = s.request_id
+    union all
+    select 'p:' || rc.profile_id, 'adult', true
+      from seated s join public.request_companions rc on rc.request_id = s.request_id
+    union all
+    select 'c:' || ch.child_id,
+           case when c.birth_year is not null
+                 and extract(year from coalesce(q.depart_at, now()) at time zone 'Asia/Jerusalem')::int - c.birth_year >= 8
+                then 'adult' else 'child_seat' end, false
+      from seated s join public.request_children ch on ch.request_id = s.request_id
+      join public.children c on c.id = ch.child_id join public.requests q on q.id = s.request_id
+  )
+  select jsonb_build_object(
+      'adults', coalesce((select sum(n) from (select count(*) - count(distinct k) as n from occ where kind = 'adult') x), 0),
+      'childSeats', coalesce((select sum(n) from (select count(*) - count(distinct k) as n from occ where kind = 'child_seat') x), 0),
+      -- the ride's driver rides as someone's companion (a chauffeur ride's extra seat would count them twice)
+      'driverCompanion', exists (select 1 from occ join public.rides r on r.id = p_ride_id
+                                  where occ.companion and occ.k = 'p:' || r.driver_id))
+    into v;
+  return v;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."_ride_seat_dupes"("p_ride_id" "uuid", "p_leg" "public"."ride_leg", "p_guests" "jsonb") OWNER TO "postgres";
+
+
+COMMENT ON FUNCTION "public"."_ride_seat_dupes"("p_ride_id" "uuid", "p_leg" "public"."ride_leg", "p_guests" "jsonb") IS 'CM1 (REQ item 260 a): seats counted twice on a ride leg (null = whole ride) because the same named person (profile or child) is on two of its requests (+ proposed guests). Internal.';
+
 
 
 CREATE OR REPLACE FUNCTION "public"."_ride_shorten_car_fits"("p_request_id" "uuid", "p_car_id" "uuid") RETURNS boolean
@@ -6860,6 +6911,30 @@ end $$;
 
 
 ALTER FUNCTION "public"."_save_request_alternative"("p_request_id" "uuid", "p_payload" "jsonb", "p_old_depart" timestamp with time zone) OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."_seats_fit_once"("p_car_id" "uuid", "p_ride_id" "uuid", "p_leg" "public"."ride_leg", "p_adults" integer, "p_child_seats" integer, "p_boosters" integer, "p_bonus" integer, "p_guests" "jsonb" DEFAULT '[]'::"jsonb") RETURNS boolean
+    LANGUAGE "plpgsql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare d jsonb;
+begin
+  d := public._ride_seat_dupes(p_ride_id, p_leg, p_guests);
+  if (d ->> 'adults')::int = 0 and (d ->> 'childSeats')::int = 0 and not ((d ->> 'driverCompanion')::boolean and p_bonus > 0) then
+    return false;   -- nobody counted twice: the caller's sum stands
+  end if;
+  return public.car_fits(p_car_id,
+    p_adults - (d ->> 'adults')::int - case when (d ->> 'driverCompanion')::boolean and p_bonus > 0 then 1 else 0 end,
+    p_child_seats - (d ->> 'childSeats')::int, p_boosters);
+end;
+$$;
+
+
+ALTER FUNCTION "public"."_seats_fit_once"("p_car_id" "uuid", "p_ride_id" "uuid", "p_leg" "public"."ride_leg", "p_adults" integer, "p_child_seats" integer, "p_boosters" integer, "p_bonus" integer, "p_guests" "jsonb") OWNER TO "postgres";
+
+
+COMMENT ON FUNCTION "public"."_seats_fit_once"("p_car_id" "uuid", "p_ride_id" "uuid", "p_leg" "public"."ride_leg", "p_adults" integer, "p_child_seats" integer, "p_boosters" integer, "p_bonus" integer, "p_guests" "jsonb") IS 'CM1 (REQ item 260 a): does the leg fit once each named person counts once? false when nobody is counted twice (the plain sum, already refused, stands). Internal.';
+
 
 
 CREATE TABLE IF NOT EXISTS "public"."held_notices" (
@@ -9915,6 +9990,8 @@ begin
     -- REQ item 246 h: the per-leg sum first; only when it does not fit, and someone on the ride gets on / off midway,
     -- the seats per stretch decide (never more than the sum, so a ride that fits costs nothing extra)
     if not public.car_fits(r.car_id, r.a::int, r.c::int, r.b::int)
+       -- CM1 (REQ item 260 a): one person on two of the ride's requests counts once
+       and not public._seats_fit_once(r.car_id, v_ride, r.leg_side::public.ride_leg, r.a::int, r.c::int, r.b::int, v_bonus)
        and not (public._ride_has_rider_spans(v_ride)
                 and public._ride_leg_fits_along(v_ride, r.leg_side::public.ride_leg, r.car_id, jsonb_build_array(jsonb_build_object('adults', v_bonus)))) then
       raise exception 'seat_config_violation' using detail =
@@ -23869,6 +23946,7 @@ begin
     select legs.leg_side, ride.car_id,
            sum(q.adults)
              + case when (select coalesce(bool_or(x.role = 'driver'), false) from seated x) or coalesce(bool_or(q.requester_id = ride.driver_id), false) then 0 else 1 end as a,
+           case when (select coalesce(bool_or(x.role = 'driver'), false) from seated x) or coalesce(bool_or(q.requester_id = ride.driver_id), false) then 0 else 1 end as bonus,
            sum(q.child_seats) as c, sum(q.boosters) as b,
            count(*) filter (where q.has_luggage and q.luggage_waived_at is null) as lug,
            count(*) filter (where q.needs_tow_hitch and q.luggage_waived_at is null) as tow
@@ -23882,7 +23960,9 @@ begin
     -- REQ item 246 h: as assert_ride_seats_fit - per stretch only when the sum does not fit and someone gets on / off
     -- midway; the proposed guests (and a volunteer driver) = the leg's count less the ride's own rows, on the whole leg.
     -- (A nested if: a subquery in the first test would cost every call the full executor.)
-    if not public.car_fits(r.car_id, r.a::int, r.c::int, r.b::int) then
+    -- CM1 (REQ item 260 a): one person on two of the ride's requests (or a proposed guest) counts once
+    if not public.car_fits(r.car_id, r.a::int, r.c::int, r.b::int)
+       and not public._seats_fit_once(r.car_id, p_ride_id, r.leg_side::public.ride_leg, r.a::int, r.c::int, r.b::int, r.bonus::int, p_guests) then
       -- REQ item 246 h (phase 2c): one guest proposed - the seats per stretch on the route with the guest
       select (e->>'request_id')::uuid, coalesce(e->>'leg', 'both')::public.ride_leg into v_guest, v_guest_leg
         from jsonb_array_elements(coalesce(p_guests, '[]'::jsonb)) e
@@ -39319,6 +39399,11 @@ GRANT ALL ON FUNCTION "public"."_ride_route_with"("p_ride_id" "uuid", "p_extra_r
 
 
 
+REVOKE ALL ON FUNCTION "public"."_ride_seat_dupes"("p_ride_id" "uuid", "p_leg" "public"."ride_leg", "p_guests" "jsonb") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_ride_seat_dupes"("p_ride_id" "uuid", "p_leg" "public"."ride_leg", "p_guests" "jsonb") TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."_ride_shorten_car_fits"("p_request_id" "uuid", "p_car_id" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."_ride_shorten_car_fits"("p_request_id" "uuid", "p_car_id" "uuid") TO "service_role";
 
@@ -39664,6 +39749,11 @@ GRANT ALL ON FUNCTION "public"."_run_as_owner"("p_owner" "uuid", "p_sql" "text")
 
 REVOKE ALL ON FUNCTION "public"."_save_request_alternative"("p_request_id" "uuid", "p_payload" "jsonb", "p_old_depart" timestamp with time zone) FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."_save_request_alternative"("p_request_id" "uuid", "p_payload" "jsonb", "p_old_depart" timestamp with time zone) TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."_seats_fit_once"("p_car_id" "uuid", "p_ride_id" "uuid", "p_leg" "public"."ride_leg", "p_adults" integer, "p_child_seats" integer, "p_boosters" integer, "p_bonus" integer, "p_guests" "jsonb") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_seats_fit_once"("p_car_id" "uuid", "p_ride_id" "uuid", "p_leg" "public"."ride_leg", "p_adults" integer, "p_child_seats" integer, "p_boosters" integer, "p_bonus" integer, "p_guests" "jsonb") TO "service_role";
 
 
 

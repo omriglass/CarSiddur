@@ -22,6 +22,7 @@ import type { Car } from "@/features/fleet/api";
 
 import { servedOf } from "../applySolve";
 import { isReservation } from "@/features/rides/servedOf";
+import { peopleOf } from "@/features/rides/ridePeople";
 import { isoToDayMinutes, slotToIso, wouldOverlap } from "./geometry";
 import { defaultMergeLeg, mergeInvalidReason, mergeLegForCard, previewMerge, type MergeLeg, type MergeRouteContext } from "./mergeProposal";
 import { unmetItemId } from "./unmetLegs";
@@ -141,6 +142,18 @@ export function passengersOf(ride: BoardRide): SeatNeed {
     (acc, s) => ({ adults: acc.adults + s.adults, childSeats: acc.childSeats + s.child_seats, boosters: acc.boosters + s.boosters }),
     { adults: served.length && !served.some((entry) => entry.role === "driver") ? 1 : 0, childSeats: 0, boosters: 0 },
   );
+}
+
+/**
+ * The seats of `host` with `request` on it (CM1, REQ item 260 a): one person counts once - the request's requester or a
+ * named companion already on the host takes no second seat. Children are matched by the server only (`_ride_seat_dupes`);
+ * this is the instant drag highlight, the server decides.
+ */
+export function mergedSeatNeed(host: BoardRide, request: Pick<WeekRequestRow, "requester_id" | "adults" | "child_seats" | "boosters" | "companions">): SeatNeed {
+  const need = passengersOf(host);
+  const onHost = new Set([host.driver_id, ...peopleOf(host).map((person) => person.person_id)].filter((id): id is string => !!id));
+  const shared = [request.requester_id, ...(request.companions ?? []).map((person) => person.profile_id)].filter((id) => onHost.has(id)).length;
+  return { adults: need.adults + Math.max(request.adults - shared, 0), childSeats: need.childSeats + request.child_seats, boosters: need.boosters + request.boosters };
 }
 
 /** How many of `ride`'s served requests still need a large trunk (large luggage that was not waived by hand, REQ §13.111 a). */
@@ -269,8 +282,7 @@ export function isDropTargetValid(ctx: BoardDropContext, rideId: string, carId: 
   const merge = mergeCandidateForRide(ctx, rideId, carId, minutesIso(ctx, startMinutes), minutesIso(ctx, endMinutes), hostRideId);
   if (merge) {
     if (!merge.host.driver_id || merge.host.needs_driver || !merge.request || mergeInvalidReason(merge.host, merge.request, defaultMergeLeg(merge.request), ctx.route) || unavailable(ctx, carId, merge.window.startsAt, merge.window.endsAt)) return false;
-    const hostNeed = passengersOf(merge.host);
-    if (!seatsFit(ctx, carId, { adults: hostNeed.adults + merge.request.adults, childSeats: hostNeed.childSeats + merge.request.child_seats, boosters: hostNeed.boosters + merge.request.boosters })) return false;
+    if (!seatsFit(ctx, carId, mergedSeatNeed(merge.host, merge.request))) return false;
     return !wouldOverlap(merge.window, ctx.rides.filter((other) => other.id !== rideId && other.id !== merge.host.id && other.car_id === carId && other.starts_at && other.ends_at)
       .map((other) => ({ startsAt: other.starts_at!, endsAt: other.ends_at! })), 0);
   }
@@ -425,8 +437,7 @@ export function mergeRefusalReason(ctx: BoardDropContext, host: BoardRide, reque
   const route = mergeInvalidReason(host, request, leg, ctx.route);
   if (route) return route;
   const window = mergedHostWindow(ctx, host, request, leg);
-  const need = passengersOf(host);
-  if (!seatsFit(ctx, carId, { adults: need.adults + request.adults, childSeats: need.childSeats + request.child_seats, boosters: need.boosters + request.boosters })) return "seats_full";
+  if (!seatsFit(ctx, carId, mergedSeatNeed(host, request))) return "seats_full";
   if (!window) return null;
   if (unavailable(ctx, carId, window.startsAt, window.endsAt)) return "car_unavailable";
   const others = ctx.rides.filter((ride) => ride.id !== host.id && !excludeRideIds.includes(ride.id as string) && ride.car_id === carId && ride.status !== "cancelled" && ride.starts_at && ride.ends_at)

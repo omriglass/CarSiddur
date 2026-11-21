@@ -1934,7 +1934,7 @@ Production 2026-11-18: מאי (this week's Sadran) got 18 `request_changed` noti
 - **One unified notice, not prompt:** whatever remains is collected and sent as **one combined notice per Sadran on the next `app.tick()` (15 min)** — e.g. "X בקשות השתנו / Y נכנסו להמתנה" with a link to the board; nothing urgent rides on it. Check overlap with `late_request` / `waitlisted_request` / `auto_approved` (fold them into the same digest where they are about the same activity) and with held board notices (`held_notices`, REQ §13.138).
 - **Banner:** reword `changedSinceSolveBanner` to match (e.g. the change shows on the Sadran's board; no promise of a message). A REQUIREMENTS item first (notification rules, REQ §9 / UX_FLOWS §6), new event/variant via `/add-notification-event` if a digest event is needed; wordings need owner approval. Related: owner's standing priority — one combined notice, never a burst.
 
-## Merging rides into one chained trip — a person on both counts once, no return home in between (owner 2026-11-18, CM1) — not built yet
+## Merging rides into one chained trip — a person on both counts once, no return home in between (owner 2026-11-18, CM1; REQ item 260, plan docs/CHAIN_MERGE_PLAN_2026-11.md) — phase 1 (one person counts once) built 2026-11-21; phases 2–4 next
 
 Example: ride A 07:45 home → school (drop the kids, back home) and ride B 08:30 home → Binyamina and back, both mine. Today merging B into A makes me a guest on my own ride: I count as 2 people, and the route is home → school → home → Binyamina (the base keeps its final place; the guest must board before it — `_merge_check` / `findMergeHosts` / `rideRoute.ts`, REQ §13.94–§13.95).
 
