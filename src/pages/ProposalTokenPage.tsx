@@ -1,5 +1,8 @@
 import { useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
+import { toast } from "sonner";
+
+import { paths } from "@/app/routes";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -73,6 +76,7 @@ function readShiftPayload(payload: unknown): ShiftPayload {
 export function ProposalTokenPage() {
   const { token } = useParams<{ token: string }>();
   const { session } = useSession();
+  const navigate = useNavigate();
 
   const summaryQuery = useProposalSummaryQuery(token);
   const answerViaRpc = useAnswerProposalMutation();
@@ -134,6 +138,11 @@ export function ProposalTokenPage() {
       });
     }
     setJustAnswered(answer);
+    // PX1 (owner 2026-11-21): signed in, answering ends here — a toast and back to the inbox (no session: the thanks card stays).
+    if (session) {
+      toast.success(answer === "accepted" && summaryQuery.data.type === "alternative" ? he.proposalScreen.confirmedPlanBTitle : he.proposalScreen.sentToSadran);
+      navigate(paths.inbox());
+    }
   }
 
   return (

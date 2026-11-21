@@ -791,6 +791,8 @@ export const heMember = {
     alreadyAnswered: "כבר עניתם להצעה הזו",
     genericError: "לא ניתן לטעון את ההצעה כרגע",
     confirmedTitle: "תודה! הסדרן/ית יעדכנו את הסידור",
+    /** PX1 (owner 2026-11-21): the toast after answering while signed in, before going back to the inbox. */
+    sentToSadran: "התשובה נשלחה לסדרן/ית",
     /** R10U9: after accepting a plan B on `/p/:token` — it was applied on the spot, unlike every other answer. */
     confirmedPlanBTitle: "ההצעה אושרה — שובצת בתוכנית ב׳",
     confirmedPlanBHelp: "אפשר לראות אותה ב״הנסיעות שלי״.",

@@ -4,6 +4,7 @@ import { createBrowserRouter, Outlet } from "react-router-dom";
 import { LandingRedirect } from "./LandingRedirect";
 
 import { AppShell } from "@/app/AppShell";
+import { ProposalTokenLayout } from "@/app/ProposalTokenLayout";
 import { ErrorScreen } from "@/app/ErrorScreen";
 import {
   GuardLoading,
@@ -100,7 +101,8 @@ export const router = createBrowserRouter([
       { path: "/privacy", element: <Suspense fallback={<GuardLoading />}><LegalPage doc="privacy" /></Suspense> },
       { path: "/terms", element: <Suspense fallback={<GuardLoading />}><LegalPage doc="terms" /></Suspense> },
       { path: "/pending", element: <PendingPage /> },
-      { path: "/p/:token", element: <Suspense fallback={<GuardLoading />}><ProposalTokenPage /></Suspense> },
+      // PX1 (owner 2026-11-21): signed in, the proposal keeps the app's usual top bar / bottom row (`AppShell`); without a session it stands alone.
+      { path: "/p/:token", element: <ProposalTokenLayout />, children: [{ index: true, element: <Suspense fallback={<GuardLoading />}><ProposalTokenPage /></Suspense> }] },
       { path: "*", element: <NotFoundPage /> },
     ],
   },

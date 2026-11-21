@@ -2037,7 +2037,7 @@ Owner: in the siddur (and the board) it is still hard to see who goes where. Two
 
 - **Editing a ride with several people and several stops (owner 2026-11-20).** In the edit form a member can add people and stops to their ride, but cannot set who gets off (or on) where — `RequestRidersField` (LT1 2b) is not reachable / not clear enough while editing — and the result is hard to manage and to see. Eventually every stop says who gets off / is picked up there ("ענבר יורדת בבנימינה, נגה עולה בזכרון"), on the form and on the ride sheet, read the same way as the summary sentence above. After AI1; check first with the owner which screen they used (the edit form, the ride sheet's "+ נוסע/ת", or the board).
 
-## Answering a proposal leaves you stuck on it (owner 2026-11-21, PX1) — not built yet
+## Answering a proposal leaves you stuck on it (owner 2026-11-21, PX1) — built 2026-11-21 (signed in: AppShell around `/p/:token`, toast + `/inbox`; no session unchanged; toast wording to approve)
 
 Owner: after a member answers a הצעה (accept / decline) on `/p/<token>` or the in-app proposal view, they stay on the proposal with no way out. After the answer: a toast (e.g. "התשובה נשלחה לסדרן/ית" — wording to approve) and back to `/notifications` (the inbox). And the proposal screen keeps the usual bottom navigation row instead of hiding it. Check both entries: signed in (full UI) and the no-sign-in token page (no inbox to go back to — there the toast + a link to sign in / the app).
 
