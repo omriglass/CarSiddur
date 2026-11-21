@@ -23,6 +23,7 @@ import { buildPersonBlocks, needsPersonBlocks, type RequestExtras } from "@/feat
 import { RidePublicNotesEditor } from "@/features/rides/components/RidePublicNotesEditor";
 import { RideRouteStops } from "@/features/rides/components/RideRouteStops";
 import { RideDetailsView } from "@/features/rides/components/RideDetailsView";
+import { RideSummaryLine } from "@/features/rides/components/RideSummaryLine";
 import { parseRideRoute, routeOverrunsWindow } from "@/lib/rideRoute";
 import type { DestinationPreset } from "@/components/DestinationCombobox";
 
@@ -176,6 +177,23 @@ export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenCha
   // R3B16: a volunteer driver is shown by the driver picker (name + remove); the passenger summary below must not repeat it.
   const volunteerShownByPicker = !!ride && !!driverCandidates && !ride.needs_driver && !!ride.driver_id && !servedOf(ride).some((entry) => entry.role === "driver");
   const servedEntries = ride ? withChildNames(servedOf(ride), requests) : [];
+  const blockLabel = ride && ride.origin_id && ride.destination_id && homeDestinationId
+    ? rideBlockLabel({
+      originId: ride.origin_id,
+      destinationId: ride.destination_id,
+      originName: ride.origin_name ?? "",
+      destinationName: ride.destination_name ?? "",
+      homeDestinationId,
+      served: servedOf(ride),
+      driverName: driverName ?? ride.driver_name,
+      isChauffeur: !!ride.is_chauffeur,
+      needsDriver: !!ride.needs_driver,
+      autoRelocation: !!ride.auto_relocation,
+      carMove: ride.pin_reason === "CAR_MOVE",
+      startsAt: ride.starts_at ?? undefined,
+      relayPartner: relayPartnerOf(ride, otherRides),
+    })
+    : null;
   // Everyone but the base request (the driver's, else the first) was added by a merge.
   const baseEntry = servedEntries.find((entry) => entry.role === "driver") ?? servedEntries[0];
   const addedPeople = servedEntries.filter((entry) => entry.request_id && entry.request_id !== baseEntry?.request_id);
@@ -297,6 +315,11 @@ export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenCha
                     <p className="text-muted-foreground">{tv("sadranRideSheet.seriesLine", { index: String(ride.series_index ?? 1), count: String(ride.series_count) })}</p>
                   ) : null}
 
+                  {/* RP1 (owner 2026-11-21): the siddur sheet's summary sentence, when it says more than the ride's label. */}
+                  {blockLabel && !reservation ? (
+                    <RideSummaryLine rideId={ride.id} version={ride.version} route={ride.route} people={peopleOf(ride)} lead={blockLabel} onlyWhenMore />
+                  ) : null}
+
                   {/* One line per served request (owner 2026-11-08: no repeated information, normal text colour). */}
                   {servedEntries.length && !reservation ? (
                     <ul className="space-y-2" data-testid="ride-sheet-requests">
@@ -337,22 +360,8 @@ export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenCha
                     <p className="whitespace-pre-wrap break-words text-foreground" data-testid="ride-sheet-summary-line">
                       {reservation
                         ? (ridePassengerSummary(servedEntries, ride.needs_driver || volunteerShownByPicker ? null : driverName ?? ride.driver_name, { addedNames }) || (driverName ?? ride.driver_name ?? ""))
-                        : ride.origin_id && ride.destination_id && homeDestinationId
-                          ? rideBlockLabel({
-                              originId: ride.origin_id,
-                              destinationId: ride.destination_id,
-                              originName: ride.origin_name ?? "",
-                              destinationName: ride.destination_name ?? "",
-                              homeDestinationId,
-                              served: servedOf(ride),
-                              driverName: driverName ?? ride.driver_name,
-                              isChauffeur: !!ride.is_chauffeur,
-                              needsDriver: !!ride.needs_driver,
-                              autoRelocation: !!ride.auto_relocation,
-                              carMove: ride.pin_reason === "CAR_MOVE",
-                              startsAt: ride.starts_at ?? undefined,
-                              relayPartner: relayPartnerOf(ride, otherRides),
-                            })
+                        : blockLabel
+                          ? blockLabel
                           : `${ride.origin_name} → ${ride.destination_name} · ${driverName ?? ride.driver_name}`}
                     </p>
                   )}

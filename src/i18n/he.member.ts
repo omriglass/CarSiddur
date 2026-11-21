@@ -726,6 +726,11 @@ export const heMember = {
     pick: "לאסוף את {{names}}",
     dropAndPick: "להוריד את {{off}} ולאסוף את {{on}}",
     back: "בחזור {{text}}",
+    /** RP1 (owner 2026-11-21, wording to approve): who stays at the far end / is picked up there on the way back. */
+    leaveThere: "משאירים שם את {{names}}",
+    leaveAt: "משאירים ב{{place}} את {{names}}",
+    pickUpThere: "אוספים שם את {{names}}",
+    pickUpAt: "אוספים ב{{place}} את {{names}}",
     listAnd: "{{init}} ו{{last}}",
   },
   /** SD1 (REQ item 256, owner-approved 2026-11-19): the ride's time constraints, per person or per route. */

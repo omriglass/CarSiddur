@@ -23,14 +23,26 @@ function viaPhrase(row: StopRow): string {
   return [tv("rideSummary.via", { place }), what].filter(Boolean).join(" ");
 }
 
-/** The sentence: the ride's own label (`rideBlockLabel`), then the places in the middle of each way. */
+/**
+ * The sentence: the ride's own label (`rideBlockLabel`), then the places in the middle of each way. RP1 (owner
+ * 2026-11-21): on a ride that goes both ways, also who stays at the far end ("משאירים שם את ענבר") and who is picked up
+ * there on the way back ("בחזור אוספים שם את נגה") - "שם" while nothing was said about another place, else the place.
+ */
 export function rideSummaryText(lead: string, rows: readonly StopRow[]): string {
-  const middle = (leg: StopRow["leg"]) => {
-    const legRows = rows.filter((row) => row.leg === leg);
-    return legRows.slice(1, -1).map(viaPhrase).join(", ");
-  };
-  const out = middle("out");
-  const back = middle("return");
+  const legRows = (leg: StopRow["leg"]) => rows.filter((row) => row.leg === leg);
+  const middle = (leg: StopRow["leg"]) => legRows(leg).slice(1, -1).map(viaPhrase).join(", ");
+  const outRows = legRows("out");
+  const backRows = legRows("return");
+  const farEnd = outRows[outRows.length - 1];
+  const backStart = backRows[0];
+  const stays = farEnd && backStart ? farEnd.off.filter((name) => !backStart.on.includes(name)) : [];
+  const joins = farEnd && backStart ? backStart.on.filter((name) => !farEnd.off.includes(name)) : [];
+  const outMiddle = middle("out");
+  const at = (key: "leave" | "pickUp", place: string, names: string[]) => (outMiddle
+    ? tv(`rideSummary.${key}At`, { place, names: namesList(names) })
+    : tv(`rideSummary.${key}There`, { names: namesList(names) }));
+  const out = [outMiddle, stays.length && farEnd ? at("leave", farEnd.point.name, stays) : ""].filter(Boolean).join(", ");
+  const back = [joins.length && backStart ? at("pickUp", backStart.point.name, joins) : "", middle("return")].filter(Boolean).join(", ");
   const first = out ? `${lead}, ${out}.` : back ? `${lead}.` : lead;
   return back ? `${first} ${tv("rideSummary.back", { text: back })}.` : first;
 }
