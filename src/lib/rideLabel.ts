@@ -71,6 +71,12 @@ export interface RideLabelInput {
   /** The places the ride passes on each way, by name (`rideViaNames`). Owner 2026-11-16: folded into the label -
    *  "חבר ל- זכרון יעקב, בנימינה. חזור: זכרון יעקב. אדמין מגבעת חביבה" - instead of a separate "דרך: … · חזרה דרך: …". */
   via?: { out: readonly string[]; return: readonly string[] };
+  /**
+   * RP1 (owner 2026-11-21): everyone on the ride by name, driver first (`riderShortNames`). A ride with one destination
+   * then names them all - "חבר, נגה וענבר לבנימינה" - instead of only the requesters; `out.ridersNamed` says it did.
+   */
+  riders?: readonly string[];
+  out?: { ridersNamed?: boolean };
 }
 
 function firstName(fullName: string): string {
@@ -204,8 +210,11 @@ function rideLabelParts(input: RideLabelInput, toPlace: (place: string) => strin
   if (input.served.length === 1 && driver?.car_mode === "relay") {
     // R3B19: a one-way ride that ends at the department home leaves no car parked away.
     if (driver.trip_type === "one_way" && input.destinationId !== input.homeDestinationId) {
+      // RP1 (owner 2026-11-21): everyone on it by name, like any simple ride.
+      const riders = (input.riders ?? []).filter(Boolean);
+      if (riders.length && input.out) input.out.ridersNamed = true;
       return [tv("rideCoordination.oneWayParked", {
-        name: driver.requester ? firstName(driver.requester) : "",
+        name: riders.length ? hebrewList(riders) : driver.requester ? firstName(driver.requester) : "",
         place: driver.leg === "return" ? input.originName : input.destinationName,
       })];
     }
@@ -249,7 +258,9 @@ function rideLabelParts(input: RideLabelInput, toPlace: (place: string) => strin
     });
   }
   // Owner 2026-11-17: a ride with no request behind it (a time hold) still says whose it is - its driver.
-  const names = (input.served.length ? [driver, ...passengers].map((s) => (s?.requester ? firstName(s.requester) : null))
+  const riders = (input.riders ?? []).filter(Boolean);
+  if (riders.length && input.out) input.out.ridersNamed = true;
+  const names = (riders.length ? [...riders] : input.served.length ? [driver, ...passengers].map((s) => (s?.requester ? firstName(s.requester) : null))
     : [input.needsDriver ? null : input.driverName?.trim() ? firstName(input.driverName) : null])
     .filter((n): n is string => !!n);
   const who = hebrewList(names);

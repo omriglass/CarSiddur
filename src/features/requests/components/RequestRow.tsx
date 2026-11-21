@@ -200,7 +200,8 @@ export function RequestRow({
       {row.editorOf ? <p className="text-xs text-muted-foreground" data-testid="request-editor-line"><bdi>{tv("request.editorOf", { name: row.editorOf })}</bdi></p> : null}
       {row.childOf && !row.editorOf ? <p className="text-xs text-muted-foreground" data-testid="request-child-line"><bdi>{tv("myWeek.kidRideOf", { name: row.childOf })}</bdi></p> : null}
       {row.companionOf ? <p className="text-xs text-muted-foreground" data-testid="request-companion-line"><bdi>{tv("request.companionAddedBy", { name: row.companionOf })}</bdi></p> : null}
-      {others ? (
+      {/* RP1 (owner 2026-11-21): a placed request's people are on its ride card - one list, not two. */}
+      {others && !rides?.length ? (
         <p className="text-xs text-muted-foreground" data-testid="request-other-people">{tv("ridePublicDetails.companions", { names: others })}</p>
       ) : null}
       {row.rideDescription ? <p className="text-xs text-muted-foreground" data-testid="request-description"><bdi>{row.rideDescription}</bdi></p> : null}

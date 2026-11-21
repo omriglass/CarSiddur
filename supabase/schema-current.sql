@@ -24382,6 +24382,18 @@ end $$;
 ALTER FUNCTION "public"."rides_settle_ride_changes"() OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."rides_stretches"("p_ride_ids" "uuid"[]) RETURNS "jsonb"
+    LANGUAGE "sql" STABLE
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  select coalesce(jsonb_object_agg(t.id::text, public.ride_stretches(t.id)), '{}'::jsonb)
+    from (select distinct u.id from unnest(p_ride_ids[1:200]) as u(id) where u.id is not null) t;
+$$;
+
+
+ALTER FUNCTION "public"."rides_stretches"("p_ride_ids" "uuid"[]) OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."rides_sync_request_coverage"() RETURNS "trigger"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -41989,6 +42001,12 @@ GRANT ALL ON FUNCTION "public"."rides_release_join_requests"() TO "service_role"
 
 REVOKE ALL ON FUNCTION "public"."rides_settle_ride_changes"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."rides_settle_ride_changes"() TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."rides_stretches"("p_ride_ids" "uuid"[]) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."rides_stretches"("p_ride_ids" "uuid"[]) TO "service_role";
+GRANT ALL ON FUNCTION "public"."rides_stretches"("p_ride_ids" "uuid"[]) TO "authenticated";
 
 
 

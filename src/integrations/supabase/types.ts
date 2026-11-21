@@ -9028,6 +9028,7 @@ export type Database = {
         Returns: Json
       }
       ride_stretches: { Args: { p_ride_id: string }; Returns: Json }
+      rides_stretches: { Args: { p_ride_ids: string[] }; Returns: Json }
       rides_with_people: {
         Args: {
           p_child_ids: string[]

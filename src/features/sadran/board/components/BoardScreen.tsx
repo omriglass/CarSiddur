@@ -623,7 +623,7 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
                 originName: r.origin_name ?? "",
                 // Same fix as the grid's `rideBlockLabel` (bug #3): a round
                 // trip's own `destination_name` is always home ("נבו").
-                ...rideDescriptionFields(servedOf(r).length ? r.notes : null, withChildNames(servedOf(r), board.requestsQuery.data ?? []), { addedNames: addedPeopleNames(r, servedOf(r)), driverName: r.needs_driver ? null : r.driver_name }),
+                ...rideDescriptionFields(servedOf(r).length ? r.notes : null, withChildNames(servedOf(r), board.requestsQuery.data ?? []), { addedNames: addedPeopleNames(r, servedOf(r)), driverName: r.needs_driver ? null : r.driver_name, includeCompanions: !board.namesEveryoneRideIds.has(r.id as string) }),
                 ...rideCoordinatorNoteFields(servedOf(r), board.requestsQuery.data ?? []),
                 label: board.weekGridRides.find((item) => item.id === r.id)?.label,
                 destinationName: (

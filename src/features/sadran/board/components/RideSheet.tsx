@@ -46,7 +46,7 @@ import { rideBlockLabel } from "../rideLabel";
 import { requestRouteText } from "../requestRoute";
 import { isReservation } from "@/features/rides/servedOf";
 import { namedPassengersOf, relayPartnerOf, servedOf, withChildNames } from "../../solverRun";
-import { addedPeopleNames, peopleOf } from "@/features/rides/ridePeople";
+import { addedPeopleNames, peopleOf, riderShortNames } from "@/features/rides/ridePeople";
 import { RidePassengersEditor } from "./RidePassengersEditor";
 import { PlanSwitchButton } from "./PlanSwitchButton";
 import { TripTypeChange } from "./TripTypeChange";
@@ -192,6 +192,7 @@ export function RideSheet({ ride, cars, driverName, homeDestinationId, onOpenCha
       carMove: ride.pin_reason === "CAR_MOVE",
       startsAt: ride.starts_at ?? undefined,
       relayPartner: relayPartnerOf(ride, otherRides),
+      riders: riderShortNames(ride),
     })
     : null;
   // Everyone but the base request (the driver's, else the first) was added by a merge.

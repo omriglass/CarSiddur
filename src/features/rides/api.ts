@@ -241,6 +241,17 @@ export async function fetchRideStretches(rideId: string): Promise<RideStretches>
   return parsed.success ? parsed.data : null;
 }
 
+/** RP1 (owner 2026-11-21): several rides' stretches in one call (`rides_stretches`, at most 200) - for the ride cards. */
+export async function fetchRidesStretches(rideIds: readonly string[]): Promise<Map<string, RideStretches>> {
+  const data = await rpc("rides_stretches", { p_ride_ids: [...rideIds] });
+  const out = new Map<string, RideStretches>();
+  for (const [id, value] of Object.entries((data ?? {}) as Record<string, unknown>)) {
+    const parsed = rideStretchesSchema.safeParse(value);
+    if (parsed.success) out.set(id, parsed.data);
+  }
+  return out;
+}
+
 /** REQ item 246 h: how someone on the ride rides it (`parts`: per leg null = not riding, else the board / alight places). */
 export async function setRidePersonPart(rideId: string, expectedVersion: number, key: string, parts: Record<string, unknown>): Promise<void> {
   await rpc("set_ride_person_part", { p_ride_id: rideId, p_expected_version: expectedVersion, p_key: key, p_parts: parts as unknown as Json });

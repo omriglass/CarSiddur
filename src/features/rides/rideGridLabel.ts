@@ -1,7 +1,9 @@
 import { rideBlockLabel } from "@/lib/rideLabel";
+import { ridePassengerParts } from "@/lib/ridePassengerSummary";
 import { viaLabel } from "@/lib/routeLabel";
 
 import type { BoardRide } from "./api";
+import { addedPeopleNames, riderShortNames } from "./ridePeople";
 import { rideViaNames, servedOf } from "./servedOf";
 
 /**
@@ -11,6 +13,26 @@ import { rideViaNames, servedOf } from "./servedOf";
  * driver and the place and shows the notes under it.
  */
 export function rideGridLabel(ride: BoardRide, homeDestinationId: string | null | undefined, { notesAsLabel = true } = {}): string {
+  return rideCardLabel(ride, homeDestinationId, { notesAsLabel }).label;
+}
+
+/**
+ * RP1 (owner 2026-11-21): the card's title and whether it names everyone on the ride. A complex ride's flow sentence
+ * (`summary`, `useRideSummaries`) is the title; a simple ride names all its riders ("חבר, נגה וענבר לבנימינה"). When
+ * the title names everyone (and nobody rides unnamed), the card drops its "נוסעים" line.
+ */
+export function rideCardLabel(ride: BoardRide, homeDestinationId: string | null | undefined,
+  { notesAsLabel = true, summary }: { notesAsLabel?: boolean; summary?: string } = {}): { label: string; namesEveryone: boolean } {
+  const served = servedOf(ride);
+  const parts = ridePassengerParts(served, ride.needs_driver ? null : ride.driver_name, { addedNames: addedPeopleNames(ride, served) });
+  const unnamed = parts.adults + parts.children > 0;
+  if (summary) return { label: summary, namesEveryone: !unnamed };
+  const out: { ridersNamed?: boolean } = {};
+  const label = rideBaseLabel(ride, homeDestinationId, notesAsLabel, out);
+  return { label, namesEveryone: !!out.ridersNamed && !unnamed };
+}
+
+function rideBaseLabel(ride: BoardRide, homeDestinationId: string | null | undefined, notesAsLabel: boolean, out: { ridersNamed?: boolean }): string {
   const served = servedOf(ride);
   if (notesAsLabel && !served.length && ride.notes) return ride.notes;
   if (!(homeDestinationId && ride.origin_id && ride.destination_id)) {
@@ -31,5 +53,7 @@ export function rideGridLabel(ride: BoardRide, homeDestinationId: string | null 
     autoRelocation: !!ride.auto_relocation,
     carMove: ride.pin_reason === "CAR_MOVE",
     startsAt: ride.starts_at ?? undefined,
+    riders: riderShortNames(ride),
+    out,
   });
 }

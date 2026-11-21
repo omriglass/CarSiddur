@@ -14,7 +14,9 @@ import { luggageMarker, towMarker } from "@/lib/luggageWaiver";
 import { TZ, dateKey, formatTime } from "@/lib/time";
 import { rideDescriptionFields } from "@/lib/ridePublicDetails";
 import { ridePassengerSummary } from "@/lib/ridePassengerSummary";
-import { addedPeopleNames } from "@/features/rides/ridePeople";
+import { addedPeopleNames, riderShortNames } from "@/features/rides/ridePeople";
+import { rideCardLabel } from "@/features/rides/rideGridLabel";
+import { useRideSummaries } from "@/features/rides/useRideSummaries";
 import { fetchCarSeatConfigs } from "@/features/fleet/api";
 import { useDestinations, useRideTypes } from "@/features/fleet/hooks";
 import { buildWeek } from "@/features/solverBridge/buildSolverInput";
@@ -528,6 +530,9 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
   const rides = ridesQuery.data ?? [];
   // REQ item 248: a member's edit may leave more people than seats - shown until someone fixes it
   const seatShortfalls = useSeatShortfalls(rides, departmentId);
+  // RP1 (owner 2026-11-21): a complex ride's block says it as a flow; a simple one names everyone in its title.
+  const rideSummaries = useRideSummaries(rides, department?.home_destination_id ?? null);
+  const namesEveryoneRideIds = new Set<string>();
   const awaitingDriverRequestIds = new Set(rides.filter((ride) => ride.needs_driver).flatMap((ride) => servedOf(ride).map((entry) => entry.request_id)));
 
   // REQ §13.94: route data for the merged-ride twin (`src/lib/rideRoute.ts`) and for the one-way
@@ -752,6 +757,12 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
 
   const shadowedRideIds = new Set((rideChangesQuery.data ?? []).filter((change) => !change.is_planning).flatMap((change) => [...(change.ride_id ? [change.ride_id] : []), ...change.parties.map((party) => party.ride_id)]));
   const connectedRideIds = connectedPairRideIds(rides);
+  /** The block's title names everyone on the ride (the flow sentence, or a simple ride's riders) - no "נוסעים" line then. */
+  const rideNamesEveryone = (r: (typeof rides)[number]) => {
+    const named = rideCardLabel(r, department?.home_destination_id ?? null, { summary: r.id ? rideSummaries.get(r.id) : undefined }).namesEveryone;
+    if (named && r.id) namesEveryoneRideIds.add(r.id);
+    return named;
+  };
   const weekGridRides: WeekGridRide[] = activeDayRidesAll
     .filter((r) => r.id && r.car_id && r.starts_at && r.ends_at)
     .map((r) => ({
@@ -775,11 +786,13 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
       // alone is always the department's own name ("נבו") for the common
       // case — `rideBlockLabel` composes "<driver> ו<passengers> ל<real
       // destination>" from `served` instead (see `rideLabel.ts`).
-      ...rideDescriptionFields(servedOf(r).length ? r.notes : null, withChildNames(servedOf(r), requestsQuery.data ?? []), { addedNames: addedPeopleNames(r, servedOf(r)), driverName: r.needs_driver ? null : r.driver_name }),
+      ...rideDescriptionFields(servedOf(r).length ? r.notes : null, withChildNames(servedOf(r), requestsQuery.data ?? []), { addedNames: addedPeopleNames(r, servedOf(r)), driverName: r.needs_driver ? null : r.driver_name, includeCompanions: !rideNamesEveryone(r) }),
       ...rideCoordinatorNoteFields(servedOf(r), requestsQuery.data ?? []),
       // REQUIREMENTS §13.93 "Multi-stop rides" Display: "· דרך: פתח תקווה, תל אביב" — the stops by
       // name (owner 2026-10-05: not a count), only when the ride passes any (`rideViaNames`).
       label: (() => {
+        const summary = r.id ? rideSummaries.get(r.id) : undefined;
+        if (summary) return summary;
         const viaNames = rideViaNames(r);
         const labelled = !(!servedOf(r).length && r.notes) && !!(department?.home_destination_id && r.origin_id && r.destination_id);
         const base = (!servedOf(r).length && r.notes) || (
@@ -799,6 +812,7 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
                 carMove: r.pin_reason === "CAR_MOVE",
                 startsAt: r.starts_at ?? undefined,
                 relayPartner: relayPartnerOf(r, rides),
+                riders: riderShortNames(r),
               })
             : (r.destination_name ?? ""));
         const via = labelled ? "" : viaLabel(viaNames);
@@ -1085,6 +1099,7 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
     draftByRideId,
     shadowedRideIds,
     weekGridRides,
+    namesEveryoneRideIds,
     awayByCarId,
     awayWeekGridBlocks,
     dayWaitlistGroups,

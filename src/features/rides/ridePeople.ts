@@ -159,3 +159,16 @@ export function myRidePersonKey(ride: Pick<BoardRide, "people" | "driver_id">, p
   if (people.some((person) => person.person_id === profileId && person.source === "driver")) return null;
   return people.find((person) => person.person_id === profileId && person.source !== "driver")?.key ?? null;
 }
+
+/** First names, unless two of them share one (then the full names). */
+export function shortNames(names: readonly string[]): string[] {
+  const first = (name: string) => name.split(/\s+/)[0] ?? name;
+  const count = new Map<string, number>();
+  for (const name of new Set(names)) count.set(first(name), (count.get(first(name)) ?? 0) + 1);
+  return names.map((name) => (count.get(first(name)) === 1 ? first(name) : name));
+}
+
+/** RP1 (owner 2026-11-21): everyone on the ride for its title, driver first - "חבר, נגה וענבר לבנימינה". */
+export function riderShortNames(ride: Pick<BoardRide, "people">): string[] {
+  return shortNames(peopleOf(ride).map((person) => person.display_name.trim()).filter(Boolean));
+}

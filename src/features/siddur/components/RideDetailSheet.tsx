@@ -37,7 +37,7 @@ import { RideRouteStops } from "@/features/rides/components/RideRouteStops";
 import { RideStopsView } from "@/features/rides/components/RideStopsView";
 import { RideSummaryLine } from "@/features/rides/components/RideSummaryLine";
 import { parseRideRoute } from "@/lib/rideRoute";
-import { peopleOf } from "@/features/rides/ridePeople";
+import { peopleOf, riderShortNames } from "@/features/rides/ridePeople";
 import type { HandOverCandidate } from "@/features/rides/handOver";
 import type { OwnCar } from "@/features/rides/useOwnCarMove";
 import type { FreedCarPreviewRequest } from "@/features/rides/api";
@@ -73,6 +73,7 @@ function headerLabel(ride: BoardRide, served: readonly ServedEntry[], homeDestin
     carMove: ride.pin_reason === "CAR_MOVE",
     startsAt: ride.starts_at ?? undefined,
     relayPartner: relayPartnerOf(ride, weekRides),
+    riders: riderShortNames(ride),
   });
 }
 

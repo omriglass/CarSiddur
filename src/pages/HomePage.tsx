@@ -4,6 +4,7 @@ import { cancelRidePreview, editRidePreview, removeMePreview } from "@/features/
 import { useFreedCarGate, useFreedCarLine } from "@/features/rides/useFreedCar";
 import { FreedCarConfirmDialog, KeepOutButton } from "@/features/rides/FreedCarConfirmDialog";
 import { seatsShortText, useSeatShortfalls } from "@/features/rides/useSeatShortfalls";
+import { useRideSummaries } from "@/features/rides/useRideSummaries";
 import { useActiveDepartment } from "@/features/auth/useActiveDepartment";
 import { useWeekChangeWatch } from "@/features/liveSync/useWeekChangeWatch";
 import { ChevronDown, Inbox, MessageCircleQuestion } from "lucide-react";
@@ -156,6 +157,8 @@ export function HomePage() {
   const openCarIssuesQuery = useOpenCarIssuesQuery([...new Set((upcomingRidesQuery.data ?? []).flatMap((ride) => (ride.car_id ? [ride.car_id] : [])))]);
   // REQ item 248: more people than seats after a member's edit - a warning on the card until someone fixes it
   const seatShortfalls = useSeatShortfalls(upcomingRidesQuery.data ?? [], active.departmentId);
+  // RP1 (owner 2026-11-21): a complex ride's card says it as a flow; a simple one names everyone in its title.
+  const rideSummaries = useRideSummaries(upcomingRidesQuery.data ?? [], (ride) => homeDestinationIds[ride.department_id ?? ""]);
   const rideTypesQuery = useRideTypes();
   const myCarsQuery = useMyResponsibleCarsQuery();
   // REQ item 150 (d): cars I became responsible for and have not yet completed a checklist for.
@@ -392,7 +395,7 @@ export function HomePage() {
       neighbours: ride.id ? neighboursByRide?.get(ride.id) : undefined,
       tight: !!ride.id && tightRideIds.has(ride.id),
       relatedLabel: related?.length ? tv("myWeek.kidRideOf", { name: related.map((entry) => entry.name).join(", ") }) : undefined,
-    }, ride.department_id ? homeDestinationIds[ride.department_id] : undefined);
+    }, ride.department_id ? homeDestinationIds[ride.department_id] : undefined, ride.id ? rideSummaries.get(ride.id) : undefined);
     // REQ item 248: more people than seats after a member's edit
     const seatsShort = ride.id ? seatsShortText(seatShortfalls.get(ride.id)) : undefined;
     // CR1 (REQ item 257): the car's open issues, on every ride of mine.

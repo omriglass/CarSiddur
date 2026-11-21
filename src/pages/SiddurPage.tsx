@@ -97,7 +97,8 @@ import { EditModeButton } from "@/features/rides/components/EditModeButton";
 import { useDragHint, useEditMode } from "@/features/rides/editMode";
 import type { Week, BoardRide } from "@/features/siddur/api";
 import { representativeRideTypeCode, servedOf } from "@/features/rides/servedOf";
-import { rideGridLabel } from "@/features/rides/rideGridLabel";
+import { rideCardLabel } from "@/features/rides/rideGridLabel";
+import { useRideSummaries } from "@/features/rides/useRideSummaries";
 import { isRideDayEditable } from "@/features/rides/rideDayEditable";
 import { addedPeopleNames, myRidePersonKey } from "@/features/rides/ridePeople";
 import type { LegName } from "@/lib/rideLegMark";
@@ -223,6 +224,9 @@ export function SiddurPage() {
   const rides = boardRidesQuery.data ?? [];
   // REQ item 248: more people than seats after a member's edit - a warning on the ride until someone fixes it
   const seatShortfalls = useSeatShortfalls(rides, departmentId);
+  // RP1 (owner 2026-11-21): a complex ride's card says it as a flow; a simple one names everyone in its title.
+  const rideSummaries = useRideSummaries(rides, homeDestinationId);
+  const cardLabelOf = (r: BoardRide) => rideCardLabel(r, homeDestinationId, { summary: r.id ? rideSummaries.get(r.id) : undefined });
   const editableOwnRequest = selectedRideId
     ? (myRequestsQuery.data ?? []).find((request) => request.ride?.id === selectedRideId && canEditRequest(request))
     : undefined;
@@ -505,9 +509,9 @@ export function SiddurPage() {
       endMinutes: minutesSinceMidnight(r.starts_at as string) + (Date.parse(r.ends_at as string) - Date.parse(r.starts_at as string)) / 60_000,
       // REQUIREMENTS §13.93 "Multi-stop rides" Display: "· N עצירות" appended only when the
       // ride actually serves a request with stops (same marker as the Sadran board).
-      label: rideGridLabel(r, homeDestinationId),
+      label: cardLabelOf(r).label,
       rideTypeCode: representativeRideTypeCode(servedOf(r)),
-      ...rideDescriptionFields(servedOf(r).length ? r.notes : null, servedOf(r), { addedNames: addedNamesOf(r), driverName: r.needs_driver ? null : r.driver_name }),
+      ...rideDescriptionFields(servedOf(r).length ? r.notes : null, servedOf(r), { addedNames: addedNamesOf(r), driverName: r.needs_driver ? null : r.driver_name, includeCompanions: !cardLabelOf(r).namesEveryone }),
       ...rideCoordinatorNoteFields(servedOf(r), coordinatorRequests),
       shadowed: shadowedRideIds.has(r.id as string),
       needsDriver: !!r.needs_driver,
@@ -726,7 +730,7 @@ export function SiddurPage() {
                     originName: r.origin_name ?? "",
                     destinationName,
                     label: weekGridRides.find((item) => item.id === r.id)?.label,
-                    ...rideDescriptionFields(servedOf(r).length ? r.notes : null, servedOf(r), { addedNames: addedNamesOf(r), driverName: r.needs_driver ? null : r.driver_name }),
+                    ...rideDescriptionFields(servedOf(r).length ? r.notes : null, servedOf(r), { addedNames: addedNamesOf(r), driverName: r.needs_driver ? null : r.driver_name, includeCompanions: !cardLabelOf(r).namesEveryone }),
                     ...rideCoordinatorNoteFields(servedOf(r), coordinatorRequests),
                     driverName: r.driver_name,
                     isChauffeur: !!r.is_chauffeur,

@@ -6,6 +6,7 @@
 // ("חבר לבנימינה"). Built from the stops view's rows (`stopRows`), so the two never disagree.
 import { he, tv } from "@/i18n/he";
 
+import { shortNames } from "./ridePeople";
 import type { StopRow } from "./rideStretches";
 
 /** "נועה", "נועה ועידו", "נועה, עידו ודנה". */
@@ -15,12 +16,11 @@ export function namesList(names: readonly string[]): string {
 }
 
 /** First names, unless two people share one. */
-function shortNames(rows: readonly StopRow[]): (name: string) => string {
-  const all = new Set(rows.flatMap((row) => [...row.on, ...row.off]));
-  const first = (name: string) => name.split(/\s+/)[0] ?? name;
-  const count = new Map<string, number>();
-  for (const name of all) count.set(first(name), (count.get(first(name)) ?? 0) + 1);
-  return (name) => (count.get(first(name)) === 1 ? first(name) : name);
+function shortNamesOf(rows: readonly StopRow[]): (name: string) => string {
+  const all = [...new Set(rows.flatMap((row) => [...row.on, ...row.off]))];
+  const short = shortNames(all);
+  const map = new Map(all.map((name, i) => [name, short[i]!]));
+  return (name) => map.get(name) ?? name;
 }
 
 /** One way as a flow: who leaves from where, what happens at each place on the way, where they go on to. */
@@ -57,16 +57,24 @@ function plain(out: readonly StopRow[], back: readonly StopRow[]): boolean {
   return !out.length || !back.length || [...out[0]!.on].sort().join("|") === [...back[0]!.on].sort().join("|");
 }
 
+/** Each way as a flow, or null when there is nothing to explain (a simple ride: its label says it). */
+export function rideFlowText(rows: readonly StopRow[], homeId: string | null = null, oneWay: "out" | "return" | null = null): string | null {
+  const out = rows.filter((row) => row.leg === "out");
+  const back = rows.filter((row) => row.leg === "return");
+  if (!rows.length || plain(out, back)) return null;
+  const short = shortNamesOf(rows);
+  if (!out.length || !back.length) {
+    const text = legText(out.length ? out : back, homeId, short);
+    return `${oneWay ? tv(oneWay === "out" ? "rideSummary.onlyOut" : "rideSummary.onlyBack", { text }) : text}.`;
+  }
+  return `${legText(out, homeId, short)}. ${tv("rideSummary.back", { text: legText(back, homeId, short) })}.`;
+}
+
 /**
  * The sentence; `lead` (the ride's label) when there is nothing more to say. `oneWay`: the ride goes that way only
  * (its route has no other leg) - said clearly, "· הלוך בלבד" / "· חזור בלבד" (owner 2026-11-21).
  */
 export function rideSummaryText(lead: string, rows: readonly StopRow[], homeId: string | null = null, oneWay: "out" | "return" | null = null): string {
-  const mark = (text: string) => (oneWay ? tv(oneWay === "out" ? "rideSummary.onlyOut" : "rideSummary.onlyBack", { text }) : text);
-  const out = rows.filter((row) => row.leg === "out");
-  const back = rows.filter((row) => row.leg === "return");
-  if (!rows.length || plain(out, back)) return mark(lead);
-  const short = shortNames(rows);
-  if (!out.length || !back.length) return `${mark(legText(out.length ? out : back, homeId, short))}.`;
-  return `${legText(out, homeId, short)}. ${tv("rideSummary.back", { text: legText(back, homeId, short) })}.`;
+  return rideFlowText(rows, homeId, oneWay)
+    ?? (oneWay ? tv(oneWay === "out" ? "rideSummary.onlyOut" : "rideSummary.onlyBack", { text: lead }) : lead);
 }

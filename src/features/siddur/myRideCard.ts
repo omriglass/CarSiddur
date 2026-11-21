@@ -6,7 +6,7 @@ import { tv } from "@/i18n/he";
 import { carHandoverNotes, type CarNeighbours } from "@/features/rides/carHandover";
 import { servedOf } from "@/features/rides/servedOf";
 import { addedPeopleNames } from "@/features/rides/ridePeople";
-import { rideGridLabel } from "@/features/rides/rideGridLabel";
+import { rideCardLabel } from "@/features/rides/rideGridLabel";
 import type { BoardRide } from "./api";
 
 export function myRideCard(
@@ -17,6 +17,8 @@ export function myRideCard(
   handover?: { viewerId: string | undefined; neighbours: CarNeighbours | undefined; tight?: boolean; relatedLabel?: string },
   /** Owner 2026-11-17: with the department's home known, the card says what the siddur says - whose ride, where. */
   homeDestinationId?: string | null,
+  /** RP1 (owner 2026-11-21): a complex ride's flow sentence (`useRideSummaries`) - the card's title then. */
+  summary?: string,
 ): RideCardData | null {
   if (!ride.id || !ride.starts_at) return null;
   const served = servedOf(ride);
@@ -43,6 +45,7 @@ export function myRideCard(
   const viewerId = handover?.viewerId;
   const participates = !!viewerId && (ride.driver_id === viewerId || !!ownEntry);
   const handoverNotes = participates && !handover?.relatedLabel ? carHandoverNotes(handover?.neighbours, viewerId, [viewerId]) : undefined;
+  const cardLabel = homeDestinationId ? rideCardLabel(ride, homeDestinationId, { notesAsLabel: false, summary }) : null;
   return {
     handover: handoverNotes,
     tightSchedule: handover?.tight || undefined,
@@ -52,13 +55,13 @@ export function myRideCard(
     originName: ride.origin_name ?? "", destinationName: destination,
     // Owner 2026-11-17: the same line as the siddur (the driver and the places, everyone on it), then the notes, then
     // the other riders; the joining lines are inside it.
-    label: homeDestinationId ? rideGridLabel(ride, homeDestinationId, { notesAsLabel: false }) : chauffeur ? chauffeurRideLabel(ride.needs_driver ? null : ride.driver_name, passengers, ride.starts_at, ride.origin_id ?? undefined,
+    label: homeDestinationId ? cardLabel!.label : chauffeur ? chauffeurRideLabel(ride.needs_driver ? null : ride.driver_name, passengers, ride.starts_at, ride.origin_id ?? undefined,
       { from: ride.origin_name ?? "", to: ride.destination_name ?? "" })
       : tv(ownEntry?.leg === "return" ? "home.rideFrom" : "home.rideTo", { destination }),
     showDay: true,
     purpose: ownRequest?.rideTypeName || purposes.join(" / ") || rideTypes.find((type) => type.code === "other")?.name_he,
     joining: homeDestinationId ? undefined : joining,
-    ...rideDescriptionFields(ride.notes, served, { addedNames: addedPeopleNames(ride, served) }),
+    ...rideDescriptionFields(ride.notes, served, { addedNames: addedPeopleNames(ride, served), driverName: ride.needs_driver ? null : ride.driver_name, includeCompanions: !cardLabel?.namesEveryone }),
     driverName: ride.driver_name, carName: ride.car_name, carOnTop: true, carId: ride.car_id, carType: ride.car_type ?? undefined,
     isChauffeur: chauffeur, needsDriver: !!ride.needs_driver, isMine: !handover?.relatedLabel,
     rideTypeCode: ownRequest?.rideTypeCode ?? served[0]?.ride_type,

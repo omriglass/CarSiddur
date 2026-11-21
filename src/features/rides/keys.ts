@@ -17,4 +17,6 @@ export const ridesKeys = {
   carNeighbours: (rideIds: readonly string[]) => [siddurKeys.all[0], "carNeighbours", [...rideIds].sort().join(",")] as const,
   /** REQ item 246 h: one ride's stops view (`ride_stretches`), read when its sheet opens; the ride's version keeps it fresh. */
   stretches: (rideId: string, version: number | null | undefined) => [siddurKeys.all[0], "rideStretches", rideId, version ?? null] as const,
+  /** RP1: the cards' complex rides in one read (`rides_stretches`), keyed by each ride's id and version. */
+  stretchesBatch: (rides: readonly string[]) => [siddurKeys.all[0], "rideStretchesBatch", [...rides].sort().join(",")] as const,
 };

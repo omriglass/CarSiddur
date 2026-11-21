@@ -208,6 +208,14 @@ begin
      and v_x #> '{return,fixed,0}' = jsonb_build_object('at', d0 + interval '5 hours', 'anchor', 'leave', 'flex', 0),
     format('TEST 10 FAILED: stated hours (%s)', v_x);
 
+  -----------------------------------------------------------------------
+  -- RP1 (2026-11-21): the batched read for the ride cards - the same per ride; nulls and repeats ignored.
+  -----------------------------------------------------------------------
+  v_x := public.rides_stretches(array[rA, rA, null]::uuid[]);
+  assert v_x = jsonb_build_object(rA::text, public.ride_stretches(rA)), format('TEST RP1 FAILED: rides_stretches (%s)', v_x);
+  assert public.rides_stretches(array[]::uuid[]) = '{}'::jsonb, 'TEST RP1 FAILED: empty';
+
+
   raise notice 'ride_people_parts.sql: all assertions passed';
 end $$;
 
