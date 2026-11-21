@@ -7,7 +7,7 @@
  * No Hebrew here (hard rule 3): place names, people and the member's text arrive as data in the user turn.
  */
 
-export const PROMPT_VERSION = "ai1-2026-11-20.6";
+export const PROMPT_VERSION = "ai1-2026-11-21.7";
 
 export interface AskPlace { name: string; aliases?: string[] }
 export interface AskPerson { name: string; kind: "child" | "member"; drives?: boolean }
@@ -69,6 +69,8 @@ Rules:
   "the kids" = all the member's children. The member themselves is never in people. extra_adults = unnamed extra adults
   ("a friend", "a guest", "two more" are extra_adults, not people).
 - needs: "large_trunk" for a lot of luggage / a big trunk; "tow_hitch" for a towing hook.
+- find_ride: fill date, time, time_mode, destination and origin exactly as for a new_request (the app searches with them);
+  never ask anything.
 - ride_info: matching_rides lists the ref of every ride in my_rides the question is about (by day, place, time, people); every
   ride when it asks about all of them or about a whole week. Set date when a single day is said. Never ask anything.
 - Edits and cancels: matching_rides lists the ref of EVERY ride in my_rides the message could mean (by day, place, time, people).
@@ -80,7 +82,17 @@ Rules:
   BY that amount. Its imperative "ta'arich" (lengthen!) is spelled exactly like the noun "date": at the start of a message about
   a ride it is the verb. "ta'arich ... be-sha'a" = extend by an hour: end_shift_minutes 60 / 30 (shortening: negative), never a time to ask about. "Earlier/later by" works the same
   on the start (start_shift_minutes) unless the member says "the return".
-- A message describing a trip with its own destination and hours is a new_request, even when the member already has rides that day.
+  An edit whose verb is extend / lengthen / shorten / make earlier / make later NEVER asks "what_time": "be-sha'a" there is
+  "by one hour", "be-chatsi sha'a" "by half an hour", "be-sha'atayim" "by two hours". Examples (transliterated):
+  "ta'arich et ha-nesi'a le-<place> be-yom rishon be-sha'a" → edit_request, end_shift_minutes 60, ask null;
+  "ta'arich ota be-sha'a" (a follow-up about the draft's ride) → end_shift_minutes 60, ask null;
+  "tekatser et ha-nesi'a be-chatsi sha'a" → end_shift_minutes -30.
+- A message describing a trip with its own destination and hours is a new_request, even when the member already has rides that day —
+  also when it is the SAME day and place as a ride in my_rides but states its own hours ("I need to be in <place> at 8 and back at
+  12, and stop at <place2> on the way"). An edit refers to an existing ride ("my ride", "the ride", "it") or changes it relative
+  to what it is; a message that says "I need to be / I need to go" with times is a new_request.
+  A stop added "on the way" / "on the way back" on a day with a ride in my_rides, with no hours of its own ("I'll stop at the
+  supermarket on the way back on Wednesday"), is an edit_request of that ride (stops, leg "return" for the way back).
 - Never assume a day: no day said means date null (ask "what_day"). "now" / "right now" means today, and time = now's time.
 - A duration ("for two hours", "for an hour") goes in duration_minutes; do not convert it into a return time yourself.
 - Never ask when they come back: no return said means return_time null (the app estimates it).
