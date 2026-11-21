@@ -1638,8 +1638,9 @@ export const heMember = {
   waitlist: {
     laneTitle: "בדיון",
     // REQ §13.182: the siddur's "חסר רכב" columns, their show/hide button and a waiting request's sheet.
-    siddurLane: "חסר רכב",
-    siddurLaneN: "חסר רכב {{number}}",
+    // WL1 (owner 2026-11-21): the column is called "רשימת המתנה" (was "חסר רכב").
+    siddurLane: "רשימת המתנה",
+    siddurLaneN: "רשימת המתנה {{number}}",
     scrollTo: "{{count}} ממתינים לרכב — מעבר לרשימת ההמתנה",
     waitingSheetTitle: "ממתין/ה לרכב",
     waitingSheetHint: "ברשימת ההמתנה — מחכה שיתפנה רכב בשעות האלה.",
