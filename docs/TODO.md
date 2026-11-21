@@ -2024,7 +2024,7 @@ Owner report: next week's Monday ride בנימינה → מצר shows ~20 minute
 - **Fix:** one migration rewriting both functions in full with the factor 2 + a SQL test pinning a known pair against `haversine_km() * 1.3`. Expect side effects once released: estimated pairs double, some merges now within the detour limit get refused, chauffeur rides between such places get longer — next week's board may show new warnings. Release timing: owner.
 - **Data note (not the bug):** the place "בנימינה וחריש" has Harish's coordinates (1.5 km from מצר), so times from it are short too.
 
-## Who goes where on a ride is hard to read — too many names (owner 2026-11-20, RP1) — first bullet built 2026-11-21 (REQ §13.178 amended: summaries by leg, `namesByLeg`; the people list keeps per-row marks; wording to approve); summary sentence and per-stop editing open
+## Who goes where on a ride is hard to read — too many names (owner 2026-11-20, RP1) — first bullet built 2026-11-21 (REQ §13.178 amended: summaries by leg, `namesByLeg`; the people list keeps per-row marks; wording to approve); summary sentence and per-stop editing open. **Owner 2026-11-21:** the summary sentence is wanted on the Sadran's ride sheet too (easier for them); "פרטי הנסיעה" as a whole needs a rework, shape not decided — kept for later
 
 Owner: in the siddur (and the board) it is still hard to see who goes where. Two changes:
 
