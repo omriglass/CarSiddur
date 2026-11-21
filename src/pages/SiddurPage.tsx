@@ -533,7 +533,9 @@ export function SiddurPage() {
   const weekGridVisibleCars = hideIdleTemporaryCars(weekGridCars, weekGridRides, myPrivateCarIds);
   const waitingGrid = activeDay
     ? waitingLanes(activeDayWaiting, activeDay, minutesSinceMidnight,
-        (lane) => (lane === 0 ? he.waitlist.siddurLane : tv("waitlist.siddurLaneN", { number: String(lane + 1) })), waitingLabel)
+        (lane) => (lane === 0 ? he.waitlist.siddurLane : tv("waitlist.siddurLaneN", { number: String(lane + 1) })), waitingLabel,
+        // WL1 (owner 2026-11-21): a published day from today on always has the "חסר רכב" column, empty or not — two taps on it file a waiting-list request.
+        waitlistWeek && activeDayPublished && activeDay >= today ? 1 : 0)
     : { cars: [], rides: [] };
   // REQ §13.114: maintenance bands in the car column; draggable by the car's current responsible person, the Sadran, the admin.
   // Owner 2026-10-11: the same hatched "car is at X" band as the board — not from home, but free for someone at X.

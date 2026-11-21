@@ -27,6 +27,8 @@ export function waitingLanes(
   minutesOf: (iso: string) => number,
   laneName: (index: number) => string,
   labelOf: (request: WaitingRequest) => string,
+  /** WL1 (owner 2026-11-21): lanes shown even with nobody waiting (1 = an empty "חסר רכב" column to tap into). */
+  minLanes = 0,
 ): { cars: WeekGridCar[]; rides: WeekGridRide[] } {
   const items = requests
     .filter((request) => request.day === day)
@@ -35,7 +37,7 @@ export function waitingLanes(
       return { id: `${WAITING_BLOCK_PREFIX}${request.request_id}`, request, startMinutes, endMinutes: startMinutes + (Date.parse(request.ends_at) - Date.parse(request.starts_at)) / 60_000 };
     });
   const packed = packPhantomLanes(items);
-  const laneCount = packed.reduce((max, item) => Math.max(max, item.lane + 1), 0);
+  const laneCount = packed.reduce((max, item) => Math.max(max, item.lane + 1), minLanes);
   return {
     cars: Array.from({ length: laneCount }, (_, lane) => ({ id: `${WAITING_LANE_PREFIX}${lane}`, name: laneName(lane), group: "phantom" as const })),
     rides: packed.map((item) => ({

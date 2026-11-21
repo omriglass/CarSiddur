@@ -2041,6 +2041,6 @@ Owner: in the siddur (and the board) it is still hard to see who goes where. Two
 
 Owner: after a member answers a הצעה (accept / decline) on `/p/<token>` or the in-app proposal view, they stay on the proposal with no way out. After the answer: a toast (e.g. "התשובה נשלחה לסדרן/ית" — wording to approve) and back to `/notifications` (the inbox). And the proposal screen keeps the usual bottom navigation row instead of hiding it. Check both entries: signed in (full UI) and the no-sign-in token page (no inbox to go back to — there the toast + a link to sign in / the app).
 
-## A waiting-list column every day, even empty (owner 2026-11-21, WL1) — not built yet
+## A waiting-list column every day, even empty (owner 2026-11-21, WL1) — built 2026-11-21 (siddur table: `waitingLanes(…, minLanes)`, a published day from today on; the two-tap waiting-list request already existed, REQ §13.183 f). Not done: the phone list view and /my (no column there), the board
 
 Owner: on this week's siddur a member should be able to put themselves on the רשימת המתנה for a day. Show the waiting-list column (REQ §13.182/183) as the last column of every day **even when nobody is in it**; tapping / double-tapping an empty spot in it opens a request for that day and hours **for no particular car** — straight into the waiting list (the existing `waitlist=1` flow, which still tries to place it first and says "car was free" when it could, consistency decision 24). Check: phone day list + desktop grid, /my week view, the board's own waiting-list column, and the column header wording.
