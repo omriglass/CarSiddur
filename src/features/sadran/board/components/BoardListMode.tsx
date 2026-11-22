@@ -47,7 +47,7 @@ export function BoardListMode({ rides, pendingRides = [], draftRideIds, shadowed
 
   return (
     <div className="theme-grid-neutral space-y-3">
-      <div className="flex gap-1 rounded-md border p-1" role="tablist">
+      <div className="flex gap-1 rounded-md border p-1" role="tablist" data-testid="board-list-segments">
         {(
           [
             { key: "cars", label: he.sadranBoard.listModeCars },

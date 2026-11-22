@@ -524,7 +524,7 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
         <RideTypeLegend types={(board.rideTypesQuery.data ?? []).map((rt) => ({ code: rt.code, nameHe: rt.name_he }))} />
       </div>
 
-      <div className={cn("grid gap-3", showUnmetPanel && "lg:grid-cols-[minmax(0,1fr)_340px]")}>
+      <div className={cn("grid grid-cols-[minmax(0,1fr)] gap-3", showUnmetPanel && "lg:grid-cols-[minmax(0,1fr)_340px]")}>
         <div className={tableView ? "min-w-0" : "hidden min-w-0 lg:block"}>
           {/* Owner 2026-10-16: the hidden side list comes back from here (the board remembers the choice on this device). */}
           {showUnmetPanel ? null : (

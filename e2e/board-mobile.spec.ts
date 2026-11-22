@@ -37,6 +37,24 @@ test.describe("board mobile header", { tag: ["@board"] }, () => {
     await expect(page.locator("[data-car-col-id]").first()).toBeVisible();
   });
 
+  // QA run 22 R22B16: the list view's grid column grew to its widest content (the car chips), so ride titles and
+  // "נוסעים:" were cut at the left edge instead of wrapping.
+  test("the list view fits the phone's width", async ({ page }) => {
+    const openWeekStart = await getWeekStart("open");
+    await page.goto(paths.sadran.board(NEVO_DEPARTMENT_ID, openWeekStart));
+    const segments = page.getByTestId("board-list-segments");
+    await expect(segments).toBeVisible({ timeout: 15_000 });
+    // The seeded department has few cars; a department with a dozen makes a day's car strip this wide (min-content).
+    await segments.evaluate((tabs) => {
+      const wide = document.createElement("div");
+      wide.style.cssText = "width:2000px;height:1px";
+      tabs.parentElement!.appendChild(wide);
+    });
+    const box = (await segments.boundingBox())!;
+    expect(box.x).toBeGreaterThanOrEqual(0);
+    expect(box.x + box.width).toBeLessThanOrEqual(390);
+  });
+
   test("kebab menu contains export, differences, auto-fill, full re-solve", async ({ page }) => {
     const openWeekStart = await getWeekStart("open");
     await page.goto(paths.sadran.board(NEVO_DEPARTMENT_ID, openWeekStart));
