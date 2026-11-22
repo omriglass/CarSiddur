@@ -8,6 +8,8 @@ import { sadranKeys } from "@/features/sadran/keys";
 import { siddurKeys } from "@/features/siddur/queryKeys";
 import { showErrorToast } from "@/lib/rpc";
 
+import { mergeRefusalOf } from "./addPassengerMatches";
+
 import {
   addRidePassengers,
   cancelRideChange,
@@ -71,7 +73,8 @@ export function useAddRidePassengersMutation() {
         for (const key of [siddurKeys.all, sadranKeys.all, requestsKeys.all]) void client.invalidateQueries({ queryKey: key });
       }
     },
-    onError: showErrorToast,
+    // PS1: a refused "add the request here" is asked about by the dialog (`mergeRefusalOf`), not toasted
+    onError: (error) => { if (!mergeRefusalOf(error)) showErrorToast(error); },
   });
 }
 

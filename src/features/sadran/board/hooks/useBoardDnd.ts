@@ -1,3 +1,4 @@
+import { askPersonBusy } from "@/lib/personBusy";
 import { isCarOwner } from "@/lib/carOwners";
 import { externalHintForCard, externalHintFromSuggestion } from "@/features/sadran/proposals/externalHint";
 // Extracted from `BoardScreen.tsx` (docs/TODO.md "Code review 2026-09-24" R9):
@@ -608,6 +609,14 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
     }
     if (privateCarBlocks(dropCtx, carId, req.requester_id)) { toast.error(he.sadranBoard.privateCarNotTarget); return; }
     if (!(await confirmOwnCarMove(carId, req.requester_id, req.requester_full_name))) return;
+    // PS1 (owner 2026-11-22): the person already rides at these hours as a "+ נוסעים" passenger - the shared question first
+    const ridingAsAdded = item.ridingAsAdded;
+    if (ridingAsAdded && !chainedLeg && droppedOnRideId !== ridingAsAdded.rideId) {
+      const goAhead = await askPersonBusy({ personId: req.requester_id, name: req.requester_full_name ?? "", rides: [
+        { rideId: ridingAsAdded.rideId, driverName: ridingAsAdded.driverName, isDriver: false, startsAt: ridingAsAdded.startsAt, endsAt: ridingAsAdded.endsAt },
+      ] });
+      if (!goAhead) return;
+    }
     // R2B7: a drop on a draft block is refused; a drop on a pending-merge block means its ride.
     if (droppedOnRideId?.startsWith("draft:")) { toast.error(he.sadranBoard.dropOnDraftBlock); return; }
     if (droppedOnRideId?.startsWith("merge:")) {

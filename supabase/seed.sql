@@ -585,6 +585,21 @@ cross join (values
 ) as v(variant, title, body)
 on conflict (event,channel,(coalesce(variant,''))) do update set title=excluded.title,body=excluded.body,default_title=excluded.default_title,default_body=excluded.default_body;
 
+-- PS1 (owner 2026-11-22): the closed-request notice when it took the person off someone else's ride.
+-- Mirrors 20261123090000_add_passenger_asks_request.sql.
+insert into public.notification_templates(event,channel,variant,title,body,default_title,default_body)
+select 'outcome_changed',channel,v.variant,v.title,v.body,v.title,v.body
+from unnest(array['inbox','push']::public.notification_channel[]) channel
+cross join (values
+  ('request_closed_off_ride',
+   'הבקשה שלך נסגרה',
+   '{{byName}} סימן/ה שהנסיעה שלך ביום {{day}} {{route}} כבר לא רלוונטית, והבקשה נסגרה. הסיבה: {{reason}}. לכן ירדת גם מהנסיעה של {{driver}}. אם עדיין צריך נסיעה — אפשר להגיש בקשה חדשה.'),
+  ('request_closed_plain_off_ride',
+   'הבקשה שלך נסגרה',
+   '{{byName}} סימן/ה שהנסיעה שלך ביום {{day}} {{route}} כבר לא רלוונטית, והבקשה נסגרה. לכן ירדת גם מהנסיעה של {{driver}}. אם עדיין צריך נסיעה — אפשר להגיש בקשה חדשה.')
+) as v(variant, title, body)
+on conflict (event,channel,(coalesce(variant,''))) do update set title=excluded.title,body=excluded.body,default_title=excluded.default_title,default_body=excluded.default_body;
+
 -- O29-2 (2): a closed request returned to the waiting list, told only when the closing notice was seen.
 -- Mirrors 20261030090000_restore_closed_request_notice.sql.
 insert into public.notification_templates(event,channel,variant,title,body,default_title,default_body)

@@ -206,6 +206,9 @@ begin
   perform pg_temp.expect_refused('rides.respond_ride_change', format('select public.respond_ride_change(%L, true)', change_b));
   perform pg_temp.expect_refused('rides.cancel_ride_change', format('select public.cancel_ride_change(%L)', change_b));
   perform pg_temp.expect_refused('rides.update_ride_public_notes', format('select public.update_ride_public_notes(%L, %L, %L)', ride_b, ride_b_version, 'attack'));
+  -- PS1: the "+ נוסעים" question (who has a matching request) - same gate as add_ride_passengers
+  perform pg_temp.expect_refused('rides.ride_add_matching_requests',
+    format('select public.ride_add_matching_requests(%L, array[%L]::uuid[])', ride_b, member_b));
   perform pg_temp.expect_refused('rides.add_ride_passengers',
     format('select public.add_ride_passengers(%L, %L, %L::jsonb)', ride_b, ride_b_version,
       jsonb_build_array(jsonb_build_object('display_name', 'Intruder', 'seat_kind', 'adult'))::text));
@@ -470,7 +473,7 @@ declare
     'submit_request','withdraw_request','set_manual_boost','set_freed_slot_opt_out','set_request_children','answer_short_turnaround',
     'set_request_companions','withdraw_all_requests','submit_series_request','enter_waiting_list','apply_solver_result',
     'edit_ride','cancel_ride','unassign_ride','restore_removed_reservation','board_changes_since','board_live_events','mark_board_seen','undo_board_change','unmerge_request','split_ride_companion','merge_preview','merge_previews','set_request_trip_type','switch_request_plan','ride_route','request_ride_change','request_ride_shorten','ride_shorten_options','ride_shorten_options_for_request','set_ride_editors','ride_editor_withdraw_request','ride_editor_cancel_ride','respond_ride_change','cancel_ride_change',
-    'update_ride_public_notes','add_ride_passengers','set_ride_passengers','remove_ride_person','set_ride_person_part','leave_ride_as_guest','cancel_ride_part',
+    'update_ride_public_notes','add_ride_passengers','ride_add_matching_requests','set_ride_passengers','remove_ride_person','set_ride_person_part','leave_ride_as_guest','cancel_ride_part',
     'log_car_care','report_car_issue','log_car_kilometrage','set_car_kilometrage','submit_car_checklist','upsert_car_checklist_item','move_car_checklist_item','delete_car_checklist_item','upsert_car_guide_topic','move_car_guide_topic','delete_car_guide_topic','save_car_guide','delete_car_guide','request_car_tasks','withdraw_car_task','complete_car_task','merge_destination','suggest_destination','car_mileage_totals',
     'admin_approve_member','admin_update_member','admin_set_sadran_assignments',
     'create_proposal','send_proposal','send_draft_proposals','flush_held_notices','preview_send_all','send_all_board_changes','agree_proposal_offline','agree_proposals_offline','proposal_car_conflicts','discard_proposal','withdraw_proposal','apply_proposal','record_answer_on_behalf','proposal_party_texts',

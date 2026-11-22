@@ -1,3 +1,5 @@
+import { z } from "zod";
+
 import { supabase } from "@/integrations/supabase/client";
 import { rpc, toAppError } from "@/lib/rpc";
 import { withPersonBusyRetry } from "@/lib/personBusy";
@@ -218,7 +220,27 @@ export interface RidePassengerInput {
   return_board_place_id?: string;
   return_board_place_text?: string;
   return_alight_place_id?: string;
+  /** PS1 (owner 2026-11-22): the person's own matching open request joins the ride too - only after the person adding
+   * was asked and said yes (`fetchRideAddMatches`); then it is a merge, refused as `merge_refused`. */
+  merge_request_id?: string;
   return_alight_place_text?: string;
+}
+
+const rideAddMatchesSchema = z.array(z.object({ person_id: z.string(), request_id: z.string(), route: z.string() }));
+
+/** PS1: of these members, who has an open request at this ride's hours (and where to) - what "+ נוסעים" asks about. */
+export interface RideAddMatch {
+  personId: string;
+  requestId: string;
+  /** "לבנימינה דרך כרכור" (`request_route_label`) */
+  route: string;
+}
+
+export async function fetchRideAddMatches(rideId: string, personIds: readonly string[]): Promise<RideAddMatch[]> {
+  if (!personIds.length) return [];
+  const data = await rpc("ride_add_matching_requests", { p_ride_id: rideId, p_person_ids: [...personIds] });
+  const parsed = rideAddMatchesSchema.safeParse(data);
+  return parsed.success ? parsed.data.map((row) => ({ personId: row.person_id, requestId: row.request_id, route: row.route })) : [];
 }
 
 /** Appends named passengers to a ride's existing list (never replaces it); duplicates already on the ride or already served are silently skipped by the RPC. */

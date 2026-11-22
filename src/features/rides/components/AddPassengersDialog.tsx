@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 import { CompanionPicker } from "@/components/CompanionPicker";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { FormDialog } from "@/components/FormDialog";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -13,11 +14,14 @@ import { useProfile } from "@/features/auth/useProfile";
 import { fetchChildren } from "@/features/requests/api";
 import { guestPassengerNames } from "@/features/requests/quickRequest";
 import { useSession } from "@/features/auth/useSession";
-import { he, t } from "@/i18n/he";
+import { he, t, tv } from "@/i18n/he";
 
 import { parseRideRoute, routeHasIntermediates } from "@/lib/rideRoute";
 
 import { buildAddPassengerInputs } from "../addPassengers";
+import { mergeRefusalOf, withMerges, withoutMerge } from "../addPassengerMatches";
+import { fetchRideAddMatches, type RidePassengerInput } from "../api";
+import { mergeRefusalReason } from "../useMemberMerge";
 import { useAddRidePassengersMutation, useRideStretchesQuery } from "../hooks";
 import { addPayload, partsFor, rideLegs, roomFor, type PersonParts } from "../rideStretches";
 import { RidePartsPicker } from "./RidePartsPicker";
@@ -32,6 +36,11 @@ import type { RidePerson } from "../ridePeople";
  * `RidePublicNotesEditor` (owns its own queries + mutation); unlike `RidePassengersEditor`
  * (which *replaces* a Sadran reservation's whole people list via `set_ride_passengers()`),
  * this only *appends* via `add_ride_passengers()` and never touches the driver.
+ *
+ * PS1 (owner 2026-11-22): it adds the people, nothing more. A picked member with an open request at these hours is
+ * asked about first ("לX יש נסיעה ברשימת המתנה באותו זמן לאותו מקום. להשאיר אותה…?"); the main answer, "הוצא/י אותה
+ * מרשימת המתנה", sends the request along, to join as a merge -
+ * and a merge the server refuses is said, with the offer to add the person without it (`../addPassengerMatches.ts`).
  */
 export function AddPassengersDialog({ rideId, expectedVersion, departmentId, weekStart, people, disabled, route }: {
   rideId: string;
@@ -69,6 +78,15 @@ export function AddPassengersDialog({ rideId, expectedVersion, departmentId, wee
     enabled: open && !!departmentId && !!profileId,
   });
   const mutation = useAddRidePassengersMutation();
+  // PS1: one question at a time over the dialog (its second button, or closing it, is the "no")
+  const [question, setQuestion] = useState<{ body: string; yes: string; no: string; resolve: (answer: boolean) => void } | null>(null);
+  const [asking, setAsking] = useState(false);
+  const ask = (body: string, yes: string, no: string) =>
+    new Promise<boolean>((resolve) => setQuestion({ body, yes, no, resolve }));
+  const answer = (value: boolean) => {
+    question?.resolve(value);
+    setQuestion(null);
+  };
 
   const alreadyOnRide = people.some((person) => !!profileId && person.person_id === profileId);
 
@@ -80,22 +98,43 @@ export function AddPassengersDialog({ rideId, expectedVersion, departmentId, wee
     setParts(partsFor("whole", points, legs));
   }
 
-  function submit() {
-    const passengers = [
+  async function submit() {
+    const picked: RidePassengerInput[] = [
       ...(includeSelf && profileId ? [{ person_id: profileId, display_name: profileQuery.data?.full_name ?? "", seat_kind: "adult" as const }] : []),
       ...buildAddPassengerInputs(memberIds, childIds, guestNames, membersQuery.data ?? [], childrenQuery.data ?? []),
     ].map((passenger) => ({ ...passenger, ...(legs.length ? addPayload(parts, points) : { leg: "both" as const }) }));
-    if (!passengers.length) return;
-    mutation.mutate(
-      { rideId, expectedVersion, passengers, departmentId, weekStart },
-      {
-        onSuccess: () => {
-          toast.success(he.addPassengers.added);
-          reset();
-          setOpen(false);
-        },
-      },
-    );
+    if (!picked.length) return;
+    setAsking(true);
+    try {
+      // PS1: ask about each picked member's own open request at these hours
+      const matches = await fetchRideAddMatches(rideId, picked.flatMap((passenger) => (passenger.person_id ? [passenger.person_id] : [])))
+        .catch(() => []);
+      const yes = new Map<string, string>();
+      for (const match of matches) {
+        const name = picked.find((passenger) => passenger.person_id === match.personId)?.display_name ?? "";
+        const body = match.personId === profileId ? he.addPassengers.matchQuestionSelf : tv("addPassengers.matchQuestion", { name });
+        // the main (default) answer takes the request off the waiting list - it joins this ride
+        if (await ask(body, he.addPassengers.matchMerge, he.addPassengers.matchKeep)) yes.set(match.personId, match.requestId);
+      }
+      let passengers = withMerges(picked, yes);
+      for (;;) {
+        try {
+          await mutation.mutateAsync({ rideId, expectedVersion, passengers, departmentId, weekStart });
+          break;
+        } catch (error) {
+          const refused = mergeRefusalOf(error);
+          if (!refused) return;   // the mutation already said what went wrong
+          const body = tv("addPassengers.mergeRefused", { reason: mergeRefusalReason(refused.code, refused.needs), name: refused.name });
+          if (!(await ask(body, he.addPassengers.mergeRefusedYes, he.common.cancel))) return;
+          passengers = withoutMerge(passengers, refused.personId);
+        }
+      }
+      toast.success(he.addPassengers.added);
+      reset();
+      setOpen(false);
+    } finally {
+      setAsking(false);
+    }
   }
 
   const hasPick = includeSelf || memberIds.length > 0 || childIds.length > 0 || guestNames.trim().length > 0;
@@ -110,11 +149,11 @@ export function AddPassengersDialog({ rideId, expectedVersion, departmentId, wee
       </Button>
       <FormDialog
         open={open}
-        onOpenChange={(next) => { if (!mutation.isPending) { setOpen(next); if (!next) reset(); } }}
+        onOpenChange={(next) => { if (!mutation.isPending && !asking) { setOpen(next); if (!next) reset(); } }}
         title={he.addPassengers.title}
-        onSubmit={submit}
+        onSubmit={() => { void submit(); }}
         submitLabel={he.addPassengers.submit}
-        loading={mutation.isPending}
+        loading={mutation.isPending || asking}
         submitDisabled={!hasPick || room === false || (!parts.out && !parts.return && legs.length > 0)}
       >
         <div className="space-y-4">
@@ -152,6 +191,15 @@ export function AddPassengersDialog({ rideId, expectedVersion, departmentId, wee
           ) : null}
         </div>
       </FormDialog>
+      <ConfirmDialog
+        open={!!question}
+        onOpenChange={(next) => { if (!next) answer(false); }}
+        title={he.addPassengers.title}
+        description={question?.body}
+        confirmLabel={question?.yes}
+        cancelLabel={question?.no}
+        onConfirm={() => answer(true)}
+      />
     </>
   );
 }

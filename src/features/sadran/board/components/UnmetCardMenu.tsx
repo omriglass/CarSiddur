@@ -39,6 +39,8 @@ export interface UnmetCardMenuProps {
   onShift?: () => void;
   /** R14M1: "שבץ ברכב…" - opens the car picker (the phone has no usable drag). */
   onPlaceOnCar?: () => void;
+  /** PS1: the request is the person's seat in this driver's ride - closing it takes them off (said in the dialog). */
+  seatInRideOf?: string;
 }
 
 /** Mounted only while the menu is open, so the phone number is fetched on demand (never for every card). */
@@ -56,7 +58,7 @@ function WhatsappItem({ request, destinationName }: { request: WeekRequestRow; d
   );
 }
 
-export function UnmetCardMenu({ request, destinationName, proposalOut, tripTypeScope, fewerDays, onExternal, onDeny, onShift, onPlaceOnCar }: UnmetCardMenuProps) {
+export function UnmetCardMenu({ request, destinationName, proposalOut, tripTypeScope, fewerDays, onExternal, onDeny, onShift, onPlaceOnCar, seatInRideOf }: UnmetCardMenuProps) {
   const navigate = useNavigate();
   const link = useRequestLinkProps();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -106,7 +108,7 @@ export function UnmetCardMenu({ request, destinationName, proposalOut, tripTypeS
       ) : null}
       {tripTypeScope && dialog === "close" ? (
         <CloseRequestAction requestId={request.id} version={request.version} name={name} departmentId={tripTypeScope.departmentId} weekStart={tripTypeScope.weekStart}
-          series={!!request.series_id} open onOpenChange={closer("close")} />
+          series={!!request.series_id} seatInRideOf={seatInRideOf} open onOpenChange={closer("close")} />
       ) : null}
       {dialog === "history" ? <RequestHistoryDialog requestId={request.id} subtitle={name} open onOpenChange={closer("history")} /> : null}
       {fewerDays && dialog === "fewerDays" ? <FewerDaysAction request={request} support={fewerDays} open onOpenChange={closer("fewerDays")} /> : null}

@@ -733,6 +733,8 @@ export const heSadran = {
   /** REQ §13.101 (e): the Sadran withdraws a request as a duplicate. */
   /** Owner 2026-10-16: the redesigned unplaced-request card (UX_FLOWS §4.2). */
   unmetCard: {
+    /** PS1 (owner 2026-11-22, wording approved): the requester rides as a "+ נוסעים" passenger at these hours. */
+    ridingAsAdded: "כבר בנסיעה של {{driver}}",
     notPlacedBecause: "לא שובץ אוטומטית כי: {{reason}}",
     menuAria: "פעולות נוספות לבקשה של {{name}}",
     editRequest: "עריכת הבקשה",
@@ -790,6 +792,8 @@ export const heSadran = {
   },
   /** REQ §13.162: is a cancelled request still needed? (ride sheet "בטל נסיעה", unmet card ⋮, change log return). */
   closeRequest: {
+    /** PS1 (owner 2026-11-22, wording approved): the request is the person's seat in someone else's ride. */
+    takesOffRide: "סגירת הבקשה תוריד את {{name}} מהנסיעה של {{driver}}.",
     keepOption: "להשאיר ברשימת ההמתנה",
     keepHint: "הנסיעה עדיין נחוצה, רק לא קיבלה רכב. הבקשה חוזרת לרשימת ההמתנה ויכולה לקבל רכב שמתפנה.",
     closeOption: "הנסיעה כבר לא רלוונטית",

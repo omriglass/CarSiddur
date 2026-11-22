@@ -6908,10 +6908,19 @@ export type Database = {
         Args: { p_car: string; p_ride: string }
         Returns: undefined
       }
-      _notify_request_closed: {
-        Args: { p_reason: string; p_request_id: string }
-        Returns: undefined
-      }
+      _notify_request_closed:
+        | {
+            Args: { p_reason: string; p_request_id: string }
+            Returns: undefined
+          }
+        | {
+            Args: {
+              p_off_ride_driver: string
+              p_reason: string
+              p_request_id: string
+            }
+            Returns: undefined
+          }
       _notify_request_edited_by_manager: {
         Args: { p_actor: string; p_request: string }
         Returns: undefined
@@ -7130,6 +7139,14 @@ export type Database = {
           p_with_passengers?: boolean
         }
         Returns: Json
+      }
+      _ride_matching_leg: {
+        Args: { p_request_id: string; p_ride_id: string }
+        Returns: Database["public"]["Enums"]["ride_leg"]
+      }
+      _ride_matching_request: {
+        Args: { p_person_id: string; p_ride_id: string }
+        Returns: string
       }
       _ride_moved_by_member: {
         Args: { p_agreed: boolean; p_before: Json; p_ride_id: string }
@@ -9061,6 +9078,10 @@ export type Database = {
       resume_request_template: {
         Args: { p_template_id: string }
         Returns: undefined
+      }
+      ride_add_matching_requests: {
+        Args: { p_person_ids: string[]; p_ride_id: string }
+        Returns: Json
       }
       ride_busy_people: { Args: { p_ride_id: string }; Returns: string[] }
       ride_editor_cancel_ride: {

@@ -51,6 +51,7 @@
 // mode. Covered by `applySolve.test.ts` and
 // `supabase/tests/solve_semantics.sql`.
 
+import { requestsRidingAsAdded } from "@/features/rides/ridingAsAdded";
 import { fetchCars, fetchCarSeatConfigs, fetchDestinations, fetchRideTypes } from "@/features/fleet/api";
 import { buildSolverInput, buildWeek, FREE_TEXT_DESTINATION_ID } from "@/features/solverBridge/buildSolverInput";
 import { solve } from "@/solver";
@@ -478,9 +479,12 @@ export function buildSolverContextFromData(params: GatherSolverContextParams, ro
     Math.ceil(effectiveWeekSettings(departmentSettings, weekRow).turnaroundMinutes / 15));
 
   const fixedRequestIds = new Set(fixedRides.flatMap((f) => f.servedRequestIds));
+  // PS1 (owner 2026-11-22): a request whose person already rides at its hours as a "+ נוסעים" passenger is left alone
+  // (its card says so; placing it by hand asks first) - auto-fill never books them a second car.
+  const ridingAsAdded = params.forScoring ? new Map() : requestsRidingAsAdded(allRequests, boardRides);
   const openRequests = params.forScoring
     ? allRequests.filter((r) => !["draft", "withdrawn", "cancelled"].includes(r.status))
-    : selectOpenRequests(allRequests, fixedRequestIds, requestIdsWithOpenProposal(scoringProposals));
+    : selectOpenRequests(allRequests, fixedRequestIds, requestIdsWithOpenProposal(scoringProposals)).filter((r) => !ridingAsAdded.has(r.id));
 
   // Rides a 'full' re-solve may replace: current, non-pinned board rides
   // (i.e. everything not in `fixedRides`). Used both for continuity

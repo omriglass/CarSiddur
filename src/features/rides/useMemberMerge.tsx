@@ -35,8 +35,8 @@ interface Flow {
   suggested?: boolean;
 }
 
-/** Hebrew reason for a refused member merge (the board's codes, `he.mergedRide.invalid`). */
-function refusal(code: string | null, needs: readonly ("large_trunk" | "tow_hitch")[]): string {
+/** Hebrew reason for a refused member merge (the board's codes, `he.mergedRide.invalid`); also "+ נוסעים" (PS1). */
+export function mergeRefusalReason(code: string | null, needs: readonly ("large_trunk" | "tow_hitch")[]): string {
   if (code === "luggage" && needs.includes("tow_hitch")) {
     return needs.includes("large_trunk") ? he.mergedRide.invalid.luggage_and_tow : he.mergedRide.invalid.tow_needs_hitch;
   }
@@ -73,7 +73,7 @@ export function useMemberMerge({ departmentId, weekStart, onDone }: {
       // CM1 phase 4: a suggestion the server would refuse is simply not offered
       if (options.suggested && !preview.ok && !preview.waivable) return false;
       if (!preview.ok && !preview.waivable) {
-        toast.error(refusal(preview.code, preview.needs));
+        toast.error(mergeRefusalReason(preview.code, preview.needs));
         return true;
       }
       setFlow({ host, target, preview, step: "confirm", wait: false, chainVia: false, suggested: options.suggested });

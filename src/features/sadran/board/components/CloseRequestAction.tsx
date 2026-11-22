@@ -19,11 +19,13 @@ export interface CloseRequestActionProps {
   weekStart: string;
   /** A multi-day request: every day is closed. */
   series?: boolean;
+  /** PS1 (owner 2026-11-22): the request is the person's seat in this driver's ride - closing it takes them off. */
+  seatInRideOf?: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
 
-export function CloseRequestAction({ requestId, version, name, departmentId, weekStart, series, open, onOpenChange }: CloseRequestActionProps) {
+export function CloseRequestAction({ requestId, version, name, departmentId, weekStart, series, seatInRideOf, open, onOpenChange }: CloseRequestActionProps) {
   const [reason, setReason] = useState("");
   const mutation = useCloseRequestMutation();
   const recordUndo = useRecordBoardUndo();
@@ -51,6 +53,11 @@ export function CloseRequestAction({ requestId, version, name, departmentId, wee
     >
       <div className="space-y-3" data-testid="close-request-dialog">
         {series ? <p className="text-sm text-muted-foreground">{he.closeRequest.seriesNote}</p> : null}
+        {seatInRideOf ? (
+          <p role="alert" className="rounded-md border border-destructive/50 bg-destructive/5 p-2 text-sm font-medium text-destructive" data-testid="close-request-takes-ride">
+            {tv("closeRequest.takesOffRide", { name, driver: seatInRideOf })}
+          </p>
+        ) : null}
         <p role="alert" className="rounded-md border border-destructive/50 bg-destructive/5 p-2 text-sm font-medium text-destructive">
           {he.closeRequest.closeWarning}
         </p>

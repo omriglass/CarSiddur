@@ -26,6 +26,7 @@ import { requestRouteLine, tripTypeLabel } from "../requestRoute";
 import { fallbackLine, hasActiveFallback } from "../planBLine";
 
 import type { WeekRequestRow } from "../../api";
+import type { RidingAsAdded } from "@/features/rides/ridingAsAdded";
 import { isActiveStop } from "@/lib/routeStops";
 import { isDisplacementSuggestion } from "../displacementChecklist";
 
@@ -62,6 +63,10 @@ export interface UnmetListItem {
    * that boards the guest somewhere other than the host's own origin, `null`/absent otherwise.
    */
   suggestionBoardAt?: (string | null)[];
+  /** PS1: the requester already rides at these hours as a "+ נוסעים" passenger ("כבר בנסיעה של Y"). */
+  ridingAsAdded?: RidingAsAdded;
+  /** PS1: the request itself is the person's seat in this driver's ride (an old "+ נוסעים" link, a part merged). */
+  seatInRideOf?: string;
 }
 
 /** Below this many pixels of raw movement, a touch pointerdown is still a scroll attempt — cancel the pending long-press. */
@@ -318,6 +323,7 @@ export function UnmetList({ items, onAction, onOpenProposal, onDecision, dayStar
                   onDeny={onDecision ? () => onDecision(item, "deny") : undefined}
                   onShift={() => (onDecision ? onDecision(item, "shift") : onAction(item, null))}
                   onPlaceOnCar={onPlaceOnCar && placeableCarsOf ? () => setPlacing(item) : undefined}
+                  seatInRideOf={item.seatInRideOf}
                 />
               </div>
               <p className="font-medium" data-testid="unmet-when">
@@ -337,6 +343,11 @@ export function UnmetList({ items, onAction, onOpenProposal, onDecision, dayStar
               {item.request.ride_description ? <p className="whitespace-pre-wrap break-words">{item.request.ride_description}</p> : null}
               {item.request.notes ? <p className="whitespace-pre-wrap break-words"><span className="font-medium">{he.field.notes}: </span>{item.request.notes}</p> : null}
               {fallbackLine(item.request) ? <p className="font-medium" data-testid="unmet-fallback">{fallbackLine(item.request)}</p> : null}
+              {item.ridingAsAdded ? (
+                <p className="w-fit rounded-full border px-2 py-0.5 text-xs font-medium" data-testid="unmet-riding-as-added">
+                  {item.ridingAsAdded.driverName ? tv("unmetCard.ridingAsAdded", { driver: item.ridingAsAdded.driverName }) : he.personBusy.title}
+                </p>
+              ) : null}
               {/* R20 Q2: the merged ride this guest rode on changed with its host's edit, and the guest no longer fit. */}
               {item.request.status_reason === "HOST_EDITED" ? (
                 <p className="w-fit rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-950 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-100" data-testid="unmet-host-edited">

@@ -707,6 +707,15 @@ export const heMember = {
      * the ride themself — replaces the siddur's old "ask to join" button on a published week. */
     self: "אני",
     selfAlreadyOn: "כבר רשומ/ה על הנסיעה הזו",
+    /** PS1 (owner 2026-11-22, owner's wording): the added member has an open request at the same time to the same place.
+     * The main button takes it off the waiting list (it joins this ride); the other keeps it waiting as well. */
+    matchQuestion: "ל{{name}} יש נסיעה ברשימת המתנה באותו זמן לאותו מקום. להשאיר אותה ברשימת המתנה, בנוסף לנסיעה הזאת?",
+    matchQuestionSelf: "יש לך נסיעה ברשימת המתנה באותו זמן לאותו מקום. להשאיר אותה ברשימת המתנה, בנוסף לנסיעה הזאת?",
+    matchMerge: "הוצא/י אותה מרשימת המתנה",
+    matchKeep: "להשאיר ברשימת המתנה",
+    /** PS1: "yes" that the merge refused - `reason` is the board's merge refusal ("אי אפשר לצרף — …"). */
+    mergeRefused: "{{reason}}. להוסיף את {{name}} לנסיעה בלי הבקשה?",
+    mergeRefusedYes: "להוסיף בלי הבקשה",
     // REQ item 246 h (owner mock "LT1 stop hours mock", board 5): how someone rides the route
     part: { whole: "כל הנסיעה", out: "רק הלוך", return: "רק חזור", middle: "עולה או יורד/ת באמצע…" },
     partLabel: "איזה חלק מהנסיעה?",

@@ -15,6 +15,7 @@ import { luggageMarker, towMarker } from "@/lib/luggageWaiver";
 import { TZ, dateKey } from "@/lib/time";
 import { rideDescriptionFields } from "@/lib/ridePublicDetails";
 import { ridePassengerSummary } from "@/lib/ridePassengerSummary";
+import { requestsRidingAsAdded } from "@/features/rides/ridingAsAdded";
 import { addedPeopleNames, riderShortNames } from "@/features/rides/ridePeople";
 import { rideCardLabel } from "@/features/rides/rideGridLabel";
 import { useRideSummaries } from "@/features/rides/useRideSummaries";
@@ -973,6 +974,12 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
    * departure time (`UnmetList.tsx`'s own sort), never empty just because
    * nobody has clicked "הרץ פותר" yet or the page was reloaded (bug #1).
    */
+  // PS1: requests whose person already rides at those hours as a "+ נוסעים" passenger ("כבר בנסיעה של Y")
+  const ridingAsAdded = requestsRidingAsAdded(boardRequests, rides);
+  // PS1: the driver whose ride this (unplaced) request is still the person's seat in - closing it takes them off
+  const seatInRideOf = (requestId: string, requesterId: string | null) => rides.find((ride) =>
+    ride.status !== "cancelled" && ride.driver_id && ride.driver_id !== requesterId && ride.driver_name
+    && servedOf(ride).some((entry) => entry.request_id === requestId))?.driver_name ?? undefined;
   const unmetItems = viewsOnDay(allUnmetViews, selectedDay, (iso) => dateKey(new Date(iso)))
     .map(({ request: r, leg }) => {
       const solverInfo = leg === "return" ? undefined : preview?.output.unmet.find((u) => u.requestId === r.id);
@@ -982,6 +989,8 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
         pendingProposalId: (proposalsQuery.data ?? []).find((p) => p.request_id === r.id && (p.status === "sent" || p.status === "accepted"))?.id,
         destinationName: r.destination_resolved_name ?? "—",
         solverInfo,
+        ridingAsAdded: ridingAsAdded.get(r.id),
+        seatInRideOf: seatInRideOf(r.id, r.requester_id),
         // REQUIREMENTS §13.93 "Multi-stop rides" §6.3 "Joining at a stop": a merge suggestion
         // whose `boardAtLocationId` is not the host ride's own origin says where the guest
         // boards — parallel array to `solverInfo.suggestions`, `null` for the ordinary

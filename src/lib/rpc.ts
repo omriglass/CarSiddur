@@ -192,6 +192,8 @@ export type ErrorCode =
   | "luggage_capacity_violation"
   | "needs_large_trunk"
   | "person_busy"
+  /** PS1: "+ נוסעים" with "yes, add the request here" that the merge refused (detail: person, name, code). */
+  | "merge_refused"
   | "ride_move_needs_agreement"
   | "car_fields_locked"
   | "car_has_upcoming_rides"
@@ -372,6 +374,7 @@ const MESSAGE_TO_CODE: Record<string, ErrorCode> = {
   // REQ §13.186 (2026-11-08): the swap changed under the dialog and now brings two rides closer than the turnaround
   swap_short_turnaround: "ride_turnaround",
   person_busy: "person_busy",
+  merge_refused: "merge_refused",
   ride_move_needs_agreement: "ride_move_needs_agreement",
   car_fields_locked: "car_fields_locked",
   car_has_upcoming_rides: "car_has_upcoming_rides",
@@ -556,6 +559,7 @@ const CODE_TO_MESSAGE: Record<ErrorCode, string> = {
   luggage_capacity_violation: he.errors.luggageCapacityViolation,
   needs_large_trunk: he.errors.needsLargeTrunk,
   person_busy: he.errors.personBusy,
+  merge_refused: he.mergedRide.invalid.unknown,
   ride_move_needs_agreement: he.errors.rideMoveNeedsAgreement,
   car_fields_locked: he.errors.carFieldsLocked,
   car_has_upcoming_rides: he.errors.carHasUpcomingRides,
@@ -739,7 +743,7 @@ export function toAppError(error: unknown): AppError {
     const description = pgError?.details || pgError?.hint || bareCode || undefined;
     return new AppError(code, message, description ?? undefined);
   }
-  return new AppError(code, message, undefined, code === "needs_large_trunk" || code === "person_busy" || code === "ride_move_needs_agreement" || code === "car_stays_away" || code === "host_edit_guests" || code === "riders_off_route" ? (pgError?.details ?? undefined) : undefined);
+  return new AppError(code, message, undefined, code === "needs_large_trunk" || code === "person_busy" || code === "merge_refused" || code === "ride_move_needs_agreement" || code === "car_stays_away" || code === "host_edit_guests" || code === "riders_off_route" ? (pgError?.details ?? undefined) : undefined);
 }
 
 /**

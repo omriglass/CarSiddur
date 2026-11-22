@@ -3,7 +3,7 @@
 --   QB8 overlap with own booking is never auto-approved
 --   QB11 contested groups: only people without a ride; leave the group once placed
 --   QB13 status follows the covering ride (never waitlisted while holding a driven ride)
---   QB14 "+ נוסעים" self-add serves the member's own request
+--   PS1 (was QB14) "+ נוסעים" adds the person only; their own request joins only on a yes (merge_request_id)
 --   QB16 car-now outside a live week is refused
 --   QB17 whole-day series legs render as `time.all_day`
 -- Transactional (begin ... rollback), like the other suites.
@@ -120,19 +120,92 @@ begin
     assert (d::jsonb->'rides'->0->>'ride_id')::uuid=rC, format('QB8: the question names the own ride, got %s',d);
   end;
 
-  -- ---- QB14: "+ נוסעים" self-add serves the member's own open request --------------------------------
+  -- ---- PS1 (owner 2026-11-22, was QB14): "+ נוסעים" adds the person only; their own matching request joins the ride
+  -- only when the person adding said yes (`merge_request_id`), as a merge under the merge's own checks -------------
   perform set_config('request.jwt.claims',jsonb_build_object('sub',sadran,'role','authenticated')::text,true);
   insert into public.requests(department_id,week_start,requester_id,filed_by,destination_id,ride_type_id,depart_at,return_at,trip_shape,status,status_reason)
-    values(dept,w,m1,sadran,dest,typ,dt+interval '30 minutes',dt+interval '2 hours 30 minutes','round_trip','waitlisted','WAITLISTED_CONTESTED') returning id into q3;
+    values(dept,w,m1,sadran,home,typ,dt+interval '30 minutes',dt+interval '2 hours 30 minutes','round_trip','waitlisted','WAITLISTED_CONTESTED') returning id into q3;
   perform set_config('request.jwt.claims',jsonb_build_object('sub',m1,'role','authenticated')::text,true);
+  -- another place at the same hours is not asked about ("באותו זמן לאותו מקום")
+  update public.requests set destination_id=dest where id=q3;
+  assert jsonb_array_length(public.ride_add_matching_requests(rC,array[m1]))=0, 'PS1: another place is not a match';
+  update public.requests set destination_id=home where id=q3;
+  res:=public.ride_add_matching_requests(rC,array[m1,m2]);
+  assert jsonb_array_length(res)=1 and (res->0->>'request_id')::uuid=q3 and (res->0->>'person_id')::uuid=m1,
+    format('PS1: the question names the own open request only, got %s',res);
   perform public.add_ride_passengers(rC,(select version from public.rides where id=rC),
     jsonb_build_array(jsonb_build_object('person_id',m1,'display_name','חבר ראשון','seat_kind','adult')));
-  assert exists(select 1 from public.ride_requests where ride_id=rC and request_id=q3 and leg='both'), 'QB14: own request linked to the ride';
-  assert (select status::text from public.requests where id=q3)='assigned', 'QB14: request served by the ride';
+  assert not exists(select 1 from public.ride_requests where ride_id=rC and request_id=q3), 'PS1: a plain add links no request';
+  assert (select status::text from public.requests where id=q3)='waitlisted', 'PS1: the request stays as it was';
+  assert exists(select 1 from public.ride_passengers where ride_id=rC and person_id=m1), 'PS1: the person is on the ride';
   select count(*) into n from public.notifications where recipient_id=m2 and data->>'variant'='passenger_joined';
   assert n=1, 'QB24: self-add uses the passenger_joined variant';
   select count(*) into n from public.notifications where recipient_id=m2 and data->>'variant'='passengers_added';
   assert n=0, 'QB24: no "X added X" notice';
+  -- closing the request never takes them off the ride (production 19.11)
+  perform set_config('request.jwt.claims',jsonb_build_object('sub',sadran,'role','authenticated')::text,true);
+  perform public.close_request(q3,(select version from public.requests where id=q3),'קיבלה רכב אחר');
+  assert exists(select 1 from public.ride_passengers where ride_id=rC and person_id=m1), 'PS1: closing the request leaves the seat';
+  assert (select n2.data->>'variant' from public.notifications n2 where n2.recipient_id=m1 and n2.data->>'request_id'=q3::text
+          and n2.data->>'variant' like 'request_closed%' limit 1)='request_closed', 'PS1: a plain closing notice (no ride taken)';
+
+  -- "yes": the request joins the ride as a merge
+  delete from public.ride_passengers where ride_id=rC and person_id=m1;
+  insert into public.requests(department_id,week_start,requester_id,filed_by,destination_id,ride_type_id,depart_at,return_at,trip_shape,status)
+    values(dept,w,m1,sadran,home,typ,dt+interval '30 minutes',dt+interval '2 hours 30 minutes','round_trip','waitlisted') returning id into q3;
+  perform set_config('request.jwt.claims',jsonb_build_object('sub',m1,'role','authenticated')::text,true);
+  begin
+    perform public.add_ride_passengers(rC,(select version from public.rides where id=rC),
+      jsonb_build_array(jsonb_build_object('person_id',m1,'display_name','חבר ראשון','seat_kind','adult','merge_request_id',q1)));
+    raise exception 'PS1: another request than the matching one must be refused';
+  exception when others then
+    get stacked diagnostics v = message_text;
+    assert v='invalid_ride_passenger', format('PS1: wanted invalid_ride_passenger, got %s',v);
+  end;
+  perform public.add_ride_passengers(rC,(select version from public.rides where id=rC),
+    jsonb_build_array(jsonb_build_object('person_id',m1,'display_name','חבר ראשון','seat_kind','adult','merge_request_id',q3)));
+  assert exists(select 1 from public.ride_requests where ride_id=rC and request_id=q3 and leg='both'), 'PS1: yes merges the request';
+  assert not exists(select 1 from public.ride_passengers where ride_id=rC and person_id=m1), 'PS1: no second, plain seat';
+  assert (select status::text from public.requests where id=q3) in ('merged','assigned'), 'PS1: the request is placed (the status trigger decides which)';
+  -- closing it now takes the seat, and the notice says whose ride
+  perform set_config('request.jwt.claims',jsonb_build_object('sub',sadran,'role','authenticated')::text,true);
+  perform public.close_request(q3,(select version from public.requests where id=q3),null);
+  assert not exists(select 1 from public.ride_requests where ride_id=rC and request_id=q3), 'PS1: closing a merged request releases it';
+  select n2.data->>'variant', n2.body_he into st, v from public.notifications n2 where n2.recipient_id=m1 and n2.data->>'request_id'=q3::text
+    and n2.data->>'variant' like 'request_closed%' limit 1;
+  assert st='request_closed_plain_off_ride', format('PS1: the notice says it took the ride, got %s',st);
+  assert v like '%'||(select full_name from public.profiles where id=m2)||'%', format('PS1: the notice names the driver, got %s',v);
+
+  -- "yes" that the merge refuses (too many seats): `merge_refused` naming the person and the reason; nothing written
+  perform set_config('request.jwt.claims',jsonb_build_object('sub',sadran,'role','authenticated')::text,true);
+  insert into public.rides(department_id,week_start,car_id,starts_at,ends_at,origin_id,destination_id,driver_id,status,is_pinned,pin_reason,created_by)
+    values(dept,w,carB,dt,dt+interval '3 hours',home,home,m2,'confirmed',true,'SADRAN_MANUAL',sadran) returning id into rC;
+  insert into public.requests(department_id,week_start,requester_id,filed_by,destination_id,ride_type_id,depart_at,return_at,trip_shape,status,adults)
+    values(dept,w,m1,sadran,home,typ,dt+interval '30 minutes',dt+interval '2 hours 30 minutes','round_trip','waitlisted',9) returning id into q3;
+  perform set_config('request.jwt.claims',jsonb_build_object('sub',m1,'role','authenticated')::text,true);
+  begin
+    perform public.add_ride_passengers(rC,(select version from public.rides where id=rC),
+      jsonb_build_array(jsonb_build_object('person_id',m1,'display_name','חבר ראשון','seat_kind','adult','merge_request_id',q3)));
+    raise exception 'PS1: a refused merge must raise';
+  exception when others then
+    get stacked diagnostics v = message_text, d = pg_exception_detail;
+    assert v='merge_refused', format('PS1: wanted merge_refused, got %s',v);
+    assert (d::jsonb->>'person_id')::uuid=m1 and d::jsonb->>'code'='seats', format('PS1: the refusal names the person and reason, got %s',d);
+  end;
+  assert not exists(select 1 from public.ride_passengers where ride_id=rC and person_id=m1)
+     and not exists(select 1 from public.ride_requests where ride_id=rC and request_id=q3), 'PS1: a refused yes writes nothing';
+
+  -- a "yes" on a day not published yet (the ride is a draft): the request rides, so it leaves the waiting list
+  perform set_config('request.jwt.claims',jsonb_build_object('sub',sadran,'role','authenticated')::text,true);
+  insert into public.rides(department_id,week_start,car_id,starts_at,ends_at,origin_id,destination_id,driver_id,status,is_pinned,pin_reason,created_by)
+    values(dept,w,carA,dt+interval '1 day',dt+interval '1 day 3 hours',home,home,m2,'draft',true,'SADRAN_MANUAL',sadran) returning id into rC;
+  insert into public.requests(department_id,week_start,requester_id,filed_by,destination_id,ride_type_id,depart_at,return_at,trip_shape,status)
+    values(dept,w,m1,sadran,home,typ,dt+interval '1 day 30 minutes',dt+interval '1 day 2 hours 30 minutes','round_trip','waitlisted') returning id into q3;
+  perform public.add_ride_passengers(rC,(select version from public.rides where id=rC),
+    jsonb_build_array(jsonb_build_object('person_id',m1,'display_name','חבר ראשון','seat_kind','adult','merge_request_id',q3)));
+  assert exists(select 1 from public.ride_requests where ride_id=rC and request_id=q3), 'PS1 draft: yes merges the request';
+  assert (select status::text from public.requests where id=q3) in ('merged','assigned'),
+    format('PS1 draft: the request leaves the waiting list, got %s',(select status::text from public.requests where id=q3));
 
   -- ---- REQ §13.99: cancelling a ride on a private car creates no freed-slot offer; a shared car does ----
   perform set_config('request.jwt.claims',jsonb_build_object('sub',sadran,'role','authenticated')::text,true);

@@ -4614,22 +4614,35 @@ CREATE OR REPLACE FUNCTION "public"."_notify_request_closed"("p_request_id" "uui
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
+begin
+  perform public._notify_request_closed(p_request_id, p_reason, null);
+end $$;
+
+
+ALTER FUNCTION "public"."_notify_request_closed"("p_request_id" "uuid", "p_reason" "text") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."_notify_request_closed"("p_request_id" "uuid", "p_reason" "text", "p_off_ride_driver" "text") RETURNS "void"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
 declare v_req public.requests%rowtype; v_by text; v_reason text := nullif(btrim(coalesce(p_reason, '')), '');
 begin
   select * into v_req from public.requests where id = p_request_id;
   if v_req.id is null or v_req.requester_id is not distinct from (select auth.uid()) then return; end if;
   select full_name into v_by from public.profiles where id = (select auth.uid());
   perform public.enqueue_notification(v_req.requester_id, 'outcome_changed', v_req.department_id, v_req.week_start,
-    jsonb_build_object('byName', coalesce(v_by, ''), 'reason', coalesce(v_reason, ''),
+    jsonb_build_object('byName', coalesce(v_by, ''), 'reason', coalesce(v_reason, ''), 'driver', coalesce(p_off_ride_driver, ''),
       'route', coalesce(public.request_route_label(p_request_id), ''),
       'day', public.day_date_label(coalesce(v_req.original_depart_at, v_req.depart_at, v_req.original_return_at, v_req.return_at))),
-    jsonb_build_object('variant', case when v_reason is null then 'request_closed_plain' else 'request_closed' end,
+    jsonb_build_object('variant', case when v_reason is null then 'request_closed_plain' else 'request_closed' end
+        || case when p_off_ride_driver is not null then '_off_ride' else '' end,
       'request_id', p_request_id, 'url', '/my'),
     format('request_closed:%s:%s', p_request_id, v_req.version));
 end $$;
 
 
-ALTER FUNCTION "public"."_notify_request_closed"("p_request_id" "uuid", "p_reason" "text") OWNER TO "postgres";
+ALTER FUNCTION "public"."_notify_request_closed"("p_request_id" "uuid", "p_reason" "text", "p_off_ride_driver" "text") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."_notify_request_edited_by_manager"("p_request" "uuid", "p_actor" "uuid") RETURNS "void"
@@ -6281,6 +6294,50 @@ $$;
 
 
 ALTER FUNCTION "public"."_ride_leg_riders"("p_ride_id" "uuid", "p_leg" "public"."ride_leg", "p_with_passengers" boolean) OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."_ride_matching_leg"("p_ride_id" "uuid", "p_request_id" "uuid") RETURNS "public"."ride_leg"
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  select case
+    when q.trip_shape = 'round_trip' and q.return_at is not null
+         and q.depart_at between r.starts_at - q.flex_depart_early and r.ends_at
+         and q.return_at between r.starts_at and r.ends_at + q.flex_return_late then 'both'::public.ride_leg
+    when q.trip_shape = 'round_trip' and q.return_at is not null
+         and q.return_at between r.starts_at and r.ends_at + q.flex_return_late
+         and not (q.depart_at between r.starts_at - q.flex_depart_early and r.ends_at) then 'return'::public.ride_leg
+    when q.trip_shape = 'round_trip' then 'out'::public.ride_leg
+    else 'both'::public.ride_leg end
+  from public.requests q join public.rides r on r.id = p_ride_id where q.id = p_request_id;
+$$;
+
+
+ALTER FUNCTION "public"."_ride_matching_leg"("p_ride_id" "uuid", "p_request_id" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."_ride_matching_request"("p_ride_id" "uuid", "p_person_id" "uuid") RETURNS "uuid"
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  select q.id from public.requests q join public.rides r on r.id = p_ride_id
+  where q.requester_id = p_person_id and q.department_id = r.department_id
+    and q.week_start = r.week_start and q.status in ('submitted', 'waitlisted', 'proposed')
+    and q.depart_at is not null
+    and not exists (select 1 from public.ride_requests rr where rr.request_id = q.id and rr.ride_id = p_ride_id)
+    and tstzrange(q.depart_at - q.flex_depart_early, coalesce(q.return_at, q.depart_at + interval '1 minute') + q.flex_return_late, '[)')
+        && tstzrange(r.starts_at, r.ends_at, '[)')
+    and q.destination_id is not null
+    and (q.destination_id = r.destination_id
+         or exists (select 1 from public.ride_requests rr join public.requests s on s.id = rr.request_id
+                    where rr.ride_id = p_ride_id and s.destination_id = q.destination_id)
+         or exists (select 1 from public.ride_requests rr join public.request_stops st on st.request_id = rr.request_id
+                    where rr.ride_id = p_ride_id and st.place_id = q.destination_id))
+  order by q.depart_at, q.id limit 1;
+$$;
+
+
+ALTER FUNCTION "public"."_ride_matching_request"("p_ride_id" "uuid", "p_person_id" "uuid") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."_ride_moved_by_member"("p_ride_id" "uuid", "p_before" "jsonb", "p_agreed" boolean) RETURNS "void"
@@ -8741,9 +8798,14 @@ declare
   v_leg public.ride_leg;
   v_matched_route text;
   v_prev_flag text;
-  v_linked boolean;
   v_seen_keys text[] := '{}';
   v_check_along boolean;
+  v_merge_id uuid;
+  v_check jsonb;
+  v_checks jsonb := '{}'::jsonb;
+  v_any_merge boolean := false;
+  v_start timestamptz;
+  v_end timestamptz;
 begin
   select * into v_ride from public.rides where id = p_ride_id for update;
   if not found or v_ride.status = 'cancelled' then raise exception 'ride_not_found' using errcode = 'P0001'; end if;
@@ -8869,30 +8931,26 @@ begin
       v_seen_child_ids := v_seen_child_ids || v_child_id;
     end if;
 
-    -- REQ §13.100 (QB14): a member added to a ride that matches their own open request is the request
-    -- being served (the seat comes from the request's own counts), not a second anonymous seat.
+    -- PS1 (owner 2026-11-22): "+ נוסעים" adds the person, nothing more. Their own open request at these hours joins
+    -- the ride only when the person adding was asked and said yes (`merge_request_id`, ride_add_matching_requests) -
+    -- then as a merge, under the merge's own checks (route, detour, seats); refused = `merge_refused`, nothing written.
     v_match := null; v_leg := null;
+    v_merge_id := nullif(v_item ->> 'merge_request_id', '')::uuid;
     if v_person_id is not null then
-      select q.* into v_match from public.requests q
-      where q.requester_id = v_person_id and q.department_id = v_ride.department_id
-        and q.week_start = v_ride.week_start and q.status in ('submitted', 'waitlisted', 'proposed')
-        and q.depart_at is not null
-        and not exists (select 1 from public.ride_requests rr join public.rides rd on rd.id = rr.ride_id
-                        where rr.request_id = q.id and rd.status <> 'cancelled' and rd.id = p_ride_id)
-        and tstzrange(q.depart_at - q.flex_depart_early, coalesce(q.return_at, q.depart_at + interval '1 minute') + q.flex_return_late, '[)')
-            && tstzrange(v_ride.starts_at, v_ride.ends_at, '[)')
-      order by q.depart_at, q.id limit 1;
-      if v_match.id is not null then
-        v_leg := case
-          when v_match.trip_shape = 'round_trip' and v_match.return_at is not null
-               and v_match.depart_at between v_ride.starts_at - v_match.flex_depart_early and v_ride.ends_at
-               and v_match.return_at between v_ride.starts_at and v_ride.ends_at + v_match.flex_return_late then 'both'::public.ride_leg
-          when v_match.trip_shape = 'round_trip' and v_match.return_at is not null
-               and v_match.return_at between v_ride.starts_at and v_ride.ends_at + v_match.flex_return_late
-               and not (v_match.depart_at between v_ride.starts_at - v_match.flex_depart_early and v_ride.ends_at) then 'return'::public.ride_leg
-          when v_match.trip_shape = 'round_trip' then 'out'::public.ride_leg
-          else 'both'::public.ride_leg end;
+      select q.* into v_match from public.requests q where q.id = public._ride_matching_request(p_ride_id, v_person_id);
+    end if;
+    if v_merge_id is not null then
+      if v_match.id is distinct from v_merge_id then
+        raise exception 'invalid_ride_passenger' using errcode = 'P0001';
       end if;
+      v_leg := public._ride_matching_leg(p_ride_id, v_merge_id);
+      v_check := public._merge_check(p_ride_id, v_merge_id, v_leg);
+      if not coalesce((v_check ->> 'ok')::boolean, false) then
+        raise exception 'merge_refused' using errcode = 'P0001',
+          detail = jsonb_build_object('person_id', v_person_id, 'name', v_display_name,
+            'code', coalesce(v_check ->> 'code', public._merge_error_code(v_check ->> 'error')), 'needs', v_check -> 'needs')::text;
+      end if;
+      v_checks := v_checks || jsonb_build_object(v_merge_id::text, v_check);
     end if;
 
     -- R22B8 (owner 2026-11-22, REQ §13.176): a member already riding at these hours is asked about first, as a request
@@ -8903,7 +8961,7 @@ begin
         coalesce(v_match.id, nullif(current_setting('app.join_from_request', true), '')::uuid));
     end if;
 
-    if v_match.id is not null then
+    if v_merge_id is not null then
       v_new_a := v_new_a + v_match.adults; v_new_c := v_new_c + v_match.child_seats; v_new_b := v_new_b + v_match.boosters;
     else
       case v_seat_kind
@@ -8915,7 +8973,7 @@ begin
 
     v_accepted := v_accepted || jsonb_build_object(
       'person_id', v_person_id, 'child_id', v_child_id, 'display_name', v_display_name, 'seat_kind', v_seat_kind,
-      'request_id', v_match.id, 'leg', v_leg, 'part', v_part,
+      'request_id', v_merge_id, 'leg', v_leg, 'part', v_part,
       'board_place_id', nullif(v_item ->> 'board_place_id', ''), 'board_place_text', nullif(trim(v_item ->> 'board_place_text'), ''),
       'alight_place_id', nullif(v_item ->> 'alight_place_id', ''), 'alight_place_text', nullif(trim(v_item ->> 'alight_place_text'), ''),
       'return_board_place_id', nullif(v_item ->> 'return_board_place_id', ''), 'return_board_place_text', nullif(trim(v_item ->> 'return_board_place_text'), ''),
@@ -8933,25 +8991,33 @@ begin
 
   for v_item in select * from unnest(v_accepted)
   loop
-    v_linked := false;
     if nullif(v_item ->> 'request_id', '') is not null then
-      begin
-        insert into public.ride_requests (ride_id, request_id, role, leg, car_mode)
-        values (p_ride_id, (v_item ->> 'request_id')::uuid, 'passenger', (v_item ->> 'leg')::public.ride_leg, 'passenger');
-        v_linked := true;
-        v_prev_flag := current_setting('app.system_status_transition', true);
-        perform set_config('app.system_status_transition', 'on', true);
-        update public.requests set status = 'assigned', status_reason = null
-        where id = (v_item ->> 'request_id')::uuid and status in ('submitted', 'waitlisted')
-          and public.request_legs_covered(id);
-        perform set_config('app.system_status_transition', coalesce(v_prev_flag, 'off'), true);
-        perform public.waitlist_group_leave((v_item ->> 'request_id')::uuid);
-        v_matched_route := public.request_route_label((v_item ->> 'request_id')::uuid);
-      exception when others then
-        v_linked := false;   -- the ride's own checks refused the link: keep the plain named seat
-      end;
-    end if;
-    if not v_linked then
+      v_check := v_checks -> (v_item ->> 'request_id');
+      insert into public.ride_requests (ride_id, request_id, role, leg, car_mode, detour_minutes)
+      values (p_ride_id, (v_item ->> 'request_id')::uuid, 'passenger', (v_item ->> 'leg')::public.ride_leg, 'passenger',
+        greatest(coalesce((v_check ->> 'added_out_minutes')::int, 0), coalesce((v_check ->> 'added_return_minutes')::int, 0)));
+      v_any_merge := true;
+      -- the route extension, as any merge (REQ §13.95): earlier by the added out-leg driving, later by the return's
+      v_start := least(coalesce(v_start, v_ride.starts_at), (v_check ->> 'new_starts_at')::timestamptz);
+      v_end := greatest(coalesce(v_end, v_ride.ends_at), (v_check ->> 'new_ends_at')::timestamptz);
+      -- REQ §13.90: its pending proposals end with it
+      update public.proposals set status = 'withdrawn'
+      where request_id = (v_item ->> 'request_id')::uuid and status in ('draft', 'sent');
+      v_prev_flag := current_setting('app.system_status_transition', true);
+      perform set_config('app.system_status_transition', 'on', true);
+      -- PS1 fix (owner 2026-11-22, local test): on a day not published yet the ride is still a draft, which
+      -- `request_legs_covered` does not count - the request stayed "waiting" although it rides. A merge counts every
+      -- live ride, draft included, as the board's own merges do (`apply_proposal`).
+      update public.requests q set status = 'merged', status_reason = null
+      where q.id = (v_item ->> 'request_id')::uuid and q.status in ('submitted', 'waitlisted', 'proposed')
+        and (select case when q.trip_shape = 'round_trip' then coalesce(bool_or(rr.covers_out), false) and coalesce(bool_or(rr.covers_return), false)
+                         else count(*) > 0 end
+             from public.ride_requests rr join public.rides r on r.id = rr.ride_id
+             where rr.request_id = q.id and r.status <> 'cancelled');
+      perform set_config('app.system_status_transition', coalesce(v_prev_flag, 'off'), true);
+      perform public.waitlist_group_leave((v_item ->> 'request_id')::uuid);
+      v_matched_route := public.request_route_label((v_item ->> 'request_id')::uuid);
+    else
       insert into public.ride_passengers (ride_id, department_id, week_start, person_id, child_id, display_name, seat_kind, added_by, leg,
                                           board_place_id, board_place_text, alight_place_id, alight_place_text,
                                           return_board_place_id, return_board_place_text, return_alight_place_id, return_alight_place_text)
@@ -8970,6 +9036,15 @@ begin
 
   if v_check_along and not public._ride_people_fit(p_ride_id) then
     raise exception 'ride_seats_exceeded' using errcode = 'P0001';
+  end if;
+
+  if v_any_merge then
+    update public.rides set starts_at = least(starts_at, v_start), ends_at = greatest(ends_at, v_end),
+      is_pinned = true, pin_reason = coalesce(pin_reason, 'MEMBER_EDIT')
+    where id = p_ride_id;
+    perform public.assert_ride_request_day(p_ride_id);
+    perform public.assert_ride_seats_fit(p_ride_id);
+    perform public.assert_car_chain(v_ride.car_id, v_ride.week_start);
   end if;
 
   update public.rides set updated_at = now() where id = p_ride_id
@@ -12406,7 +12481,7 @@ CREATE OR REPLACE FUNCTION "public"."close_request"("p_request_id" "uuid", "p_ex
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
-declare v_req public.requests%rowtype; v_ids uuid[];
+declare v_req public.requests%rowtype; v_ids uuid[]; v_driver text;
 begin
   select * into v_req from public.requests where id = p_request_id for update;
   if v_req.id is null then raise exception 'request_not_found' using errcode = 'P0001'; end if;
@@ -12416,9 +12491,15 @@ begin
   if exists (select 1 from public.weeks where department_id = v_req.department_id and week_start = v_req.week_start and phase = 'archived') then
     raise exception 'week_archived' using errcode = 'P0001';
   end if;
+  -- PS1 (owner 2026-11-22): a request that is the person's seat in someone else's ride takes them off it - the notice says so
+  select coalesce(p.full_name, '') into v_driver
+  from public.ride_requests rr join public.rides r on r.id = rr.ride_id left join public.profiles p on p.id = r.driver_id
+  where rr.request_id = p_request_id and rr.role <> 'driver' and r.status <> 'cancelled'
+    and r.driver_id is not null and r.driver_id is distinct from v_req.requester_id
+  order by r.starts_at, r.id limit 1;
   perform set_config('app.audit_reason', coalesce(nullif(btrim(coalesce(p_reason, '')), ''), 'close_request'), true);
   v_ids := public._close_request(p_request_id);
-  perform public._notify_request_closed(p_request_id, p_reason);
+  perform public._notify_request_closed(p_request_id, p_reason, v_driver);
   return jsonb_build_object('request_id', p_request_id, 'status', 'cancelled', 'status_reason', 'CLOSED_BY_SADRAN', 'closed', to_jsonb(v_ids));
 end $$;
 
@@ -23976,6 +24057,30 @@ $$;
 
 
 ALTER FUNCTION "public"."resume_request_template"("p_template_id" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."ride_add_matching_requests"("p_ride_id" "uuid", "p_person_ids" "uuid"[]) RETURNS "jsonb"
+    LANGUAGE "plpgsql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare v_ride public.rides%rowtype;
+begin
+  select * into v_ride from public.rides where id = p_ride_id;
+  if v_ride.id is null or v_ride.status = 'cancelled' then raise exception 'ride_not_found' using errcode = 'P0001'; end if;
+  if not public.member_of(v_ride.department_id) then raise exception 'not_authorized' using errcode = 'P0001'; end if;
+  if not (public.is_week_public(v_ride.department_id, v_ride.week_start) or public.can_manage_week(v_ride.department_id, v_ride.week_start)) then
+    raise exception 'ride_week_not_public' using errcode = 'P0001';
+  end if;
+  return coalesce((
+    select jsonb_agg(jsonb_build_object('person_id', m.pid, 'request_id', m.rid,
+             'route', coalesce(public.request_route_label(m.rid), '')) order by m.pid)
+    from (select x.pid, public._ride_matching_request(p_ride_id, x.pid) as rid
+          from unnest(coalesce(p_person_ids, '{}'::uuid[])) as x(pid)) m
+    where m.rid is not null), '[]'::jsonb);
+end $$;
+
+
+ALTER FUNCTION "public"."ride_add_matching_requests"("p_ride_id" "uuid", "p_person_ids" "uuid"[]) OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."ride_busy_people"("p_ride_id" "uuid") RETURNS SETOF "uuid"
@@ -39953,6 +40058,11 @@ GRANT ALL ON FUNCTION "public"."_notify_request_closed"("p_request_id" "uuid", "
 
 
 
+REVOKE ALL ON FUNCTION "public"."_notify_request_closed"("p_request_id" "uuid", "p_reason" "text", "p_off_ride_driver" "text") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_notify_request_closed"("p_request_id" "uuid", "p_reason" "text", "p_off_ride_driver" "text") TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."_notify_request_edited_by_manager"("p_request" "uuid", "p_actor" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."_notify_request_edited_by_manager"("p_request" "uuid", "p_actor" "uuid") TO "service_role";
 
@@ -40183,6 +40293,16 @@ GRANT ALL ON FUNCTION "public"."_ride_leg_fits_with_guest"("p_ride_id" "uuid", "
 
 REVOKE ALL ON FUNCTION "public"."_ride_leg_riders"("p_ride_id" "uuid", "p_leg" "public"."ride_leg", "p_with_passengers" boolean) FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."_ride_leg_riders"("p_ride_id" "uuid", "p_leg" "public"."ride_leg", "p_with_passengers" boolean) TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."_ride_matching_leg"("p_ride_id" "uuid", "p_request_id" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_ride_matching_leg"("p_ride_id" "uuid", "p_request_id" "uuid") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."_ride_matching_request"("p_ride_id" "uuid", "p_person_id" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_ride_matching_request"("p_ride_id" "uuid", "p_person_id" "uuid") TO "service_role";
 
 
 
@@ -42704,6 +42824,12 @@ GRANT ALL ON FUNCTION "public"."restore_removed_reservation"("p_ride_id" "uuid")
 REVOKE ALL ON FUNCTION "public"."resume_request_template"("p_template_id" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."resume_request_template"("p_template_id" "uuid") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."resume_request_template"("p_template_id" "uuid") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."ride_add_matching_requests"("p_ride_id" "uuid", "p_person_ids" "uuid"[]) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."ride_add_matching_requests"("p_ride_id" "uuid", "p_person_ids" "uuid"[]) TO "service_role";
+GRANT ALL ON FUNCTION "public"."ride_add_matching_requests"("p_ride_id" "uuid", "p_person_ids" "uuid"[]) TO "authenticated";
 
 
 
