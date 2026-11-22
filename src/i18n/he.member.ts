@@ -542,6 +542,8 @@ export const heMember = {
     gridView: "תצוגת לוח",
     listView: "תצוגת רשימה",
     noRides: "אין נסיעות ביום הזה.",
+    /** R22U11: the day's rides under the waiting list on the phone list (shown only with it; wording to approve). */
+    ridesHeading: "נסיעות",
     thisWeek: "השבוע",
     nextWeek: "שבוע הבא",
     waitlistForDay: "רשימת המתנה ליום {{day}}",

@@ -703,12 +703,19 @@ export function SiddurPage() {
                 <EmptyState icon={CalendarDays} message={he.siddur.noRides} />
               ) : (
                 <>
+                  {/* R22U11: the dashed waiting cards read as drafts without a heading - the same name as the week view's column */}
+                  {activeDayWaitlistGroups.length || activeDayWaiting.length ? (
+                    <h3 className="px-1 pt-1 text-sm font-semibold text-muted-foreground" data-testid="siddur-waiting-heading">{he.waitlist.siddurLane}</h3>
+                  ) : null}
                   {activeDayWaitlistGroups.map((group) => (
                     <WaitlistGroupCard key={group.id} group={group} onClick={() => setSelectedGroupId(group.id)} />
                   ))}
                   {activeDayWaiting.map((request) => (
                     <WaitingRequestCard key={request.request_id} request={request} onClick={() => setSelectedWaitingId(request.request_id)} />
                   ))}
+                  {(activeDayWaitlistGroups.length || activeDayWaiting.length) && activeDayRides.length ? (
+                    <h3 className="px-1 pt-2 text-sm font-semibold text-muted-foreground" data-testid="siddur-rides-heading">{he.siddur.ridesHeading}</h3>
+                  ) : null}
                   {activeDayRides.map((r) => {
                   // Same fix as `weekGridRides` above (UX_FLOWS §20): a round trip's own
                   // `destination_name` is always the department's home name.
