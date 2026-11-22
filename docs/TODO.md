@@ -2047,3 +2047,56 @@ Owner: after a member answers a הצעה (accept / decline) on `/p/<token>` or t
 ## A waiting-list column every day, even empty (owner 2026-11-21, WL1) — built 2026-11-21 (siddur table: `waitingLanes(…, minLanes)`, a published day from today on; the two-tap waiting-list request already existed, REQ §13.183 f). Column renamed "רשימת המתנה" (owner 2026-11-21). Not needed on /my (owner). Not needed either: the phone list view, the board (owner 2026-11-21) — WL1 complete
 
 Owner: on this week's siddur a member should be able to put themselves on the רשימת המתנה for a day. Show the waiting-list column (REQ §13.182/183) as the last column of every day **even when nobody is in it**; tapping / double-tapping an empty spot in it opens a request for that day and hours **for no particular car** — straight into the waiting list (the existing `waitlist=1` flow, which still tries to place it first and says "car was free" when it could, consistency decision 24). Check: phone day list + desktop grid, /my week view, the board's own waiting-list column, and the column header wording.
+
+## QA run 22 findings (2026-11-22; seed 4652, department `qa-s4652`, QA week 29.11–5.12; main @ 8b8bada; two Sonnet agents on the disposable stack; Tue + Thu through the board UI) — **awaiting owner triage**
+
+Scope: everything unreleased since v2026.11.17-3, AI off. Thorough on board placement, what members read, and how features interact (CM1 chains, one-way joins, multi-stop, companions on one trip, RP1, RT1, ED1, OB1, ND1, SN1); sanity only for CG1, PX1, proposals, WL1. The lead filed extra cases the QA Sadran was not told about (school run + work + pickup, a companion on one trip only, a one-way join, a multi-stop work ride, a non-driver's הקפצה, a ride filed for someone else). Whole week published and put live. Car-now not tested (the QA week is not the current week).
+
+### Bugs
+- **R22B1 (Tue 1.12, ride db9b555f) — cancelling one trip of a chained ride cancels the whole ride.** A member's cancel on the Gan Shmuel request (69103b24) also cancelled their Hadera work request (489824cb): both `RIDE_CANCELLED` in the same instant (lead checked the data). The member's cancel goes through `cancel_ride` on the ride, and the member drives both trips, so the driver path cancels everything. `withdraw` is refused (`request_has_ride`), so a member cannot drop just one trip of a chain. Same path from /my in the app.
+- **R22B2 (Wed 2.12, ride b6638f4d; Tue db9b555f) — a companion is not told when the ride is cancelled.** The requester cancelled; the companion got no notice (lead checked: no notification for them). Only the canceller and the Sadran heard.
+- **R22B3 (Tue 1.12, chain popup) — the result line does not follow the one-trip answer.** With "הורדה ב…" picked, "התוצאה" still shows the plain route (the server applied the via route correctly). REQ item 260 says the line follows the answer.
+- **R22B4 (Tue 1.12, ride db9b555f) — after a chain the same person shows twice, plus a phantom "מבוגר/ת 1".** Riders read "טליה, נועם, טליה, אור, אריאל, מבוגר/ת 1" on the board, the siddur and /my; the CLI shows both requests counting their adults (2a + 2a+1cs) for the same driver. Check that seats count her once (CM1 phase 1). The chained route also showed only "חדרה" to the members (no Gan Shmuel), and the children were marked leg "both" though they ride only the second trip.
+- **R22B5 (Tue 1.12, chain popup) — leftovers.** It says the driver herself "מצטרף/ת בדרך הלוך / חזרה", a stray "טליה שגיא: 15:30" line remains, and the "הלוך בלבד / הלוך וחזור" leg choice is still offered in chain mode.
+- **R22B6 (Wed 2.12 m01 and others: c28437b9, ec58a435, 74b4417f, 215d4da1) — a named child leaves a phantom adult.** The request stores adults 2, child seats 0 with one named child (age 8); the passenger list then shows the child by name *and* "מבוגר/ת 1" (siddur ride dd192894; m22's /my on Sat). Either the child is counted twice or the unnamed-adult line ignores named children.
+- **R22B7 (Tue 1.12, req c97a4834, ride 2ee2103d) — a same-day return edit of a multi-stop ride is refused.** Return 16:00 → 16:30 and → 15:30 both refused with `car_taken_choice` / `drives_others=false`, though the ride carries two others; the "leave the passengers without a driver" wording is misleading. The board shows no trace of the refused edit (the Sadran cannot follow up). Possibly a real overlap with another ride of the same person — check.
+- **R22B8 (Tue 1.12, ride 3890c070) — "+ נוסעים" join ignores the joiner's other ride.** m13 joined an 08:00–23:59 ride while already on 07:15–16:00 the same day; a request would be refused `person_busy`.
+- **R22B9 (Tue 1.12, req 29300a5d on ride 2ee2103d) — a merged home boarder is labelled at the wrong stop.** Route "גבעת חביבה ← עין שמר (איסוף עומר צור) ← …" for someone boarding at home at 07:15; "דיברת עם…" also asks the people only dropped at Ein Shemer.
+- **R22B10 (Wed 2.12, ride 58eaac0e) — a merge `out` onto a ride that has only a return leg is accepted** (should be `leg_missing`/`window`); the draft showed "00:00-17:45". A 0-flex guest's window was not checked either (proposal declined, so harmless this time).
+- **R22B11 (Wed 2.12, m03 ce9f7780, ride 6130da58) — one out-only ride, three windows.** The published notice and siddur say 08:30–23:59, the companion's /my 08:30–09:30 "יום 1/2"; /my lists "חזור 15:00" with no mark that the return has no ride.
+- **R22B12 (Fri 4.12, req 5ba739a8) — a round trip shorter than its drive time is accepted and placed** (Tel Aviv 08:15–09:15, 66 min each way; ride a77a8fbd ends before the car can be back).
+- **R22B13 (Thu 3.12, m23 req 746c926d, ride 7dd3f912) — a הקפצה pickup leaves before the requested time** (pickup 11:30, return ride 10:45–11:30).
+- **R22B14 (Thu 3.12, m22 → m35, d488c1e2) — the filer does not see a ride filed for someone else in the UI /my** ("הוגשה עבור" never appears; the CLI lists it; the rider's side shows "הוגשה ע״י" correctly).
+- **R22B15 (Thu 3.12, m14 dc084216) — the trip-type notice says "עכשיו: הלוך-חזור" with no return time or car**, after the Sadran turned a one-way into a round trip (return 10:45 invented). The arranged one-way join case was not served as a join.
+- **R22B16 (Tue 390 px, board list view) — ride titles and the "נוסעים:" line are clipped at the left edge** instead of wrapping.
+- **R22B17 (QA tools) — `qa:sadran`:** whole-week `autofill` gave `server_busy` once (a retry worked); `send-held` without `--days` sent 0 while one notice was held (check the board's "שלח את כל ההצעות" default scope); return-only legs print the outbound route; flexibility "-day/+daym" after `trip-type`; no command for a chain merge (`chain_via`). `qa:member my-rides` printed the driver twice.
+
+### UI changes
+- **R22U1 — the chain ask is not offered when either ride carries someone else's request** (`chainTripOf` needs exactly one request). Tue m08 (a guest on each ride) and Thu m02 (the work trip is a guest on someone else's ride) were never offered; it worked only after unmerging the guests. Offer it anyway, or say why not.
+- **R22U2 — dragging a small ride on the board grabs a guest chip** ("לפצל את הנסיעה?"); a short drag moved a ride 1½ h, and "כן, כבר סיכמנו" applied it with no preview of the new hours (may be a Playwright artifact).
+- **R22U3 — "דיברת עם X?" for a move names everyone on the ride**, including people the move does not affect.
+- **R22U4 — a one-way drop on a multi-day series car: "אי אפשר לצרף — הנסיעה המאוחדת תחרוג מהיום של הנסיעה"** does not explain why.
+- **R22U5 — a car move left behind after a trip-type change** stays as an orphan with a CHAIN-BREAK that blocks publishing; hint or clean up.
+- **R22U6 — the 15-minute grid:** popups say "כ-16:00 (ביקשו 15:00)" but the board does not show the ride's new end before confirming.
+- **R22U7 — a cancelled chained ride shows as two unrelated lines** in the live strip and the log.
+- **R22U8 — a host cancelling leaves a guest's ride driverless with no mark on the board** (Thu 76e4a6ac; the guest's notice "נשארה בלי נהג/ת" was right).
+- **R22U9 — /my on a phone:** the install and notification cards push "הנסיעות שלי" below the fold.
+- **R22U10 — wordings:** "שירה אבוטבול לוקח/ת את הרכב" (a name with a slash form); "יום 1/2" on a same-day out-only ride; a ride driven for others shows "גבעת חביבה->גבעת חביבה" on /my (m01, Thu 201737fa) while the notice says "לבנימינה".
+- **R22U11 — the siddur's dashed waiting-list cards at the top of a day look like drafts to a member;** a "ממתינים" heading?
+- **R22U12 — a merge proposal with a 5-hour shift** (Wed m17, 33f89a10) should say the shift plainly.
+
+### Missing obvious features
+- **R22M1 — drop only one trip of a chain** (see R22B1).
+- **R22M2 — bulk "assign volunteer drivers"** for the many driverless chauffeur rides (5–8 a day Mon–Thu); `assign-driver` does not consider where the driver is or their neighbouring rides.
+- **R22M3 — the week summary does not show unmet legs blocked only by a missing driver** (Thu READY with noDriver 6, yet publish needs `--allow-unanswered`).
+- **R22M4 — a late request with no car on a published day:** only a time shift can be proposed (`deny` is refused `proposal_day_public`), so the Sadran falls back to the mailbox.
+- **R22M5 — no freed-car prompt after a live cancellation was seen** (no waiting request fitted the freed hours, so unverified).
+
+### Additional features
+- **R22F1 — offer a car move or return pairing when a placed one-way strands a car** (Mon 11-30, b734d542: `place --pair` placed the lone leg with a CHAIN-BREAK and two publish blockers).
+- **R22F2 — rush-hour travel times not visible:** the same destination had the same minutes early and midday (unverified; check TT1).
+- **R22F3 — "find a replacement driver" from the notice when a host cancels.**
+
+### Notes
+- Sanity checks: proposal answers (origin, merge, external, shift) applied or declined correctly within minutes; the children-overlap banner on the board is clear; the "לשבץ בכל זאת?" chain-break dialog, the one-way join, per-day publish and held-notice gating worked. Car guides and the waiting-list column were not examined.
+- Left unmet: Sun 4, Mon 4, Tue 11, Wed 12, Thu 10, Sat 1 (Netanya/Haifa origins, peak-hour no-car, drop-off return legs with no driver); days published with `--allow-unanswered`.
