@@ -2094,7 +2094,7 @@ Scope: everything unreleased since v2026.11.17-3, AI off. Thorough on board plac
 
 ### Additional features
 - **R22F1 — offer a car move or return pairing when a placed one-way strands a car** (Mon 11-30, b734d542: `place --pair` placed the lone leg with a CHAIN-BREAK and two publish blockers).
-- **R22F2 — rush-hour travel times not visible:** the same destination had the same minutes early and midday (unverified; check TT1).
+- **R22F2 — rush-hour travel times not visible:** the same destination had the same minutes early and midday (unverified; check TT1). **Checked 2026-11-22 - works as REQ item 249 (b) says:** the times shown on a ride with places in the middle are stretched (QA week, Tue 07:15: Haifa ~08:46 against 08:28 plain; midday rides unchanged); a plain A -> B ride shows no hour between its car times; the solver, merges, joins and the QA tools' minutes are plain by design (owner 2026-11-17).
 - **R22F3 — "find a replacement driver" from the notice when a host cancels.**
 
 ### Notes
