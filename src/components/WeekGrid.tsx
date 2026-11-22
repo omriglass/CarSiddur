@@ -24,7 +24,7 @@ import { RideNotes } from "./RideNotes";
 import { useIsDesktop } from "./useIsDesktop";
 import { RideDeltaLine } from "./RideDeltaLine";
 import type { RideDeltaView } from "@/features/sadran/requestDelta";
-import { clampRideVertical, minutesFromClientY, snapTimeShift } from "./weekGridGeometry";
+import { clampRideVertical, minutesFromClientY, moveShiftNearRequested, snapTimeShift } from "./weekGridGeometry";
 import { RichLines } from "./RichLines";
 import { WeekGridNowLine } from "./WeekGridNowLine";
 import { HOLD_TO_DRAG_MS, holdStartOf, isDragAttempt, setTouchScrollLocked, watchHold, type HoldStart } from "./holdGesture";
@@ -992,10 +992,7 @@ export function WeekGrid({
     if (current.kind === "resize-end" && current.originEndMinutes + shift >= 1439 && dayEndMinutes === 1440) {
       return 1439 - current.originEndMinutes;
     }
-    const requestedStart = rideById.get(current.rideId)?.requestedStartMinutes;
-    if (current.kind === "move" && requestedStart != null && Math.abs(current.originStartMinutes + shift - requestedStart) <= 15) {
-      return requestedStart - current.originStartMinutes;
-    }
+    if (current.kind === "move") return moveShiftNearRequested(current.originStartMinutes, shift, rideById.get(current.rideId)?.requestedStartMinutes);
     return shift;
   }
 

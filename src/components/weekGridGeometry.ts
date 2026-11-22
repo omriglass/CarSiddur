@@ -32,3 +32,15 @@ export function snapTimeShift(rawDeltaMinutes: number): number {
   if (Math.abs(rawDeltaMinutes) < TIME_SHIFT_DEAD_ZONE_MINUTES) return 0;
   return Math.round(rawDeltaMinutes / 15) * 15;
 }
+
+/**
+ * A moved ride's time shift: a move that lands less than 15 minutes from the ride's requested start (an off-grid
+ * request time, e.g. 08:10) snaps back to it; a full 15-minute step always stands (owner 2026-11-22: a ride at its
+ * requested time could only move in 30-minute steps, the 15-minute step snapped back). Exported for unit tests.
+ */
+export function moveShiftNearRequested(originStartMinutes: number, shift: number, requestedStartMinutes: number | undefined): number {
+  if (requestedStartMinutes != null && Math.abs(originStartMinutes + shift - requestedStartMinutes) < 15) {
+    return requestedStartMinutes - originStartMinutes;
+  }
+  return shift;
+}

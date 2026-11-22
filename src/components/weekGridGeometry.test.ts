@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { clampRideVertical, minutesFromClientY, snapTimeShift } from "./weekGridGeometry";
+import { clampRideVertical, minutesFromClientY, moveShiftNearRequested, snapTimeShift } from "./weekGridGeometry";
 
 // Vertical-board redesign (UX_FLOWS.md §20 "owner feedback: flip the
 // grid" — cars as columns, hours as rows, time flows top→bottom). The old
@@ -90,5 +90,18 @@ describe("clampRideVertical", () => {
   it("keeps a minimum height for a 15-minute ride so the label stays legible (never below the 0.5% floor)", () => {
     const rect = clampRideVertical(12 * 60, 12 * 60 + 15, dayStart, dayEnd);
     expect(parseFloat(rect.height)).toBeGreaterThan(0);
+  });
+});
+
+describe("moveShiftNearRequested (owner 2026-11-22)", () => {
+  it("a ride at its requested time moves by one 15-minute step, either way", () => {
+    expect(moveShiftNearRequested(480, 15, 480)).toBe(15);
+    expect(moveShiftNearRequested(480, -15, 480)).toBe(-15);
+  });
+  it("a move back near an off-grid requested start snaps to it", () => {
+    expect(moveShiftNearRequested(540, -45, 490)).toBe(-50);
+  });
+  it("no requested start: the shift as is", () => {
+    expect(moveShiftNearRequested(480, 15, undefined)).toBe(15);
   });
 });
