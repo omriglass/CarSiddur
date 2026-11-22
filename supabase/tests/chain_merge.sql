@@ -91,6 +91,14 @@ begin
   -- m1 is on both requests: on the way there A's seat for m1 is not counted twice
   assert (select (e ->> 'adults')::int from jsonb_array_elements(public._ride_leg_riders(rB, 'out') -> 'riders') e
            where e ->> 'key' = 'req:' || qA) = 0, 'TEST 3 FAILED: m1 counted twice on the way there';
+  -- CM1 limit: the chained trip's people ride the way there only - in the people list too (view and board readers)
+  insert into public.request_companions(request_id, profile_id) values (qA, m2);
+  assert (select e ->> 'leg' from public.board_rows(array[rB]) b cross join jsonb_array_elements(b.people) e
+           where e ->> 'key' = format('comp:%s:%s', qA, m2)) = 'out', 'TEST 3 FAILED: the chained companion rides both ways (board_rows)';
+  assert (select e ->> 'leg' from public.v_board_rides b cross join jsonb_array_elements(b.people) e
+           where b.id = rB and e ->> 'key' = format('comp:%s:%s', qA, m2)) = 'out', 'TEST 3 FAILED: the chained companion rides both ways (view)';
+  assert public.ride_request_ride_leg(rB, qB) = 'both', 'TEST 3 FAILED: the base trip rides both ways';
+  delete from public.request_companions where request_id = qA and profile_id = m2;
   -- a second chain on the same ride is not offered
   insert into public.requests(department_id, week_start, requester_id, filed_by, origin_id, destination_id, ride_type_id, depart_at, return_at,
                               trip_type, trip_shape, status, adults)
@@ -127,6 +135,7 @@ begin
   assert v_places = format('%s:origin,%s:board,%s:destination', haifa, school, home), format('TEST 5 FAILED: way back %s', v_places);
   assert not exists (select 1 from jsonb_array_elements(public._ride_leg_riders(rB, 'out') -> 'riders') e
                       where e ->> 'key' = 'req:' || qC), 'TEST 5 FAILED: the pickup rides the way there';
+  assert public.ride_request_ride_leg(rB, qC) = 'return', 'TEST 5 FAILED: the pickup''s people ride the way there (people list)';
 
   -----------------------------------------------------------------------
   -- 6) The base leaves: the chained request rides its own route again.
@@ -135,6 +144,8 @@ begin
   assert (select chain from public.ride_requests where ride_id = rB and request_id = qC) is null, 'TEST 6 FAILED: chain kept';
   select string_agg(coalesce(r.place_id::text, ''), ',' order by r.leg, r."position") into v_places from public.ride_route(rB) r;
   assert v_places = concat_ws(',', home, school, school, home), format('TEST 6 FAILED: route %s', v_places);
+  assert (select starts_at from public.rides where id = rB) = d0 + interval '405 minutes',
+    'TEST 6 FAILED: the pickup''s ride keeps the chain''s start, not its own';
 
   -----------------------------------------------------------------------
   -- 7) No chain without a shared person, or with trips that overlap.
@@ -147,6 +158,21 @@ begin
   assert public._merge_chain_plan(rB, qD, 'both') is null, 'TEST 7 FAILED: chained without a shared person';
   update public.requests set depart_at = d0 + interval '120 minutes', return_at = d0 + interval '150 minutes' where id = qA;
   assert public._merge_chain_plan(rB, qA, 'both') is null, 'TEST 7 FAILED: chained inside the other trip';
+
+  -----------------------------------------------------------------------
+  -- 8) The base leaves a `before` chain: the ride ends at the chained trip's own return again.
+  -----------------------------------------------------------------------
+  update public.requests set depart_at = d0, return_at = d0 + interval '30 minutes' where id = qA;
+  update public.rides set starts_at = d0 + interval '45 minutes', ends_at = d0 + interval '375 minutes' where id = rB;
+  v_plan := public._merge_chain_plan(rB, qA, 'both');
+  assert v_plan ->> 'side' = 'before', format('TEST 8 FAILED: plan %s', v_plan);
+  insert into public.ride_requests(ride_id, request_id, role, leg, car_mode) values (rB, qA, 'passenger', 'both', 'passenger');
+  perform public._apply_chain(rB, v_plan);
+  update public.rides set starts_at = d0 where id = rB;
+  delete from public.ride_requests where ride_id = rB and request_id = qB;
+  select * into v_ride from public.rides where id = rB;
+  assert v_ride.starts_at = d0 and v_ride.ends_at = d0 + interval '30 minutes',
+    format('TEST 8 FAILED: the school ride runs %s-%s', v_ride.starts_at, v_ride.ends_at);
 
   raise notice 'chain_merge: all tests passed';
 end $$;

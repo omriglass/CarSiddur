@@ -1159,9 +1159,9 @@ begin
 
   -- the part of the ride each request rides (first stored leg; a reversed one-way guest rides the way back)
   select jsonb_object_agg(f.ride_id::text || ':' || f.request_id::text,
-           case when f.role = 'passenger' and f.leg = 'out' then public.ride_request_ride_leg(f.ride_id, f.request_id) else f.leg end)
+           case when (f.role = 'passenger' and f.leg = 'out') or f.chain is not null then public.ride_request_ride_leg(f.ride_id, f.request_id) else f.leg end)
     into v_legs
-    from (select distinct on (x.ride_id, x.request_id) x.ride_id, x.request_id, x.role, x.leg
+    from (select distinct on (x.ride_id, x.request_id) x.ride_id, x.request_id, x.role, x.leg, x.chain
             from public.ride_requests x join public.rides r on r.id = x.ride_id
            where x.ride_id = any(v_ids) and r.department_id = any(v_leg_depts)
            order by x.ride_id, x.request_id, x.created_at, x.leg) f;
@@ -5333,12 +5333,36 @@ ALTER FUNCTION "public"."_proposal_holds_ride"("p" "public"."proposals") OWNER T
 
 
 CREATE OR REPLACE FUNCTION "public"."_publish_ride_line"("p_request_id" "uuid", "p_ride_id" "uuid") RETURNS "text"
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  select public._publish_ride_line_core(p_request_id, p_ride_id, null);
+$$;
+
+
+ALTER FUNCTION "public"."_publish_ride_line"("p_request_id" "uuid", "p_ride_id" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."_publish_ride_line"("p_request_id" "uuid", "p_ride_id" "uuid", "p_viewer" "uuid") RETURNS "text"
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  select concat_ws(' · ', public._publish_ride_line_core(p_request_id, p_ride_id, p_viewer),
+    (select public._frag('publish.with', jsonb_build_object('names', n))
+     from (select public._ride_other_names(p_ride_id, p_viewer) as n) x where n is not null));
+$$;
+
+
+ALTER FUNCTION "public"."_publish_ride_line"("p_request_id" "uuid", "p_ride_id" "uuid", "p_viewer" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."_publish_ride_line_core"("p_request_id" "uuid", "p_ride_id" "uuid", "p_viewer" "uuid") RETURNS "text"
     LANGUAGE "plpgsql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
 declare
   q public.requests%rowtype; r public.rides%rowtype; rr public.ride_requests%rowtype;
-  v_what text; v_range text; v_pickup boolean; v_car text; v_origin text;
+  v_what text; v_range text; v_pickup boolean; v_car text; v_origin text; v_span tstzrange;
 begin
   select * into q from public.requests where id = p_request_id;
   select * into r from public.rides where id = p_ride_id;
@@ -5353,27 +5377,16 @@ begin
     v_range := to_char(coalesce(case when rr.leg = 'return' then q.return_at else q.depart_at end, r.starts_at) at time zone 'Asia/Jerusalem', 'HH24:MI');
   else
     v_what := coalesce(public.request_route_label(p_request_id), '');
-    v_range := to_char(r.starts_at at time zone 'Asia/Jerusalem', 'HH24:MI') || '–' || to_char(r.ends_at at time zone 'Asia/Jerusalem', 'HH24:MI');
+    v_span := public.person_ride_span(p_ride_id, coalesce(p_viewer, q.requester_id));
+    v_range := to_char(coalesce(lower(v_span), r.starts_at) at time zone 'Asia/Jerusalem', 'HH24:MI') || '–'
+      || to_char(coalesce(upper(v_span), r.ends_at) at time zone 'Asia/Jerusalem', 'HH24:MI');
   end if;
   return public._frag('publish.ride_line', jsonb_build_object('day', public.day_date_label(r.starts_at),
     'range', v_range, 'what', concat_ws(' · ', nullif(v_what, ''), nullif(v_car, ''))));
 end $$;
 
 
-ALTER FUNCTION "public"."_publish_ride_line"("p_request_id" "uuid", "p_ride_id" "uuid") OWNER TO "postgres";
-
-
-CREATE OR REPLACE FUNCTION "public"."_publish_ride_line"("p_request_id" "uuid", "p_ride_id" "uuid", "p_viewer" "uuid") RETURNS "text"
-    LANGUAGE "sql" STABLE SECURITY DEFINER
-    SET "search_path" TO 'public', 'pg_temp'
-    AS $$
-  select concat_ws(' · ', public._publish_ride_line(p_request_id, p_ride_id),
-    (select public._frag('publish.with', jsonb_build_object('names', n))
-     from (select public._ride_other_names(p_ride_id, p_viewer) as n) x where n is not null));
-$$;
-
-
-ALTER FUNCTION "public"."_publish_ride_line"("p_request_id" "uuid", "p_ride_id" "uuid", "p_viewer" "uuid") OWNER TO "postgres";
+ALTER FUNCTION "public"."_publish_ride_line_core"("p_request_id" "uuid", "p_ride_id" "uuid", "p_viewer" "uuid") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."_refresh_car_task_notices"("p_car_id" "uuid") RETURNS "void"
@@ -24157,9 +24170,12 @@ CREATE OR REPLACE FUNCTION "public"."ride_request_ride_leg"("p_ride_id" "uuid", 
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
-  -- the part of THIS ride the request rides: its stored leg, except a reversed one-way guest rides the way back.
+  -- the part of THIS ride the request rides: its stored leg, except a reversed one-way guest rides the way back and a
+  -- chained trip rides the part the chain leaves it (CM1).
   -- Read helper of v_board_rides.people (security invoker): a leg only, null for a ride the caller cannot see.
-  select case when rr.role = 'passenger' and rr.leg = 'out' and public._merge_guest_swapped(p_ride_id, p_request_id)
+  select case when rr.chain like 'before%' then 'out'::public.ride_leg
+              when rr.chain like 'after%' then 'return'::public.ride_leg
+              when rr.role = 'passenger' and rr.leg = 'out' and public._merge_guest_swapped(p_ride_id, p_request_id)
               then 'return'::public.ride_leg else rr.leg end
   from public.ride_requests rr join public.rides r on r.id = rr.ride_id
   where rr.ride_id = p_ride_id and rr.request_id = p_request_id
@@ -24175,7 +24191,7 @@ CREATE OR REPLACE FUNCTION "public"."ride_requests_chain_cleanup"() RETURNS "tri
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
-declare v_was_base uuid;
+declare v_was_base uuid; c record; v_ride public.rides%rowtype; v_start timestamptz; v_end timestamptz;
 begin
   if old.chain is not null then return null; end if;
   if not exists (select 1 from public.ride_requests rr where rr.ride_id = old.ride_id and rr.chain is not null) then return null; end if;
@@ -24186,6 +24202,20 @@ begin
    order by (y.role = 'driver') desc, y.created_at, y.request_id limit 1;
   if v_was_base = old.request_id
      or not exists (select 1 from public.ride_requests rr where rr.ride_id = old.ride_id and rr.chain is null) then
+    select * into v_ride from public.rides where id = old.ride_id;
+    for c in select rr.chain, q.depart_at, q.return_at from public.ride_requests rr join public.requests q on q.id = rr.request_id
+              where rr.ride_id = old.ride_id and rr.chain is not null limit 1 loop
+      if v_ride.id is not null and v_ride.status <> 'cancelled' then
+        v_start := v_ride.starts_at; v_end := v_ride.ends_at;
+        if c.chain like 'after%' and c.depart_at is not null then v_start := greatest(v_ride.starts_at, c.depart_at); end if;
+        if c.chain like 'before%' and c.return_at is not null then
+          v_end := least(v_ride.ends_at, public._round_up_ride_end(v_start, c.return_at));
+        end if;
+        if v_end > v_start and (v_start, v_end) is distinct from (v_ride.starts_at, v_ride.ends_at) then
+          update public.rides set starts_at = v_start, ends_at = v_end where id = old.ride_id;
+        end if;
+      end if;
+    end loop;
     update public.ride_requests set chain = null where ride_id = old.ride_id and chain is not null;
   end if;
   return null;
@@ -31362,9 +31392,9 @@ CREATE OR REPLACE FUNCTION "public"."week_board_rides_rows"("p_department_id" "u
   -- Like ride_request_ride_leg, no leg for a caller outside the department (public rides are readable by all).
   vleg as materialized (
     select f.ride_id, f.request_id,
-           case when f.role = 'passenger' and f.leg = 'out' then public.ride_request_ride_leg(f.ride_id, f.request_id)
+           case when (f.role = 'passenger' and f.leg = 'out') or f.chain is not null then public.ride_request_ride_leg(f.ride_id, f.request_id)
                 else f.leg end as leg
-      from (select distinct on (x.ride_id, x.request_id) x.ride_id, x.request_id, x.role, x.leg
+      from (select distinct on (x.ride_id, x.request_id) x.ride_id, x.request_id, x.role, x.leg, x.chain
               from vrr x order by x.ride_id, x.request_id, x.created_at) f
      where (select public.member_of(p_department_id) or public.is_admin() or (select auth.uid()) is null)
   ),
@@ -39993,6 +40023,11 @@ GRANT ALL ON FUNCTION "public"."_publish_ride_line"("p_request_id" "uuid", "p_ri
 
 REVOKE ALL ON FUNCTION "public"."_publish_ride_line"("p_request_id" "uuid", "p_ride_id" "uuid", "p_viewer" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."_publish_ride_line"("p_request_id" "uuid", "p_ride_id" "uuid", "p_viewer" "uuid") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."_publish_ride_line_core"("p_request_id" "uuid", "p_ride_id" "uuid", "p_viewer" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_publish_ride_line_core"("p_request_id" "uuid", "p_ride_id" "uuid", "p_viewer" "uuid") TO "service_role";
 
 
 

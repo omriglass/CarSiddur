@@ -58,17 +58,31 @@ export function peopleOf(ride: Pick<BoardRide, "people">): RidePerson[] {
   // R2B15: one row per `key` (a volunteer driver after `set_ride_driver` can arrive twice).
   // R22B4 (CM1): one row per person too - on a chained ride the same person is on both trips (the driver, again as the
   // second trip's requester); the first row (the driver's) stands for them, as one person counts once (REQ item 260).
+  // CM1: the kept row rides the parts of all their rows (a chained trip's row rides one part, the base trip's both).
   const seen = new Set<string>();
+  const byPerson = new Map<string, RidePerson>();
   for (const entry of raw) {
     const parsed = ridePersonSchema.safeParse(entry);
     if (!parsed.success || seen.has(parsed.data.key)) continue;
-    const person = personKey(parsed.data);
-    if (person && seen.has(person)) continue;
-    seen.add(parsed.data.key);
-    if (person) seen.add(person);
-    people.push(parsed.data);
+    // The driver drives the whole ride, whichever of their trips the row was read from.
+    const row = parsed.data.source === "driver" ? { ...parsed.data, leg: undefined } : parsed.data;
+    const person = personKey(row);
+    const kept = person ? byPerson.get(person) : undefined;
+    if (kept) {
+      kept.leg = widerLeg(kept.leg, row.leg);
+      continue;
+    }
+    seen.add(row.key);
+    if (person) byPerson.set(person, row);
+    people.push(row);
   }
   return people;
+}
+
+/** The part of the ride two rows of one person cover together (none = the whole ride, unmarked). */
+function widerLeg(a: RideLeg | null | undefined, b: RideLeg | null | undefined): RideLeg | undefined {
+  if (!a || !b) return undefined;
+  return a === b ? a : "both";
 }
 
 /** The person behind a row (a member or a named child), for "one person counts once"; unnamed guests have none. */

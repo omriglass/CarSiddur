@@ -31,6 +31,15 @@ describe("peopleOf", () => {
     expect(peopleOf({ people: [driver, requester, child, again, childAgain] })).toEqual([driver, requester, child]);
   });
 
+  it("a chained ride: the short trip's child rides one part, a person on both trips rides it all, the driver is never marked (CM1)", () => {
+    const driverOut = { ...driver, request_id: "r2", leg: "out" as const };
+    const kidOut = person({ key: "child:r2:c2", source: "child", display_name: "ילדה", child_id: "c2", request_id: "r2", seat_kind: "child_seat", leg: "out" });
+    const partnerBoth = person({ key: "comp:r1:p3", source: "companion", display_name: "גל", person_id: "p3", request_id: "r1", leg: "both" });
+    const partnerOut = person({ key: "comp:r2:p3", source: "companion", display_name: "גל", person_id: "p3", request_id: "r2", leg: "out" });
+    const people = peopleOf({ people: [driverOut, partnerOut, kidOut, partnerBoth] });
+    expect(people.map((p) => [p.display_name, p.leg])).toEqual([["עומרי", undefined], ["גל", "both"], ["ילדה", "out"]]);
+  });
+
   it("returns an empty array when people is null or not an array", () => {
     expect(peopleOf({ people: null })).toEqual([]);
     expect(peopleOf({ people: "garbage" as unknown as never })).toEqual([]);

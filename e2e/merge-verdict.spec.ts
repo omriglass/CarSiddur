@@ -128,18 +128,13 @@ test.describe("merge popup takes the server's verdict", { tag: ["@board"] }, () 
         await page.reload();
       });
 
-      await test.step("refused: reason from the server's code, send and draft disabled, nothing written", async () => {
+      await test.step("refused: the server's reason, no popup, nothing written", async () => {
+        // R7B4: the drop is refused by the board's quick check, so the server decides per leg; it allows none here and
+        // its own reason shows as the toast, no popup (R22: the popup opened only while the quick check let it through).
         await dragRequest(page, guestRequestId, carId, 450);
-        const dialog = page.getByTestId("merge-dialog");
-        await expect(dialog).toBeVisible();
-        const invalid = dialog.getByTestId("merge-invalid");
         // R6B3: the clash is with the PREVIOUS ride (its turnaround reaches the grown start), and the reason says so.
-        await expect(invalid).toHaveText(he.mergedRide.invalid.turnaround_conflict_previous);
-        await expect(invalid).toHaveAttribute("data-code", "turnaround");
-        await expect(dialog.getByTestId("merge-prepare")).toBeDisabled();
-        await expect(dialog.getByTestId("merge-save-draft")).toBeDisabled();
-        await dialog.getByRole("button", { name: he.common.cancel, exact: true }).click();
-        await expect(dialog).not.toBeVisible();
+        await expect(page.locator("[data-sonner-toast]").filter({ hasText: he.mergedRide.invalid.turnaround_conflict_previous })).toBeVisible();
+        await expect(page.getByTestId("merge-dialog")).toHaveCount(0);
         const { data: proposals } = await service.from("proposals").select("id").eq("request_id", guestRequestId);
         expect(proposals).toHaveLength(0);
         await expect(page.locator(`button[data-ride-id="${rideId}"]:visible`)).toHaveCount(1);

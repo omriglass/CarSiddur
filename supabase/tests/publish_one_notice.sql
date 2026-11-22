@@ -259,4 +259,34 @@ begin
   assert body like '%'||public._frag('publish.removed')||'%', 'a placed request that lost its ride is told: '||coalesce(body,'<none>');
   raise notice 'publish_one_notice.sql (removed only when placed): all assertions passed';
 end $$;
+
+-- QA run 22 B11: a one-way guest on a long host ride reads its own part of the ride (person_ride_span), not the
+-- host's window; the driver keeps the whole window.
+reset role;
+do $$
+declare dept uuid:='00000000-0000-0000-0000-000000000001'; manager uuid:='00000000-0000-0000-0000-000000000102';
+  m1 uuid:='00000000-0000-0000-0000-000000000103'; m2 uuid:='00000000-0000-0000-0000-000000000104';
+  home uuid:='00000000-0000-0000-0000-000000000010'; dest uuid:='00000000-0000-0000-0000-000000000011';
+  typ uuid:='00000000-0000-0000-0000-000000000021'; car uuid:='00000000-0000-0000-0000-000000000041';
+  w date:=public.current_week_start()+259; dt timestamptz; host uuid; guest uuid; r uuid; line text; span tstzrange;
+begin
+  insert into public.weeks(department_id,week_start,phase,open_at,close_at,publish_at)
+    values(dept,w,'open',now()-interval '1 day',now()+interval '1 day',now()+interval '2 days');
+  dt:=((w+1)+time '08:30') at time zone 'Asia/Jerusalem';
+  insert into public.requests(department_id,week_start,requester_id,filed_by,destination_id,origin_id,ride_type_id,trip_shape,trip_type,depart_at,return_at,status,adults)
+    values(dept,w,m1,m1,dest,home,typ,'round_trip','round_trip',dt,((w+1)+time '23:59') at time zone 'Asia/Jerusalem','assigned',1) returning id into host;
+  insert into public.requests(department_id,week_start,requester_id,filed_by,destination_id,origin_id,ride_type_id,trip_shape,trip_type,depart_at,return_at,status,adults)
+    values(dept,w,m2,m2,dest,home,typ,'round_trip','round_trip',dt,dt+interval '6 hours 30 minutes','merged',1) returning id into guest;
+  insert into public.rides(department_id,week_start,car_id,starts_at,ends_at,origin_id,destination_id,driver_id,status,created_by)
+    values(dept,w,car,dt,((w+1)+time '23:59') at time zone 'Asia/Jerusalem',home,home,m1,'draft',manager) returning id into r;
+  insert into public.ride_requests(ride_id,request_id,role,leg,car_mode) values(r,host,'driver','both','keep'),(r,guest,'passenger','out','passenger');
+  span:=public.person_ride_span(r,m2);
+  line:=public._publish_ride_line(guest,r,m2);
+  assert upper(span) < ((w+1)+time '23:59') at time zone 'Asia/Jerusalem', 'the guest rides only the out leg: '||span::text;
+  assert line like '%08:30–'||to_char(upper(span) at time zone 'Asia/Jerusalem','HH24:MI')||'%' and line not like '%23:59%',
+    'R22B11: the guest reads its own part of the ride, got: '||line;
+  line:=public._publish_ride_line(host,r,m1);
+  assert line like '%08:30–23:59%', 'R22B11: the driver keeps the ride''s window, got: '||line;
+  raise notice 'publish_one_notice.sql (a guest reads its own part): all assertions passed';
+end $$;
 rollback;

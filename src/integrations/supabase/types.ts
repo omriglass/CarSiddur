@@ -7030,6 +7030,10 @@ export type Database = {
             Args: { p_request_id: string; p_ride_id: string; p_viewer: string }
             Returns: string
           }
+      _publish_ride_line_core: {
+        Args: { p_request_id: string; p_ride_id: string; p_viewer: string }
+        Returns: string
+      }
       _refresh_car_task_notices: {
         Args: { p_car_id: string }
         Returns: undefined
