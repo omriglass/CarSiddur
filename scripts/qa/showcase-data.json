@@ -1,5 +1,5 @@
 {
-  "_comment": "Showcase department (docs/SHOWCASE_SCENARIOS.md): every member, car and request demonstrates one principle. Read by scripts/qa/showcase.mjs. Days are 0=Sun..4=Thu of the next week; times HH:MM (Asia/Jerusalem); places by name from qa-data.json (home = גבעת חביבה). Flexibility values: \"0\", \"15 min\", \"30 min\", \"1 hour\", \"2 hours\".",
+  "_comment": "Showcase department (docs/SHOWCASE_SCENARIOS.md): every member, car and request demonstrates one principle. Read by scripts/qa/showcase.mjs. Days are 0=Sun..4=Thu of the next week; times HH:MM (Asia/Jerusalem); places by name from qa-data.json (home = גבעת חביבה). Flexibility values: \"0\", \"15 min\", \"30 min\", \"1 hour\", \"2 hours\". Days 5=Fri hold the scenarios of the release after v2026.11.17-3 (N1-N5), kept apart so S1-S23 keep their outcomes.",
   "department": {
     "name": "מחלקת הדגמה"
   },
@@ -55,6 +55,22 @@
       "key": "m08",
       "name": "עומר דהן",
       "about": "multi-day traveller"
+    },
+    {
+      "key": "m09",
+      "name": "ליאת שגב",
+      "about": "parent of עמית; school drop-off, then work (chained rides)"
+    },
+    {
+      "key": "m10",
+      "name": "נעמה רז",
+      "doesNotDrive": true,
+      "about": "does not drive, nothing filed (a new request opens on הקפצה)"
+    },
+    {
+      "key": "m11",
+      "name": "תומר גל",
+      "about": "rides with ליאת to work on the way out only"
     }
   ],
   "children": [
@@ -71,6 +87,13 @@
       "age": 9,
       "guardians": [
         "m04"
+      ]
+    },
+    {
+      "name": "עמית שגב",
+      "age": 7,
+      "guardians": [
+        "m09"
       ]
     }
   ],
@@ -435,7 +458,138 @@
       "depart": "08:00",
       "ret": "12:00",
       "rideType": "work"
+    },
+    {
+      "id": "N1",
+      "member": "m09",
+      "day": 5,
+      "trip": "round_trip",
+      "dest": "פרדס חנה",
+      "depart": "07:30",
+      "ret": "08:00",
+      "children": "all",
+      "rideType": "childcare"
+    },
+    {
+      "id": "N2",
+      "member": "m09",
+      "day": 5,
+      "trip": "round_trip",
+      "dest": "בנימינה",
+      "depart": "08:15",
+      "ret": "16:00",
+      "adults": 2,
+      "companions": [
+        "m11"
+      ],
+      "riders": [
+        {
+          "who": "m11",
+          "leg": "return",
+          "rides": false
+        }
+      ],
+      "rideType": "work"
+    },
+    {
+      "id": "N4",
+      "member": "m01",
+      "day": 5,
+      "trip": "round_trip",
+      "dest": "חיפה",
+      "depart": "09:00",
+      "ret": "14:00",
+      "adults": 2,
+      "stops": [
+        {
+          "leg": "out",
+          "place": "זכרון יעקב"
+        }
+      ],
+      "companions": [
+        "m07"
+      ],
+      "riders": [
+        {
+          "who": "m07",
+          "leg": "out",
+          "alight": "זכרון יעקב"
+        },
+        {
+          "who": "m07",
+          "leg": "return",
+          "rides": false
+        }
+      ],
+      "rideType": "errands"
+    },
+    {
+      "id": "N5",
+      "member": "m04",
+      "for": "m05",
+      "day": 5,
+      "trip": "round_trip",
+      "dest": "נתניה",
+      "depart": "17:00",
+      "ret": "19:00",
+      "rideType": "healthcare"
     }
   ],
-  "freeText": "קניון חוצות המפרץ"
+  "freeText": "קניון חוצות המפרץ",
+  "carDetails": [
+    {
+      "car": "plain",
+      "corporation": "אלבר",
+      "model": "טויוטה קורולה",
+      "tireFront": 32,
+      "tireRear": 30,
+      "responsible": "m01"
+    }
+  ],
+  "carIssues": [
+    {
+      "car": "plain",
+      "member": "m07",
+      "category": "warning_light",
+      "description": "נורת לחץ אוויר בצמיגים דולקת"
+    },
+    {
+      "car": "plain",
+      "member": "m04",
+      "category": "physical_damage",
+      "description": "שריטה בדלת האחורית הימנית"
+    }
+  ],
+  "guideTopics": [
+    {
+      "key": "tpms",
+      "title": "איפוס חיישן לחץ אוויר",
+      "required": true
+    },
+    {
+      "key": "seat",
+      "title": "חיבור כיסא בטיחות",
+      "required": false
+    }
+  ],
+  "guides": [
+    {
+      "car": "plain",
+      "topic": "tpms",
+      "steps": [
+        "מנפחים את כל הצמיגים ללחץ שכתוב בדף הרכב.",
+        "מניעים את הרכב ולוחצים על כפתור האיפוס מתחת להגה, משמאל, עד שהנורה מהבהבת שלוש פעמים.",
+        "נוסעים כ-10 דקות מעל 40 קמ\"ש — הנורה נכבית."
+      ]
+    },
+    {
+      "car": "kids",
+      "topic": "seat",
+      "steps": [
+        "מושכים את רצועות האיזופיקס מהמושב האחורי.",
+        "מחברים את הכיסא עד שנשמעת נקישה בשני הצדדים.",
+        "מותחים את הרצועה העליונה לטבעת שמאחורי המושב."
+      ]
+    }
+  ]
 }

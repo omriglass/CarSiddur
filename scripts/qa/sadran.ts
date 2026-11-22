@@ -452,7 +452,12 @@ async function cmdMerge(board: Board, args: Args): Promise<void> {
   // REQ §13.100 (c): a request may be merged into a ride that still needs a driver (it keeps waiting for a volunteer).
   if (host.needs_driver || !host.driver_id) console.log(`note: host ride ${short(host.id)} still needs a driver; the guest joins it and the ride keeps waiting for a volunteer`);
   const invalid = mergeInvalidReason(host, request, leg, board.routeCtx);
-  if (invalid) throw new UsageError(`merge not valid: ${invalid}`);
+  // The board's quick check does not know chains (CM1): as on the board (`serverMergeLeg`), the server's verdict decides.
+  if (invalid) {
+    const server = await api.fetchMergePreview(host.id as string, request.id, leg);
+    if (!server?.ok) throw new UsageError(`merge not valid: ${server?.code ?? invalid}`);
+    console.log(`note: the quick check said ${invalid}; the server accepts it${server.chain ? " (a chained ride)" : ""}`);
+  }
   // R22B17: --chain = the board's chain ask (the ride as one trip with the member's other errand, `chain_via`); the server
   // checks it like the board's (merge_preview.chain).
   const payload = { ...mergePayload(host.id as string, leg), ...(has(args, "chain") ? { chain_via: true } : {}) };

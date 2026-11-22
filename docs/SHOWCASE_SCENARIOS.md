@@ -18,6 +18,9 @@ A small, fixed department where **every member, car and request demonstrates one
 | m06 גיל פרץ | owns a **private car** (הסובארו של גיל) | only the owner puts requests on it |
 | m07 שירן ביטון | very flexible | volunteer driver, merges, joining a ride |
 | m08 עומר דהן | traveller | multi-day request, equipment |
+| m09 ליאת שגב | parent of עמית (7) | school drop-off, then work: two trips that chain into one ride (CM1) |
+| m10 נעמה רז | **does not drive**, nothing filed | a new request opens straight on the הקפצה dialog (ND1) |
+| m11 תומר גל | rides with m09 | a companion on the way out only |
 
 | Car | Principle |
 |---|---|
@@ -27,6 +30,8 @@ A small, fixed department where **every member, car and request demonstrates one
 | הונדה שחונה בחדרה — 5a, base חדרה | a car that **stays at another place** (starts the week in Hadera) |
 | קורולה — 5a | an ordinary car |
 | הסובארו של גיל — m06's private car | private car: never used for anyone else by the solver |
+
+Car details and guides (CR1/CR2, CG1): the **קורולה** has a corporation (אלבר), make and model, tire pressure (32/30 PSI), m01 as the person who looks after it, two open issues (a warning light from m07, a scratch from m04) and the required guide "איפוס חיישן לחץ אוויר" written step by step; the **סקודה** has the optional guide "חיבור כיסא בטיחות". Every other car misses the required guide, so it is flagged on its car page and in `/cars/guides/<dept>`.
 
 ## Part 1 — scenarios (next week; verified outcomes of one auto-fill on a fresh stack)
 
@@ -54,12 +59,31 @@ A small, fixed department where **every member, car and request demonstrates one
 | S19 | Wed–Fri | m08 **multi-day** → ירושלים Wed 08:00 → Fri 14:00 | one car held for days | one car (the small one) for 3 days, "series 1/3…3/3" | Sadran "להציע פחות ימים"; m08 "קיצור הבקשה" (down to one day) |
 | S20–S23 | Thu | m01, m04, m06, m07 round trips 08:00–12:00 to nearby places | **more requests than cars** (S19 holds one car, the Honda is in Hadera) | 3 placed, **1 unmet** with "start from Hadera" suggestion | proposals (origin / external / deny); publish; waiting list |
 
+### Friday — the release after v2026.11.17-3 (verified on a fresh stack 2026-11-22: auto-fill of Friday only)
+
+Friday holds only these (and the last day of S19), so S1–S23 keep their outcomes.
+
+| ID | Request | Principle | Expected after auto-fill (Friday) | Then try (by hand) |
+|---|---|---|---|---|
+| N1 | m09 round trip with עמית → פרדס חנה 07:30–08:00 | school run (child seat) | on the van (a child-seat car), its own ride | — |
+| N2 | m09 round trip → בנימינה 08:15–16:00 with **m11 on the way out only** | work trip; a companion on one leg | its own ride on another car | **CM1:** drag N2 onto N1's ride (or move one next to the other: "לאחד את הנסיעות?") → one ride 07:30–16:00, home → פרדס חנה → בנימינה → home, עמית only on the school part, m11 to בנימינה (a car without a child seat refuses N1 for seats). Unmerge / cancel one trip → the other gets its own hours back |
+| N4 | m01 round trip → חיפה via זכרון יעקב 09:00–14:00, **m07 gets off at זכרון יעקב** and does not come back | a stop where someone gets off | one ride via זכרון יעקב | the summary sentence per direction (RP1), "הלוך: … / חזור: …", the ride title naming everyone |
+| N5 | m04 files a round trip → נתניה 17:00–19:00 **for m05** | filing for someone else (OB1) | on a car, m05 drives | m05's "my rides": "הוגשה ע״י מיכל"; m04's: "הוגשה עבור אבי" |
+| — | m10 | non-driver | nothing filed | as m10, "+" → the sentence form opens on the הקפצה dialog (ND1) |
+
+After the chain and publishing Friday, read it as m09, m11, m07 (my rides, the siddur's ride title and sheet, the publish notice).
+
 ### Live-phase scenarios (after publishing — by hand, no data needed)
 - **Late request** (any member, a published day) → auto-approved when a car is free, else waiting list; the Sadran gets one notice.
 - **Edit on a published day** (m01 moves S1 by 30 min) → same car when it fits, notice "old → new".
 - **Cancel** as the driver (m01), as a passenger (S2 after merging into S1), as the requester of a chauffeur ride (m03 S5), one leg of a הקפצה → the driver is told; freed-car offer for the car's whole free gap.
 - **Freed car** → offered to waiting members (Thursday's unmet request).
-- **Car-now** (רוצה רכב עכשיו) works only in the *current* week: load with `--this-week` to test it.
+- **Car-now** (רוצה רכב עכשיו) works only in the *current* week: load with `--this-week` to test it; it can file for someone else (OB1).
+- **Round-trip ask (RT1):** on S5 (m03's הקפצה, two legs), stretch the out-leg ride on the board to the pickup hour → "נראה שזו גם נסיעת האיסוף".
+- **Merge consent (PX1 and §13.138):** a merge proposal asks only the people whose hours change; answer it signed in → "התשובה נשלחה לסדרן/ית" and back to the inbox.
+- **The Sadran's combined notice (SN1):** two late requests within 15 minutes → one Sadran notice.
+- **Waiting list (WL1):** on a published day from today on, the siddur's "רשימת המתנה" column; two taps file a waiting-list request for those hours.
+- **Same-day edits (ED1):** with `--this-week`, a ride of today whose hours have passed is still editable until the day ends.
 
 ### Known discrepancies (found while building this, 2026-10-06)
 - **D1** — Auto-fill pairs complementary one-way legs (S8 + S9) **automatically**; REQ item 105 a says they are *suggested*, never paired automatically.
@@ -76,6 +100,8 @@ Make sure the data has **at least one** of each:
 - [ ] a car based away from home (starts the week elsewhere)
 - [ ] a car with a maintenance block on a working day
 - [ ] a private (member-owned) car with rides of its owner
+- [ ] a car with full details (corporation, make and model, tire pressure, a responsible person) and open issues
+- [ ] guide topics (one required, one optional); a car with the required guide written, cars missing it
 
 **Members**
 - [ ] a member living far from home (default origin elsewhere, no car there)
@@ -84,6 +110,7 @@ Make sure the data has **at least one** of each:
 - [ ] a private-car owner
 - [ ] a flexible member who can volunteer to drive
 - [ ] a member with a multi-day request
+- [ ] a non-driver with nothing filed (the הקפצה-first form)
 
 **Requests**
 - [ ] plain round trip from home; one with flexibility, one rigid
@@ -98,6 +125,8 @@ Make sure the data has **at least one** of each:
 - [ ] the private car's owner's own ride; someone asking to join it
 - [ ] a multi-day request (3 days)
 - [ ] a day with more requests than free cars
+- [ ] the same person's two trips one after the other (chain); a companion on one leg only; someone getting off at a stop
+- [ ] a request filed for someone else
 
 **Actions to exercise (Sadran)**
 - [ ] auto-fill once (everything it can place, in one click)
@@ -108,6 +137,7 @@ Make sure the data has **at least one** of each:
 - [ ] trip-type change on an unmet card (with confirmation)
 - [ ] mark a car move ("העברת רכב") and see it decide where the car is
 - [ ] fewer days for a multi-day request; withdraw a duplicate
+- [ ] chain two trips of one person ("לאחד את הנסיעות?"); unmerge one; the round-trip ask
 - [ ] publish; then the live phase above
 
 **Actions to exercise (members)**

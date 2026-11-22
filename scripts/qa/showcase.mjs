@@ -100,7 +100,30 @@ export async function buildShowcase({ out, apiUrl, tag = "showcase", log = conso
     });
     if (r.error) throw new Error(`maintenance: ${r.error.message}`);
   }
-  log("cars, members, children, default origins, private car and maintenance ready");
+  // ---- car details, open issues, car guides (CR1/CR2, CG1 - REQ items 257, 259) ----
+  for (const c of DATA.carDetails ?? []) {
+    const r = await svc.from("cars").update({
+      corporation: c.corporation, model: c.model, tire_pressure_front_psi: c.tireFront, tire_pressure_rear_psi: c.tireRear,
+      responsible_id: c.responsible ? memberByKey.get(c.responsible).id : null,
+    }).eq("id", cars.find((x) => x.key === c.car).id);
+    if (r.error) throw new Error(`showcase: car details ${c.car}: ${r.error.message}`);
+  }
+  for (const i of DATA.carIssues ?? []) {
+    const r = await memberByKey.get(i.member).client.rpc("report_car_issue", { _car_id: cars.find((x) => x.key === i.car).id, _category: i.category, _description: i.description });
+    if (r.error) throw new Error(`showcase: car issue ${i.car}: ${r.error.message}`);
+  }
+  const admin = await signedInClient(api, ADMIN_EMAIL, ADMIN_PASSWORD);
+  const topics = new Map();
+  for (const t of DATA.guideTopics ?? []) {
+    const r = await admin.rpc("upsert_car_guide_topic", { p_department_id: dept.id, p_topic_id: null, p_title: t.title, p_required: t.required, p_active: true });
+    if (r.error) throw new Error(`showcase: guide topic ${t.key}: ${r.error.message}`);
+    topics.set(t.key, r.data);
+  }
+  for (const g of DATA.guides ?? []) {
+    const r = await admin.rpc("save_car_guide", { p_car_id: cars.find((x) => x.key === g.car).id, p_guide_id: null, p_topic_id: topics.get(g.topic), p_title: null, p_steps: g.steps });
+    if (r.error) throw new Error(`showcase: guide ${g.car}/${g.topic}: ${r.error.message}`);
+  }
+  log("cars, members, children, default origins, private car, maintenance, car details, issues and guides ready");
 
   // ---- requests, filed as the member through the real RPCs ----
   const ctx = new Ctx({ rng: mulberry32(1), dept, weekStart, places, rideTypes, cars });
@@ -116,7 +139,18 @@ export async function buildShowcase({ out, apiUrl, tag = "showcase", log = conso
       defaultOriginId: m.defaultOriginId ?? places[0].id, flex: s.flex, adults: s.adults, luggage: s.luggage, notes: s.notes,
       stops: (s.stops ?? []).map((st) => ({ leg: st.leg, id: place(st.place).id })),
     };
-    const payload = buildPayload(ctx, o);
+    const payload = buildPayload(ctx, {
+      ...o, companionIds: (s.companions ?? []).map((k) => memberByKey.get(k).id),
+    });
+    // OB1 (REQ items 127, 253): filed by this member in someone else's name.
+    if (s.for) payload.requester_id = memberByKey.get(s.for).id;
+    // LT1 (REQ item 246 h): a companion on one leg only, or getting off on the way.
+    if (s.riders) {
+      payload.riders = s.riders.map((r) => ({
+        rider_key: `companion:${memberByKey.get(r.who).id}`, leg: r.leg,
+        ...(r.rides === false ? { rides: false } : {}), ...(r.alight ? { alight_place_id: place(r.alight).id } : {}),
+      }));
+    }
     const fn = s.series ? "submit_series_request" : "submit_request";
     const res = await m.client.rpc(fn, { payload });
     if (res.error) { results.push({ id: s.id, member: m.email, error: res.error.message }); continue; }
