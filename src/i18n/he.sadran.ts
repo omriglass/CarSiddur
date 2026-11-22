@@ -978,7 +978,7 @@ export const heSadran = {
       already_on_ride: "הבקשה כבר בנסיעה הזו (או שהצעה זהה כבר נשלחה)",
       /** R13B18: e.g. the out leg of a pickup-only request (its drop-off was cancelled). */
       leg_missing: "אי אפשר לצרף — לבקשה אין את הכיוון הזה (אולי בוטל)",
-      /** R22B10: a day of a multi-day ride drives only some legs (wording to approve). */
+      /** R22B10: a day of a multi-day ride drives only some legs (owner-approved 2026-11-22). */
       series_day_leg: "אי אפשר לצרף — ביום הזה של הנסיעה הרב־יומית אין נסיעה בכיוון הזה",
       /** REQ §13.112 (c): the ride serves a "N hours between A and B" request whose length never changes. */
       window_locked: "אי אפשר לצרף — הנסיעה היא בחלון זמן קבוע והצירוף היה מאריך אותה",

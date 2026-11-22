@@ -301,6 +301,10 @@ export const heMember = {
     returnBeforeDeparture: "שעת החזרה חייבת להיות אחרי שעת היציאה",
     seatFitWarning: "הרכבים במחלקה לא מתאימים למספר הנוסעים שביקשת; הסדרן/ית יטפלו בכך.",
     tooShortWarning: "הנסיעה לשם ובחזרה לוקחת בערך {{minutes}} דקות — יותר מכל זמן הבקשה. כדאי לבדוק את השעות.",
+    // R22B12 (owner 2026-11-22): asked on save
+    tooShortAskTitle: "הנסיעה לשם וחזרה לוקחת כ־{{drive}} — יותר מהשעות שבחרת",
+    tooShortAskBody: "לשמור בכל זאת?",
+    tooShortAskConfirm: "לשמור בכל זאת",
     duplicateWarning: "יש לך כבר בקשה חופפת בזמנים האלה — אולי כדאי לערוך אותה במקום לפתוח בקשה חדשה.",
     editRequestLink: "לעריכת הבקשה",
     changedSinceSolveBanner: "השבוע כבר בהכנה — השינוי יופיע בלוח של הסדרן/ית",

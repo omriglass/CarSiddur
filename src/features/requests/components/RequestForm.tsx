@@ -128,6 +128,8 @@ interface SubmitOptions {
   confirmRelease?: boolean;
   confirmLose?: boolean;
   ignoreChildOverlap?: boolean;
+  /** R22B12: "save anyway" to a round trip shorter than its drive there and back. */
+  ignoreTooShort?: boolean;
   allowCarAway?: boolean;
   carAwayDeclined?: boolean;
   /** PR3: the answers to "the car is taken at the new hours" — another car, or hours cut to sit next to the ride in the way. */
@@ -714,9 +716,11 @@ export function RequestForm({
   // already says "אין זמן ביעד" for it (REQ §13.119 e).
   const isListPlace = (value: DestinationValue, emptyOk: boolean) =>
     "presetId" in value ? !!value.presetId : emptyOk && value.freeText.trim() === "";
-  const durationCheckWanted = !isSentence && tripType === "round_trip" && !isMultiDay
+  // R22B12 (owner 2026-11-22): both layouts also ask on save when the hours are shorter than the drive (known drives only)
+  const tooShortAskWanted = tripType === "round_trip" && !isMultiDay
     && isListPlace(routeValues.origin, true) && isListPlace(routeValues.destination, false);
-  const routesWanted = (anchorSyncActive || durationCheckWanted) && hasDestination(routeValues.destination);
+  const durationCheckWanted = !isSentence && tooShortAskWanted;
+  const routesWanted = (anchorSyncActive || tooShortAskWanted) && hasDestination(routeValues.destination);
   const outRouteQuery = useRouteMinutesQuery(departmentId, outboundRoutePoints(routeValues), routesWanted);
   const returnRouteQuery = useRouteMinutesQuery(departmentId, returnRoutePoints(routeValues), routesWanted && needsReturn);
   // Plan B (REQ §13.112): origin -> drop place, for the drop time sheet's "leave at" anchor.
@@ -737,9 +741,10 @@ export function RequestForm({
   const returnMinutes = marginOf(returnRouteQuery.data ?? (returnRouteQuery.isError ? DEFAULT_HOP_MINUTES : null));
   const planBMinutes = marginOf(planBRouteQuery.data ?? (planBRouteQuery.isError ? DEFAULT_HOP_MINUTES : null));
   // Only a known drive warns (a failed preview's 60-minute guess does not).
-  const tooShortDrive = durationCheckWanted
+  const tooShortAsk = tooShortAskWanted
     ? roundTripTooShort({ tripType, departTime: values.departTime, returnTime: values.returnTime, outMinutes: outRouteQuery.data ?? null, returnMinutes: returnRouteQuery.data ?? null })
     : null;
+  const tooShortDrive = durationCheckWanted ? tooShortAsk : null;
 
   // Keeps `departTime`/`returnTime` (what is submitted) equal to the car times implied by the
   // typed anchors; a multi-day request has no anchors (its legs share one payload).
@@ -936,6 +941,7 @@ export function RequestForm({
   // REQ §13.101 f (QM5): the edit the server wants confirmed (release to the waiting list).
   // R2M4: named children already on another member's overlapping request — warn, allow anyway.
   const [pendingChildOverlap, setPendingChildOverlap] = useState<{ values: RequestFormValues; rows: ChildOverlapRow[] } | null>(null);
+  const [pendingTooShort, setPendingTooShort] = useState<{ values: RequestFormValues; minutes: number } | null>(null);
   // R2B20 / REQ §102 f: an open-week edit the probe says would lose the member's current car.
   const [pendingLose, setPendingLose] = useState<{ values: RequestFormValues; names: string[] } | null>(null);
   const [pendingRelease, setPendingRelease] = useState<{ values: RequestFormValues; names: string[] } | null>(null);
@@ -1008,7 +1014,7 @@ export function RequestForm({
     saveSignatureRef.current = signature;
     const previous = saveOptionsRef.current;
     saveOptionsRef.current = sameValues
-      ? { confirmLose: previous.confirmLose, confirmRelease: previous.confirmRelease, ignoreChildOverlap: previous.ignoreChildOverlap, ridersOffRouteOk: previous.ridersOffRouteOk }
+      ? { confirmLose: previous.confirmLose, confirmRelease: previous.confirmRelease, ignoreChildOverlap: previous.ignoreChildOverlap, ignoreTooShort: previous.ignoreTooShort, ridersOffRouteOk: previous.ridersOffRouteOk }
       : {};
     if (!sameValues) overlapConfirmedRef.current = false;
     freedAskedRef.current = false;
@@ -1189,6 +1195,12 @@ export function RequestForm({
       } catch {
         setSubmitError(t("request.submitError"));
       }
+      return;
+    }
+
+    // R22B12 (owner 2026-11-22): a round trip shorter than its drive there and back asks before it is saved
+    if (!options.ignoreTooShort && tooShortAsk != null) {
+      setPendingTooShort({ values: formValues, minutes: tooShortAsk });
       return;
     }
 
@@ -1935,6 +1947,19 @@ export function RequestForm({
         <p className="text-sm">{tv("request.releaseAffected", { names: pendingLose.names.join(", ") })}</p>
       ) : null}
     </ConfirmDialog>
+    <ConfirmDialog
+      open={!!pendingTooShort}
+      onOpenChange={(open) => { if (!open) setPendingTooShort(null); }}
+      title={tv("request.tooShortAskTitle", { drive: pendingTooShort ? `${Math.floor(pendingTooShort.minutes / 60)}:${String(pendingTooShort.minutes % 60).padStart(2, "0")}` : "" })}
+      description={t("request.tooShortAskBody")}
+      confirmLabel={t("request.tooShortAskConfirm")}
+      cancelLabel={t("request.overlapBack")}
+      onConfirm={() => {
+        const pending = pendingTooShort;
+        setPendingTooShort(null);
+        if (pending) void performSubmit(pending.values, { ignoreTooShort: true });
+      }}
+    />
     <ConfirmDialog
       open={!!pendingChildOverlap}
       onOpenChange={(open) => { if (!open) setPendingChildOverlap(null); }}

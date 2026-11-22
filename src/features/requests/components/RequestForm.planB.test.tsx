@@ -3,7 +3,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { he } from "@/i18n/he";
+import { he, tv } from "@/i18n/he";
 
 import { RequestForm } from "./RequestForm";
 
@@ -329,13 +329,16 @@ describe("RequestForm plan B line (REQ §13.112 a/b)", () => {
 
 // Shares this file's form harness (classic layout, mocked route minutes).
 describe("RequestForm too-short round trip (R13B16)", () => {
-  it("the classic layout warns when the request is shorter than the drive there and back, and never blocks", async () => {
+  it("the classic layout warns when the request is shorter than the drive there and back; saving asks first (R22B12)", async () => {
     mocks.layout.current = "classic";
     mocks.routeMinutes.current = 150; // default window 08:00–12:00 = 240 minutes
     show();
     fireEvent.click(screen.getByText("pick-destination"));
     expect(await screen.findByTestId("too-short-warning")).toHaveTextContent("300");
     fireEvent.click(screen.getByRole("button", { name: he.action.submitRequest }));
+    expect(await screen.findByText(tv("request.tooShortAskTitle", { drive: "5:00" }))).toBeInTheDocument();
+    expect(mocks.submit).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: he.request.tooShortAskConfirm }));
     await waitFor(() => expect(mocks.submit).toHaveBeenCalledOnce());
   });
 

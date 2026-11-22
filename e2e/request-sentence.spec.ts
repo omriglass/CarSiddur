@@ -107,6 +107,50 @@ test.describe("request sentence layout", { tag: ["@request-form"] }, () => {
     await expect(page.getByTestId("request-entered-times").filter({ hasText: tv("requestSentence.enteredArriveBy", { time: "09:30" }) }).first()).toBeVisible();
   });
 
+  test("a round trip shorter than its drive there and back asks before it is saved (R22B12)", async ({ page }) => {
+    await signIn(page, SEEDED_USERS.member2);
+    await page.goto("/requests/new");
+    await dismissGuide(page);
+    const sentence = page.getByTestId("request-sentence");
+    await expect(sentence).toBeVisible();
+    await sentence.getByTestId("chip-destination").click();
+    await page.getByPlaceholder(he.requestSentence.placeSearch).fill("ירושלים");
+    await page.getByRole("option").filter({ hasText: "ירושלים" }).first().click();
+    // 08:00 out, home by 09:00 - Jerusalem is 100 minutes each way
+    await sentence.getByTestId("chip-out").click();
+    let sheet = page.getByRole("dialog");
+    const depart = sheet.getByLabel(he.field.depart);
+    await depart.fill("08:00");
+    await depart.blur();
+    await sheet.getByRole("button", { name: he.requestSentence.sheetDone }).click();
+    await sentence.getByTestId("chip-return").click();
+    sheet = page.getByRole("dialog");
+    const home = sheet.getByLabel(he.field.return);
+    await home.fill("09:00");
+    await home.blur();
+    await sheet.getByRole("button", { name: he.requestSentence.sheetDone }).click();
+
+    const next = page.getByTestId("stage-next");
+    if (await next.isVisible()) await next.click();
+    const submit = page.getByRole("button", { name: tv("action.submitRequest", {}), exact: true });
+    // another test's request may overlap that day: "keep both" first
+    const keepBoth = page.getByRole("dialog", { name: he.request.overlapTitle }).getByRole("button", { name: he.request.overlapKeepBoth });
+    const keepBothIfAsked = () => keepBoth.waitFor({ state: "visible", timeout: 2_000 }).then(() => keepBoth.click(), () => undefined);
+    await submit.click();
+    await keepBothIfAsked();
+    const ask = page.getByRole("alertdialog").or(page.getByRole("dialog")).filter({ hasText: he.request.tooShortAskBody });
+    await expect(ask).toBeVisible();
+    await expect(ask).toContainText(tv("request.tooShortAskTitle", { drive: "3:20" }));
+    // "back" saves nothing; "save anyway" saves
+    await ask.getByRole("button", { name: he.request.overlapBack }).click();
+    await expect(page).not.toHaveURL(/\/my$/);
+    await submit.click();
+    await keepBothIfAsked();
+    await page.getByRole("button", { name: he.request.tooShortAskConfirm }).click();
+    await keepBothIfAsked();
+    await expect(page).toHaveURL(/\/my$/);
+  });
+
   test("the hours at the route's ends are edited from the stops sheet too (REQ item 249 a)", async ({ page }) => {
     await signIn(page, SEEDED_USERS.member2);
     await page.goto("/requests/new");
