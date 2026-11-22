@@ -3851,10 +3851,8 @@ begin
     v_ch_extra := greatest(round(v_ch_after - v_ch_before - v_ch_guest), 0)::int;
     select max(r.refused) into v_refused from jsonb_to_recordset(v_ra) as r(refused text);
     if v_refused is not null then v_err := coalesce(v_err, v_refused); end if;
-    if v_ch_extra > v_lim_min then
-      if coalesce(current_setting('app.long_detour', true), '') = 'allow' then v_detour_problem := true;
-      elsif v_err is null then v_err := 'merge_detour_too_long'; end if;
-    end if;
+    -- owner 2026-11-22: a chain over the limit is only reported (the popup warns), never refused
+    if v_ch_extra > v_lim_min then v_detour_problem := true; end if;
     v_ix := case when v_chain ->> 'side' like 'before%' then 1 else 2 end;
     v_add_min[v_ix] := v_ch_extra;
     if v_one is not null then

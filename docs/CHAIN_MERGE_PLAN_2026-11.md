@@ -44,7 +44,7 @@ rebuilt from the requests every time. That one piece of storage is also what (a)
    Otherwise the merge is an insertion, exactly as today.
 3. **Where the trips join.** Trip 1's return leg and trip 2's way out from home are dropped, and the car drives from trip 1's
    far end straight to trip 2's first place. Trip 1's far end becomes a stop on the chained ride's way out, with its stay (the
-   time between arriving there and leaving, as asked). The detour limits apply to the added driving, as for every merge
+   time between arriving there and leaving, as asked). The added driving is compared with the detour limits, as for every merge, but over them a chain is only warned about (owner 2026-11-22), never refused
    today: the chained ride's driving, against the two trips' driving minus the dropped legs.
 4. **People on only one trip.** This is question (a). Someone on trip 2 only, who would have boarded at home, either:
    - rides **the whole ride**: boards at the start of trip 1 and rides through school; or

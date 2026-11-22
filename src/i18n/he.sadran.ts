@@ -954,7 +954,7 @@ export const heSadran = {
     chainTimeBefore: "יוצאים ב-{{time}} (במקום {{was}})",
     chainTimeAfter: "חוזרים ל{{place}} ב-{{time}} (במקום {{was}})",
     chainMore: "{{count}} נוספים",
-    chainTooLong: "עיקוף ארוך מדי",
+    chainLong: "ייתכן שארוך: עוד {{minutes}} דק׳ נסיעה",
     resultWho: "{{name}}:",
     /** REQ §13.95 (H1): a merge is refused - toast text. */
     invalid: {

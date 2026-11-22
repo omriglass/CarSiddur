@@ -42,9 +42,13 @@ describe("chain one-trip question", () => {
     expect(onChange).toHaveBeenCalledWith(true);
   });
 
-  it("an answer over the detour limit cannot be picked", () => {
-    const chain = parseChain({ ...raw, one_trip: { ...raw.one_trip, via: { ...raw.one_trip.via, ok: false } } })!;
-    render(<ChainOneTripChoice chain={{ side: chain.side, oneTrip: chain.oneTrip! }} via={false} onChange={vi.fn()} />);
-    expect(screen.getByTestId("chain-one-trip-via")).toBeDisabled();
+  it("an answer over the detour limit is offered with a warning", () => {
+    const chain = parseChain({ ...raw, one_trip: { ...raw.one_trip, via: { ...raw.one_trip.via, ok: false, added_minutes: 25 } } })!;
+    const onChange = vi.fn();
+    render(<ChainOneTripChoice chain={{ side: chain.side, oneTrip: chain.oneTrip! }} via={false} onChange={onChange} />);
+    expect(screen.getByTestId("chain-one-trip-via")).toBeEnabled();
+    expect(screen.getByTestId("chain-one-trip-long")).toHaveTextContent("25");
+    fireEvent.click(screen.getByTestId("chain-one-trip-via"));
+    expect(onChange).toHaveBeenCalledWith(true);
   });
 });

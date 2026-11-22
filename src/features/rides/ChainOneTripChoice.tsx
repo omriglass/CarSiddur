@@ -2,7 +2,7 @@
 // not on the short one. They ride the whole ride, or the ride passes the start place again for them - each answer shows
 // the route it makes and their time ("לכל הנסיעה" first). Shared by the Sadran's merge popup and the member's merge.
 import { Button } from "@/components/ui/button";
-import { he, tv } from "@/i18n/he";
+import { tv } from "@/i18n/he";
 import { formatTime } from "@/lib/time";
 
 import { chainFirst, chainRouteText, oneTripNames, type ChainOneTrip, type ChainVariant, type MergeChain } from "./mergeChain";
@@ -34,7 +34,6 @@ export function ChainOneTripChoice({ chain, via, onChange }: ChainOneTripChoiceP
         type="button"
         role="radio"
         aria-checked={via === isVia}
-        disabled={!variant.ok && via !== isVia}
         variant={via === isVia ? "default" : "outline"}
         className="h-auto min-h-11 w-full flex-col items-start whitespace-normal py-2 text-start"
         data-testid={isVia ? "chain-one-trip-via" : "chain-one-trip-plain"}
@@ -42,7 +41,7 @@ export function ChainOneTripChoice({ chain, via, onChange }: ChainOneTripChoiceP
       >
         <span>{label}</span>
         {time ? <span className="text-xs font-normal opacity-80" data-testid="chain-one-trip-time">{time}</span> : null}
-        {!variant.ok ? <span className="text-xs font-normal opacity-80">{he.mergedRide.chainTooLong}</span> : null}
+        {!variant.ok ? <span className="text-xs font-normal opacity-80" data-testid="chain-one-trip-long">{tv("mergedRide.chainLong", { minutes: String(variant.addedMinutes) })}</span> : null}
       </Button>
     );
   };

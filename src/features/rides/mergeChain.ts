@@ -9,8 +9,10 @@ export type ChainRoute = { leg: "out" | "return"; placeId: string | null; name: 
 export interface ChainVariant {
   route: ChainRoute;
   at: string | null;
-  /** Its driving is within the department's detour limit (an answer over it is not offered). */
+  /** Its driving is within the department's detour limit (over it: offered with a warning, owner 2026-11-22). */
   ok: boolean;
+  /** Driving it adds against the two trips driven apart. */
+  addedMinutes: number;
 }
 
 /**
@@ -64,7 +66,8 @@ function parseRoute(raw: unknown): ChainRoute {
 function parseVariant(raw: unknown): ChainVariant | null {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
   const v = raw as Record<string, unknown>;
-  return { route: parseRoute(v.route), at: typeof v.at === "string" ? v.at : null, ok: v.ok !== false };
+  return { route: parseRoute(v.route), at: typeof v.at === "string" ? v.at : null, ok: v.ok !== false,
+    addedMinutes: typeof v.added_minutes === "number" ? v.added_minutes : 0 };
 }
 
 function parseOneTrip(raw: unknown): ChainOneTrip | null {

@@ -21,7 +21,7 @@ declare
   w date := public.current_week_start() + 1484;
   d0 timestamptz;
   qA uuid; qB uuid; qC uuid; rA uuid; rB uuid; rC uuid;
-  v jsonb; v_one jsonb; v_places text; v_span jsonb; v_rider jsonb;
+  v jsonb; v_one jsonb; v_places text; v_span jsonb; v_rider jsonb; v_lim int;
 begin
   insert into public.weeks(department_id, week_start, phase, open_at, close_at, publish_at)
     values (dept, w, 'solving', now() - interval '3 days', now() - interval '2 days', now() - interval '1 day');
@@ -74,6 +74,21 @@ begin
   select string_agg(e ->> 'place_id', ',' order by ordinality) into v_places
     from jsonb_array_elements(v -> 'chain' -> 'route') with ordinality x(e, ordinality) where e ->> 'leg' = 'out';
   assert v_places = concat_ws(',', home, school, home, haifa), format('TEST 2 FAILED: route %s', v_places);
+
+  -----------------------------------------------------------------------
+  -- 2b) Owner 2026-11-22: over the detour limit the answer is still offered and the merge goes through - only reported.
+  -----------------------------------------------------------------------
+  select detour_limit_minutes into v_lim from public.department_settings where department_id = dept;
+  update public.department_settings set detour_limit_minutes = 0 where department_id = dept;
+  perform set_config('app.long_detour', '', true);
+  v := public._merge_check(rB, qA, 'both');
+  assert not (v -> 'chain' -> 'one_trip' -> 'via' ->> 'ok')::boolean
+     and (v -> 'chain' -> 'one_trip' -> 'via' ->> 'added_minutes')::int > 0, format('TEST 2b FAILED: no warning %s', v -> 'chain' -> 'one_trip' -> 'via');
+  perform set_config('app.chain_via', 'on', true);
+  v := public._merge_check(rB, qA, 'both');
+  perform set_config('app.chain_via', '', true);
+  assert (v ->> 'ok')::boolean and (v ->> 'detour_problem')::boolean, format('TEST 2b FAILED: refused %s', v ->> 'error');
+  update public.department_settings set detour_limit_minutes = v_lim where department_id = dept;
 
   -----------------------------------------------------------------------
   -- 3) Applied: the stored route, m2 gets on at the second home (seats and the stops view), m1 rides it all.
