@@ -734,7 +734,7 @@ export const heMember = {
   rideSummary: {
     tabs: { summary: "סיכום", details: "פרטים", history: "היסטוריה" },
     tabsLabel: "פרטי הנסיעה",
-    /** RP1 (owner 2026-11-21, wording to approve): each way as a flow; "…One" when one person is in the car. */
+    /** RP1 (owner 2026-11-21, owner-approved 2026-11-22): each way as a flow; "…One" when one person is in the car. */
     leave: "{{names}} יוצאים מ{{from}}",
     leaveOne: "{{names}} יוצא/ת מ{{from}}",
     homeWord: "הבית",
