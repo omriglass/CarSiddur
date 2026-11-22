@@ -223,7 +223,10 @@ export interface RidePassengerInput {
 
 /** Appends named passengers to a ride's existing list (never replaces it); duplicates already on the ride or already served are silently skipped by the RPC. */
 export async function addRidePassengers(rideId: string, expectedVersion: number, passengers: RidePassengerInput[]): Promise<void> {
-  await rpc("add_ride_passengers", { p_ride_id: rideId, p_expected_version: expectedVersion, p_passengers: passengers as unknown as Json });
+  // R22B8 (REQ §13.176): a member already riding at these hours is asked about first
+  await withPersonBusyRetry((allowBusy) => rpc("add_ride_passengers", {
+    p_ride_id: rideId, p_expected_version: expectedVersion, p_passengers: passengers as unknown as Json, p_allow_busy: allowBusy,
+  }));
 }
 
 /**

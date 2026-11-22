@@ -200,9 +200,21 @@ async function cmdEdit(args: Args): Promise<void> {
     guest_passenger_names: row.guestPassengerNames.length ? row.guestPassengerNames : undefined,
     request_id: row.id, expected_version: row.version,
     stops: [...destinationValuesToStopPayload(outStops, "out"), ...destinationValuesToStopPayload(returnStops, "return")],
+    // REQ §13.176: the form's "keep both" answer to "you already have a ride at these hours"
+    ...(has(args, "keep-both") ? { overlap_confirmed: true } : {}),
   };
   if (payload.preferred_car_id && flag(args, "car")) throw new UsageError("--car takes a car id here (members do not see the board); omit it to keep the preference");
-  let result = await requests.submitRequest(payload) as unknown as requests.SubmitRequestResult;
+  let result: requests.SubmitRequestResult;
+  try {
+    result = await requests.submitRequest(payload) as unknown as requests.SubmitRequestResult;
+  } catch (e) {
+    // R22B17: the overlap question is a question, not a failure — say how to answer it like the form
+    if ((e as { code?: string }).code === "person_busy" || String((e as Error).message).includes("person_busy")) {
+      console.log(`NOT edited ${short(id)}: the server asks first (person_busy: another ride or request of yours overlaps the new hours) — nothing changed; rerun with --keep-both to keep both`);
+      return;
+    }
+    throw e;
+  }
   // REQ §13.158: an edit never costs the car — no car at the new hours refuses it, nothing changed.
   if (result.edit_refused) {
     console.log(`NOT edited ${short(id)}: refused (${result.edit_refused}${result.group_offer ? ` group=${short(result.group_offer)}` : ""}) — no car takes the new hours; the booking is kept`);
@@ -219,7 +231,11 @@ async function cmdEdit(args: Args): Promise<void> {
   }
   if (result.needs_confirmation) {
     if (!has(args, "confirm-release")) {
-      console.log(`NOT edited ${short(id)}: the server asks first (${result.needs_confirmation}, drives_others=${!!result.drives_others}) — nothing changed; rerun with --confirm-release to leave the passengers without a driver`);
+      // R22B17: say only what the server said (car_taken_choice carries no drives_others)
+      const others = "drives_others" in result ? `, drives_others=${!!result.drives_others}` : "";
+      const hint = result.needs_confirmation === "release_to_waitlist" ? "rerun with --confirm-release to leave the passengers without a driver"
+        : "rerun with --confirm-release to answer yes";
+      console.log(`NOT edited ${short(id)}: the server asks first (${result.needs_confirmation}${others}) — nothing changed; ${hint}`);
       return;
     }
     result = await requests.submitRequest({ ...payload, confirm_release: true }) as unknown as requests.SubmitRequestResult;
@@ -334,7 +350,22 @@ async function cmdJoin(args: Args): Promise<void> {
   const rides = (await fetchBoardRides(SCOPE.departmentId, weekOf(day))).filter((r) => r.status !== "cancelled");
   const ride = rides.find((r) => r.id === resolveId(need(args.pos[0], "<rideId>"), rides.flatMap((x) => (x.id ? [x.id] : [])), "ride"))!;
   const { data: me } = await supabase.from("profiles").select("full_name").eq("id", ME).single();
-  await addRidePassengers(ride.id as string, ride.version ?? 0, [{ person_id: ME, display_name: me?.full_name ?? "", seat_kind: "adult" }]);
+  const people = [{ person_id: ME, display_name: me?.full_name ?? "", seat_kind: "adult" as const }];
+  try {
+    if (has(args, "keep-both")) {
+      // the "yes, anyway" answer to the overlap question (R22B8)
+      const { error } = await supabase.rpc("add_ride_passengers", { p_ride_id: ride.id as string, p_expected_version: ride.version ?? 0, p_passengers: people, p_allow_busy: true });
+      if (error) throw error;
+    } else {
+      await addRidePassengers(ride.id as string, ride.version ?? 0, people);
+    }
+  } catch (e) {
+    if (String((e as Error).message).includes("person_busy") || (e as { code?: string }).code === "person_busy") {
+      console.log(`NOT joined ${short(ride.id)}: the server asks first (person_busy: you already ride at these hours) — nothing changed; rerun with --keep-both to join anyway`);
+      return;
+    }
+    throw e;
+  }
   console.log(`joined ride ${short(ride.id)}`);
 }
 
@@ -401,9 +432,9 @@ function usage(): void {
   request <day> --depart HH:MM [--return HH:MM] --dest <place|free:text> [--trip round_trip|one_way|drop_off] [--from] [--pickup] [--origin P] [--stop P]... [--return-stop P]...
           [--adults N --child-seats N --boosters N --luggage] [--flex 0|15|30|60|120|any | --flex-depart-early/-late/--flex-return-early/-late] [--return-day D] [--car ID] [--ride-type CODE] [--notes T] [--waitlist] [--for <member>] [--companion <member>]... [--child <name>]...
           [--fallback alternative|manage --alt-place P --alt-arrive HH:MM [--alt-pickup-place P --alt-pickup HH:MM]]   (plan B / "I will manage")
-  edit <req> [--day D --depart HH:MM --return HH:MM --dest P --origin P --trip-type T [--from|--pickup] --adults N --flex X --notes T --stop P... --clear-stops] [--confirm-release]
+  edit <req> [--day D --depart HH:MM --return HH:MM --dest P --origin P --trip-type T [--from|--pickup] --adults N --flex X --notes T --stop P... --clear-stops] [--confirm-release] [--keep-both]
   groups | resolve-group <group> <member,...> [--driver X] (first listed drives)
-  join <ride> --day D | withdraw <req> | cancel <req> [reason] | shorten <req> <first-day> <HH:MM> <last-day> <HH:MM> | car-now --dest P [--hours N] [--adults N]`);
+  join <ride> --day D [--keep-both] | withdraw <req> | cancel <req> [reason] | shorten <req> <first-day> <HH:MM> <last-day> <HH:MM> | car-now --dest P [--hours N] [--adults N]`);
 }
 
 run(async () => {

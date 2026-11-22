@@ -3347,6 +3347,80 @@ $$;
 ALTER FUNCTION "public"."_host_edit_guest_reason"("p_code" "text") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."_host_edit_resize"("p_request_id" "uuid", "payload" "jsonb", "p_trip_type" "public"."trip_type", "p_trip_shape" "public"."trip_shape", "p_needs_car" boolean, "p_one_way_mode" "public"."leg_car_mode", "p_origin_id" "uuid", "p_origin_text" "text", "p_depart_at" timestamp with time zone, "p_return_at" timestamp with time zone) RETURNS "jsonb"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  e public.requests%rowtype; r public.rides%rowtype; h public.ride_requests%rowtype;
+  v_s timestamptz; v_e timestamptz; v_ok boolean := false; v_day date;
+begin
+  select * into e from public.requests where id = p_request_id;
+  if e.id is null or e.status <> 'assigned' or e.series_id is not null or e.trip_type <> 'round_trip'
+     or p_trip_type <> 'round_trip' or p_return_at is null or e.return_at is null or p_depart_at is null then
+    return null;
+  end if;
+  if (e.depart_at, e.return_at) = (p_depart_at, p_return_at) then return null; end if;
+  -- the edit changes nothing but the hours (the same test as a guest's edit that stays, R20B8)
+  if not public._request_save_unchanged(p_request_id,
+       payload - array['flex_depart_early', 'flex_depart_late', 'flex_return_early', 'flex_return_late',
+                       'depart_anchor', 'arrive_by', 'return_anchor', 'leave_dest_at', 'duration_locked', 'guest_ride_return'],
+       p_trip_type, p_trip_shape, p_needs_car, p_one_way_mode, p_origin_id, p_origin_text, e.depart_at, e.return_at, true) then
+    return null;
+  end if;
+  -- on one ride, a published one, as its driver
+  if (select count(*) from public.ride_requests rr join public.rides x on x.id = rr.ride_id
+      where rr.request_id = p_request_id and x.status <> 'cancelled') <> 1 then
+    return null;
+  end if;
+  select x.* into r from public.ride_requests rr join public.rides x on x.id = rr.ride_id
+  where rr.request_id = p_request_id and x.status <> 'cancelled';
+  select * into h from public.ride_requests where ride_id = r.id and request_id = p_request_id;
+  if r.status = 'draft' or r.series_id is not null or r.car_id is null or h.role <> 'driver' or h.leg <> 'both'
+     or r.driver_id is distinct from e.requester_id then
+    return null;
+  end if;
+  -- someone else's trip rides along (without one, the ordinary edit carries the added people, REQ §13.205); a chained
+  -- ride (CM1) keeps its own hour rules
+  if not exists (select 1 from public.ride_requests g where g.ride_id = r.id and g.request_id <> p_request_id)
+     or exists (select 1 from public.ride_requests g where g.ride_id = r.id and g.chain is not null) then
+    return null;
+  end if;
+  -- the hour that moves carries nobody else's trip
+  if p_depart_at <> e.depart_at and exists (select 1 from public.ride_requests g
+       where g.ride_id = r.id and g.request_id <> p_request_id and g.covers_out) then
+    return null;
+  end if;
+  if p_return_at <> e.return_at and exists (select 1 from public.ride_requests g
+       where g.ride_id = r.id and g.request_id <> p_request_id and g.covers_return) then
+    return null;
+  end if;
+  -- the ride moves by as much as the member's own hours (its added driving for the riders stays as it was)
+  v_s := r.starts_at + (p_depart_at - e.depart_at);
+  v_e := r.ends_at + (p_return_at - e.return_at);
+  v_day := (r.starts_at at time zone 'Asia/Jerusalem')::date;
+  if v_e <= v_s or (v_s at time zone 'Asia/Jerusalem')::date <> v_day
+     or ((v_e - interval '1 minute') at time zone 'Asia/Jerusalem')::date <> v_day then
+    return null;
+  end if;
+  -- the car takes the new window: tried and rolled back
+  begin
+    update public.rides set starts_at = v_s, ends_at = v_e where id = r.id;
+    v_ok := true;
+    raise exception 'host_resize_probe' using errcode = 'PXHR1';
+  exception when others then
+    null;
+  end;
+  if not v_ok then return null; end if;
+  return jsonb_build_object('ride_id', r.id, 'car_id', r.car_id, 'starts_at', v_s, 'ends_at', v_e,
+    'old_starts_at', r.starts_at, 'old_ends_at', r.ends_at, 'brings_back', r.origin_id is not distinct from r.destination_id,
+    'origin_id', r.origin_id);
+end $$;
+
+
+ALTER FUNCTION "public"."_host_edit_resize"("p_request_id" "uuid", "payload" "jsonb", "p_trip_type" "public"."trip_type", "p_trip_shape" "public"."trip_shape", "p_needs_car" boolean, "p_one_way_mode" "public"."leg_car_mode", "p_origin_id" "uuid", "p_origin_text" "text", "p_depart_at" timestamp with time zone, "p_return_at" timestamp with time zone) OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."_is_ride_editor"("p_department" "uuid", "p_owner" "uuid", "p_actor" "uuid") RETURNS boolean
     LANGUAGE "sql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -8609,7 +8683,7 @@ end $$;
 ALTER FUNCTION "public"."add_car_owner"("p_car_id" "uuid", "p_profile_id" "uuid") OWNER TO "postgres";
 
 
-CREATE OR REPLACE FUNCTION "public"."add_ride_passengers"("p_ride_id" "uuid", "p_expected_version" integer, "p_passengers" "jsonb") RETURNS "void"
+CREATE OR REPLACE FUNCTION "public"."add_ride_passengers"("p_ride_id" "uuid", "p_expected_version" integer, "p_passengers" "jsonb", "p_allow_busy" boolean DEFAULT false) RETURNS "void"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
@@ -8670,6 +8744,8 @@ begin
   if exists (select 1 from public.weeks where department_id = v_ride.department_id and week_start = v_ride.week_start and phase = 'archived') then
     raise exception 'week_archived' using errcode = 'P0001';
   end if;
+  -- R22B8 (REQ §13.176): "yes, add them anyway" to the question below (a caller's own answer is kept)
+  if p_allow_busy then perform public._person_busy_mode(true); end if;
 
   select array_agg(person_id) filter (where person_id is not null), array_agg(child_id) filter (where child_id is not null)
     into v_existing_person_ids, v_existing_child_ids
@@ -8794,6 +8870,14 @@ begin
           when v_match.trip_shape = 'round_trip' then 'out'::public.ride_leg
           else 'both'::public.ride_leg end;
       end if;
+    end if;
+
+    -- R22B8 (owner 2026-11-22, REQ §13.176): a member already riding at these hours is asked about first, as a request
+    -- or taking the wheel is ("כבר יש נסיעה אחרת בשעות האלה"; `person_busy`, `p_allow_busy` goes ahead). Not the ride
+    -- this member's own request is leaving (join_other_ride), nor the open request that this seat serves.
+    if v_person_id is not null then
+      perform public._assert_person_free(v_person_id, tstzrange(v_ride.starts_at, v_ride.ends_at, '[)'), p_ride_id,
+        coalesce(v_match.id, nullif(current_setting('app.join_from_request', true), '')::uuid));
     end if;
 
     if v_match.id is not null then
@@ -8927,7 +9011,7 @@ end;
 $$;
 
 
-ALTER FUNCTION "public"."add_ride_passengers"("p_ride_id" "uuid", "p_expected_version" integer, "p_passengers" "jsonb") OWNER TO "postgres";
+ALTER FUNCTION "public"."add_ride_passengers"("p_ride_id" "uuid", "p_expected_version" integer, "p_passengers" "jsonb", "p_allow_busy" boolean) OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."admin_approve_member"("p_profile_id" "uuid", "p_department_id" "uuid") RETURNS "void"
@@ -11315,15 +11399,25 @@ begin
     perform set_config('app.audit_reason', 'cancel_ride_part', true);
     delete from public.ride_requests where ride_id = r.id and request_id = p_request_id;
     perform public._fit_ride_to_its_legs(r.id);
-    update public.ride_requests rr set role = 'driver', car_mode = 'keep'
-     from public.requests q where q.id = rr.request_id and rr.ride_id = r.id and q.requester_id = r.driver_id
-       and rr.request_id = (select rr2.request_id from public.ride_requests rr2 where rr2.ride_id = r.id
-                            order by rr2.created_at, rr2.request_id limit 1);
     perform public.refresh_car_turnarounds(r.car_id, r.week_start);
   else
     -- a chained trip, or a trip that is not the ride's base: what unmerge does (it refuses the base of a plain merge)
     perform public._unmerge_core(r.id, p_request_id, 'CANCELLED_BY_MEMBER');
   end if;
+  -- the ride's driver's own trip that is left is the ride's driver trip again, and no longer "riding in someone else's
+  -- ride" (a member merge made it `merged`)
+  if not exists (select 1 from public.ride_requests rr where rr.ride_id = r.id and rr.role = 'driver') then
+    update public.ride_requests rr set role = 'driver', car_mode = 'keep'
+     from public.requests q where q.id = rr.request_id and rr.ride_id = r.id and q.requester_id = r.driver_id
+       and rr.request_id = (select rr2.request_id from public.ride_requests rr2 join public.requests q2 on q2.id = rr2.request_id
+                            where rr2.ride_id = r.id and q2.requester_id = r.driver_id order by rr2.created_at, rr2.request_id limit 1);
+  end if;
+  v_prev_sys := coalesce(nullif(current_setting('app.system_status_transition', true), ''), 'off');
+  perform set_config('app.system_status_transition', 'on', true);
+  update public.requests q set status = 'assigned'
+   where q.status = 'merged' and q.requester_id = r.driver_id
+     and q.id in (select rr.request_id from public.ride_requests rr where rr.ride_id = r.id and rr.role = 'driver');
+  perform set_config('app.system_status_transition', v_prev_sys, true);
 
   v_prev_sys := coalesce(nullif(current_setting('app.system_status_transition', true), ''), 'off');
   perform set_config('app.system_status_transition', 'on', true);
@@ -15877,7 +15971,10 @@ begin
     from unnest(coalesce(q.guest_passenger_names, '{}'::text[])) as g(name) where nullif(trim(g.name), '') is not null
   ) people;
 
+  -- R22B8: the ride this request leaves is not "another ride at these hours"
+  perform set_config('app.join_from_request', q.id::text, true);
   perform public.add_ride_passengers(p_ride_id, p_expected_version, v_people);
+  perform set_config('app.join_from_request', '', true);
 
   for v_held in
     select r.id, r.version from public.ride_requests rr join public.rides r on r.id = rr.ride_id
@@ -28213,6 +28310,7 @@ declare
   v_guest_return_at timestamptz;
   v_guest_stays boolean := false;   -- R20B8: a guest's new hours still fit the ride they ride in
   v_off_route jsonb;   -- REQ item 248: people whose place is no longer on the route
+  v_host_resize jsonb;   -- R22B7: the published ride this request drives, resized in place to the new hours
   v_host_keeps boolean;   -- R20 Q2 redo: the probe of a host's edit, whether the host stays on the car   -- R20 Q2: the guests riding on the draft ride this request hosts
 begin
   -- REQ §13.190: the browser asks before a short turnaround (`short_turnaround_ask`: try_auto_approve names the car's
@@ -28402,6 +28500,12 @@ begin
     v_guest_stays := v_published_edit and not v_unchanged and not v_neutral and not v_requester_changed
       and public._guest_edit_stays(v_request_id, payload, v_trip_type, v_trip_shape, v_needs_car, v_one_way_mode,
         v_origin_id, v_origin_text, v_depart_at, v_return_at);
+    -- R22B7 (owner 2026-11-22): a driver whose ride carries someone else's trip moves an hour that carries nobody
+    -- else: the ride is resized in place (as the siddur's edit-mode drag would), never released and placed again.
+    if v_published_edit and not v_unchanged and not v_neutral and not v_guest_stays and not v_requester_changed then
+      v_host_resize := public._host_edit_resize(v_request_id, payload, v_trip_type, v_trip_shape, v_needs_car, v_one_way_mode,
+        v_origin_id, v_origin_text, v_depart_at, v_return_at);
+    end if;
     -- REQ §13.102 (f), R2B20: the form asks before saving whether an edit would lose the current booking.
     -- R20 Q2 redo: a request hosting guests on an unpublished day's ride is put back on its car when it can be, so the
     -- probe tries the edit (every guest answered "release", so it never asks) and rolls it back.
@@ -28462,7 +28566,7 @@ begin
       return jsonb_build_object('ok', true, 'placement_neutral', true, 'unchanged', false, 'request_id', v_request_id,
         'status', v_existing.status, 'is_late', v_existing.is_late, 'warnings', '[]'::jsonb, 'overlaps', '[]'::jsonb);
     end if;
-    if v_published_edit and not v_guest_stays then
+    if v_published_edit and not v_guest_stays and v_host_resize is null then
       v_booking := public.request_booking_info(v_request_id);
       if (v_booking ->> 'has_booking')::boolean and coalesce(current_setting('app.edit_probe_inner', true), 'off') <> 'on' then
         -- Probe: run the whole edit (release + new placement) in a subtransaction. A clean move onto a
@@ -29030,6 +29134,25 @@ begin
     v_auto_result := jsonb_build_object('status', v_existing.status, 'reason', 'GUEST_STAYS',
       'ride_id', (select rr.ride_id from public.ride_requests rr join public.rides r on r.id = rr.ride_id
                   where rr.request_id = v_request_id and r.status <> 'cancelled' order by r.starts_at limit 1));
+  elsif v_host_resize is not null then
+    -- R22B7: the same ride on the same car at the new hours; its riders keep their parts (the form's `ride_edited`
+    -- notice tells them the ride's new hours)
+    update public.rides set starts_at = (v_host_resize ->> 'starts_at')::timestamptz, ends_at = (v_host_resize ->> 'ends_at')::timestamptz
+    where id = (v_host_resize ->> 'ride_id')::uuid;
+    v_auto_result := jsonb_build_object('status', 'assigned', 'reason', 'HOST_RESIZED',
+      'ride_id', (v_host_resize ->> 'ride_id')::uuid, 'car_id', (v_host_resize ->> 'car_id')::uuid);
+    -- the hours the ride gives up are offered (R21B6: an earlier start, or an earlier end when the car comes back)
+    if (v_host_resize ->> 'starts_at')::timestamptz > (v_host_resize ->> 'old_starts_at')::timestamptz then
+      perform public._offer_freed_time((v_host_resize ->> 'ride_id')::uuid, (v_host_resize ->> 'car_id')::uuid,
+        (v_host_resize ->> 'old_starts_at')::timestamptz, (v_host_resize ->> 'starts_at')::timestamptz,
+        (v_host_resize ->> 'origin_id')::uuid, 'shorten', false, (v_host_resize ->> 'ride_id')::uuid);
+    end if;
+    if (v_host_resize ->> 'ends_at')::timestamptz < (v_host_resize ->> 'old_ends_at')::timestamptz
+       and (v_host_resize ->> 'brings_back')::boolean then
+      perform public._offer_freed_time((v_host_resize ->> 'ride_id')::uuid, (v_host_resize ->> 'car_id')::uuid,
+        (v_host_resize ->> 'ends_at')::timestamptz, (v_host_resize ->> 'old_ends_at')::timestamptz,
+        (v_host_resize ->> 'origin_id')::uuid, 'shorten', false, (v_host_resize ->> 'ride_id')::uuid);
+    end if;
   elsif coalesce((payload->>'reserve_missing_driver')::boolean,false) then
     v_auto_result:=public.reserve_live_one_way_slot(v_request_id);
     perform public.enqueue_notification(s.profile_id,'waitlisted_request',v_department_id,v_week_start,
@@ -39632,6 +39755,11 @@ GRANT ALL ON FUNCTION "public"."_host_edit_guest_reason"("p_code" "text") TO "se
 
 
 
+REVOKE ALL ON FUNCTION "public"."_host_edit_resize"("p_request_id" "uuid", "payload" "jsonb", "p_trip_type" "public"."trip_type", "p_trip_shape" "public"."trip_shape", "p_needs_car" boolean, "p_one_way_mode" "public"."leg_car_mode", "p_origin_id" "uuid", "p_origin_text" "text", "p_depart_at" timestamp with time zone, "p_return_at" timestamp with time zone) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_host_edit_resize"("p_request_id" "uuid", "payload" "jsonb", "p_trip_type" "public"."trip_type", "p_trip_shape" "public"."trip_shape", "p_needs_car" boolean, "p_one_way_mode" "public"."leg_car_mode", "p_origin_id" "uuid", "p_origin_text" "text", "p_depart_at" timestamp with time zone, "p_return_at" timestamp with time zone) TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."_is_ride_editor"("p_department" "uuid", "p_owner" "uuid", "p_actor" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."_is_ride_editor"("p_department" "uuid", "p_owner" "uuid", "p_actor" "uuid") TO "service_role";
 
@@ -40535,9 +40663,9 @@ GRANT ALL ON FUNCTION "public"."add_car_owner"("p_car_id" "uuid", "p_profile_id"
 
 
 
-REVOKE ALL ON FUNCTION "public"."add_ride_passengers"("p_ride_id" "uuid", "p_expected_version" integer, "p_passengers" "jsonb") FROM PUBLIC;
-GRANT ALL ON FUNCTION "public"."add_ride_passengers"("p_ride_id" "uuid", "p_expected_version" integer, "p_passengers" "jsonb") TO "service_role";
-GRANT ALL ON FUNCTION "public"."add_ride_passengers"("p_ride_id" "uuid", "p_expected_version" integer, "p_passengers" "jsonb") TO "authenticated";
+REVOKE ALL ON FUNCTION "public"."add_ride_passengers"("p_ride_id" "uuid", "p_expected_version" integer, "p_passengers" "jsonb", "p_allow_busy" boolean) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."add_ride_passengers"("p_ride_id" "uuid", "p_expected_version" integer, "p_passengers" "jsonb", "p_allow_busy" boolean) TO "service_role";
+GRANT ALL ON FUNCTION "public"."add_ride_passengers"("p_ride_id" "uuid", "p_expected_version" integer, "p_passengers" "jsonb", "p_allow_busy" boolean) TO "authenticated";
 
 
 

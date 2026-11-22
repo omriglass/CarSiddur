@@ -6790,6 +6790,21 @@ export type Database = {
         Returns: undefined
       }
       _host_edit_guest_reason: { Args: { p_code: string }; Returns: string }
+      _host_edit_resize: {
+        Args: {
+          p_depart_at: string
+          p_needs_car: boolean
+          p_one_way_mode: Database["public"]["Enums"]["leg_car_mode"]
+          p_origin_id: string
+          p_origin_text: string
+          p_request_id: string
+          p_return_at: string
+          p_trip_shape: Database["public"]["Enums"]["trip_shape"]
+          p_trip_type: Database["public"]["Enums"]["trip_type"]
+          payload: Json
+        }
+        Returns: Json
+      }
       _is_ride_editor: {
         Args: { p_actor: string; p_department: string; p_owner: string }
         Returns: boolean
@@ -7502,6 +7517,7 @@ export type Database = {
       }
       add_ride_passengers: {
         Args: {
+          p_allow_busy?: boolean
           p_expected_version: number
           p_passengers: Json
           p_ride_id: string
