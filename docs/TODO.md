@@ -2106,3 +2106,8 @@ Scope: everything unreleased since v2026.11.17-3, AI off. Thorough on board plac
 **Owner triage 2026-11-22 (QA run 22):** order: the chain bugs B1–B5 first (reproduced on the QA week), then the other bugs, then the UI items.
 - B1: cancelling one trip of a chained ride **asks**; the default answer cancels only that trip (the rest of the ride stays). U1: offer the chain ask even when other people are on either ride. B6: not now. M2: no. F1, F3: no. F2: a real issue (check rush-hour times). M5: verify.
 - U2: a real problem with small rides. U3: name only the affected people. U4, U6, U11: yes. U5: a hint. U7: fine as is. U8: mark it on the board. U9: no. U10: the wordings yes; the "יום 1/2" on a guest's one-leg card (the host's series details shown to the guest, same cause as B11) is minor. U12: dropped.
+
+## A car put "בטיפול" sends its rides at that time to the waiting list (owner 2026-11-22, MT1) — not built yet; plan first
+- When a maintenance period ("בטיפול") is set on a car, every ride on that car overlapping the period is taken off the car and its requests go to the waiting list, and the people on those rides are notified.
+- Today the rides stay on the car: the driver (published days) and the Sadranim get `maintenance_affects` (REQ §13.119 b) and the ride becomes a publication conflict (§13.120 d).
+- To decide in the plan: try another free car first, before the waiting list? Unpublished days too (no notices then)? Multi-day rides partly inside the period? Merged guests and "+ נוסעים" people? Asking the person who sets the period first (side-effect prompt — new wording to approve), and one combined notice per person.
