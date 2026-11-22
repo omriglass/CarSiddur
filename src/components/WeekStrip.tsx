@@ -1,12 +1,16 @@
 import { datesOfWeek } from "@/components/dateFieldDates";
 import { he } from "@/i18n/he";
 import { formatDayMonth } from "@/lib/dayLabels";
+import { UserRoundX } from "lucide-react";
+
 import { cn } from "@/lib/utils";
 import { isToday } from "./weekStripToday";
 
 export interface WeekStripDayCounts {
   rides: number;
   unmet: number;
+  /** R22U8: rides of the day still without a driver (the board only) - marked so a day needing one is seen unopened. */
+  needsDriver?: number;
 }
 
 interface WeekStripProps {
@@ -66,6 +70,13 @@ export function WeekStrip({ weekStart, counts, selected, onSelect }: WeekStripPr
             {dayCounts && dayCounts.unmet > 0 ? (
               <span className="text-[10px] text-destructive" dir="ltr">
                 {dayCounts.unmet}
+              </span>
+            ) : null}
+            {dayCounts?.needsDriver ? (
+              <span className="flex items-center gap-0.5 text-[10px] text-destructive" title={he.boardCoordination.needsDriver} data-testid={`week-strip-needs-driver-${date}`}>
+                <UserRoundX className="size-3" aria-hidden="true" />
+                <span dir="ltr">{dayCounts.needsDriver}</span>
+                <span className="sr-only">{he.boardCoordination.needsDriver}</span>
               </span>
             ) : null}
           </button>

@@ -962,6 +962,8 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
   const dayCounts = days.map((d) => ({
     rides: rides.filter((r) => r.starts_at && dateKey(new Date(r.starts_at)) === d).length,
     unmet: viewsOnDay(allUnmetViews, d, (iso) => dateKey(new Date(iso))).length,
+    // R22U8: a ride left without a driver (e.g. its host cancelled) is marked on its day
+    needsDriver: rides.filter((r) => r.needs_driver && r.status !== "cancelled" && r.starts_at && dateKey(new Date(r.starts_at)) === d).length,
   }));
 
   /**
