@@ -1,6 +1,6 @@
 // CM1 phase 3 (REQ item 260 c, owner 2026-11-21): two trips chained into one ride, and the long trip has people who are
 // not on the short one. They ride the whole ride, or the ride passes the start place again for them - each answer shows
-// the route it makes and their time ("לכל הנסיעה" first). Shared by the Sadran's merge popup and the member's merge.
+// the route it makes and their time ("כל הדרך" first). Shared by the Sadran's merge popup and the member's merge.
 import { Button } from "@/components/ui/button";
 import { tv } from "@/i18n/he";
 import { formatTime } from "@/lib/time";

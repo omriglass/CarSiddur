@@ -163,7 +163,7 @@ export function useCarCorporationsQuery(enabled: boolean) {
   return useQuery({ queryKey: carKeys.corporations(), queryFn: fetchCarCorporations, enabled, staleTime: 5 * 60_000 });
 }
 
-/** CG1 (REQ item 259): the model names already used on any car (suggestions for "דגם"). */
+/** CG1 (REQ item 259): the model names already used on any car (suggestions for "יצרן ודגם"). */
 export function useCarModelsQuery(enabled: boolean) {
   return useQuery({ queryKey: carKeys.models(), queryFn: fetchCarModels, enabled, staleTime: 5 * 60_000 });
 }

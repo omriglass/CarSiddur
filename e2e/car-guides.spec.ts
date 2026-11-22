@@ -6,7 +6,7 @@ import { NEVO_DEPARTMENT_ID, newSignedInPage, SEEDED_USERS, serviceRoleClient, s
 
 /**
  * "איך עושים…" guides per car (REQ item 259, UX_FLOWS §5.11 / §5.16): the admin defines a required topic on
- * `/cars/guides/:dept`; the car page then says "לא הוזן מדריך: …" to whoever manages the car; writing the guide in
+ * `/cars/guides/:dept`; the car page then says "חסר מדריך: …" to whoever manages the car; writing the guide in
  * place clears it; a member opens it from the car menu and steps through it one step at a time.
  */
 const service = serviceRoleClient();

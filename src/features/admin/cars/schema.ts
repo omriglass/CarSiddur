@@ -32,7 +32,7 @@ export const carSchema = z.object({
   base_location_id: z.string().uuid().nullable(),
   /** CR1 (REQ item 257): "תאגיד", free text (names already used are suggested). */
   corporation: z.string().trim().max(80).nullable(),
-  /** CG1 (REQ item 259): "דגם", free text; orders "copy a guide from another car" (same model first). */
+  /** CG1 (REQ item 259): "יצרן ודגם", free text; orders "copy a guide from another car" (same model first). */
   model: z.string().trim().max(80).nullable(),
   /** CR1: the recommended tire pressure, PSI — both or neither (`cars_tire_pressure_ck`, 10–99). */
   tire_pressure_front_psi: z.number().int().min(10).max(99).nullable(),

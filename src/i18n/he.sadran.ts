@@ -945,16 +945,16 @@ export const heSadran = {
     /** CM1 phase 2 (REQ item 260 b): two trips one after the other merge into one ride (wording to approve). */
     chainRoute: "הנסיעות יתחברו לנסיעה אחת: {{route}}",
     // CM1 phase 3 (REQ item 260 c): the people on one of the two trips only (wordings to approve)
-    chainAskBefore: "{{names}} רק בנסיעה השנייה — מתי לאסוף?",
-    chainAskAfter: "{{names}} רק בנסיעה הראשונה — מתי להוריד?",
-    chainWhole: "לכל הנסיעה — {{route}}",
-    chainPickUp: "לאסוף מ{{place}} — {{route}}",
-    chainRideOn: "ממשיכים בנסיעה — {{route}}",
-    chainDropOff: "להוריד ב{{place}} בדרך — {{route}}",
-    chainTimeBefore: "יוצאים ב-{{time}} (במקום {{was}})",
-    chainTimeAfter: "חוזרים ל{{place}} ב-{{time}} (במקום {{was}})",
+    chainAskBefore: "{{names}}:",
+    chainAskAfter: "{{names}}:",
+    chainWhole: "כל הדרך — {{route}}",
+    chainPickUp: "איסוף מ{{place}} — {{route}}",
+    chainRideOn: "כל הדרך — {{route}}",
+    chainDropOff: "הורדה ב{{place}} — {{route}}",
+    chainTimeBefore: "כ-{{time}} (ביקשו {{was}})",
+    chainTimeAfter: "כ-{{time}} (ביקשו {{was}})",
     chainMore: "{{count}} נוספים",
-    chainLong: "ייתכן שארוך: עוד {{minutes}} דק׳ נסיעה",
+    chainLong: "+כ-{{minutes}} דק׳ נסיעה",
     resultWho: "{{name}}:",
     /** REQ §13.95 (H1): a merge is refused - toast text. */
     invalid: {
@@ -1038,7 +1038,7 @@ export const heSadran = {
     /** CM1 phase 4 (REQ item 260 d): a ride placed / moved next to the same person's ride. */
     chain: {
       title: "לאחד את הנסיעות?",
-      body: "אפשר לחבר אותן לנסיעה אחת: {{route}}",
+      body: "לאותו אדם יש נסיעה צמודה — אפשר נסיעה אחת: {{route}}",
       yes: "לאחד",
       notNow: "לא עכשיו",
     },

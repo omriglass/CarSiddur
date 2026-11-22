@@ -579,8 +579,8 @@ local replay stack and comparing it with the production solve — scripts/replay
    lower one is refused ("הקילומטראז׳ נמוך מהקריאה האחרונה…"). The history tab lists readings and
    corrections; the Excel export has a "קילומטראז׳" sheet.
 7. Guides (REQ item 259): as a car admin add a required topic on `/cars/guides/<dept>`; the car page
-   and `/cars` say "לא הוזן מדריך: …". As the car's responsible person write it on the car page ("כתיבה",
-   "+ שלב", ↑↓, "העתקה מרכב אחר" with the same "דגם" first). As a member open it from the car menu and
+   and `/cars` say "חסר מדריך: …". As the car's responsible person write it on the car page ("כתיבה",
+   "+ שלב", ↑↓, "העתקה מרכב אחר" with the same "יצרן ודגם" first). As a member open it from the car menu and
    from the "איך עושים…" chip on `/my`: tap, swipe and buttons move one step; "הצגה כרשימה"; "סיום".
 
 **REQ**: §13.69, §13.70, §13.71, §13.72, §13.73, item 150 (a), (c), item 257, item 259.

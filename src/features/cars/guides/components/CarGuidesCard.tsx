@@ -18,7 +18,7 @@ import { GuideEditorDialog } from "./GuideEditorDialog";
 /**
  * REQ item 259 on the car page ("לכל מי שנוסע/ת ברכב"): the car's guides — a tap opens the step viewer. Whoever
  * manages the car (`can_manage_car`) also sees the department topics not written yet ("כתיבה"), a pencil per guide,
- * "+ מדריך", and on a shared car the prompt "לא הוזן מדריך: …" for the required ones; car admins / admins get the link
+ * "+ מדריך", and on a shared car the prompt "חסר מדריך: …" for the required ones; car admins / admins get the link
  * to the topics. Nothing to show to a reader of a car without guides.
  */
 export function CarGuidesCard({ car, canManage, canDefine }: {

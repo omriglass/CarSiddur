@@ -1,7 +1,7 @@
 /**
  * "איך עושים…" — step-by-step guides per car (REQ item 259, TODO CG1): the guides list, the one-step-at-a-time viewer,
  * the in-place editor on the car page, copying from another car and the department's guide topics. Own module (spread
- * into `he.ts`). Wordings to approve (owner 2026-11-21: build first, approve after).
+ * into `he.ts`). Wordings owner-approved 2026-11-22.
  */
 export const heCarGuides = {
   carGuides: {
@@ -20,8 +20,8 @@ export const heCarGuides = {
     tapHint: "הקשה — לשלב הבא",
     asList: "הצגה כרשימה",
     asSteps: "שלב אחר שלב",
-    missing: "לא הוזן מדריך: {{topics}}",
-    missingCount: "{{count}} מדריכים חסרים",
+    missing: "חסר מדריך: {{topics}}",
+    missingCount: "חסרים {{count}} מדריכים",
     editor: {
       add: "+ מדריך",
       edit: "עריכת המדריך",

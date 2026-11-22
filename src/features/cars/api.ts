@@ -164,7 +164,7 @@ export async function fetchCarCorporations(): Promise<string[]> {
   return [...new Set((data ?? []).map((row) => (row.corporation ?? "").trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, "he"));
 }
 
-/** CG1 (REQ item 259): every model name already used on a car, for the "דגם" suggestions (no list table). */
+/** CG1 (REQ item 259): every model name already used on a car, for the "יצרן ודגם" suggestions (no list table). */
 export async function fetchCarModels(): Promise<string[]> {
   const { data, error } = await supabase.from("cars").select("model").not("model", "is", null);
   if (error) throw toAppError(error);

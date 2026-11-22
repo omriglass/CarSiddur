@@ -182,7 +182,7 @@ test("a member drags their school run onto their day trip in edit mode: one chai
   }
 });
 
-// CM1 phase 3 (REQ item 260 c): member2 rides the day trip only - "לכל הנסיעה" is preselected, "לאסוף מ..." passes home again
+// CM1 phase 3 (REQ item 260 c): member2 rides the day trip only - "כל הדרך" is preselected, "איסוף מ..." passes home again
 test("the Sadran chains with a pickup from home for the one on the day trip only", { tag: ["@board"] }, async ({ browser }) => {
   test.slow();
   const week = "2042-03-09";
