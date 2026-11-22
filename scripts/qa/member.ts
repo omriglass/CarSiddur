@@ -2,6 +2,7 @@
 // own api functions / RPCs, signed in as that member on the disposable stack.
 import { fromZonedTime } from "date-fns-tz";
 
+import { fetchDepartmentMembers } from "@/features/auth/api";
 import { fetchDestinations, fetchRideTypes } from "@/features/fleet/api";
 import { fetchNotifications, fetchProposalLink, markAllNotificationsRead } from "@/features/inbox/api";
 import { answerProposal } from "@/features/proposals/api";
@@ -286,6 +287,26 @@ async function cmdRequest(args: Args, forceToday = false): Promise<void> {
     stops: [...destinationValuesToStopPayload(flagAll(args, "stop").map((s) => resolvePlaceToken(destinations, s)), "out"),
       ...destinationValuesToStopPayload(flagAll(args, "return-stop").map((s) => resolvePlaceToken(destinations, s)), "return")],
   };
+  // QA run 2026-11-22: file for another member (REQ §13.127, `requester_id`), name companions and children like the form
+  const lookupMember = async (token: string): Promise<string> => {
+    const rows = await fetchDepartmentMembers(SCOPE!.departmentId, null);
+    const hit = rows.filter((r) => r.id.endsWith(token) || r.name.includes(token));
+    if (hit.length !== 1) throw new UsageError(`member "${token}": ${hit.length} matches`);
+    return hit[0]!.id;
+  };
+  const forToken = flag(args, "for");
+  if (forToken) payload.requester_id = await lookupMember(forToken);
+  const companionIds = await Promise.all(flagAll(args, "companion").map(lookupMember));
+  const childTokens = flagAll(args, "child");
+  let childIds: string[] = [];
+  if (childTokens.length) {
+    const { data: kids } = await supabase.from("children").select("id, full_name").eq("department_id", SCOPE.departmentId);
+    childIds = childTokens.map((token) => {
+      const hit = (kids ?? []).filter((k) => k.full_name.includes(token));
+      if (hit.length !== 1) throw new UsageError(`child "${token}": ${hit.length} matches`);
+      return hit[0]!.id;
+    });
+  }
   type Filed = requests.SubmitRequestResult & { series_id?: string; request_ids?: string[] };
   const isSeries = !!(returnDay && returnDay > day);
   // REQ item 211: like the form, a new request asks when a free car would be left at the destination.
@@ -297,6 +318,11 @@ async function cmdRequest(args: Args, forceToday = false): Promise<void> {
       console.log(`NOT filed: the server asks first (car_stays_away, car=${result.car_name ?? "-"}) — nothing filed; rerun with --allow-car-away (take the car, it stays at the destination) or --wait (file and wait for the Sadran)`);
       return;
     }
+  }
+  const filedIds = result.request_ids ?? (result.request_id ? [result.request_id] : []);
+  for (const id of filedIds) {
+    if (companionIds.length) await requests.setRequestCompanions(id, companionIds);
+    if (childIds.length) await requests.setRequestChildren(id, childIds);
   }
   console.log(`filed: ${result.request_ids ? `series ${short(result.series_id)} requests ${result.request_ids.map(short).join(",")}` : `request ${short(result.request_id)}`} late=${result.is_late ?? "-"} status=${result.status ?? "submitted"}${result.ride_id ? ` ride=${short(result.ride_id)}` : ""}${result.car_id ? ` car=${short(result.car_id)}` : ""}${result.reason ? ` reason=${result.reason}` : ""}${result.warnings?.length ? ` warnings=${result.warnings.join(",")}` : ""}`);
 }
@@ -373,7 +399,7 @@ function usage(): void {
   inbox [--all] [--mark-read] | proposals | answer <proposalId|token> accept|decline [--note T]
   messages [--new] | reply <text> [--re X] | my-rides | siddur <day>
   request <day> --depart HH:MM [--return HH:MM] --dest <place|free:text> [--trip round_trip|one_way|drop_off] [--from] [--pickup] [--origin P] [--stop P]... [--return-stop P]...
-          [--adults N --child-seats N --boosters N --luggage] [--flex 0|15|30|60|120|any | --flex-depart-early/-late/--flex-return-early/-late] [--return-day D] [--car ID] [--ride-type CODE] [--notes T] [--waitlist]
+          [--adults N --child-seats N --boosters N --luggage] [--flex 0|15|30|60|120|any | --flex-depart-early/-late/--flex-return-early/-late] [--return-day D] [--car ID] [--ride-type CODE] [--notes T] [--waitlist] [--for <member>] [--companion <member>]... [--child <name>]...
           [--fallback alternative|manage --alt-place P --alt-arrive HH:MM [--alt-pickup-place P --alt-pickup HH:MM]]   (plan B / "I will manage")
   edit <req> [--day D --depart HH:MM --return HH:MM --dest P --origin P --trip-type T [--from|--pickup] --adults N --flex X --notes T --stop P... --clear-stops] [--confirm-release]
   groups | resolve-group <group> <member,...> [--driver X] (first listed drives)

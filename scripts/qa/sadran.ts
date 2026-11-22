@@ -22,7 +22,6 @@ import {
 } from "@/features/sadran/board/dropValidity";
 import { mergeInvalidReason, mergePayload, mergePayloadLeg, type MergeLeg } from "@/features/sadran/board/mergeProposal";
 import { requestStart, requestWithinFlex, tripTypeOf } from "@/features/sadran/board/phantomLanes";
-import { initialRouteEditValues, reservationRoutePlaces, routeEditChanged, routeEditPayload, type RouteEditValues } from "@/features/sadran/board/rideRouteEdit";
 import { isDropOffWithPickup, coveredLegs } from "@/features/sadran/board/unmetLegs";
 import { fetchWhatsappTemplates } from "@/features/sadran/api";
 import { addRidePassengers } from "@/features/rides/api";
@@ -452,41 +451,6 @@ async function cmdTripType(board: Board, args: Args): Promise<void> {
   console.log(`trip type -> ${type}: status=${res.status} changed=${res.changed}${res.rideId ? ` ride=${short(res.rideId)}` : ""}${res.restoredReturnAt ? ` restoredReturn=${t(res.restoredReturnAt)}` : ""}${res.defaultedReturnAt ? ` defaultedReturn=${t(res.defaultedReturnAt)}` : ""}`);
 }
 
-async function cmdEditRoute(board: Board, args: Args): Promise<void> {
-  const token = need(args.pos[0], "<rideId|requestId>");
-  const all = [...board.rides.flatMap((r) => (r.id ? [r.id] : [])), ...board.requests.map((r) => r.id)];
-  const id = resolveId(token, all, "ride or request");
-  let ride = board.rides.find((r) => r.id === id);
-  if (!ride) {
-    ride = board.rides.find((r) => r.status !== "cancelled" && servedOf(r).some((e) => e.request_id === id));
-    if (!ride) throw new UsageError("that request has no ride yet; edit its route with propose shift or change it on the request");
-  }
-  const served = servedOf(ride);
-  const base = served.find((e) => e.role === "driver") ?? served[0];
-  const request = base ? board.boardRequests.find((r) => r.id === base.request_id) : undefined;
-  const initial = initialRouteEditValues({
-    request: request ?? null, stops: (base?.stops ?? []) as never,
-    ride: { origin_id: ride.origin_id, origin_name: ride.origin_name, destination_id: ride.destination_id, destination_name: ride.destination_name },
-    homeId: board.scope.homeDestinationId, placeName: (placeId) => board.destinations.find((d) => d.id === placeId)?.name,
-  });
-  const values: RouteEditValues = { ...initial,
-    origin: flag(args, "origin") ? resolvePlace(board, flag(args, "origin")!) : initial.origin,
-    destination: flag(args, "dest") ? resolvePlace(board, flag(args, "dest")!) : initial.destination,
-    outStops: has(args, "clear-stops") ? [] : flagAll(args, "stop").length ? flagAll(args, "stop").map((s) => resolvePlace(board, s)) : initial.outStops,
-    returnStops: has(args, "clear-stops") ? [] : flagAll(args, "return-stop").length ? flagAll(args, "return-stop").map((s) => resolvePlace(board, s)) : initial.returnStops };
-  if (!routeEditChanged(initial, values)) throw new UsageError("nothing changed (give --origin/--dest/--stop/--return-stop/--clear-stops)");
-  if (base?.request_id) {
-    await createProposalFrom(board, { requestId: base.request_id, rideId: ride.id as string, type: "shift", payload: routeEditPayload(ride.id as string, values) }, has(args, "draft"));
-    return;
-  }
-  const places = reservationRoutePlaces(values);
-  if (!places) throw new UsageError("a reservation's route takes two list places only");
-  await api.editRide({ id: ride.id as string, department_id: board.scope.departmentId, week_start: board.scope.weekStart, car_id: ride.car_id as string,
-    starts_at: ride.starts_at as string, ends_at: ride.ends_at as string, origin_id: places.originId, destination_id: places.destinationId, driver_id: ride.driver_id,
-    needs_driver: !!ride.needs_driver, notes: ride.notes ?? undefined, is_pinned: !!ride.is_pinned, pin_reason: ride.pin_reason, allow_conflict: true, served: servedToEditRideLegs(served) }, ride.version ?? undefined);
-  console.log(`reservation ${short(ride.id)} route -> ${board.destName(places.originId)}->${board.destName(places.destinationId)}`);
-}
-
 async function cmdPropose(board: Board, args: Args): Promise<void> {
   const request = resolveRequest(board, need(args.pos[0], "<requestId>"));
   const type = need(args.pos[1], "shift|origin|alternative|deny|external") as "shift" | "origin" | "alternative" | "deny" | "external";
@@ -815,7 +779,6 @@ function usage(): void {
   move <ride> [--car C] [--start HH:MM] [--end HH:MM] [--propose [--draft]]
   merge <req> <ride> [--leg out|return|both] [--draft] | unmerge <ride> <req>
   trip-type <req> <round_trip|one_way|drop_off>
-  edit-route <ride|req> [--origin P] [--dest P] [--stop P]... [--return-stop P]... [--clear-stops] [--draft]
   propose <req> shift [--car C --depart HH:MM --return HH:MM --day D --ride R --no-places --chain-break] | origin --origin P --car C | deny [--reason T] | external [--hint cab|rental|public_transport|private|waive] [--reason T] | alternative [--car C --depart HH:MM] [--return HH:MM (pickup from the drop-off place only; default pickup + drive)] [--return-car C (pickup car)]  [--draft]  (no --car/--depart = the solver's useAlternative numbers)
   send <proposal> | withdraw <proposal> | discard <proposal> | apply <proposal>
   unassign <ride> | cancel-ride <ride> [reason] [--close <req>,...] [--continue <req>,...] | close <req> [reason] | restore <req> | reserve <car> <day> <HH:MM-HH:MM> <note> | car-move <car> <from> <to> <HH:MM> [--day D] [--minutes N]
@@ -844,7 +807,6 @@ run(async () => {
     case "merge": return cmdMerge(board, args);
     case "unmerge": return cmdUnmerge(board, args);
     case "trip-type": return cmdTripType(board, args);
-    case "edit-route": return cmdEditRoute(board, args);
     case "propose": return cmdPropose(board, args);
     case "send": return cmdSend(board, args);
     case "withdraw": { await api.withdrawProposal(resolveId(need(args.pos[0], "<proposalId>"), board.proposals.map((p) => p.id), "proposal")); console.log("withdrawn"); return; }
