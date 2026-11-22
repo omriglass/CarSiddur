@@ -497,8 +497,8 @@
       "day": 5,
       "trip": "round_trip",
       "dest": "חיפה",
-      "depart": "09:00",
-      "ret": "14:00",
+      "depart": "17:00",
+      "ret": "21:00",
       "adults": 2,
       "stops": [
         {

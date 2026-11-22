@@ -65,9 +65,9 @@ Friday holds only these (and the last day of S19), so S1–S23 keep their outcom
 
 | ID | Request | Principle | Expected after auto-fill (Friday) | Then try (by hand) |
 |---|---|---|---|---|
-| N1 | m09 round trip with עמית → פרדס חנה 07:30–08:00 | school run (child seat) | on the van (a child-seat car), its own ride | — |
-| N2 | m09 round trip → בנימינה 08:15–16:00 with **m11 on the way out only** | work trip; a companion on one leg | its own ride on another car | **CM1:** drag N2 onto N1's ride (or move one next to the other: "לאחד את הנסיעות?") → one ride 07:30–16:00, home → פרדס חנה → בנימינה → home, עמית only on the school part, m11 to בנימינה (a car without a child seat refuses N1 for seats). Unmerge / cancel one trip → the other gets its own hours back |
-| N4 | m01 round trip → חיפה via זכרון יעקב 09:00–14:00, **m07 gets off at זכרון יעקב** and does not come back | a stop where someone gets off | one ride via זכרון יעקב | the summary sentence per direction (RP1), "הלוך: … / חזור: …", the ride title naming everyone |
+| N1 | m09 round trip with עמית → פרדס חנה 07:30–08:00 | school run (child seat) | on a child-seat car (van or Skoda), its own ride | — |
+| N2 | m09 round trip → בנימינה 08:15–16:00 with **m11 on the way out only** | work trip; a companion on one leg | its own ride on another car | **CM1:** drag N2 onto N1's ride (or move one next to the other: "לאחד את הנסיעות?") → one ride 07:30–16:00, home → פרדס חנה → בנימינה → home, עמית only on the school part, m11 to בנימינה (N1 dropped on a car without a child seat is refused for seats; Friday's other rides start at 17:00, so the chained ride fits whichever car it is on). The proposal, if sent rather than "כבר סיכמנו", reads "הצעה: לחבר את שתי הנסיעות שלך לנסיעה אחת". Unmerge / cancel one trip → the other gets its own hours back |
+| N4 | m01 round trip → חיפה via זכרון יעקב 17:00–21:00, **m07 gets off at זכרון יעקב** and does not come back | a stop where someone gets off | one ride via זכרון יעקב | the summary sentence per direction (RP1), "הלוך: … / חזור: …", the ride title naming everyone |
 | N5 | m04 files a round trip → נתניה 17:00–19:00 **for m05** | filing for someone else (OB1) | on a car, m05 drives | m05's "my rides": "הוגשה ע״י מיכל"; m04's: "הוגשה עבור אבי" |
 | — | m10 | non-driver | nothing filed | as m10, "+" → the sentence form opens on the הקפצה dialog (ND1) |
 

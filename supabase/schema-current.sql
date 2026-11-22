@@ -20124,6 +20124,7 @@ declare
   v_placed boolean; v_leg_word text := ''; v_hint text; v_suggest text := ''; v_note text := '';
   v_jd timestamptz; v_jr timestamptz; v_ride_driver text; v_ride_car text; v_leg_raw text := '';
   v_title_change text := ''; v_added text := ''; v_ret_stops text; v_cont text := ''; v_ride_dest text;
+  v_chain jsonb; v_chain_route text := ''; v_chain_window text := '';
 begin
   select * into pr from public.proposals where id = p_proposal_id;
   if pr.id is null then return null; end if;
@@ -20251,6 +20252,20 @@ begin
             jsonb_build_object('time', public._hhmm(q.return_at)));
         end if;
       end if;
+      -- SH2 (owner 2026-11-22): the same person's two trips chained into one ride (CM1, the driver's own) - "join
+      -- the trips into one", with the chained route in order and the ride's new hours, not "join X's ride".
+      if v_variant = 'merge_passenger' and r.driver_id = q.requester_id and v_leg_raw = 'both' then
+        v_mc := public._merge_check(r.id, q.id, 'both');
+        v_chain := case when coalesce(pr.payload ->> 'chain_via', '') = 'true' then v_mc -> 'chain' -> 'one_trip' -> 'via' else v_mc -> 'chain' end;
+        if jsonb_typeof(v_chain) = 'object' and jsonb_typeof(v_chain -> 'route') = 'array' then
+          select string_agg(t.e ->> 'name', ' ← ' order by t.o) into v_chain_route
+            from jsonb_array_elements(v_chain -> 'route') with ordinality t(e, o)
+           where t.e ->> 'leg' = 'out'
+              or t.o > (select min(t2.o) from jsonb_array_elements(v_chain -> 'route') with ordinality t2(e, o) where t2.e ->> 'leg' = 'return');
+          v_chain_window := public._hhmm((v_mc ->> 'new_starts_at')::timestamptz) || '–' || public._hhmm((v_mc ->> 'new_ends_at')::timestamptz);
+          v_variant := 'merge_chain_self';
+        end if;
+      end if;
       v_title_change := case when v_time_change <> '' then public._frag('title.change', jsonb_build_object('change', v_time_change)) else '' end;
     else
       -- A host or a fellow passenger: the ride this reader is on, and only the joiner's legs on that ride.
@@ -20334,6 +20349,7 @@ begin
     'reasonNote', v_note, 'externalSuggestion', v_suggest,
     'originOrHome', coalesce(v_origin_name, (select d.name from public.destinations d where d.id = v_home), ''),
     'newOrigin', coalesce(v_new_origin, ''),
+    'chainRoute', coalesce(v_chain_route, ''), 'chainWindow', coalesce(v_chain_window, ''),
     'newDepart', coalesce(public._hhmm(nullif(pr.payload ->> 'depart_at', '')::timestamptz), ''),
     'newReturn', coalesce(public._hhmm(nullif(pr.payload ->> 'return_at', '')::timestamptz), ''));
   if pr.type = 'alternative' then v := v || public._alternative_vars(pr.payload, pr.department_id); end if;
