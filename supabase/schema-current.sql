@@ -18432,6 +18432,7 @@ CREATE OR REPLACE FUNCTION "public"."person_ride_span"("p_ride_id" "uuid", "p_pr
 declare
   r public.rides%rowtype; v_whole tstzrange; v_req uuid; v_base boolean; v_leg public.ride_leg;
   v_lo timestamptz; v_hi timestamptz;
+  v_l public.ride_leg; v_e jsonb; v_found boolean := false; v_b_eta timestamptz; v_a_eta timestamptz;
 begin
   select * into r from public.rides where id = p_ride_id;
   if r.id is null or r.status = 'cancelled' or p_profile_id is null then return null; end if;
@@ -18445,6 +18446,27 @@ begin
          or exists (select 1 from public.request_companions c where c.request_id = q.id and c.profile_id = p_profile_id))
   group by rr.request_id order by bool_or(rr.role = 'driver') desc, rr.request_id limit 1;
   if v_req is not null then
+    -- a companion riding part of the ride: their own stretches on each leg
+    if not exists (select 1 from public.requests q where q.id = v_req and q.requester_id = p_profile_id)
+       and exists (select 1 from public.request_rider_stops s where s.request_id = v_req and s.rider_key = 'companion:' || p_profile_id) then
+      foreach v_l in array array['out', 'return']::public.ride_leg[] loop
+        -- their own row on this leg, else (no row: riding with the request) the request's own stretch
+        for v_e in select x from jsonb_array_elements(public._ride_leg_riders(r.id, v_l) -> 'riders') x
+                    where x ->> 'key' in ('comp:' || v_req || ':' || p_profile_id, 'req:' || v_req)
+                    order by (x ->> 'key' like 'comp:%') desc limit 1 loop
+          v_found := true;
+          if coalesce((v_e ->> 'absent')::boolean, false) or v_e ->> 'board' is null or v_e ->> 'alight' is null then continue; end if;
+          select min(z.eta) filter (where z.i = (v_e ->> 'board')::int), max(z.eta) filter (where z.i = (v_e ->> 'alight')::int)
+            into v_b_eta, v_a_eta
+            from (select x.eta, (row_number() over (order by x."position") - 1)::int as i from public._ride_route(r.id) x where x.leg = v_l) z;
+          v_lo := least(v_lo, v_b_eta); v_hi := greatest(v_hi, v_a_eta);
+        end loop;
+      end loop;
+      if v_found and v_lo is not null and v_hi > v_lo then
+        return tstzrange(greatest(v_lo, r.starts_at), least(v_hi, r.ends_at), '[)');
+      end if;
+      v_lo := null; v_hi := null;
+    end if;
     if v_base then return v_whole; end if;
     select min(x.eta), max(x.eta) into v_lo, v_hi from public._ride_route(r.id) x
     where x.request_id = v_req and x.kind in ('board', 'alight');
