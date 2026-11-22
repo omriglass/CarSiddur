@@ -17,8 +17,8 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: readonly ChangelogEntry[] = [
   {
-    id: "2026-11-23-chained-rides",
-    date: "2026-11-23",
+    id: "2026-11-22-chained-rides",
+    date: "2026-11-22",
     title: "נסיעות מחוברות ומדריכים לרכב",
     users: [
       "שתי נסיעות שלך זו אחר זו — למשל הקפצת הילדים לבית הספר ואז נסיעה לעבודה — יכולות להתחבר לנסיעה אחת, בלי לחזור הביתה באמצע. כשמזיזים נסיעה ליד נסיעה אחרת שלך, האפליקציה מציעה לאחד אותן.",
