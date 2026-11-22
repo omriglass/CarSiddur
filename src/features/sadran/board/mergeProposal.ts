@@ -134,11 +134,12 @@ function hostRouteTimed(host: BoardRide, leg: MergeLeg, ctx: MergeRouteContext):
 
 /**
  * R22B9 / R22U3 (owner 2026-11-22): the host's trips a merge onto `host` changes - those whose times move
- * (`mergeAffectedRequestIds`; the driver is always affected). `null` when it cannot tell (no preview, no hours, a
+ * (`mergeAffectedRequestIds`; the driver is always affected) - and their requesters (`affected_parties`: only they
+ * and the driver must accept the proposal). `null` when it cannot tell (no preview, no hours, a
  * chain) - the caller then names everyone on the ride, as before.
  */
 export function mergeAffectedParties(host: BoardRide, request: WeekRequestRow, leg: MergeLeg, ctx: MergeRouteContext,
-  preview: MergePreview | null, requests: readonly WeekRequestRow[]): { requestIds: Set<string> } | null {
+  preview: MergePreview | null, requests: readonly WeekRequestRow[]): { requestIds: Set<string>; requesterIds: string[] } | null {
   if (!preview?.valid || preview.chain || !host.starts_at || !host.ends_at) return null;
   const byId = new Map(requests.map((r) => [r.id, r]));
   const trips = servedOf(host).flatMap((entry) => (entry.request_id && entry.request_id !== request.id ? [{ ...entry, request_id: entry.request_id }] : [])).map((entry) => {
@@ -332,6 +333,7 @@ const MERGE_CODE_TEXT: Record<string, string> = {
   turnaround: he.mergedRide.invalid.turnaround_conflict,
   already_on_ride: he.mergedRide.invalid.already_on_ride,
   leg_missing: he.mergedRide.invalid.leg_missing,
+  series_day_leg: he.mergedRide.invalid.series_day_leg,
   window: he.mergedRide.invalid.window,
   time_far: he.mergedRide.invalid.time_far,
   window_locked: he.mergedRide.invalid.window_locked,

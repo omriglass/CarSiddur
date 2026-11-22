@@ -3854,6 +3854,15 @@ begin
     v_err := 'merge_leg_missing';
   end if;
 
+  -- R22B10 (owner 2026-11-22): a day of a multi-day ride has only the legs that day drives - after the first day there
+  -- is no way out (the car left on day 1; that day's ride starts at 00:00), before the last day no way back.
+  if v_err is null and exists(select 1 from public.ride_requests rr join public.requests q on q.id = rr.request_id
+       where rr.ride_id = p_ride_id and q.series_id is not null and coalesce(q.series_count, 1) > 1 and (
+         (p_leg in ('out', 'both') and q.series_index > 1)
+      or (p_leg in ('return', 'both') and q.series_index < q.series_count))) then
+    v_err := 'merge_series_day_leg';
+  end if;
+
   -- CM1 phase 2 (REQ item 260 b): the same person's two trips one after the other chain into one ride
   if v_err is null then v_chain := public._merge_chain_plan(p_ride_id, p_request_id, p_leg); end if;
   -- CM1 phase 3 (REQ item 260 c): the long trip's people who are not on the short trip ride the whole chained ride, or
@@ -4190,6 +4199,7 @@ CREATE OR REPLACE FUNCTION "public"."_merge_error_code"("_err" "text") RETURNS "
     when 'merge_turnaround_conflict' then 'turnaround'
     when 'merge_already_on_ride' then 'already_on_ride'
     when 'merge_leg_missing' then 'leg_missing'
+    when 'merge_series_day_leg' then 'series_day_leg'
     when 'merge_window_locked' then 'window_locked'
     when 'merge_fixed_hour' then 'fixed_hour'
     when 'ride_conflicts_with_maintenance' then 'maintenance'
