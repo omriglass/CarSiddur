@@ -2,6 +2,7 @@
 // every query the board reads plus the pure derivation of the week-grid
 // data (cars/rides/blocks/unmet list/policy preview) that used to live in
 // the component's own body. Pure move — behaviour unchanged.
+import { chainBrokenWarningText } from "../chainWarning";
 import { withoutPrivateCarOffers } from "../privateCarOffers";
 import { formatInTimeZone, fromZonedTime } from "date-fns-tz";
 import { useEffect, useMemo, useState } from "react";
@@ -11,7 +12,7 @@ import { useSearchParams } from "react-router-dom";
 import { datesOfWeek, todayInJerusalem } from "@/components/dateFieldDates";
 import { t, tv } from "@/i18n/he";
 import { luggageMarker, towMarker } from "@/lib/luggageWaiver";
-import { TZ, dateKey, formatTime } from "@/lib/time";
+import { TZ, dateKey } from "@/lib/time";
 import { rideDescriptionFields } from "@/lib/ridePublicDetails";
 import { ridePassengerSummary } from "@/lib/ridePassengerSummary";
 import { addedPeopleNames, riderShortNames } from "@/features/rides/ridePeople";
@@ -845,11 +846,7 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
       driverOverlapWarning: r.id && driverOverlapIds.has(r.id) ? t("sadranBoard.driverOverlapWarning") : undefined,
       seatsShortWarning: r.id ? seatsShortText(seatShortfalls.get(r.id)) : undefined,
       chainBrokenWarning: r.id && chainBreakByRideId.has(r.id)
-        ? tv("sadranBoard.carNotHereWarning", {
-          // R5U6: name the ride (time + who) so the warning is readable away from its block (list mode, tooltips, screen readers).
-          ride: [r.starts_at ? formatTime(new Date(r.starts_at)) : "", ...servedOf(r).map((entry) => entry.requester?.trim().split(/\s+/)[0] ?? "").filter(Boolean)].filter(Boolean).join(" · "),
-          place: destinationNameById.get(chainBreakByRideId.get(r.id)!.carLocationId) ?? "",
-        })
+        ? chainBrokenWarningText(r, servedOf(r).map((entry) => entry.requester), destinationNameById.get(chainBreakByRideId.get(r.id)!.carLocationId) ?? "")
         : undefined,
     }));
 
