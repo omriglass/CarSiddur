@@ -19,6 +19,7 @@ import { talkedTitle } from "../talkedTitle";
 
 import type { ComposerPrefill as MergePrefill } from "../draftInput";
 import type { WeekRequestRow } from "../../api";
+import { mergeRouteText } from "../mergeRouteText";
 
 type FlexSource = Parameters<typeof requestFlexLines>[0];
 
@@ -40,7 +41,7 @@ export interface MergePrefillDialogProps {
   /** The base ride's own window (before the merge). */
   hostStartsAt?: string | null;
   hostEndsAt?: string | null;
-  request: (Pick<WeekRequestRow, "trip_shape" | "requester_full_name" | "depart_at" | "return_at" | "destination_resolved_name"> & FlexSource) | undefined;
+  request: (Pick<WeekRequestRow, "id" | "trip_shape" | "requester_full_name" | "depart_at" | "return_at" | "destination_resolved_name"> & FlexSource) | undefined;
   /** REQ §13.101 (QU5): the base ride's own requester (flexibility shown next to the base). */
   hostRequest?: (Pick<WeekRequestRow, "requester_full_name"> & FlexSource) | null;
   /** REQ §13.101 (k): second ride of a connected pair, previewed with its own leg. */
@@ -158,7 +159,8 @@ function ResultBlock({ carName, hostDriverName, hostLabel, hostStartsAt, hostEnd
   if (!preview?.valid || split) return null;
   const guestName = request?.requester_full_name ?? "";
   const legPoints = preview.route.filter((point) => point.leg === (preview.boardLeg ?? "out"));
-  const routeText = legPoints.map((point) => (point.requestId && (point.kind === "board" || point.kind === "alight") ? tv("mergedRide.resultPickup", { place: point.name, name: guestName }) : point.name)).join(" ← ");
+  // R22B9: only the joining person's own places carry their name - another rider's stop on the route is just a place
+  const routeText = mergeRouteText(legPoints, request?.id, guestName);
   const joinerAt = preview.joinerOutAt ?? preview.boardEta;
   return (
     <div className="space-y-1" data-testid="merge-result">

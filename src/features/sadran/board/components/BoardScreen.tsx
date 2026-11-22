@@ -55,7 +55,7 @@ import { addedPeopleNames, peopleNames, peopleOf } from "@/features/rides/ridePe
 import { resolveRideRealDestination } from "../rideLabel";
 import { duplicateChildRuns, groupDuplicateRuns } from "../duplicateChildRuns";
 import { connectedMateOf, unmetItemId } from "../unmetLegs";
-import { applyServerMergeTimes, mergeInvalidReason, mergeLegOptions, mergePayloadLeg, mergePayloadLegs, mergeVerdict, mergeWaitChoice, previewMerge, timeFarPrompt, timeFarWarning, type MergeLeg, type MergeVerdict } from "../mergeProposal";
+import { applyServerMergeTimes, mergeAffectedParties, mergeInvalidReason, mergeLegOptions, mergePayloadLeg, mergePayloadLegs, mergeVerdict, mergeWaitChoice, previewMerge, timeFarPrompt, timeFarWarning, type MergeLeg, type MergeVerdict } from "../mergeProposal";
 import { longDetourText, type MergeWaitChoice } from "@/features/rides/mergeQuestions";
 import { requestRouteLine } from "../requestRoute";
 import { parseTimeToMinutes } from "@/features/solverBridge/buildSolverInput";
@@ -198,6 +198,16 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
     const requester = board.requestsQuery.data?.find((request) => request.id === prefill.requestId)?.requester_full_name ?? "";
     if (prefill.type !== "merge") return [requester];
     const rideIds = new Set([...mergePayloadLegs(prefill.payload).map((entry) => entry.ride_id), ...(prefill.rideId ? [prefill.rideId] : [])]);
+    // R22B9 / R22U3 (owner 2026-11-22): only the people whose part of the ride changes - the driver, and the trips
+    // whose times move (with their companions); the rest are told someone joined, not asked
+    const host = rideIds.size === 1 ? board.rides.find((ride) => ride.id && rideIds.has(ride.id)) : undefined;
+    const request = board.requestsQuery.data?.find((row) => row.id === prefill.requestId);
+    const affected = host && request && board.routeCtx
+      ? mergeAffectedParties(host, request, mergePayloadLeg(prefill.payload, request), board.routeCtx, mergePreview, board.requestsQuery.data ?? []) : null;
+    if (host && affected) {
+      return [requester, ...peopleNames(peopleOf(host).filter((person) => person.source === "driver"
+        || (!!person.request_id && affected.requestIds.has(person.request_id) && (person.source === "requester" || person.source === "companion" || person.source === "child"))))];
+    }
     return [requester, ...board.rides.filter((ride) => ride.id && rideIds.has(ride.id)).flatMap((ride) => peopleNames(peopleOf(ride)))];
   }
   const mergeRequest = board.boardRequests.find((request) => request.id === dnd.mergePrefill?.requestId);

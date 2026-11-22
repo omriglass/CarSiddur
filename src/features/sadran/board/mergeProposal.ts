@@ -7,7 +7,9 @@ import { he, tv } from "@/i18n/he";
 import { isTightSchedule, parseLongDetour, type LongDetour, type MergeWaitChoice } from "@/features/rides/mergeQuestions";
 import { parseFlexInterval } from "@/features/solverBridge/buildSolverInput";
 import { formatTime } from "@/lib/time";
-import { fallbackRoute, mergePassengerIntoRoute, parseRideRoute, type Hop, type HopKm, type MergedRoute, type MergeInvalid } from "@/lib/rideRoute";
+import { fallbackRoute, mergePassengerIntoRoute, parseRideRoute, routeEtas, type Hop, type HopKm, type MergedRoute, type MergeInvalid, type RoutePoint } from "@/lib/rideRoute";
+import { servedOf } from "@/features/rides/servedOf";
+import { mergeAffectedRequestIds } from "./mergeAffected";
 
 import type { BoardRide, WeekRequestRow } from "../api";
 
@@ -111,6 +113,44 @@ export interface MergePreview extends MergedRoute {
   joinerReturnAt: string | null;
   /** CM1 phase 2 (REQ item 260 b): the merge joins two trips one after the other into one ride (from `merge_preview`). */
   chain?: MergeChain | null;
+}
+
+/** The host ride's route timed by the same twin as `previewMerge` (so its times compare with the merged route's). */
+function hostRouteTimed(host: BoardRide, leg: MergeLeg, ctx: MergeRouteContext): RoutePoint[] {
+  const stored = parseRideRoute(host.route);
+  const base = stored.length ? stored : fallbackRoute({
+    startsAt: host.starts_at!, endsAt: host.ends_at!,
+    originId: host.origin_id, originName: host.origin_name,
+    destinationId: host.destination_id, destinationName: host.destination_name,
+  });
+  const route = leg === "return" && !base.some((point) => point.leg === "return") ? base.map((point) => ({ ...point, leg: "return" as const })) : base;
+  const startMs = Date.parse(host.starts_at!); const endMs = Date.parse(host.ends_at!);
+  const ofLeg = (side: "out" | "return") => route.filter((p) => p.leg === side).sort((a, b) => a.position - b.position);
+  return [
+    ...(ofLeg("out").length ? routeEtas(ofLeg("out"), "out", startMs, endMs, ctx.hop, ctx.stopMinutes) : []),
+    ...(ofLeg("return").length ? routeEtas(ofLeg("return"), "return", startMs, endMs, ctx.hop, ctx.stopMinutes) : []),
+  ];
+}
+
+/**
+ * R22B9 / R22U3 (owner 2026-11-22): the host's trips a merge onto `host` changes - those whose times move
+ * (`mergeAffectedRequestIds`; the driver is always affected). `null` when it cannot tell (no preview, no hours, a
+ * chain) - the caller then names everyone on the ride, as before.
+ */
+export function mergeAffectedParties(host: BoardRide, request: WeekRequestRow, leg: MergeLeg, ctx: MergeRouteContext,
+  preview: MergePreview | null, requests: readonly WeekRequestRow[]): { requestIds: Set<string> } | null {
+  if (!preview?.valid || preview.chain || !host.starts_at || !host.ends_at) return null;
+  const byId = new Map(requests.map((r) => [r.id, r]));
+  const trips = servedOf(host).flatMap((entry) => (entry.request_id && entry.request_id !== request.id ? [{ ...entry, request_id: entry.request_id }] : [])).map((entry) => {
+    const own = byId.get(entry.request_id);
+    return { requestId: entry.request_id, leg: entry.leg as "out" | "return" | "both",
+      originId: own?.origin_id ?? ctx.homeId ?? null, destinationId: own?.destination_id ?? null };
+  });
+  const requestIds = mergeAffectedRequestIds({
+    before: hostRouteTimed(host, leg, ctx), merged: preview.route,
+    startsAt: host.starts_at, newStartsAt: preview.startsAt, endsAt: host.ends_at, newEndsAt: preview.endsAt, trips,
+  });
+  return { requestIds };
 }
 
 /** The host ride as it would be once `request` joins on `leg`. */

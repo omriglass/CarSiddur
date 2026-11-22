@@ -942,6 +942,8 @@ export const heSadran = {
     resultHeading: "התוצאה",
     resultCar: "{{car}} · {{driver}} נוהג/ת",
     resultPickup: "{{place}} (איסוף {{name}})",
+    /** R22B9: the joiner's drop-off on the merged route (wording to approve). */
+    resultDropOff: "{{place}} (הורדת {{name}})",
     /** CM1 phase 2 (REQ item 260 b): two trips one after the other merge into one ride (wording to approve). */
     chainRoute: "הנסיעות יתחברו לנסיעה אחת: {{route}}",
     // CM1 phase 3 (REQ item 260 c): the people on one of the two trips only (wordings to approve)
