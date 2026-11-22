@@ -119,7 +119,7 @@ async function boardWeek(service: SupabaseClient, week: string) {
 
 test("the Sadran drops the school run on the day trip: one chained ride", { tag: ["@board"] }, async ({ browser }) => {
   test.slow();
-  const week = "2042-03-02";
+  const week = "2046-01-07";
   const service = serviceRoleClient();
   const { data: existing } = await service.from("weeks").select("phase").eq("department_id", NEVO_DEPARTMENT_ID).eq("week_start", week).maybeSingle();
   if (!existing) {
@@ -150,7 +150,7 @@ test("the Sadran drops the school run on the day trip: one chained ride", { tag:
 
 test("a member drags their school run onto their day trip in edit mode: one chained ride", { tag: ["@siddur"] }, async ({ browser }) => {
   test.slow();
-  const week = "2041-03-03";
+  const week = "2046-01-14";
   const service = serviceRoleClient();
   const admin = await publishedFixtureWeek(week);
   await admin.auth.signOut();
@@ -185,7 +185,7 @@ test("a member drags their school run onto their day trip in edit mode: one chai
 // CM1 phase 3 (REQ item 260 c): member2 rides the day trip only - "כל הדרך" is preselected, "איסוף מ..." passes home again
 test("the Sadran chains with a pickup from home for the one on the day trip only", { tag: ["@board"] }, async ({ browser }) => {
   test.slow();
-  const week = "2042-03-09";
+  const week = "2046-01-21";
   const service = serviceRoleClient();
   await boardWeek(service, week);
   await cleanup(service, week);
@@ -211,7 +211,7 @@ test("the Sadran chains with a pickup from home for the one on the day trip only
 
 test("a member chains their two rides and has the one on the day trip picked up from home", { tag: ["@siddur"] }, async ({ browser }) => {
   test.slow();
-  const week = "2041-03-10";
+  const week = "2046-01-28";
   const service = serviceRoleClient();
   const admin = await publishedFixtureWeek(week);
   await admin.auth.signOut();
@@ -240,7 +240,7 @@ test("a member chains their two rides and has the one on the day trip picked up 
 // CM1 phase 4 (REQ item 260 d): placing / moving a ride next to the same person's ride offers "לאחד את הנסיעות?"
 test("the Sadran places the school run next to the day trip and is offered to chain them", { tag: ["@board"] }, async ({ browser }) => {
   test.slow();
-  const week = "2042-03-16";
+  const week = "2046-02-04";
   const service = serviceRoleClient();
   await boardWeek(service, week);
   await cleanup(service, week);
@@ -267,7 +267,7 @@ test("the Sadran places the school run next to the day trip and is offered to ch
 
 test("a member moves their school run next to their day trip and is offered to chain them", { tag: ["@siddur"] }, async ({ browser }) => {
   test.slow();
-  const week = "2041-03-17";
+  const week = "2046-02-11";
   const service = serviceRoleClient();
   const admin = await publishedFixtureWeek(week);
   await admin.auth.signOut();
@@ -305,7 +305,7 @@ test("a member moves their school run next to their day trip and is offered to c
 // trip, and the other keeps the ride with its own hours
 test("a member cancels the school run of their chained ride from my rides and keeps the day trip", { tag: ["@siddur"] }, async ({ browser }) => {
   test.slow();
-  const week = "2041-03-10";
+  const week = "2046-02-18";
   const service = serviceRoleClient();
   const admin = await publishedFixtureWeek(week);
   await admin.auth.signOut();

@@ -3,7 +3,7 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 import { he, tv } from "../src/i18n/he";
 import { NEVO_DEPARTMENT_ID, SEEDED_USERS, SUPABASE_ANON_KEY, SUPABASE_URL, newSignedInPage, serviceRoleClient } from "./helpers";
 
-// REQ §13.182 (owner 2026-11-03): the siddur's "חסר רכב" columns with the button that scrolls to them, the owner's
+// REQ §13.182 (owner 2026-11-03): the siddur's "רשימת המתנה" columns (renamed from "חסר רכב", WL1) with the button that scrolls to them, the owner's
 // private car row on every day, and "add a ride on this car" from the car card on /my.
 const MEMBER1_ID = "00000000-0000-0000-0000-000000000103";
 const ADMIN_ID = "00000000-0000-0000-0000-000000000101";
@@ -126,7 +126,7 @@ test.describe("siddur waiting list", { tag: ["@waitlist", "@siddur"] }, () => {
     }
   });
 
-  test("table view: a \"חסר רכב\" column holds the waiting block; the button scrolls to it; the requester can edit it", async ({ browser }) => {
+  test("table view: a \"רשימת המתנה\" column holds the waiting block; the button scrolls to it; the requester can edit it", async ({ browser }) => {
     const requester = await newSignedInPage(browser, SEEDED_USERS.member1);
     try {
       await requester.page.setViewportSize({ width: 390, height: 844 });
@@ -134,7 +134,7 @@ test.describe("siddur waiting list", { tag: ["@waitlist", "@siddur"] }, () => {
       await requester.page.goto(`/siddur/${NEVO_DEPARTMENT_ID}/${fixture.weekStart}?day=${fixture.day}`);
       const column = requester.page.locator('[data-car-col-id="phantom:waiting:0"]');
       await expect(column).toBeAttached({ timeout: 15_000 });
-      await expect(requester.page.getByText(he.waitlist.siddurLane, { exact: true })).toBeAttached();
+      await expect(requester.page.getByTitle(he.waitlist.siddurLane, { exact: true })).toBeAttached();
       // After every car; the button brings the whole column into the table's visible width.
       await requester.page.getByTestId("siddur-waitlist-button").first().click();
       await expect.poll(() => shownWidthShare(column)).toBeGreaterThan(0.95);
@@ -151,7 +151,7 @@ test.describe("siddur waiting list", { tag: ["@waitlist", "@siddur"] }, () => {
     }
   });
 
-  test("two taps on a \"חסר רכב\" column open a new request for those hours", async ({ browser }) => {
+  test("two taps on a \"רשימת המתנה\" column open a new request for those hours", async ({ browser }) => {
     const member = await newSignedInPage(browser, SEEDED_USERS.member2);
     const { page } = member;
     try {
