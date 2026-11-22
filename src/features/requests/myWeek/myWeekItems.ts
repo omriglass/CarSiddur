@@ -5,6 +5,7 @@ import type { WeekGridItemKind, WeekGridRide } from "@/components/WeekGrid";
 import type { BoardRide } from "@/features/siddur/api";
 import { isRideOfMine, type RelatedRideLabel } from "@/features/rides/myRides";
 import { representativeRideTypeCode, rideViaNames, servedOf } from "@/features/rides/servedOf";
+import { viewerSeriesDay } from "@/features/rides/viewerSeriesDay";
 import { tv } from "@/i18n/he";
 import { addedPeopleNames } from "@/features/rides/ridePeople";
 import { richLinesText, rideDescriptionLines, type RichLine } from "@/lib/ridePublicDetails";
@@ -108,6 +109,8 @@ export function rideBlocks(
     handoverLines?: ReadonlyMap<string, readonly string[]>;
     /** REQ item 248: rides with more people than seats (already worded). */
     seatsShort?: ReadonlyMap<string, string>;
+    /** R22U10: the signed-in member - their trip on a ride decides its "יום 1/2" marker. */
+    viewerId?: string;
   } = {},
 ): MyWeekBlock[] {
   const out: MyWeekBlock[] = [];
@@ -152,8 +155,7 @@ export function rideBlocks(
           handoverLines: !notMine ? extras.handoverLines?.get(ride.id!) : undefined,
           seatsShortWarning: extras.seatsShort?.get(ride.id!),
           rideTypeCode: representativeRideTypeCode(servedOf(ride)),
-          seriesIndex: ride.series_index,
-          seriesCount: ride.series_count,
+          ...viewerSeriesDay(ride, (id) => myRequestsById?.get(id), extras.viewerId),
         },
       });
     });

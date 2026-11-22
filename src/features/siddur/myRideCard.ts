@@ -5,6 +5,7 @@ import { rideDescriptionFields } from "@/lib/ridePublicDetails";
 import { tv } from "@/i18n/he";
 import { carHandoverNotes, type CarNeighbours } from "@/features/rides/carHandover";
 import { servedOf } from "@/features/rides/servedOf";
+import { viewerSeriesDay } from "@/features/rides/viewerSeriesDay";
 import { addedPeopleNames } from "@/features/rides/ridePeople";
 import { rideCardLabel } from "@/features/rides/rideGridLabel";
 import type { BoardRide } from "./api";
@@ -65,6 +66,6 @@ export function myRideCard(
     driverName: ride.driver_name, carName: ride.car_name, carOnTop: true, carId: ride.car_id, carType: ride.car_type ?? undefined,
     isChauffeur: chauffeur, needsDriver: !!ride.needs_driver, isMine: !handover?.relatedLabel,
     rideTypeCode: ownRequest?.rideTypeCode ?? served[0]?.ride_type,
-    seriesIndex: ride.series_index, seriesCount: ride.series_count,
+    ...viewerSeriesDay(ride, (id) => requests.find((request) => request.id === id), handover?.viewerId),
   };
 }

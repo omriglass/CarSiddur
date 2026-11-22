@@ -180,7 +180,7 @@ export function MyWeekView({ departmentId, homeDestinationId, profileId, request
       const lines = carHandoverLines(carHandoverNotes(neighbours, profileId, profileId ? [profileId] : []), { startsAt: ride.starts_at, endsAt: ride.ends_at });
       if (lines.length) handoverLines.set(ride.id, lines.map((line) => `${line.before}${line.day ? `${line.day} ` : ""}${line.time}${line.after}`));
     }
-    const blocks = rideBlocks(mine, dayKeys, (ride) => rideWithCarLabel(ride.car_id ? carNameById.get(ride.car_id) ?? "" : "", rideRouteLabel(ride, homeDestinationId)), myRequestsById, { tightIds, related, filedFor, handoverLines,
+    const blocks = rideBlocks(mine, dayKeys, (ride) => rideWithCarLabel(ride.car_id ? carNameById.get(ride.car_id) ?? "" : "", rideRouteLabel(ride, homeDestinationId)), myRequestsById, { tightIds, related, filedFor, handoverLines, viewerId: profileId,
       seatsShort: new Map([...seatShortfalls].flatMap(([id, short]) => { const text = seatsShortText(short); return text ? [[id, text] as const] : []; })) });
     if (!isPast) {
       const sameDepartment = requests.filter((row) => row.departmentId === departmentId && row.weekStart === weekStart);
