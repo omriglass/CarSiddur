@@ -117,6 +117,10 @@ begin
   assert (select status from public.rides where id=x)='cancelled', 'its ride is released';
   assert not exists(select 1 from public.ride_requests rr join public.rides d on d.id=rr.ride_id where rr.request_id=q3 and d.status<>'cancelled'), 'no live ride left';
   assert (select trip_type from public.requests where id=q3)='one_way', 'the new trip type is kept';
+  -- R22B15: no car for the new shape - the member is told so, with the hours
+  assert exists(select 1 from public.notifications where recipient_id=m1 and data->>'variant'='trip_type_changed_unplaced'
+                and data->>'request_id'=q3::text and body_he like '%09:00%' and body_he not like '%{{%'),
+    format('R22B15 unplaced notice, got %s', (select array_agg(body_he) from public.notifications where data->>'request_id'=q3::text));
 
   -- R8B12 (pilot fix round P2): a request with no car is placed on ANY free shared car when its trip type changes.
   -- Release the held car (reservation deleted), switch back to a round trip: it lands on that free car.
@@ -126,6 +130,11 @@ begin
   assert res->>'status'='assigned' and res->>'ride_id' is not null, format('unplaced request placed on a free car, got %s',res);
   assert exists(select 1 from public.ride_requests rr join public.rides d on d.id=rr.ride_id
     where rr.request_id=q3 and d.status<>'cancelled' and d.car_id='00000000-0000-0000-0000-000000000042'), 'on the one free shared car';
+  -- R22B15: placed - the notice carries the hours and the car
+  assert exists(select 1 from public.notifications where recipient_id=m1 and data->>'variant'='trip_type_changed'
+                and data->>'request_id'=q3::text and body_he like '%09:00–12:00%'
+                and body_he like '%'||(select name from public.cars where id='00000000-0000-0000-0000-000000000042')||'%'),
+    format('R22B15 placed notice, got %s', (select array_agg(body_he) from public.notifications where data->>'request_id'=q3::text));
   -- ... and a non-driver's unplaced round trip changed to a drop-off: chauffeur rides, one per leg, on a free car
   -- (needs-driver waiting list, exactly as a hand placement).
   update public.profiles set does_not_drive=true where id=m2;

@@ -26848,7 +26848,8 @@ begin
 
   if q.requester_id is distinct from v_actor then
     perform public.enqueue_notification(q.requester_id, 'outcome_changed', q.department_id, q.week_start,
-      '{}'::jsonb, jsonb_build_object('variant', 'trip_type_changed', 'request_id', q.id),
+      '{}'::jsonb, jsonb_build_object('variant', case when v_placed or exists (select 1 from public.ride_requests rr join public.rides x on x.id = rr.ride_id
+        where rr.request_id = q.id and x.status <> 'cancelled') then 'trip_type_changed' else 'trip_type_changed_unplaced' end, 'request_id', q.id),
       format('trip_type_changed:%s:%s', q.id, q.version));
   end if;
 
