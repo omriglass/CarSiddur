@@ -122,6 +122,12 @@ async function cmdAnswer(args: Args): Promise<void> {
   console.log(`answered ${answer} (${type} proposal)`);
 }
 
+/** R22B17: the other people's trips on the ride - the driver is already printed as `driver=` (before: twice). */
+function ridersOf(r: Awaited<ReturnType<typeof fetchMyUpcomingRides>>[number]): string {
+  const others = [...new Set(servedOf(r).map((e) => e.requester).filter((name) => name && name !== r.driver_name))];
+  return others.length ? ` | riders ${others.join(", ")}` : "";
+}
+
 async function cmdMyRides(): Promise<void> {
   const rides = await fetchMyUpcomingRides(ME, SCOPE?.departmentId);
   const mine = await requests.fetchMyRequests(ME, SCOPE?.departmentId);
@@ -130,7 +136,7 @@ async function cmdMyRides(): Promise<void> {
     // My own route (my request's places), not the car's home->home; the car's legs are shown after "car".
     const own = mine.find((q) => q.ride?.id === r.id);
     const myRoute = own ? `${own.originName ?? own.originText ?? "home"}->${own.destination}${own.stops.length ? ` via ${own.stops.map((x) => x.name).join(",")}` : ""}` : null;
-    console.log(`  ride ${short(r.id)} ${dateKey(r.starts_at as string)} ${t(r.starts_at)}-${t(r.ends_at)} ${myRoute ? `my route ${myRoute} (car ${r.origin_name}->${r.destination_name})` : `${r.origin_name}->${r.destination_name}`} car=${r.car_name ?? "?"} driver=${r.needs_driver ? "(none yet)" : r.driver_name ?? "-"}${r.driver_id === ME ? " (I drive)" : ""} status=${r.status} | ${servedOf(r).map((e) => e.requester).join(", ")}`);
+    console.log(`  ride ${short(r.id)} ${dateKey(r.starts_at as string)} ${t(r.starts_at)}-${t(r.ends_at)} ${myRoute ? `my route ${myRoute} (car ${r.origin_name}->${r.destination_name})` : `${r.origin_name}->${r.destination_name}`} car=${r.car_name ?? "?"} driver=${r.needs_driver ? "(none yet)" : r.driver_name ?? "-"}${r.driver_id === ME ? " (I drive)" : ""} status=${r.status}${ridersOf(r)}`);
   }
   console.log(`MY REQUESTS (${mine.length})`);
   for (const r of mine) console.log(`  ${reqLine(r)}`);

@@ -58,8 +58,9 @@ const instantAt = (day: string, hhmm: string): string => {
   return fromZonedTime(`${day}T${formatMinutes(m)}:00`, TZ).toISOString();
 };
 const flexText = (early: string | null | undefined, late: string | null | undefined): string => {
-  const f = (raw: string | null | undefined) => { const v = parseFlexInterval(raw); return v === "day" ? "day" : String(v); };
-  return `-${f(early)}/+${f(late)}m`;
+  // R22B17: "any time that day" reads "day", minutes read "30m" ("-day/+daym" before)
+  const f = (raw: string | null | undefined) => { const v = parseFlexInterval(raw); return v === "day" ? "day" : `${v}m`; };
+  return `-${f(early)}/+${f(late)}`;
 };
 
 function seatsOfCar(board: Board, carId: string): string {
@@ -218,7 +219,7 @@ async function cmdDay(board: Board, day: string): Promise<void> {
   console.log(`UNMET (${unmet.length})`);
   for (const item of unmet) {
     const r = item.request;
-    const route = `${r.origin_id ? board.destName(r.origin_id) : r.origin_text ?? "home"}->${r.destination_resolved_name ?? "?"}`;
+    const route = routeText(board, r, item.leg);
     const stops = (r.stops ?? []).map((s) => `${s.leg}:${s.place?.name ?? s.place_text}`).join(",");
     const drop = tripTypeOf(r) === "drop_off";
     console.log(`  req ${short(r.id)}${item.leg ? `:${item.leg}` : ""} ${r.requester_full_name ?? "?"} ${tripTypeOf(r)}${r.trip_shape !== "round_trip" ? `(${r.trip_shape})` : ""} ${route}${stops ? ` stops[${stops}]` : ""} dep ${t(r.depart_at)} ${flexText(r.flex_depart_early, r.flex_depart_late)}${r.return_at ? ` ret ${t(r.return_at)} ${flexText(r.flex_return_early, r.flex_return_late)}` : ""} ${r.adults}a${r.child_seats ? `+${r.child_seats}cs` : ""}${r.boosters ? `+${r.boosters}b` : ""}${r.requester_does_not_drive ? " non-driver" : ""}${r.driving_companion_ids.length ? " has-driving-companion" : ""}${r.preferred_car_name ? ` prefers=${r.preferred_car_name}` : ""} status=${r.status}${r.is_late ? " LATE" : ""}${drop ? " (needs a driver)" : ""}${r.series_id ? " series" : ""}${r.notes ? ` notes="${r.notes}"` : ""}${item.pendingProposalId ? ` proposal-pending=${short(item.pendingProposalId)}` : ""}`);
@@ -243,12 +244,19 @@ async function cmdDay(board: Board, day: string): Promise<void> {
   }
 }
 
+/** R22B17: a return leg (or a pickup-only request) is driven from the destination back, so it prints that way round. */
+function routeText(board: Board, r: Board["boardRequests"][number], leg?: string | null): string {
+  const origin = r.origin_id ? board.destName(r.origin_id) : r.origin_text ?? "home";
+  const destination = r.destination_resolved_name ?? "?";
+  return leg === "return" || r.trip_shape === "one_way_from" ? `${destination}->${origin}` : `${origin}->${destination}`;
+}
+
 async function cmdRequests(board: Board, args: Args): Promise<void> {
   const status = flag(args, "status");
   const day = args.pos[0];
   const rows = board.boardRequests.filter((r) => (!status || r.status === status) && (!day || dayOf(requestStart(r)) === day));
   for (const r of rows.sort((a, b) => (a.depart_at ?? "").localeCompare(b.depart_at ?? ""))) {
-    console.log(`req ${short(r.id)} ${dayOf(requestStart(r))} ${r.requester_full_name ?? "?"} ${tripTypeOf(r)} ${r.origin_id ? board.destName(r.origin_id) : r.origin_text ?? "home"}->${r.destination_resolved_name ?? "?"} dep ${t(r.depart_at)} ret ${t(r.return_at)} ${r.adults}a status=${r.status}`);
+    console.log(`req ${short(r.id)} ${dayOf(requestStart(r))} ${r.requester_full_name ?? "?"} ${tripTypeOf(r)} ${routeText(board, r)} dep ${t(r.depart_at)} ret ${t(r.return_at)} ${r.adults}a status=${r.status}`);
   }
   console.log(`(${rows.length} requests)`);
 }
@@ -273,7 +281,18 @@ async function applyOutput(board: Board, mode: "remaining" | "full", args: Args)
     console.log(`dry run (nothing applied): solver would serve=${output.stats.served} unmet=${output.stats.unmet} needsDriver=${output.stats.needsDriver} relocations=${output.stats.relocations}`);
     return;
   }
-  const summary = await api.applySolverResult(board.scope.departmentId, board.scope.weekStart, payload as unknown as Json);
+  // R22B17: a whole-week apply can hit a lock or the statement timeout (`server_busy`); the apply is atomic and auto-fill is
+  // idempotent, so the tool retries twice, as the QA Sadran did by hand.
+  let summary: Awaited<ReturnType<typeof api.applySolverResult>> | undefined;
+  for (let attempt = 1; !summary; attempt++) {
+    try {
+      summary = await api.applySolverResult(board.scope.departmentId, board.scope.weekStart, payload as unknown as Json);
+    } catch (error) {
+      if (attempt >= 3 || (error as { code?: string }).code !== "server_busy") throw error;
+      console.log(`server_busy on apply (attempt ${attempt}), retrying`);
+      await new Promise((resolve) => setTimeout(resolve, 2000 * attempt));
+    }
+  }
   console.log(`applied (${mode}${day ? ` day ${day}` : ""}): inserted=${summary.inserted} deleted=${summary.deleted} unchanged=${summary.unchanged} unassigned=${summary.unassigned_requests.length}${summary.skippedSeries?.length ? ` skippedSeries=${summary.skippedSeries.length} (${summary.skippedSeries.map((s) => s.reason).join(",")})` : ""}`);
   console.log(`solver: served=${output.stats.served} unmet=${output.stats.unmet} needsDriver=${output.stats.needsDriver} relocations=${output.stats.relocations}${output.stats.budgetExhausted ? " BUDGET-EXHAUSTED" : ""}`);
 }
@@ -434,7 +453,10 @@ async function cmdMerge(board: Board, args: Args): Promise<void> {
   if (host.needs_driver || !host.driver_id) console.log(`note: host ride ${short(host.id)} still needs a driver; the guest joins it and the ride keeps waiting for a volunteer`);
   const invalid = mergeInvalidReason(host, request, leg, board.routeCtx);
   if (invalid) throw new UsageError(`merge not valid: ${invalid}`);
-  await createProposalFrom(board, { requestId: request.id, rideId: host.id, type: "merge", payload: mergePayload(host.id as string, leg) }, has(args, "draft"));
+  // R22B17: --chain = the board's chain ask (the ride as one trip with the member's other errand, `chain_via`); the server
+  // checks it like the board's (merge_preview.chain).
+  const payload = { ...mergePayload(host.id as string, leg), ...(has(args, "chain") ? { chain_via: true } : {}) };
+  await createProposalFrom(board, { requestId: request.id, rideId: host.id, type: "merge", payload }, has(args, "draft"));
 }
 
 async function cmdUnmerge(board: Board, args: Args): Promise<void> {
@@ -777,7 +799,7 @@ function usage(): void {
   autofill [--day D] [--dry-run] | resolve-full [--dry-run]
   place <req> <car> <HH:MM> [--leg out|return] [--pair] [--force]
   move <ride> [--car C] [--start HH:MM] [--end HH:MM] [--propose [--draft]]
-  merge <req> <ride> [--leg out|return|both] [--draft] | unmerge <ride> <req>
+  merge <req> <ride> [--leg out|return|both] [--chain] [--draft] | unmerge <ride> <req>
   trip-type <req> <round_trip|one_way|drop_off>
   propose <req> shift [--car C --depart HH:MM --return HH:MM --day D --ride R --no-places --chain-break] | origin --origin P --car C | deny [--reason T] | external [--hint cab|rental|public_transport|private|waive] [--reason T] | alternative [--car C --depart HH:MM] [--return HH:MM (pickup from the drop-off place only; default pickup + drive)] [--return-car C (pickup car)]  [--draft]  (no --car/--depart = the solver's useAlternative numbers)
   send <proposal> | withdraw <proposal> | discard <proposal> | apply <proposal>
@@ -832,8 +854,14 @@ run(async () => {
     case "messages": printMail(mailFor(OUT, SADRAN_EMAIL, has(args, "new"), ["sadran"])); return;
     case "send-held": {
       const days = flag(args, "days");
+      // R22B17: say what was held before and after - notices that net out (taken off and put back) are dropped, not sent.
+      const heldOf = async () => (await api.fetchPublicationReadiness(board.scope.departmentId, board.scope.weekStart))
+        .reduce((sum, day) => sum + (day.heldNotices ?? 0), 0);
+      const before = await heldOf();
       const sent = await api.flushHeldNotices(board.scope.departmentId, board.scope.weekStart, days ? days.split(",") : null);
-      console.log(`held board notices sent: ${sent}`); return;
+      const after = await heldOf();
+      console.log(`held board notices: ${before} held, ${sent} sent, ${Math.max(0, before - after - sent)} dropped (no net change), ${after} still held${days ? "" : " (all days)"}`);
+      return;
     }
     case "publish": return cmdPublish(board, args);
     case "advance": if (args.pos[0] === "live") return cmdAdvanceLive(board); throw new UsageError("advance live");
