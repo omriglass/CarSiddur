@@ -187,6 +187,7 @@
         "supabase/tests/chain_merge.sql",
         "supabase/tests/chain_merge_via.sql",
         "src/features/rides/ChainOneTripChoice.tsx",
+        "src/features/rides/chainSuggest*.ts",
         "supabase/migrations/**/*seats_person_once*",
         "supabase/migrations/**/*chain_merge*",
         "supabase/migrations/**/*ride_people_parts*",
