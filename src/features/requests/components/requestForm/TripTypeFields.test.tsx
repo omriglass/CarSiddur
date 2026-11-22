@@ -16,13 +16,14 @@ const render = (ui: ReactElement) => baseRender(<QueryClientProvider client={new
 type Form = ReturnType<typeof useForm<RequestFormValues>>;
 const captured: { form?: Form } = {};
 
-function Harness() {
+function Harness({ pill = false, start = "round_trip" }: { pill?: boolean; start?: TripType }) {
   const form = useForm<RequestFormValues>({
-    defaultValues: { tripType: "round_trip", dropOffPickup: false, tripShape: "round_trip", needsCarAtDestination: true, departTime: "08:00", returnTime: "17:30", returnStops: [{ presetId: "x1", name: "X" }], outStops: [] } as unknown as RequestFormValues,
+    defaultValues: { tripType: start, dropOffPickup: false, tripShape: start === "drop_off" ? "one_way_to" : "round_trip", needsCarAtDestination: true, departTime: "08:00", returnTime: "17:30", returnStops: [{ presetId: "x1", name: "X" }], outStops: [] } as unknown as RequestFormValues,
   });
   useEffect(() => { captured.form = form; });
   const tripType = (useWatch({ control: form.control, name: "tripType" }) ?? "round_trip") as TripType;
-  return <TripTypeFields control={form.control} form={form} variant="weekly" tripType={tripType} dropOffPickup={false} canDrive />;
+  const dropOffPickup = (useWatch({ control: form.control, name: "dropOffPickup" }) ?? false) as boolean;
+  return <TripTypeFields control={form.control} form={form} variant="weekly" tripType={tripType} dropOffPickup={dropOffPickup} canDrive pill={pill} />;
 }
 
 describe("TripTypeFields keeps the return time", () => {
@@ -44,5 +45,20 @@ describe("TripTypeFields keeps the return time", () => {
     expect(form().getValues("returnStops")).toEqual([{ presetId: "x1", name: "X" }]);
     fireEvent.click(screen.getByRole("radio", { name: he.request.tripTypeRoundTrip }));
     expect(form().getValues("returnStops")).toEqual([{ presetId: "x1", name: "X" }]);
+  });
+
+  it("the sentence layout's \"הקפצה ואיסוף\" asks the pickup hour there, not home-by (R22B13)", () => {
+    render(<Harness pill start="drop_off" />);
+    const form = () => captured.form as Form;
+    fireEvent.click(screen.getByTestId("drop-off-mode-both"));
+    expect(form().getValues("returnAnchor")).toBe("leave");
+    expect(form().getValues("leaveDestTime")).toBe("17:30");
+  });
+
+  it("the classic layout keeps the home-by hour", () => {
+    render(<Harness start="drop_off" />);
+    const form = () => captured.form as Form;
+    fireEvent.click(screen.getByTestId("drop-off-mode-both"));
+    expect(form().getValues("returnAnchor")).toBeUndefined();
   });
 });

@@ -46,12 +46,20 @@ export function TripTypeFields({ control, form, variant, tripType, dropOffPickup
   if (variant === "carNow") return null;
 
   function applyTripType(next: TripType, nextDropOffPickup: boolean) {
+    const before = form.getValues();
     const fields = tripTypeToLegacyFields(next, nextDropOffPickup);
     form.setValue("tripType", next, { shouldDirty: true });
     form.setValue("dropOffPickup", nextDropOffPickup, { shouldDirty: true });
     form.setValue("tripShape", fields.tripShape, { shouldDirty: true, shouldValidate: true });
     form.setValue("needsCarAtDestination", fields.needsCarAtDestination, { shouldDirty: true });
     form.setValue("oneWayCarMode", fields.oneWayCarMode, { shouldDirty: true });
+    // R22B13 (owner 2026-11-22): in the sentence layout a הקפצה's pickup is "איסוף משם ב־" by default - the hour the
+    // car is at the place - not "home by"; the hour already typed becomes the pickup hour (the car times follow)
+    const pickupTurnedOn = next === "drop_off" && nextDropOffPickup && !(before.tripType === "drop_off" && before.dropOffPickup);
+    if (pill && pickupTurnedOn && before.returnAnchor !== "leave" && before.returnTime && before.returnTime !== "23:59") {
+      form.setValue("returnAnchor", "leave", { shouldDirty: true });
+      form.setValue("leaveDestTime", before.returnTime, { shouldDirty: true });
+    }
   }
 
   /** REQ §13.181 (c): into or out of "רק איסוף" the places swap — a pickup goes from the place back to the base. */

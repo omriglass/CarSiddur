@@ -277,11 +277,22 @@ async function cmdRequest(args: Args, forceToday = false): Promise<void> {
   if (!["round_trip", "one_way", "drop_off"].includes(type)) throw new UsageError("--trip round_trip|one_way|drop_off");
   const shape = shapeFor(type, args);
   const depart = nowWindow?.departTime ?? flag(args, "depart");
-  const ret = nowWindow?.returnTime ?? flag(args, "return");
+  const pickupAt = flag(args, "pickup-at");
+  let ret = nowWindow?.returnTime ?? flag(args, "return");
   if (shape !== "one_way_from") need(depart, "--depart HH:MM");
-  if (shape !== "one_way_to") need(ret, "--return HH:MM");
   const dest = resolvePlaceToken(destinations, need(flag(args, "dest"), "--dest <place|free:text>"));
   const origin = placeOf(destinations, flag(args, "origin"));
+  // R22B13: `--pickup-at HH:MM` = "איסוף משם ב־" (the car is at the place then), like the form's default; the
+  // car's home-by time follows from the drive back, rounded up to the quarter hour
+  if (pickupAt) {
+    if (type !== "drop_off" || !has(args, "pickup")) throw new UsageError("--pickup-at goes with --trip drop_off --pickup");
+    const point = (v: typeof dest | undefined) => (!v ? { place_id: SCOPE!.homeDestinationId, place_text: null } : "presetId" in v ? { place_id: v.presetId, place_text: null } : { place_id: null, place_text: v.freeText });
+    const minutes = await requests.fetchRouteMinutesPreview(SCOPE.departmentId, [point(dest), point(origin)]);
+    const at = parseHHMM(pickupAt);
+    if (at == null) throw new UsageError(`bad time ${pickupAt} (want HH:MM)`);
+    ret = formatMinutes(Math.min(Math.ceil((at + minutes) / 15) * 15, 23 * 60 + 45));
+  }
+  if (shape !== "one_way_to") need(ret, "--return HH:MM (or --pickup-at HH:MM)");
   const rideTypeToken = flag(args, "ride-type");
   const rideType = rideTypeToken ? rideTypes.find((r) => r.code === rideTypeToken || r.name_he === rideTypeToken || r.id === rideTypeToken) : rideTypes.find((r) => r.code === "other") ?? rideTypes[0];
   if (!rideType) throw new UsageError(`ride type not found (have: ${rideTypes.map((r) => r.code).join(", ")})`);
@@ -297,6 +308,7 @@ async function cmdRequest(args: Args, forceToday = false): Promise<void> {
     depart_at: shape === "one_way_from" ? undefined : instantAt(day, depart!), return_at: shape === "one_way_to" ? undefined : instantAt(returnDay ?? day, ret!),
     adults: Number(flag(args, "adults") ?? 1), child_seats: Number(flag(args, "child-seats") ?? 0), boosters: Number(flag(args, "boosters") ?? 0),
     has_luggage: has(args, "luggage"),
+    ...(pickupAt ? { return_anchor: "leave" as const, leave_dest_at: instantAt(day, pickupAt) } : {}),
     flex_depart_early: flex(flag(args, "flex-depart-early")) ?? f ?? "0", flex_depart_late: flex(flag(args, "flex-depart-late")) ?? f ?? "0",
     flex_return_early: flex(flag(args, "flex-return-early")) ?? f ?? "0", flex_return_late: flex(flag(args, "flex-return-late")) ?? f ?? "0",
     notes: flag(args, "notes"), preferred_car_id: flag(args, "car") ?? null, waitlist: has(args, "waitlist") || undefined,
@@ -429,7 +441,7 @@ function usage(): void {
   console.log(`qa:member --as <email> <command> [--out DIR] [--password P] [--dept NAME|ID]
   inbox [--all] [--mark-read] | proposals | answer <proposalId|token> accept|decline [--note T]
   messages [--new] | reply <text> [--re X] | my-rides | siddur <day>
-  request <day> --depart HH:MM [--return HH:MM] --dest <place|free:text> [--trip round_trip|one_way|drop_off] [--from] [--pickup] [--origin P] [--stop P]... [--return-stop P]...
+  request <day> --depart HH:MM [--return HH:MM] --dest <place|free:text> [--trip round_trip|one_way|drop_off] [--from] [--pickup [--pickup-at HH:MM]] [--origin P] [--stop P]... [--return-stop P]...
           [--adults N --child-seats N --boosters N --luggage] [--flex 0|15|30|60|120|any | --flex-depart-early/-late/--flex-return-early/-late] [--return-day D] [--car ID] [--ride-type CODE] [--notes T] [--waitlist] [--for <member>] [--companion <member>]... [--child <name>]...
           [--fallback alternative|manage --alt-place P --alt-arrive HH:MM [--alt-pickup-place P --alt-pickup HH:MM]]   (plan B / "I will manage")
   edit <req> [--day D --depart HH:MM --return HH:MM --dest P --origin P --trip-type T [--from|--pickup] --adults N --flex X --notes T --stop P... --clear-stops] [--confirm-release] [--keep-both]
