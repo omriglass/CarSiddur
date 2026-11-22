@@ -42,6 +42,13 @@ describe("chain one-trip question", () => {
     expect(onChange).toHaveBeenCalledWith(true);
   });
 
+  it("their time is on the 15-minute grid (R22U6)", () => {
+    const chain = parseChain(raw)!;
+    render(<ChainOneTripChoice chain={{ side: chain.side, oneTrip: chain.oneTrip! }} via={false} onChange={vi.fn()} />);
+    // 08:20 -> 08:15; asked 08:30
+    expect(screen.getByTestId("chain-one-trip-via")).toHaveTextContent(tv("mergedRide.chainTimeBefore", { time: "08:15", was: "08:30" }));
+  });
+
   it("an answer over the detour limit is offered with a warning", () => {
     const chain = parseChain({ ...raw, one_trip: { ...raw.one_trip, via: { ...raw.one_trip.via, ok: false, added_minutes: 25 } } })!;
     const onChange = vi.fn();

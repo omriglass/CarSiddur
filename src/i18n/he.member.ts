@@ -542,7 +542,7 @@ export const heMember = {
     gridView: "תצוגת לוח",
     listView: "תצוגת רשימה",
     noRides: "אין נסיעות ביום הזה.",
-    /** R22U11: the day's rides under the waiting list on the phone list (shown only with it; wording to approve). */
+    /** R22U11: the day's rides under the waiting list on the phone list (shown only with it; owner-approved 2026-11-22). */
     ridesHeading: "נסיעות",
     thisWeek: "השבוע",
     nextWeek: "שבוע הבא",
@@ -561,7 +561,8 @@ export const heMember = {
   // REQ §13.108 f: "be back on time" — who takes the car next / where it arrives from (display only).
   carHandover: {
     alertLabel: "שימו לב",
-    returnByRide: "{{name}} לוקח/ת את הרכב ב-{{time}} — חשוב להחזיר בזמן",
+    /** R22U10 (owner 2026-11-22): no gendered verb next to a full name. */
+    returnByRide: "הרכב עובר ל{{name}} ב-{{time}} — חשוב להחזיר בזמן",
     returnByUnnamed: "הרכב נלקח ב-{{time}} — חשוב להחזיר בזמן",
     returnByReservation: "הרכב שמור ב-{{time}} — חשוב להחזיר בזמן",
     returnByCarMove: "הרכב מועבר ב-{{time}} — חשוב להחזיר בזמן",

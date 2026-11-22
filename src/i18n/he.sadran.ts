@@ -133,7 +133,7 @@ export const heSadran = {
     carAwayAtWeekEnd: "{{car}} מסיים/ת את השבוע ב{{place}}, לא בבית",
     /** REQUIREMENTS §13.93/SOLVER.md §1.3a `chainBreaks()` — a fixed ride whose car is actually elsewhere; a warning only. */
     carNotHereWarning: "הנסיעה ({{ride}}): הרכב לא נמצא כאן — הוא ב{{place}}",
-    /** R22U5: the same on a Sadran car move - often one left behind after the trip it served changed (wording to approve). */
+    /** R22U5: the same on a Sadran car move - often one left behind after the trip it served changed (owner-approved 2026-11-22). */
     carMoveNotHereWarning: "העברת הרכב ({{ride}}): הרכב לא נמצא כאן — הוא ב{{place}}. אם ההעברה כבר לא נחוצה, אפשר לבטל אותה",
     invalidWindow: "יש לבחור טווח שעות תקין באותו יום",
     mergeConfirm: "לאחד את שתי הנסיעות?",

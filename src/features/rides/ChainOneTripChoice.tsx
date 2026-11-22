@@ -14,6 +14,12 @@ export interface ChainOneTripChoiceProps {
   onChange: (via: boolean) => void;
 }
 
+const QUARTER_MS = 15 * 60_000;
+/** The nearest quarter hour (Jerusalem's offset is whole hours, so epoch quarters are wall-clock quarters). */
+function quarterHour(iso: string): number {
+  return Math.round(Date.parse(iso) / QUARTER_MS) * QUARTER_MS;
+}
+
 export function ChainOneTripChoice({ chain, via, onChange }: ChainOneTripChoiceProps) {
   const { oneTrip } = chain;
   const first = chainFirst(chain);
@@ -24,9 +30,11 @@ export function ChainOneTripChoice({ chain, via, onChange }: ChainOneTripChoiceP
     const label = first
       ? (isVia ? tv("mergedRide.chainPickUp", { place: oneTrip.place, route }) : tv("mergedRide.chainWhole", { route }))
       : (isVia ? tv("mergedRide.chainDropOff", { place: oneTrip.place, route }) : tv("mergedRide.chainRideOn", { route }));
-    const time = variant.at && oneTrip.was && formatTime(new Date(variant.at)) !== formatTime(new Date(oneTrip.was))
+    // R22U6 (owner 2026-11-22): on the 15-minute grid like the ride's own hours ("כ-15:30", not "כ-15:29")
+    const at = variant.at ? formatTime(new Date(quarterHour(variant.at))) : null;
+    const time = at && oneTrip.was && at !== formatTime(new Date(oneTrip.was))
       ? tv(first ? "mergedRide.chainTimeBefore" : "mergedRide.chainTimeAfter",
-        { time: formatTime(new Date(variant.at)), was: formatTime(new Date(oneTrip.was)), place: oneTrip.place })
+        { time: at, was: formatTime(new Date(oneTrip.was)), place: oneTrip.place })
       : null;
     return (
       <Button
