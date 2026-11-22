@@ -138,11 +138,13 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
   async function suggestChain(trip: ChainTrip) {
     for (const other of chainNeighbours(trip, rides, dropCtx.turnaroundMinutes ?? 30, declinedChains.current).slice(0, 2)) {
       if (!other.rideId || !trip.rideId) continue;
+      // R22U1: the trip alone on its ride moves onto the other ride (which may carry other people)
+      const [moving, onto] = trip.alone ? [trip, other] : [other, trip];
       let preview;
-      try { preview = await fetchMergePreview(other.rideId, trip.requestId, "both"); } catch { return; }
+      try { preview = await fetchMergePreview(onto.rideId!, moving.requestId, "both"); } catch { return; }
       if (!preview?.chain || !(preview.ok || preview.waivable)) continue;
       const answer = await askDrop({ kind: "chain", route: chainRouteText(preview.chain) });
-      if (answer === "yes") openMerge(trip.requestId, other.rideId, "both", null);
+      if (answer === "yes") openMerge(moving.requestId, onto.rideId!, "both", null);
       else declinedChains.current.add(chainPairKey(trip.requestId, other.requestId));
       return;
     }
@@ -777,7 +779,7 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
       if (twin) await handlePlaceUnmetRequest(twin.item, carId, twin.minutes, undefined, true);
       else if (!chainedLeg && !item.leg && req.trip_type === "round_trip") {
         void suggestChain({ rideId: placedRideId, requestId: req.id, startsAt: window.startsAt, endsAt: window.endsAt, originId: req.origin_id ?? null,
-          people: [`p:${req.requester_id}`, ...(req.companions ?? []).map((c) => `p:${c.profile_id}`)] });
+          people: [`p:${req.requester_id}`, ...(req.companions ?? []).map((c) => `p:${c.profile_id}`)], alone: true });
       }
     } catch {
       // The mutation reports validation errors; keep the request on its phantom lane.

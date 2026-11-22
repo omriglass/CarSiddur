@@ -169,17 +169,19 @@ function ResultBlock({ carName, hostDriverName, hostLabel, hostStartsAt, hostEnd
         : routeText ? <p data-testid="merge-result-route">{routeText}</p> : null}
       {/* CM1 phase 3 (REQ item 260 c): the people on one trip only - the whole ride, or pass the start again for them */}
       {preview.chain?.oneTrip && onChainViaChange ? <ChainOneTripChoice chain={{ side: preview.chain.side, oneTrip: preview.chain.oneTrip }} via={!!chainVia} onChange={onChainViaChange} /> : null}
-      {/* REQ §13.175 (c): which way the guest rides, in words. */}
-      {preview.joinerOutAt ? <p data-testid="merge-result-leg-out">{tv("mergedRide.resultLegOut", { name: guestName, place: request?.destination_resolved_name ?? "", time: timeOf(preview.joinerOutAt) })}</p> : null}
-      {preview.joinerReturnAt ? <p data-testid="merge-result-leg-return">{tv("mergedRide.resultLegReturn", { name: guestName, place: request?.destination_resolved_name ?? "", time: timeOf(preview.joinerReturnAt) })}</p> : null}
+      {/* REQ §13.175 (c): which way the guest rides, in words - not on a chain, where the same person's own two trips
+          become one ride (R22B5: it read as the driver "joining" their own ride) */}
+      {preview.joinerOutAt && !preview.chain ? <p data-testid="merge-result-leg-out">{tv("mergedRide.resultLegOut", { name: guestName, place: request?.destination_resolved_name ?? "", time: timeOf(preview.joinerOutAt) })}</p> : null}
+      {preview.joinerReturnAt && !preview.chain ? <p data-testid="merge-result-leg-return">{tv("mergedRide.resultLegReturn", { name: guestName, place: request?.destination_resolved_name ?? "", time: timeOf(preview.joinerReturnAt) })}</p> : null}
       {hostStartsAt && hostEndsAt ? <OldNew name={hostDriverName ?? hostLabel ?? ""} oldText={hoursOf(hostStartsAt, hostEndsAt)} newText={hoursOf(preview.startsAt, preview.endsAt)} /> : null}
-      {request?.depart_at && joinerAt ? <OldNew name={guestName} oldText={timeOf(request.depart_at)} newText={timeOf(joinerAt)} /> : null}
+      {request?.depart_at && joinerAt && !preview.chain ? <OldNew name={guestName} oldText={timeOf(request.depart_at)} newText={timeOf(joinerAt)} /> : null}
     </div>
   );
 }
 
 export function MergePrefillDialog({ prefill, carName, hostDriverName, hostLabel, hostStartsAt, hostEndsAt, request, hostRequest, pair, requestRoute, leg, onLegChange, anchorLeg, legVerdicts, verdict, split, draftNote, preview, partyNames, onAgree, onConfirm, onDraft, busy, onCancel, chainVia, onChainViaChange }: MergePrefillDialogProps) {
-  const options = request && !split ? mergeLegOptions(request, anchorLeg) : null;
+  // R22B5: a chain is the two whole trips - no "one way only" choice
+  const options = request && !split && !preview?.chain ? mergeLegOptions(request, anchorLeg) : null;
   // The server decides; without a verdict (no host/request to ask about) the TS twin's validity is the fallback.
   const blocked = verdict ? verdict.status !== "ok" : (!!preview && !preview.valid) || (!!pair?.preview && !pair.preview.valid);
   return (

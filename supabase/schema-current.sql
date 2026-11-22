@@ -4407,6 +4407,37 @@ end $$;
 ALTER FUNCTION "public"."_notice_is_unpublished_outcome"("_event" "public"."notification_event", "_data" "jsonb", "_recipient" "uuid", "_department_id" "uuid", "_week_start" "date", "_caller_days" "text") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."_notify_companions_ride_cancelled"("p_ride_id" "uuid", "p_request_ids" "uuid"[], "p_by" "uuid") RETURNS "void"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare r public.rides%rowtype; v_name text; c record;
+begin
+  select * into r from public.rides where id = p_ride_id;
+  if r.id is null or coalesce(cardinality(p_request_ids), 0) = 0 then return; end if;
+  select full_name into v_name from public.profiles where id = p_by;
+  for c in
+    select distinct on (rc.profile_id) rc.profile_id, rc.request_id
+    from public.request_companions rc join public.requests q on q.id = rc.request_id
+    where rc.request_id = any(p_request_ids) and q.status in ('cancelled', 'withdrawn')
+      and rc.profile_id is distinct from p_by
+      and not exists (select 1 from public.requests q2 where q2.id = any(p_request_ids) and q2.requester_id = rc.profile_id)
+      and not exists (select 1 from public.ride_requests rr join public.requests q3 on q3.id = rr.request_id
+                      where rr.ride_id = p_ride_id and q3.requester_id = rc.profile_id)
+      and not exists (select 1 from public.ride_passengers rp where rp.ride_id = p_ride_id and rp.person_id = rc.profile_id)
+    order by rc.profile_id, rc.request_id
+  loop
+    perform public.enqueue_notification(c.profile_id, 'outcome_changed', r.department_id, r.week_start,
+      jsonb_build_object('byName', coalesce(v_name, '')),
+      jsonb_build_object('variant', 'ride_cancelled', 'ride_id', p_ride_id, 'request_id', c.request_id),
+      format('ride_cancelled:%s:%s:%s', p_ride_id, c.request_id, c.profile_id));
+  end loop;
+end $$;
+
+
+ALTER FUNCTION "public"."_notify_companions_ride_cancelled"("p_ride_id" "uuid", "p_request_ids" "uuid"[], "p_by" "uuid") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."_notify_inbox_only"("p_recipient" "uuid", "p_event" "public"."notification_event", "p_department" "uuid", "p_vars" "jsonb", "p_data" "jsonb", "p_dedupe" "text") RETURNS "uuid"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -11036,12 +11067,14 @@ begin
     loop
       perform public.release_request_booking(v_req);
     end loop;
+    perform public._notify_companions_ride_cancelled(p_ride_id, v_reqs, (select auth.uid()));   -- R22B2
     perform set_config('app.notify_now', v_prev_notify, true);
     return;
   end if;
   -- A passenger removing only their own seat does not cancel the ride, and must not
   -- cancel the series either.
   if not exists (select 1 from public.rides where id = p_ride_id and status = 'cancelled') then
+    perform public._notify_companions_ride_cancelled(p_ride_id, v_reqs, (select auth.uid()));   -- R22B2
     perform set_config('app.notify_now', v_prev_notify, true);
     return;
   end if;
@@ -11055,6 +11088,7 @@ begin
   update public.requests set status = 'cancelled', status_reason = 'RIDE_CANCELLED'
   where series_id = v_series and status not in ('cancelled', 'withdrawn');
   perform set_config('app.system_status_transition', 'off', true);
+  perform public._notify_companions_ride_cancelled(p_ride_id, v_reqs, (select auth.uid()));   -- R22B2
   perform set_config('app.notify_now', v_prev_notify, true);
 end $$;
 
@@ -11238,6 +11272,89 @@ end $$;
 
 
 ALTER FUNCTION "public"."cancel_ride_change_before_planning"("p_change_id" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."cancel_ride_part"("p_ride_id" "uuid", "p_request_id" "uuid", "p_expected_version" integer) RETURNS "jsonb"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  r public.rides%rowtype; v_actor uuid := (select auth.uid()); v_q public.requests%rowtype;
+  v_chain text; v_base uuid; v_any_chain boolean; v_name text; v_fellow record; v_prev_sys text;
+  v_prev_notify text := coalesce(nullif(current_setting('app.notify_now', true), ''), 'off');
+begin
+  select * into r from public.rides where id = p_ride_id for update;
+  if not found or r.status = 'cancelled' then raise exception 'ride_not_found' using errcode = 'P0001'; end if;
+  if not public.member_of(r.department_id) or not public.request_related(p_request_id, v_actor) then
+    raise exception 'not_authorized' using errcode = 'P0001';
+  end if;
+  if p_expected_version is null or r.version <> p_expected_version then perform public.raise_stale_version(); end if;
+  if exists (select 1 from public.weeks w where w.department_id = r.department_id and w.week_start = r.week_start and w.phase = 'archived') then
+    raise exception 'week_archived' using errcode = 'P0001';
+  end if;
+  select * into v_q from public.requests where id = p_request_id;
+  if not exists (select 1 from public.ride_requests rr where rr.ride_id = r.id and rr.request_id = p_request_id) then
+    raise exception 'request_not_on_ride' using errcode = 'P0001';
+  end if;
+  if not exists (select 1 from public.ride_requests rr where rr.ride_id = r.id and rr.request_id <> p_request_id) then
+    raise exception 'request_alone_on_ride' using errcode = 'P0001';   -- nothing else to keep: the caller cancels the ride
+  end if;
+  if exists (select 1 from public.rides r2 join public.weeks w on w.department_id = r2.department_id and w.week_start = r2.week_start
+             where r2.id = r.id and w.phase = 'live') then
+    perform set_config('app.notify_now', 'on', true);
+  end if;
+
+  select rr.chain into v_chain from public.ride_requests rr where rr.ride_id = r.id and rr.request_id = p_request_id;
+  select exists (select 1 from public.ride_requests rr where rr.ride_id = r.id and rr.chain is not null) into v_any_chain;
+  select rr.request_id into v_base from public.ride_requests rr where rr.ride_id = r.id
+   order by (rr.role = 'driver') desc, rr.created_at, rr.request_id limit 1;
+
+  if v_chain is null and v_base = p_request_id and v_any_chain then
+    -- the chain's base trip leaves: the chained trip (the chain is cleared by ride_requests_chain_cleanup) keeps the ride
+    -- with its own hours, and its requester, when driving the ride, is its driver row again
+    perform set_config('app.audit_reason', 'cancel_ride_part', true);
+    delete from public.ride_requests where ride_id = r.id and request_id = p_request_id;
+    perform public._fit_ride_to_its_legs(r.id);
+    update public.ride_requests rr set role = 'driver', car_mode = 'keep'
+     from public.requests q where q.id = rr.request_id and rr.ride_id = r.id and q.requester_id = r.driver_id
+       and rr.request_id = (select rr2.request_id from public.ride_requests rr2 where rr2.ride_id = r.id
+                            order by rr2.created_at, rr2.request_id limit 1);
+    perform public.refresh_car_turnarounds(r.car_id, r.week_start);
+  else
+    -- a chained trip, or a trip that is not the ride's base: what unmerge does (it refuses the base of a plain merge)
+    perform public._unmerge_core(r.id, p_request_id, 'CANCELLED_BY_MEMBER');
+  end if;
+
+  v_prev_sys := coalesce(nullif(current_setting('app.system_status_transition', true), ''), 'off');
+  perform set_config('app.system_status_transition', 'on', true);
+  update public.requests set status = 'cancelled', status_reason = 'CANCELLED_BY_MEMBER' where id = p_request_id;
+  perform set_config('app.system_status_transition', v_prev_sys, true);
+  if exists (select 1 from public.ride_requests rr join public.rides x on x.id = rr.ride_id
+             where rr.request_id = p_request_id and x.status <> 'cancelled') then
+    perform public.release_request_booking(p_request_id);
+  end if;
+
+  -- who is told: the others on the ride (requesters, their companions, the driver) that a rider left …
+  select p.full_name into v_name from public.profiles p where p.id = v_q.requester_id;
+  for v_fellow in
+    select distinct x.person from (
+      select q.requester_id as person from public.ride_requests rr join public.requests q on q.id = rr.request_id where rr.ride_id = r.id
+      union select rc.profile_id from public.ride_requests rr join public.request_companions rc on rc.request_id = rr.request_id where rr.ride_id = r.id
+      union select r.driver_id
+      union select rp.person_id from public.ride_passengers rp where rp.ride_id = r.id) x
+    where x.person is not null and x.person is distinct from v_actor and x.person is distinct from v_q.requester_id
+  loop
+    perform public._notify_rider_left(v_fellow.person, r.id, coalesce(v_name, ''), coalesce(public.request_route_label(p_request_id), ''),
+      public.day_date_label(r.starts_at), format('passenger_left:%s:%s:%s', r.id, p_request_id, v_fellow.person));
+  end loop;
+  -- … and the cancelled trip's own companions that it was cancelled
+  perform public._notify_companions_ride_cancelled(r.id, array[p_request_id], v_actor);
+  perform set_config('app.notify_now', v_prev_notify, true);
+  return jsonb_build_object('ride_id', r.id, 'request_status', 'cancelled');
+end $$;
+
+
+ALTER FUNCTION "public"."cancel_ride_part"("p_ride_id" "uuid", "p_request_id" "uuid", "p_expected_version" integer) OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."cancel_ride_without_passengers"("p_ride_id" "uuid", "p_reason" "text", "p_expected_version" integer DEFAULT NULL::integer) RETURNS "void"
@@ -39605,6 +39722,11 @@ GRANT ALL ON FUNCTION "public"."_notice_is_unpublished_outcome"("_event" "public
 
 
 
+REVOKE ALL ON FUNCTION "public"."_notify_companions_ride_cancelled"("p_ride_id" "uuid", "p_request_ids" "uuid"[], "p_by" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_notify_companions_ride_cancelled"("p_ride_id" "uuid", "p_request_ids" "uuid"[], "p_by" "uuid") TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."_notify_inbox_only"("p_recipient" "uuid", "p_event" "public"."notification_event", "p_department" "uuid", "p_vars" "jsonb", "p_data" "jsonb", "p_dedupe" "text") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."_notify_inbox_only"("p_recipient" "uuid", "p_event" "public"."notification_event", "p_department" "uuid", "p_vars" "jsonb", "p_data" "jsonb", "p_dedupe" "text") TO "service_role";
 
@@ -40678,6 +40800,12 @@ GRANT ALL ON FUNCTION "public"."cancel_ride_change"("p_change_id" "uuid") TO "se
 
 REVOKE ALL ON FUNCTION "public"."cancel_ride_change_before_planning"("p_change_id" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."cancel_ride_change_before_planning"("p_change_id" "uuid") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."cancel_ride_part"("p_ride_id" "uuid", "p_request_id" "uuid", "p_expected_version" integer) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."cancel_ride_part"("p_ride_id" "uuid", "p_request_id" "uuid", "p_expected_version" integer) TO "service_role";
+GRANT ALL ON FUNCTION "public"."cancel_ride_part"("p_ride_id" "uuid", "p_request_id" "uuid", "p_expected_version" integer) TO "authenticated";
 
 
 

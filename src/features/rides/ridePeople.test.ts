@@ -25,6 +25,12 @@ describe("peopleOf", () => {
     expect(peopleOf({ people: [driver, requester] })).toEqual([driver, requester]);
   });
 
+  it("lists a person on two trips of a chained ride once (R22B4)", () => {
+    const again = person({ key: "req:r2", source: "requester", display_name: "עומרי", person_id: "d1", request_id: "r2" });
+    const childAgain = person({ key: "child:r2:c1", source: "child", display_name: "ילד קטן", child_id: "c1", request_id: "r2", seat_kind: "child_seat" });
+    expect(peopleOf({ people: [driver, requester, child, again, childAgain] })).toEqual([driver, requester, child]);
+  });
+
   it("returns an empty array when people is null or not an array", () => {
     expect(peopleOf({ people: null })).toEqual([]);
     expect(peopleOf({ people: "garbage" as unknown as never })).toEqual([]);

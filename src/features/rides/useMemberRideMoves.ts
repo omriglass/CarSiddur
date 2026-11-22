@@ -176,7 +176,10 @@ export function useMemberRideMoves({ departmentId, weekStart, week, profileId, m
     for (const other of chainNeighbours(trip, fresh, turnaroundMinutes, declinedChains.current).slice(0, 2)) {
       const ride = fresh.find((r) => r.id === other.rideId);
       if (!ride || !ownsEditableRide(ride.id as string) || !other.people.includes(`p:${profileId}`)) continue;
-      const opened = await memberMerge.start(moved, { ride, requestId: other.requestId, name: "", own: true }, { suggested: true });
+      // R22U1: the trip alone on its ride joins the other one (which may carry other people)
+      const opened = other.alone
+        ? await memberMerge.start(moved, { ride, requestId: other.requestId, name: "", own: true }, { suggested: true })
+        : await memberMerge.start(ride, { ride: moved, requestId: trip.requestId, name: "", own: true }, { suggested: true });
       if (opened) { declinedChains.current.add(chainPairKey(trip.requestId, other.requestId)); return; }
     }
   }

@@ -42,6 +42,7 @@ import { SplitSeriesDialog, type SplitTarget } from "@/features/requests/compone
 import { TemplateSuggestions } from "@/features/requests/components/TemplateSuggestions";
 import {
   useCancelRideMutation,
+  useCancelRidePartMutation,
   usePlaceOnOwnCarMutation,
   useRestoreDuplicateMutation,
   useMyFreedSlotOffers,
@@ -62,6 +63,7 @@ import {
   seriesDayChoices,
   requestStart,
   toDisplayRows,
+  ridePartOthers,
   displayStatus,
   type DisplayRow,
   type ConfirmAction,
@@ -209,8 +211,10 @@ export function HomePage() {
   const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null);
   const freedGate = useFreedCarGate();
   // FC1 (REQ item 231): the very call the confirmation sends, tried and rolled back - who waiting gets the freed car
+  // R22B1: a trip whose ride carries another trip of mine — the default answer cancels only this trip
+  const partOthers = ridePartOthers(confirmAction, requestsQuery.data ?? []);
   const confirmFreedLine = useFreedCarLine(
-    confirmAction?.kind === "withdraw"
+    partOthers.length ? null : confirmAction?.kind === "withdraw"
       ? { action: confirmAction.row.editorOf ? "ride_editor_withdraw_request" : "withdraw_request",
           args: { p_request_id: confirmAction.row.id, p_expected_version: confirmAction.row.version } }
       : confirmAction?.kind === "cancel" && confirmAction.row.ride
@@ -234,6 +238,7 @@ export function HomePage() {
   const [selectedSuggestion, setSelectedSuggestion] = useState<TemplateSuggestion | null>(null);
   const openProposal = useOpenProposal();
   const cancelRideMutation = useCancelRideMutation();
+  const cancelRidePartMutation = useCancelRidePartMutation();
   const cancelSeriesDay = useCancelSeriesDay();
   const removeMeMutation = useRemoveRidePassengerMutation();
   const editMutation = useEditRideMutation();
@@ -508,14 +513,20 @@ export function HomePage() {
   }
 
   /** `keepOut`: "לבטל בלי להעביר את הרכב" (REQ item 237) — the calls carry the keep header. */
-  async function runConfirmAction(keepOut = false) {
+  async function runConfirmAction(keepOut = false, whole = false) {
     if (!confirmAction) return;
-    await withFreedCarChoice(keepOut, () => runConfirmActionCalls());
+    await withFreedCarChoice(keepOut, () => runConfirmActionCalls(whole));
   }
 
-  async function runConfirmActionCalls() {
+  async function runConfirmActionCalls(whole = false) {
     if (!confirmAction) return;
     try {
+      if (confirmAction.kind === "cancel" && confirmAction.row.ride && partOthers.length && !whole) {
+        await cancelRidePartMutation.mutateAsync({ rideId: confirmAction.row.ride.id, requestId: confirmAction.row.id, expectedVersion: confirmAction.row.ride.version });
+        toast.success(tv("request.cancelPartDone", { place: confirmAction.row.destination, other: partOthers[0]!.destination }));
+        setConfirmAction(null);
+        return;
+      }
       if (confirmAction.kind === "withdrawAll") {
         await withdrawAllMutation.mutateAsync(confirmAction);
       } else if (confirmAction.kind === "withdraw") {
@@ -929,13 +940,23 @@ export function HomePage() {
       <ConfirmDialog
         open={!!confirmAction}
         onOpenChange={(open) => !open && setConfirmAction(null)}
-        title={confirmDialogTitle(confirmAction)}
-        description={confirmDialogDescription(confirmAction)}
-        confirmLabel={confirmDialogLabel(confirmAction)}
+        title={partOthers.length && confirmAction?.kind === "cancel"
+          ? tv("request.cancelPartTitle", { place: confirmAction.row.destination }) : confirmDialogTitle(confirmAction)}
+        description={partOthers.length && confirmAction?.kind === "cancel"
+          ? tv("request.cancelPartBody", { other: partOthers[0]!.destination }) : confirmDialogDescription(confirmAction)}
+        confirmLabel={partOthers.length && confirmAction?.kind === "cancel"
+          ? tv("request.cancelPartOnly", { place: confirmAction.row.destination }) : confirmDialogLabel(confirmAction)}
         destructive
-        loading={withdrawMutation.isPending || cancelRideMutation.isPending || withdrawAllMutation.isPending || withdrawClaimMutation.isPending}
+        loading={withdrawMutation.isPending || cancelRideMutation.isPending || cancelRidePartMutation.isPending || withdrawAllMutation.isPending || withdrawClaimMutation.isPending}
         onConfirm={() => void runConfirmAction()}
       >
+        {partOthers.length ? (
+          <Button className="mb-2 w-full" variant="outline" data-testid="cancel-part-whole"
+            disabled={cancelRideMutation.isPending || cancelRidePartMutation.isPending}
+            onClick={() => void runConfirmAction(false, true)}>
+            {he.request.cancelPartWhole}
+          </Button>
+        ) : null}
         {seriesDayChoices(confirmAction).map((leg) => (
           <Button key={leg.rideId} className="mb-2 w-full" variant="outline" data-testid="cancel-only-day" disabled={cancelSeriesDay.busy}
             onClick={() => { setConfirmAction(null); cancelSeriesDay.start({ id: leg.rideId, version: leg.version, starts_at: leg.startsAt } as BoardRide, () => undefined); }}>

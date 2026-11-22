@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { he, tv } from "@/i18n/he";
 import type { MyRequestRow } from "./api";
-import { confirmDialogDescription, confirmDialogLabel, confirmDialogTitle, displayStatus, seriesDayChoices, legStateLine, originDestinationLabel, ownLegWindow, requestStart, seriesSpanLine, toDisplayRows } from "./myRequestsRows";
+import { confirmDialogDescription, confirmDialogLabel, confirmDialogTitle, displayStatus, ridePartOthers, seriesDayChoices, legStateLine, originDestinationLabel, ownLegWindow, requestStart, seriesSpanLine, toDisplayRows } from "./myRequestsRows";
 
 function request(overrides: Partial<MyRequestRow> = {}): MyRequestRow {
   return {
@@ -199,5 +199,24 @@ describe("seriesDayChoices (R21U5)", () => {
     expect(seriesDayChoices({ kind: "cancel", row: one })).toEqual([]);
     expect(seriesDayChoices({ kind: "withdraw", row: { ...one, seriesLegs: legs } })).toEqual([]);
     expect(seriesDayChoices({ kind: "cancel", row: { ...one, seriesLegs: legs, editorOf: "someone" } as never })).toEqual([]);
+  });
+});
+
+describe("ridePartOthers (R22B1)", () => {
+  const ride = (id: string) => ({
+    id, version: 3, startsAt: "2026-09-15T08:00:00+03:00", endsAt: "2026-09-15T16:00:00+03:00", status: "confirmed" as const,
+    originName: "Home", destinationName: "Home", carName: "Car", carType: "shared" as const, driverName: "Me", isChauffeur: false, role: "driver" as const,
+  });
+  const work = request({ id: "work", ride: ride("chain") });
+  const school = request({ id: "school", ride: ride("chain") });
+  const other = request({ id: "other", ride: ride("elsewhere") });
+  it("lists my other trips on the same ride", () => {
+    expect(ridePartOthers({ kind: "cancel", row: school }, [work, school, other]).map((r) => r.id)).toEqual(["work"]);
+  });
+  it("nothing for a ride with only this trip, a cancelled partner, a withdrawal or a ride I only edit", () => {
+    expect(ridePartOthers({ kind: "cancel", row: other }, [work, school, other])).toEqual([]);
+    expect(ridePartOthers({ kind: "cancel", row: school }, [{ ...work, status: "cancelled" }, school])).toEqual([]);
+    expect(ridePartOthers({ kind: "withdraw", row: school }, [work, school])).toEqual([]);
+    expect(ridePartOthers({ kind: "cancel", row: { ...school, editorOf: "someone" } }, [work, school])).toEqual([]);
   });
 });

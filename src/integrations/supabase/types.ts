@@ -6874,6 +6874,10 @@ export type Database = {
         }
         Returns: boolean
       }
+      _notify_companions_ride_cancelled: {
+        Args: { p_by: string; p_request_ids: string[]; p_ride_id: string }
+        Returns: undefined
+      }
       _notify_inbox_only: {
         Args: {
           p_data: Json
@@ -7776,6 +7780,14 @@ export type Database = {
       cancel_ride_change_before_planning: {
         Args: { p_change_id: string }
         Returns: undefined
+      }
+      cancel_ride_part: {
+        Args: {
+          p_expected_version: number
+          p_request_id: string
+          p_ride_id: string
+        }
+        Returns: Json
       }
       cancel_ride_without_passengers: {
         Args: {

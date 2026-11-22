@@ -18,6 +18,7 @@ import type { CarFreeWindow } from "@/features/siddur/freeWindows";
 import {
   canEditRequest,
   cancelRide,
+  cancelRidePart,
   cancelSeriesDay,
   placeOnOwnCar,
   restoreDuplicateRequest,
@@ -217,6 +218,23 @@ export function useRestoreDuplicateMutation() {
 
   return useMutation({
     mutationFn: (requestId: string) => restoreDuplicateRequest(requestId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: requestsKeys.mine(profileId) });
+      queryClient.invalidateQueries({ queryKey: siddurKeys.all });
+      queryClient.invalidateQueries({ queryKey: sadranKeys.all });
+    },
+    onError: showErrorToast,
+  });
+}
+
+/** R22B1: one trip of a ride that carries another trip of mine (`cancel_ride_part`). */
+export function useCancelRidePartMutation() {
+  const { session } = useSession();
+  const profileId = session?.user.id;
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ rideId, requestId, expectedVersion }: { rideId: string; requestId: string; expectedVersion?: number }) =>
+      cancelRidePart(rideId, requestId, expectedVersion),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: requestsKeys.mine(profileId) });
       queryClient.invalidateQueries({ queryKey: siddurKeys.all });

@@ -56,14 +56,26 @@ export function peopleOf(ride: Pick<BoardRide, "people">): RidePerson[] {
   if (!Array.isArray(raw)) return [];
   const people: RidePerson[] = [];
   // R2B15: one row per `key` (a volunteer driver after `set_ride_driver` can arrive twice).
+  // R22B4 (CM1): one row per person too - on a chained ride the same person is on both trips (the driver, again as the
+  // second trip's requester); the first row (the driver's) stands for them, as one person counts once (REQ item 260).
   const seen = new Set<string>();
   for (const entry of raw) {
     const parsed = ridePersonSchema.safeParse(entry);
     if (!parsed.success || seen.has(parsed.data.key)) continue;
+    const person = personKey(parsed.data);
+    if (person && seen.has(person)) continue;
     seen.add(parsed.data.key);
+    if (person) seen.add(person);
     people.push(parsed.data);
   }
   return people;
+}
+
+/** The person behind a row (a member or a named child), for "one person counts once"; unnamed guests have none. */
+function personKey(person: RidePerson): string | null {
+  if (person.source === "child") return person.child_id ? `child:${person.child_id}` : null;
+  if (!person.person_id) return null;
+  return person.source === "driver" || person.source === "requester" || person.source === "companion" ? `person:${person.person_id}` : null;
 }
 
 /** Display names of everyone on the ride, in list order; `excludeDriver` drops the driver's own name. */

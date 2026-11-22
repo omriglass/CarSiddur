@@ -13,20 +13,25 @@ export interface ChainTrip {
   startsAt: string;
   endsAt: string;
   originId: string | null;
-  /** 'p:<profile>' / 'c:<child>' — the driver, the requester, companions, children. */
+  /** 'p:<profile>' / 'c:<child>' — the driver, the requester, companions, children (of everyone on the ride). */
   people: readonly string[];
+  /** R22U1: the trip is the only one on its ride, so it can move onto the other ride (a ride with others stays put). */
+  alone: boolean;
 }
 
-/** The ride's own trip, when it carries exactly one round-trip request (the only kind that chains). */
+/**
+ * The ride's own trip: its base round-trip request (the driver's, else the first), the only kind that chains. R22U1 (owner
+ * 2026-11-22): a ride carrying other people's trips too still counts — it is offered when the other side is alone.
+ */
 export function chainTripOf(ride: BoardRide): ChainTrip | null {
   if (!ride.id || !ride.starts_at || !ride.ends_at || ride.status === "cancelled" || isReservation(ride)) return null;
   const served = servedOf(ride).filter((entry) => entry.request_id);
-  if (served.length !== 1) return null;
-  const entry = served[0]!;
+  if (!served.length) return null;
+  const entry = served.find((candidate) => candidate.role === "driver") ?? served[0]!;
   if (entry.leg !== "both" || (entry.trip_type && entry.trip_type !== "round_trip")) return null;
   return {
     rideId: ride.id, requestId: entry.request_id as string, startsAt: ride.starts_at, endsAt: ride.ends_at,
-    originId: entry.origin_id ?? ride.origin_id ?? null, people: personKeys(ride),
+    originId: entry.origin_id ?? ride.origin_id ?? null, people: personKeys(ride), alone: served.length === 1,
   };
 }
 
@@ -34,9 +39,9 @@ export function personKeys(ride: Pick<BoardRide, "people" | "driver_id">): strin
   const keys = new Set<string>();
   if (ride.driver_id) keys.add(`p:${ride.driver_id}`);
   for (const person of peopleOf(ride)) {
+    if (person.source === "child") { if (person.child_id) keys.add(`c:${person.child_id}`); continue; }
     if (!person.person_id) continue;
-    if (person.source === "child") keys.add(`c:${person.person_id}`);
-    else if (person.source === "driver" || person.source === "requester" || person.source === "companion") keys.add(`p:${person.person_id}`);
+    if (person.source === "driver" || person.source === "requester" || person.source === "companion") keys.add(`p:${person.person_id}`);
   }
   return [...keys];
 }
@@ -57,6 +62,7 @@ export function chainNeighbours(trip: ChainTrip, rides: readonly BoardRide[], tu
     if (skip?.has(chainPairKey(trip.requestId, other.requestId))) continue;
     if (!trip.originId || other.originId !== trip.originId) continue;
     if (!other.people.some((key) => mine.has(key))) continue;
+    if (!trip.alone && !other.alone) continue;   // neither trip can move without leaving others behind
     const [first, second] = Date.parse(trip.startsAt) <= Date.parse(other.startsAt) ? [trip, other] : [other, trip];
     const gap = (Date.parse(second.startsAt) - Date.parse(first.endsAt)) / 60_000;
     if (gap < -(turnaroundMinutes + 60) || gap > 120) continue;

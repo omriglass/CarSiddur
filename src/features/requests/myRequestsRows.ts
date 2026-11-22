@@ -120,6 +120,17 @@ export type ConfirmAction =
   | { kind: "withdrawFreedClaim"; offerId: string; requestId: string }
   | { kind: "withdrawAll"; departmentId: string; weekStart: string };
 
+/**
+ * R22B1 (owner 2026-11-22): cancelling a trip whose ride also carries another trip of mine (a chained ride) asks, and the
+ * default takes out only this trip (`cancel_ride_part`). The other trips of mine on that ride, or none.
+ */
+export function ridePartOthers(action: ConfirmAction | null, rows: readonly MyRequestRow[]): MyRequestRow[] {
+  if (action?.kind !== "cancel" || action.row.editorOf || action.row.seriesLegs || !action.row.ride) return [];
+  const rideId = action.row.ride.id;
+  return rows.filter((row) => row.id !== action.row.id && row.ride?.id === rideId && !row.editorOf
+    && row.status !== "cancelled" && row.status !== "withdrawn");
+}
+
 /** R21U5 (owner 2026-11-16): cancelling a multi-day ride from `/my` offers each day on its own, as the siddur does. */
 export function seriesDayChoices(action: ConfirmAction | null): { rideId: string; version: number; startsAt: string }[] {
   if (action?.kind !== "cancel" || action.row.editorOf || (action.row.seriesLegs?.length ?? 0) < 2) return [];

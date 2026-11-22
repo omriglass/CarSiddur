@@ -39,7 +39,18 @@ describe("chainNeighbours (CM1 phase 4, REQ item 260 d)", () => {
     expect(chainNeighbours(trip, [school, day], 30, new Set([chainPairKey("qb", "qa")]))).toEqual([]);
   });
 
-  it("only rides with one round-trip request chain", () => {
+  it("a ride with someone else's trip too: offered when the other side is alone, not when both carry others (R22U1)", () => {
+    const guest = { request_id: "qx", role: "passenger", leg: "both", car_mode: "passenger", trip_type: "round_trip", origin_id: "home", adults: 1, child_seats: 0, boosters: 0, luggage: false };
+    const busyDay = ride("b", "qb", "08:30", "14:00", ["m1", "m2"]);
+    (busyDay.served as unknown as object[]).push(guest);
+    const busySchool = ride("a", "qa", "07:45", "08:15", ["m1"]);
+    (busySchool.served as unknown as object[]).push({ ...guest, request_id: "qy" });
+    expect(chainTripOf(busyDay)).toMatchObject({ requestId: "qb", alone: false });
+    expect(chainNeighbours(chainTripOf(school)!, [school, busyDay], 30).map((t) => t.rideId)).toEqual(["b"]);
+    expect(chainNeighbours(chainTripOf(busySchool)!, [busySchool, busyDay], 30)).toEqual([]);
+  });
+
+  it("only round-trip trips chain", () => {
     expect(chainTripOf(ride("g", "qg", "08:30", "12:00", ["m1"], { served: [] }))).toBeNull();
     const oneWay = ride("h", "qh", "08:30", "12:00", ["m1"]);
     (oneWay.served as unknown as { leg: string }[])[0]!.leg = "out";

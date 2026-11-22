@@ -371,6 +371,12 @@ export const heMember = {
     cancelOnlyDay: "לבטל רק את {{day}}",
     cancelAllDays: "לבטל את כל הימים",
     cancelOnlyDayDone: "{{day}} בוטל. שאר הימים נשארו על הרכב.",
+    // R22B1 (owner 2026-11-22): one trip of a ride that carries another trip of mine — wordings to approve
+    cancelPartTitle: "לבטל רק את הנסיעה ל{{place}}?",
+    cancelPartBody: "הנסיעה הזו מחוברת לנסיעה שלך ל{{other}}. אפשר לבטל רק אותה — הנסיעה ל{{other}} נשארת.",
+    cancelPartOnly: "לבטל רק את הנסיעה ל{{place}}",
+    cancelPartWhole: "לבטל את כל הנסיעה",
+    cancelPartDone: "הנסיעה ל{{place}} בוטלה. הנסיעה ל{{other}} נשארה.",
     stopEqualsOrigin: "העצירה זהה למקום היציאה",
     stopEqualsDestination: "העצירה זהה ליעד",
     originEqualsDestination: "מקום היציאה והיעד זהים",

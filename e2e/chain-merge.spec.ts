@@ -1,7 +1,7 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import { he } from "../src/i18n/he";
+import { he, tv } from "../src/i18n/he";
 import { newSignedInPage, NEVO_DEPARTMENT_ID, SEEDED_USERS, serviceRoleClient, scrollGridColumnTo } from "./helpers";
 import { publishedFixtureWeek } from "./published-week";
 
@@ -295,6 +295,49 @@ test("a member moves their school run next to their day trip and is offered to c
       .toBe(shortRide);
     await expect.poll(async () => (await service.from("ride_requests").select("chain").eq("ride_id", shortRide!).eq("request_id", shortId).maybeSingle()).data?.chain)
       .toBe("before");
+  } finally {
+    await member1.context.close().catch(() => undefined);
+    await cleanup(service, week);
+  }
+});
+
+// R22B1 (owner 2026-11-22): cancelling one trip of a chained ride from "my rides" asks; the default takes out only that
+// trip, and the other keeps the ride with its own hours
+test("a member cancels the school run of their chained ride from my rides and keeps the day trip", { tag: ["@siddur"] }, async ({ browser }) => {
+  test.slow();
+  const week = "2041-03-10";
+  const service = serviceRoleClient();
+  const admin = await publishedFixtureWeek(week);
+  await admin.auth.signOut();
+  await cleanup(service, week);
+  const { shortId, dayId, dayRide, shortRide, at } = await fixture(service, week, true, "confirmed");
+  const member1 = await newSignedInPage(browser, SEEDED_USERS.member1);
+  try {
+    const page = member1.page;
+    await page.setViewportSize({ width: 1440, height: 1400 });
+    await page.goto(`/siddur/${NEVO_DEPARTMENT_ID}/${week}`);
+    const short = page.locator(`[data-ride-id="${shortRide}"]:visible`);
+    const day = page.locator(`[data-ride-id="${dayRide}"]:visible`);
+    await expect(day).toBeVisible();
+    await page.getByTestId("edit-mode-button").locator("visible=true").click();
+    await dragOnto(page, short, day);
+    await page.getByRole("dialog").filter({ hasText: he.rideEditing.chainTitle }).getByRole("button", { name: he.rideEditing.mergeConfirm }).click();
+    await expect.poll(async () => (await service.from("ride_requests").select("ride_id").eq("request_id", dayId).maybeSingle()).data?.ride_id)
+      .toBe(shortRide);
+
+    await page.goto(`/my?focus=${shortId}&cancel=1`);
+    const ask = page.getByRole("dialog");
+    await expect(ask).toContainText(tv("request.cancelPartBody", { other: "פרדס חנה" }));
+    await expect(ask.getByTestId("cancel-part-whole")).toBeVisible();
+    await ask.getByRole("button", { name: tv("request.cancelPartOnly", { place: "בנימינה" }) }).click();
+    await expect(ask).not.toBeVisible();
+    await expect.poll(async () => (await service.from("requests").select("status").eq("id", shortId).single()).data?.status).toBe("cancelled");
+    const { data: kept } = await service.from("requests").select("status").eq("id", dayId).single();
+    expect(kept!.status).toBe("assigned");
+    const { data: ride } = await service.from("rides").select("status,starts_at,ends_at").eq("id", shortRide!).single();
+    expect(ride!.status).not.toBe("cancelled");
+    expect(new Date(ride!.starts_at).toISOString()).toBe(new Date(at("08:30")).toISOString());
+    expect(new Date(ride!.ends_at).toISOString()).toBe(new Date(at("14:00")).toISOString());
   } finally {
     await member1.context.close().catch(() => undefined);
     await cleanup(service, week);

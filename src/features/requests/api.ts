@@ -1290,6 +1290,11 @@ export async function cancelRide(
   else await rpc("cancel_ride", { p_ride_id: rideId, p_reason: reason, p_expected_version: expectedVersion });
 }
 
+/** R22B1 (owner 2026-11-22): cancel only this request's trip on a ride that carries others too (a chained ride) — the ride stays. */
+export async function cancelRidePart(rideId: string, requestId: string, expectedVersion?: number): Promise<void> {
+  await rpc("cancel_ride_part", { p_ride_id: rideId, p_request_id: requestId, p_expected_version: expectedVersion as number });
+}
+
 /**
  * R20H1 (owner 2026-11-14): cancel one day of a multi-day ride — the day is cut out of the series and cancelled; the
  * other days keep the car. `asSadran` cancels it as the board does (`close` = "הנסיעה כבר לא רלוונטית").
