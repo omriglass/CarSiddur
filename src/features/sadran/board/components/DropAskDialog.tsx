@@ -78,6 +78,18 @@ export function DropAskDialog({ ask, onAnswer }: DropAskDialogProps) {
           <p className="text-sm text-muted-foreground">{he.dropAsk.transfer.help}</p>
         </ConfirmDialog>
       );
+    case "chain":
+      return (
+        <ConfirmDialog
+          open
+          onOpenChange={close}
+          title={he.dropAsk.chain.title}
+          description={tv("dropAsk.chain.body", { route: ask.route })}
+          confirmLabel={he.dropAsk.chain.yes}
+          cancelLabel={he.dropAsk.chain.notNow}
+          onConfirm={() => onAnswer("yes")}
+        />
+      );
     case "unplace":
       return (
         <ConfirmDialog

@@ -84,6 +84,8 @@ import {
 } from "../../hooks";
 import { useClaimRideDriverMutation, useCancelRideChangeMutation } from "@/features/rides/hooks";
 import { fetchMergePreview, fetchOneWayPartner, fetchRideVersion } from "../../api";
+import { chainNeighbours, chainPairKey, chainTripOf, type ChainTrip } from "@/features/rides/chainSuggest";
+import { chainRouteText } from "@/features/rides/mergeChain";
 import { useUndoStack } from "../useUndoStack";
 import { useBoardUndoRecorder } from "../boardUndo";
 import { servedOf, servedToEditRideLegs } from "../../solverRun";
@@ -126,6 +128,24 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
   function answerDropAsk(answer: DropAnswer) {
     dropAsk?.resolve(answer);
     setDropAsk(null);
+  }
+  // CM1 phase 4 (REQ item 260 d): pairs the Sadran answered "לא עכשיו" for are not offered again on this board visit.
+  const declinedChains = useRef(new Set<string>());
+  /**
+   * After a ride was placed or moved: the same person's ride next to it (any car) may chain with it into one ride - asked
+   * only when the server's merge check says it chains; "לאחד" opens the usual merge popup (REQ §13.138 "דיברת עם X?").
+   */
+  async function suggestChain(trip: ChainTrip) {
+    for (const other of chainNeighbours(trip, rides, dropCtx.turnaroundMinutes ?? 30, declinedChains.current).slice(0, 2)) {
+      if (!other.rideId || !trip.rideId) continue;
+      let preview;
+      try { preview = await fetchMergePreview(other.rideId, trip.requestId, "both"); } catch { return; }
+      if (!preview?.chain || !(preview.ok || preview.waivable)) continue;
+      const answer = await askDrop({ kind: "chain", route: chainRouteText(preview.chain) });
+      if (answer === "yes") openMerge(trip.requestId, other.rideId, "both", null);
+      else declinedChains.current.add(chainPairKey(trip.requestId, other.requestId));
+      return;
+    }
   }
   // REQ §13.138 (a): every board popup that leads to the composer first asks "דיברת עם X על השינוי?" —
   // agreed (apply now), draft (store unsent, stay on the board) or send now (open the composer).
@@ -755,6 +775,10 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
       // on the same car at its own time (the server then connects them; a misfit is reported like any drop).
       const twin = !chainedLeg ? keepCarTwinLeg(item) : null;
       if (twin) await handlePlaceUnmetRequest(twin.item, carId, twin.minutes, undefined, true);
+      else if (!chainedLeg && !item.leg && req.trip_type === "round_trip") {
+        void suggestChain({ rideId: placedRideId, requestId: req.id, startsAt: window.startsAt, endsAt: window.endsAt, originId: req.origin_id ?? null,
+          people: [`p:${req.requester_id}`, ...(req.companions ?? []).map((c) => `p:${c.profile_id}`)] });
+      }
     } catch {
       // The mutation reports validation errors; keep the request on its phantom lane.
     }
@@ -1038,6 +1062,8 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
           if (hasCollision && ride.status !== "draft") { toast.success(he.boardCoordination.planningSaved); return; }
           undoVersions.current.set(rideId, (ride.version ?? 0) + 1);
           toast.success(he.sadranBoard.dragAppliedToast);
+          const movedTrip = chainTripOf(ride);
+          if (movedTrip) void suggestChain({ ...movedTrip, startsAt: newStartsAt, endsAt: newEndsAt });
           undoStack.push({
             label: undoLabel,
             run: async () => {

@@ -31,6 +31,8 @@ interface Flow {
   wait: boolean;
   /** CM1 phase 3: a chain's people on one trip only - pass the start place again for them. */
   chainVia: boolean;
+  /** CM1 phase 4: offered after a move, not asked for by a drop ("לא עכשיו"). */
+  suggested?: boolean;
 }
 
 /** Hebrew reason for a refused member merge (the board's codes, `he.mergedRide.invalid`). */
@@ -62,16 +64,18 @@ export function useMemberMerge({ departmentId, weekStart, onDone }: {
   const [busy, setBusy] = useState(false);
 
   /** Asks the server; `false` = my own other ride that does not chain (the caller goes on with the ordinary move). */
-  async function start(host: BoardRide, target: MemberMergeTarget): Promise<boolean> {
+  async function start(host: BoardRide, target: MemberMergeTarget, options: { suggested?: boolean } = {}): Promise<boolean> {
     if (!host.id || !target.ride.id) return false;
     try {
       const preview = await memberMergePreview(host.id, target.ride.id, target.requestId);
       if (target.own && !preview.chain) return false;
+      // CM1 phase 4: a suggestion the server would refuse is simply not offered
+      if (options.suggested && !preview.ok && !preview.waivable) return false;
       if (!preview.ok && !preview.waivable) {
         toast.error(refusal(preview.code, preview.needs));
         return true;
       }
-      setFlow({ host, target, preview, step: "confirm", wait: false, chainVia: false });
+      setFlow({ host, target, preview, step: "confirm", wait: false, chainVia: false, suggested: options.suggested });
     } catch (error) {
       if (target.own) return false;
       showErrorToast(error);
@@ -127,7 +131,8 @@ export function useMemberMerge({ departmentId, weekStart, onDone }: {
         title={flow?.preview.chain ? he.rideEditing.chainTitle : tv("rideEditing.mergeTitle", { name: guest })}
         description={flow?.preview.chain ? tv("mergedRide.chainRoute", { route: chainRouteText(flow.preview.chain.oneTrip
           ? (flow.chainVia ? flow.preview.chain.oneTrip.via : flow.preview.chain.oneTrip.plain) : flow.preview.chain) }) : legLine}
-        confirmLabel={he.rideEditing.mergeConfirm} loading={busy} onConfirm={() => { if (flow) next(flow, "confirm"); }}>
+        confirmLabel={he.rideEditing.mergeConfirm} cancelLabel={flow?.suggested ? he.rideEditing.chainNotNow : undefined}
+        loading={busy} onConfirm={() => { if (flow) next(flow, "confirm"); }}>
         {/* CM1 phase 3 (REQ item 260 c): the people on one of my two trips only */}
         {flow?.preview.chain?.oneTrip ? (
           <ChainOneTripChoice chain={{ side: flow.preview.chain.side, oneTrip: flow.preview.chain.oneTrip }} via={flow.chainVia}

@@ -69,7 +69,7 @@ async function fixture(service: SupabaseClient, week: string, shortPlaced: boole
     const { error: shortLink } = await service.from("ride_requests").insert({ ride_id: shortRide, request_id: short.id, role: "driver", leg: "both", car_mode: "keep" });
     if (shortLink) throw shortLink;
   }
-  return { carId: cars![0]!.id as string, shortId: short.id as string, dayId: day.id as string, dayRide, shortRide, at };
+  return { carId: cars![0]!.id as string, otherCarId: cars![1]!.id as string, shortId: short.id as string, dayId: day.id as string, dayRide, shortRide, at };
 }
 
 async function dragRequest(page: Page, requestId: string, carId: string, minutes: number) {
@@ -231,6 +231,70 @@ test("a member chains their two rides and has the one on the day trip picked up 
     await ask.getByTestId("chain-one-trip-via").click();
     await ask.getByRole("button", { name: he.rideEditing.mergeConfirm }).click();
     await expectChained(service, shortRide!, shortId, at("07:45"), at("14:00"), true);
+  } finally {
+    await member1.context.close().catch(() => undefined);
+    await cleanup(service, week);
+  }
+});
+
+// CM1 phase 4 (REQ item 260 d): placing / moving a ride next to the same person's ride offers "לאחד את הנסיעות?"
+test("the Sadran places the school run next to the day trip and is offered to chain them", { tag: ["@board"] }, async ({ browser }) => {
+  test.slow();
+  const week = "2042-03-16";
+  const service = serviceRoleClient();
+  await boardWeek(service, week);
+  await cleanup(service, week);
+  const { otherCarId, shortId, dayRide, at } = await fixture(service, week, false, "draft");
+  const sadran = await newSignedInPage(browser, SEEDED_USERS.sadran);
+  try {
+    const page = sadran.page;
+    await page.setViewportSize({ width: 1600, height: 1100 });
+    await page.goto(`/sadran/${NEVO_DEPARTMENT_ID}/${week}/board`);
+    await dragRequest(page, shortId, otherCarId, 465);
+    const ask = page.getByRole("dialog").filter({ hasText: he.dropAsk.chain.body.split("{{")[0]!.trim() });
+    await expect(ask).toContainText("פרדס חנה");
+    await expect(ask.getByRole("button", { name: he.dropAsk.chain.notNow })).toBeVisible();
+    await ask.getByRole("button", { name: he.dropAsk.chain.yes, exact: true }).click();
+    const dialog = page.getByTestId("merge-dialog");
+    await expect(dialog.getByTestId("merge-result-chain")).toBeVisible();
+    await dialog.getByTestId("merge-agreed").click();
+    await expectChained(service, dayRide, shortId, at("07:45"), at("14:00"));
+  } finally {
+    await sadran.context.close().catch(() => undefined);
+    await cleanup(service, week);
+  }
+});
+
+test("a member moves their school run next to their day trip and is offered to chain them", { tag: ["@siddur"] }, async ({ browser }) => {
+  test.slow();
+  const week = "2041-03-17";
+  const service = serviceRoleClient();
+  const admin = await publishedFixtureWeek(week);
+  await admin.auth.signOut();
+  await cleanup(service, week);
+  const { shortId, dayId, shortRide } = await fixture(service, week, true, "confirmed");
+  const member1 = await newSignedInPage(browser, SEEDED_USERS.member1);
+  try {
+    const page = member1.page;
+    await page.setViewportSize({ width: 1440, height: 1400 });
+    await page.goto(`/siddur/${NEVO_DEPARTMENT_ID}/${week}`);
+    const short = page.locator(`[data-ride-id="${shortRide}"]:visible`);
+    await expect(short).toBeVisible();
+    await page.getByTestId("edit-mode-button").locator("visible=true").click();
+    await short.scrollIntoViewIfNeeded();
+    const box = (await short.boundingBox())!;
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2 - 30, { steps: 8 });
+    await page.mouse.up();
+    const ask = page.getByRole("dialog").filter({ hasText: he.rideEditing.chainTitle });
+    await expect(ask).toContainText("פרדס חנה");
+    await expect(ask.getByRole("button", { name: he.rideEditing.chainNotNow })).toBeVisible();
+    await ask.getByRole("button", { name: he.rideEditing.mergeConfirm }).click();
+    await expect.poll(async () => (await service.from("ride_requests").select("ride_id").eq("request_id", dayId).maybeSingle()).data?.ride_id)
+      .toBe(shortRide);
+    await expect.poll(async () => (await service.from("ride_requests").select("chain").eq("ride_id", shortRide!).eq("request_id", shortId).maybeSingle()).data?.chain)
+      .toBe("before");
   } finally {
     await member1.context.close().catch(() => undefined);
     await cleanup(service, week);

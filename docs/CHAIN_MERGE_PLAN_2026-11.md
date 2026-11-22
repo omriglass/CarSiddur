@@ -1,6 +1,6 @@
 # CM1 — merging rides into one chained trip (plan, 2026-11-21)
 
-Owner request 2026-11-18 (docs/TODO.md "Merging rides into one chained trip", CM1 + (a)/(b)/(c)). Status: **plan approved 2026-11-21** (answers at the end); phase 1 built 2026-11-21, phase 2 built 2026-11-21 (`20261121200000_chain_merge.sql`, suite `chain_merge.sql`), phase 3 built 2026-11-22 (`20261122090000_chain_merge_via.sql`, suite `chain_merge_via.sql`); REQUIREMENTS item 260.
+Owner request 2026-11-18 (docs/TODO.md "Merging rides into one chained trip", CM1 + (a)/(b)/(c)). Status: **plan approved 2026-11-21** (answers at the end); phase 1 built 2026-11-21, phase 2 built 2026-11-21 (`20261121200000_chain_merge.sql`, suite `chain_merge.sql`), phase 3 built 2026-11-22 (`20261122090000_chain_merge_via.sql`, suite `chain_merge_via.sql`); phase 4 built 2026-11-22 (no migration; `features/rides/chainSuggest.ts`); REQUIREMENTS item 260.
 
 ## The problem today
 

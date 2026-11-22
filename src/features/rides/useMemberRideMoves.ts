@@ -6,7 +6,7 @@
 import { carOwnerIds, isCarOwner } from "@/lib/carOwners";
 import { useQueryClient } from "@tanstack/react-query";
 import { fromZonedTime } from "date-fns-tz";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { useCarSeatConfigs, useCars, useMaintenanceBlocks } from "@/features/fleet/hooks";
@@ -30,6 +30,8 @@ import { canMoveOntoMyCar, ownCarMoveBody, rideDayPublished } from "./ownCarMove
 import { isRideRelated, rideMovableByMember } from "./relatedRide";
 import { isRideDayEditable } from "./rideDayEditable";
 import { servedOf } from "./servedOf";
+import type { BoardRide } from "./api";
+import { chainNeighbours, chainPairKey, chainTripOf } from "./chainSuggest";
 import { memberMergeTarget } from "./memberMerge";
 import { useMakeRoom } from "./useMakeRoom";
 import { useMemberMerge } from "./useMemberMerge";
@@ -158,7 +160,25 @@ export function useMemberRideMoves({ departmentId, weekStart, week, profileId, m
       await queryClient.invalidateQueries({ queryKey: siddurKeys.carLocations(departmentId, weekStart) });
       onDone?.();
       toast.success(he.rideEditing.saved);
+      if (input.id) void suggestChain(input.id);
     } catch { /* Mutation displays the database validation error. */ }
+  }
+
+  // CM1 phase 4 (REQ item 260 d): after my move, another ride of mine next to it may chain with it - offered through the
+  // usual chain dialog (with "לא עכשיו"), only when the server says it chains; a declined pair is not offered again here.
+  const declinedChains = useRef(new Set<string>());
+  async function suggestChain(rideId: string) {
+    if (!departmentId || !weekStart || !profileId) return;
+    const fresh = queryClient.getQueryData<BoardRide[]>(siddurKeys.boardRides(departmentId, weekStart)) ?? [];
+    const moved = fresh.find((r) => r.id === rideId);
+    const trip = moved ? chainTripOf(moved) : null;
+    if (!moved || !trip) return;
+    for (const other of chainNeighbours(trip, fresh, turnaroundMinutes, declinedChains.current).slice(0, 2)) {
+      const ride = fresh.find((r) => r.id === other.rideId);
+      if (!ride || !ownsEditableRide(ride.id as string) || !other.people.includes(`p:${profileId}`)) continue;
+      const opened = await memberMerge.start(moved, { ride, requestId: other.requestId, name: "", own: true }, { suggested: true });
+      if (opened) { declinedChains.current.add(chainPairKey(trip.requestId, other.requestId)); return; }
+    }
   }
 
   /** A drag / resize result: same day as the ride, the given car; `endMinutes` absent = keep the ride's length. */

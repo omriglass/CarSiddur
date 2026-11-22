@@ -48,6 +48,8 @@ export type DropAskSpec =
   | { kind: "merge"; guest: string; host: string; car: string }
   | { kind: "split"; guest: string; host: string; outcome: SplitOutcome | null }
   | { kind: "transfer"; guest: string; host: string; from: string; car: string }
+  /** CM1 phase 4 (REQ item 260 d): the same person's ride next to the one just placed / moved chains with it. */
+  | { kind: "chain"; route: string }
   | { kind: "unplace"; name: string; /** REQ §13.194: a reservation is deleted, not returned to the list. */ reservation?: boolean };
 export type DropAsk = DropAskSpec & { resolve: (answer: DropAnswer) => void };
 

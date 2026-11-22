@@ -393,6 +393,8 @@ export const he = {
     mergeTitle: "לצרף את {{name}} לנסיעה שלך?",
     /** CM1 phase 2 (REQ item 260 b): two of my rides, one after the other, become one (wording to approve). */
     chainTitle: "לחבר את שתי הנסיעות שלך לנסיעה אחת?",
+    /** CM1 phase 4 (REQ item 260 d): offered after a move lands next to another ride of mine. */
+    chainNotNow: "לא עכשיו",
     mergeConfirm: "לצרף",
     mergeDone: "{{name}} צורף/ה לנסיעה שלך",
     mergeTalkedTitle: "דיברת עם {{names}} על השינוי?",

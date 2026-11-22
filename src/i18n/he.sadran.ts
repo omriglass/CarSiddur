@@ -1035,6 +1035,13 @@ export const heSadran = {
       help: "ההמשך פותח את חלון האיחוד. ביטול בכל שלב לא משנה כלום.",
       confirm: "המשך — לאחד עם {{host}}",
     },
+    /** CM1 phase 4 (REQ item 260 d): a ride placed / moved next to the same person's ride. */
+    chain: {
+      title: "לאחד את הנסיעות?",
+      body: "אפשר לחבר אותן לנסיעה אחת: {{route}}",
+      yes: "לאחד",
+      notNow: "לא עכשיו",
+    },
     unplace: {
       title: "להוציא את הנסיעה של {{name}} מהשיבוץ?",
       body: "הבקשה תחזור לרשימת \"לא שובצו\".",
