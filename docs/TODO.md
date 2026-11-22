@@ -2100,3 +2100,7 @@ Scope: everything unreleased since v2026.11.17-3, AI off. Thorough on board plac
 ### Notes
 - Sanity checks: proposal answers (origin, merge, external, shift) applied or declined correctly within minutes; the children-overlap banner on the board is clear; the "לשבץ בכל זאת?" chain-break dialog, the one-way join, per-day publish and held-notice gating worked. Car guides and the waiting-list column were not examined.
 - Left unmet: Sun 4, Mon 4, Tue 11, Wed 12, Thu 10, Sat 1 (Netanya/Haifa origins, peak-hour no-car, drop-off return legs with no driver); days published with `--allow-unanswered`.
+
+**Owner triage 2026-11-22 (QA run 22):** order: the chain bugs B1–B5 first (reproduced on the QA week), then the other bugs, then the UI items.
+- B1: cancelling one trip of a chained ride **asks**; the default answer cancels only that trip (the rest of the ride stays). U1: offer the chain ask even when other people are on either ride. B6: not now. M2: no. F1, F3: no. F2: a real issue (check rush-hour times). M5: verify.
+- U2: a real problem with small rides. U3: name only the affected people. U4, U6, U11: yes. U5: a hint. U7: fine as is. U8: mark it on the board. U9: no. U10: the wordings yes; the "יום 1/2" on a guest's one-leg card (the host's series details shown to the guest, same cause as B11) is minor. U12: dropped.
