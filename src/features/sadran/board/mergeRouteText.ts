@@ -1,6 +1,6 @@
 import { tv } from "@/i18n/he";
 
-/** The merged leg in words: the joiner's own pickup / drop-off named ("עין שמר (הורדת עומר)"), every other place as is. */
+/** The merged leg in words: the joiner's own pickup / drop-off named ("עין שמר (משאירים את עומר)"), every other place as is. */
 export function mergeRouteText(points: readonly { name: string; requestId: string | null; kind: string }[], joinerId: string | undefined, joinerName: string): string {
   return points.map((point) => {
     if (!joinerId || point.requestId !== joinerId) return point.name;

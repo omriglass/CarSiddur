@@ -7,7 +7,7 @@ import { routeLabel } from "@/lib/routeLabel";
 import type { ProposalType } from "@/lib/enums";
 
 import { servedOf } from "../applySolve";
-import { applyServerMergeTimes, mergeLegSummary, mergePayloadLeg, mergePayloadLegs, previewMerge, type MergeRouteContext, type ServerMergePreview } from "./mergeProposal";
+import { applyServerMergeTimes, mergeAffectedParties, mergeLegSummary, mergePayloadLeg, mergePayloadLegs, previewMerge, type MergeRouteContext, type ServerMergePreview } from "./mergeProposal";
 import { buildProposalPayload, resolveShiftTimes, seriesSpanOf } from "../proposals/buildProposalPayload";
 import { externalSuggestionFor, proposalPreviewText, proposalTemplateVariant, shiftTimesUnchanged } from "../proposals/proposalText";
 
@@ -133,7 +133,14 @@ export function buildDraftInput(prefill: ComposerPrefill, ctx: DraftInputContext
       .flatMap((id) => { const ride = ctx.rides.find((r) => r.id === id); return ride ? [ride] : []; })
     : [];
   const hostRequestIds = new Set(hostRides.flatMap((ride) => servedOf(ride).map((entry) => entry.request_id)));
-  const partyProfileIds = type === "merge"
+  // R22B9 (owner 2026-11-22): a merge onto one ride needs only the driver and the requesters whose part changes; the
+  // server reads them from the payload (`affected_parties`)
+  const affected = type === "merge" && hostRides.length === 1 && hostRide && ctx.route
+    ? mergeAffectedParties(hostRide, request, mergePayloadLeg(prefill.payload, request), ctx.route, mergedPreview, ctx.requests) : null;
+  const sentPayload = affected ? { ...payload, affected_parties: affected.requesterIds.filter((id) => id !== request.requester_id) } : payload;
+  const partyProfileIds = affected
+    ? [...new Set([hostRide?.driver_id, ...affected.requesterIds].filter((id): id is string => !!id && id !== request.requester_id))]
+    : type === "merge"
     ? [...new Set([
         ...hostRides.map((ride) => ride.driver_id),
         ...ctx.requests.filter((r) => hostRequestIds.has(r.id)).map((r) => r.requester_id),
@@ -146,7 +153,7 @@ export function buildDraftInput(prefill: ComposerPrefill, ctx: DraftInputContext
       requestId: request.id,
       rideId: prefill.rideId,
       type,
-      payload: payload as unknown as Json,
+      payload: sentPayload as unknown as Json,
       reasonHe,
       partyProfileIds,
     },

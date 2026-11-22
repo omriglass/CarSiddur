@@ -150,7 +150,8 @@ export function mergeAffectedParties(host: BoardRide, request: WeekRequestRow, l
     before: hostRouteTimed(host, leg, ctx), merged: preview.route,
     startsAt: host.starts_at, newStartsAt: preview.startsAt, endsAt: host.ends_at, newEndsAt: preview.endsAt, trips,
   });
-  return { requestIds };
+  const requesterIds = [...new Set([...requestIds].flatMap((id) => { const who = byId.get(id)?.requester_id; return who ? [who] : []; }))].sort();
+  return { requestIds, requesterIds };
 }
 
 /** The host ride as it would be once `request` joins on `leg`. */

@@ -942,8 +942,8 @@ export const heSadran = {
     resultHeading: "התוצאה",
     resultCar: "{{car}} · {{driver}} נוהג/ת",
     resultPickup: "{{place}} (איסוף {{name}})",
-    /** R22B9: the joiner's drop-off on the merged route (wording to approve). */
-    resultDropOff: "{{place}} (הורדת {{name}})",
+    /** R22B9: the joiner's drop-off on the merged route (owner-approved 2026-11-22). */
+    resultDropOff: "{{place}} (משאירים את {{name}})",
     /** CM1 phase 2 (REQ item 260 b): two trips one after the other merge into one ride (wording to approve). */
     chainRoute: "הנסיעות יתחברו לנסיעה אחת: {{route}}",
     // CM1 phase 3 (REQ item 260 c): the people on one of the two trips only (wordings to approve)
@@ -978,6 +978,8 @@ export const heSadran = {
       already_on_ride: "הבקשה כבר בנסיעה הזו (או שהצעה זהה כבר נשלחה)",
       /** R13B18: e.g. the out leg of a pickup-only request (its drop-off was cancelled). */
       leg_missing: "אי אפשר לצרף — לבקשה אין את הכיוון הזה (אולי בוטל)",
+      /** R22B10: a day of a multi-day ride drives only some legs (wording to approve). */
+      series_day_leg: "אי אפשר לצרף — ביום הזה של הנסיעה הרב־יומית אין נסיעה בכיוון הזה",
       /** REQ §13.112 (c): the ride serves a "N hours between A and B" request whose length never changes. */
       window_locked: "אי אפשר לצרף — הנסיעה היא בחלון זמן קבוע והצירוף היה מאריך אותה",
       /** REQ item 246 g: a stop's stated hour would move beyond its flexibility. */

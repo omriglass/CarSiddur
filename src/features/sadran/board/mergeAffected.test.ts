@@ -47,7 +47,7 @@ describe("mergeAffectedRequestIds (R22B9 / R22U3)", () => {
 describe("mergeRouteText (R22B9)", () => {
   it("names only the joiner's own places, a drop-off as a drop-off", () => {
     const route = [p(0, "home", "origin", "host", "07:15"), p(1, "Ein Shemer", "alight", "dana", "07:20"), p(2, "Zichron", "alight", "joiner", "07:32")];
-    expect(mergeRouteText(route, "joiner", "Omer")).toBe("home ← Ein Shemer ← Zichron (הורדת Omer)");
+    expect(mergeRouteText(route, "joiner", "Omer")).toBe("home ← Ein Shemer ← Zichron (משאירים את Omer)");
     expect(mergeRouteText([p(0, "home", "origin", "host", "07:15"), p(1, "Maanit", "board", "joiner", "07:20")], "joiner", "Omer")).toBe("home ← Maanit (איסוף Omer)");
   });
 });

@@ -12914,7 +12914,11 @@ begin
       end if;
       host_versions:=host_versions||jsonb_build_object(host.id::text,host.version);
       host_snapshots:=host_snapshots||jsonb_build_object(host.id::text,jsonb_build_object('fp',public.ride_merge_fingerprint(host.id)));
-      required_parties:=required_parties||array[host.driver_id]||array(select q.requester_id from public.ride_requests rr join public.requests q on q.id=rr.request_id where rr.ride_id=host.id);
+      -- R22B9 (owner 2026-11-22): the board sends `affected_parties`, the requesters on the host ride whose part the
+      -- merge changes; only they (and the driver) must accept. Without it everyone on the ride must, as before.
+      required_parties:=required_parties||array[host.driver_id]||array(select q.requester_id from public.ride_requests rr join public.requests q on q.id=rr.request_id where rr.ride_id=host.id
+        and (p_created_via<>'sadran' or coalesce(jsonb_typeof(p_payload->'affected_parties'), '')<>'array'
+             or q.requester_id::text in (select jsonb_array_elements_text(p_payload->'affected_parties'))));
     end loop;
     if (select count(*) from jsonb_object_keys(host_versions))<>cardinality(target_ids) then raise exception 'ride_not_found'; end if;
     select coalesce(jsonb_object_agg(r.id::text,r.version),'{}'),
