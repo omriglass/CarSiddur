@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 
 import { paths } from "../src/app/routes";
 import { he } from "../src/i18n/he";
-import { NEVO_DEPARTMENT_ID, newSignedInPage, SEEDED_USERS, serviceRoleClient, signIn, showWholeCarHistory } from "./helpers";
+import { NEVO_DEPARTMENT_ID, newSignedInPage, SEEDED_USERS, serviceRoleClient, signIn, showWholeCarHistory, openCarReports } from "./helpers";
 
 /**
  * REQ item 150 (a) + (c): the admin sets "מנהל/ת רכבים" on a membership; a car admin manages the department's
@@ -54,6 +54,7 @@ test("admin sets car admin; car admin corrects kilometrage but /my stays persona
 
       await test.step("kilometrage reading: saved, then a lower one is refused", async () => {
         await member2.goto(paths.car(SHARED_CAR_ID));
+        await openCarReports(member2);
         const reportDialog = member2.getByRole("dialog");
         await member2.getByTestId("car-name-report-trigger").click();
         await reportDialog.getByRole("button", { name: he.carCare.homeKilometrageTitle }).click();
@@ -92,9 +93,11 @@ test("admin sets car admin; car admin corrects kilometrage but /my stays persona
       try {
         await expect(member1.getByRole("heading", { name: he.carPage.homeMyCarsTitle })).toBeVisible();
         await member1.goto(paths.car(SHARED_CAR_ID));
+        await openCarReports(member1);
         await expect(member1.getByTestId("car-current-km")).toContainText("11,500");
         await expect(member1.getByTestId("car-km-correct")).toHaveCount(0);
         await member1.goto(paths.car(RESPONSIBLE_CAR_ID));
+        await openCarReports(member1);
         await expect(member1.getByTestId("car-km-correct")).toBeVisible();
       } finally {
         await ctx.close();

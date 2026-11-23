@@ -250,6 +250,15 @@ export async function openRideSheetTab(page: Page, tab: "summary" | "merged" | "
   await expect(trigger).toHaveAttribute("data-state", "active");
 }
 
+/** REQ item 264: opens the car page's collapsible "דיווחים" (it may already have opened itself for a car-check prompt). */
+export async function openCarReports(page: Page): Promise<void> {
+  const toggle = page.getByTestId("car-reports-toggle");
+  await expect(async () => {
+    if ((await toggle.getAttribute("aria-expanded")) !== "true") await toggle.click();
+    await expect(toggle).toHaveAttribute("aria-expanded", "true", { timeout: 500 });
+  }).toPass();
+}
+
 /** CR1 (REQ item 257): the car page's history shows the latest three entries; "הכול (n)" shows the rest. */
 export async function showWholeCarHistory(page: Page): Promise<void> {
   const history = page.getByTestId("car-history");

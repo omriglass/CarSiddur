@@ -38,6 +38,7 @@ import { CarFactsCard } from "./CarFactsCard";
 import { CarIssueSheet, type IssueTarget } from "./CarIssueSheet";
 import { CarOpenIssues } from "./CarOpenIssues";
 import { CarRegistrationCard } from "./CarRegistrationCard";
+import { CarReportsSection } from "./CarReportsSection";
 import { CarStatusSelect } from "./CarStatusSelect";
 import { useCarCareHistoryQuery, useCarCurrentKmQuery, useCarIssueHistoryQuery, useCarOdometerHistoryQuery, useOpenCarIssuesQuery } from "../hooks";
 import { formatPlate } from "@/lib/plate";
@@ -196,7 +197,7 @@ export function CarManageScreen({ car, isAdmin, canEdit, canManageCar, canDefine
   const [filter, setFilter] = useState<CarHistoryFilter>("all");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
-  const [logView, setLogView] = useState<"wash" | "km" | null>(null);
+  const [logView, setLogView] = useState<"wash" | "km" | "problem" | "tires" | "urea" | null>(null);
   const [historyAll, setHistoryAll] = useState(false);
   const [selectedIssue, setSelectedIssue] = useState<(IssueTarget & { reporterId?: string | null }) | null>(null);
   const openIssuesQuery = useOpenCarIssuesQuery([car.id]);
@@ -289,16 +290,22 @@ export function CarManageScreen({ car, isAdmin, canEdit, canManageCar, canDefine
         codeVisible={codeVisible}
       />
       <CarOwnersCard car={car} canManageOwners={canManageOwners} />
-      {/* REQ item 259: "איך עושים…" — the car's step-by-step guides. */}
-      <CarGuidesCard car={car} canManage={canManageCar} canDefine={canDefineChecklist} />
-      <CarMoodCard
-        lastWashAt={merged.find((entry) => entry.kind === "wash")?.createdAt ?? null}
-        onLogWash={() => setLogView("wash")}
-      />
-      <CarKilometrageCard car={car} current={currentKmQuery.data ?? null} loading={currentKmQuery.isLoading} canCorrect={canManageCar} onLogKm={() => setLogView("km")} />
-      {/* R20U3 (QA run 20): the wash and kilometrage cards open their step of the car report dialog. */}
-      {logView ? <CarReportDialog carId={car.id} carName={car.name} open initialView={logView} onOpenChange={(open) => { if (!open) setLogView(null); }} /> : null}
       <CarMaintenancePanel car={car} />
+      {/* REQ item 264: the next passenger's requests, then one collapsible "דיווחים"; the car check is in it for managers only. */}
+      {canManageCar ? <CarTasksManagerCard car={car} /> : null}
+      <CarReportsSection carId={car.id} isDiesel={car.fuel_type === "diesel"} onReport={setLogView}>
+        <CarMoodCard
+          lastWashAt={merged.find((entry) => entry.kind === "wash")?.createdAt ?? null}
+          onLogWash={() => setLogView("wash")}
+        />
+        {/* A replacement car has its own odometer: no readings into the regular car's history while it is replaced. */}
+        {car.is_replaced ? null : (
+          <CarKilometrageCard car={car} current={currentKmQuery.data ?? null} loading={currentKmQuery.isLoading} canCorrect={canManageCar} onLogKm={() => setLogView("km")} />
+        )}
+        {showManage ? <CarChecklistCard car={car} canManageCar={canManageCar} canDefine={canDefineChecklist} /> : null}
+      </CarReportsSection>
+      {/* R20U3 (QA run 20): the report rows and cards open their step of the car report dialog. */}
+      {logView ? <CarReportDialog carId={car.id} carName={car.name} open initialView={logView} onOpenChange={(open) => { if (!open) setLogView(null); }} /> : null}
 
       {tier(he.carPage.tierMore)}
       <section className="space-y-3" data-testid="car-history">
@@ -351,8 +358,6 @@ export function CarManageScreen({ car, isAdmin, canEdit, canManageCar, canDefine
       {showManage ? (
         <>
           {tier(he.carPage.tierManage)}
-          {canManageCar ? <CarTasksManagerCard car={car} /> : null}
-          <CarChecklistCard car={car} canManageCar={canManageCar} canDefine={canDefineChecklist} />
           {canSetStatusOnly && !canEdit ? <CarStatusSelect car={car} /> : null}
           <CarRegistrationCard car={car} canEdit={canEdit} canEditSeatConfigs={isAdmin || (canEdit && car.type === "temporary")} />
           {canEdit || canManageCar ? (
@@ -366,9 +371,9 @@ export function CarManageScreen({ car, isAdmin, canEdit, canManageCar, canDefine
             />
           ) : null}
         </>
-      ) : (
-        <CarChecklistCard car={car} canManageCar={false} canDefine={false} />
-      )}
+      ) : null}
+      {/* REQ item 264: the guides are read now and then and rarely edited - last on the page. */}
+      <CarGuidesCard car={car} canManage={canManageCar} canDefine={canDefineChecklist} />
     </div>
   );
 }

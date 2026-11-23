@@ -45,7 +45,7 @@ export interface CarReportDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /** Opens straight on one flow (REQ item 150 b: a car task's button), "back" still leads to the menu. */
-  initialView?: "tires" | "wash" | "km";
+  initialView?: "problem" | "tires" | "wash" | "urea" | "km";
 }
 
 /**
@@ -56,7 +56,14 @@ export interface CarReportDialogProps {
  * "use it unless proven unnecessary", CLAUDE.md Conventions).
  */
 export function CarReportDialog({ carId, carName, open, onOpenChange, initialView }: CarReportDialogProps) {
-  const [view, setView] = useState<View>(initialView ?? "home");
+  const [requestedView, setView] = useState<View>(initialView ?? "home");
+  // FU2 (REQ item 219): urea only on a diesel car (the fuel type is on the car row). Owner 2026-11-13: no "needs urea"
+  // report — whoever sees it fills it.
+  const carRow = useCarQuery(open ? carId : undefined).data;
+  const isDiesel = carRow?.fuel_type === "diesel";
+  // REQ item 264: a replacement car has its own odometer, so no reading while the car is replaced (also from a car task).
+  const isReplaced = !!carRow?.is_replaced;
+  const view: View = requestedView === "km" && isReplaced ? "home" : requestedView;
   // R20B9: a double tap on "סיימתי" logs once.
   const tapLock = useTapLock(`${open}:${view}`);
   const [tires, setTires] = useState(DEFAULT_TIRE_STATES);
@@ -68,10 +75,6 @@ export function CarReportDialog({ carId, carName, open, onOpenChange, initialVie
   const logCarCareMutation = useLogCarCareMutation();
   const logKilometrageMutation = useLogCarKilometrageMutation();
   const currentKmQuery = useCarCurrentKmQuery(carId, open && view === "km");
-  // FU2 (REQ item 219): urea only on a diesel car (the fuel type is on the car row). Owner 2026-11-13: no "needs urea"
-  // report — whoever sees it fills it.
-  const carRow = useCarQuery(open ? carId : undefined).data;
-  const isDiesel = carRow?.fuel_type === "diesel";
   const guidesQuery = useCarGuidesQuery(open ? carId : undefined);
   // CR1 (REQ item 257): the known open issues before a new report; the recommended pressure above the tires.
   const openIssues = useOpenCarIssuesQuery(open && view === "problem" ? [carId] : []).data ?? [];
@@ -206,14 +209,17 @@ export function CarReportDialog({ carId, carName, open, onOpenChange, initialVie
                 <span className="font-medium">{he.carCare.homeUreaFillTitle}</span>
               </button>
             ) : null}
-            <button
-              type="button"
-              onClick={() => setView("km")}
-              className="flex min-h-16 items-center gap-3 rounded-lg border p-4 text-start transition-smooth hover:bg-accent/40"
-            >
-              <Route className="size-6 shrink-0 text-primary" aria-hidden="true" />
-              <span className="font-medium">{he.carCare.homeKilometrageTitle}</span>
-            </button>
+            {isReplaced ? null : (
+              <button
+                type="button"
+                onClick={() => setView("km")}
+                data-testid="car-report-km"
+                className="flex min-h-16 items-center gap-3 rounded-lg border p-4 text-start transition-smooth hover:bg-accent/40"
+              >
+                <Route className="size-6 shrink-0 text-primary" aria-hidden="true" />
+                <span className="font-medium">{he.carCare.homeKilometrageTitle}</span>
+              </button>
+            )}
             {/* REQ item 259: "איך עושים…" — only when the car has guides. */}
             {guidesQuery.data?.length ? (
               <button

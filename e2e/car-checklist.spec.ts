@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 
 import { paths } from "../src/app/routes";
 import { he } from "../src/i18n/he";
-import { NEVO_DEPARTMENT_ID, newSignedInPage, SEEDED_USERS, serviceRoleClient } from "./helpers";
+import { NEVO_DEPARTMENT_ID, newSignedInPage, SEEDED_USERS, serviceRoleClient, openCarReports } from "./helpers";
 
 /**
  * REQ item 150 (d): a car admin defines the department's checklist; a new responsible person is asked to complete
@@ -36,6 +36,7 @@ test("car admin defines the checklist, the new responsible person completes it: 
     try {
       await test.step("the car admin defines three items (not a Sadran, not an admin)", async () => {
         await carAdmin.goto(paths.car(CAR_ID));
+        await openCarReports(carAdmin);
         await carAdmin.getByTestId("checklist-edit-link").click();
         await expect(carAdmin.getByTestId("checklist-editor")).toBeVisible();
         let added = 0;

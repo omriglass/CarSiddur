@@ -3,7 +3,7 @@ import { expect, test } from "@playwright/test";
 import { paths } from "../src/app/routes";
 import { he, tv } from "../src/i18n/he";
 import { formatPlate } from "../src/lib/plate";
-import { NEVO_DEPARTMENT_ID, newSignedInPage, SEEDED_USERS, serviceRoleClient } from "./helpers";
+import { NEVO_DEPARTMENT_ID, newSignedInPage, SEEDED_USERS, serviceRoleClient, openCarReports } from "./helpers";
 
 /**
  * CR1 (REQ item 257, owner 2026-11-17/19/20): the car page on one page ordered by who needs what — the plate as
@@ -84,6 +84,13 @@ test("car page: formatted plate, open issues on top, in-place edits, the report 
     await expect(page.getByTestId("car-open-issues")).toContainText(description);
     await expect(page.getByTestId("car-details-tires-edit")).toHaveCount(0);
     await expect(page.getByText(he.carPage.tierManage)).toHaveCount(0);
+    // REQ item 264: a plain member gets the collapsible reports, closed, without the car check.
+    await expect(page.getByTestId("car-reports-toggle")).toHaveAttribute("aria-expanded", "false");
+    await expect(page.getByTestId("car-mood-card")).toHaveCount(0);
+    await openCarReports(page);
+    await expect(page.getByTestId("car-report-problem")).toBeVisible();
+    await expect(page.getByTestId("car-mood-card")).toBeVisible();
+    await expect(page.getByTestId("car-checklist-card")).toHaveCount(0);
     await page.getByTestId("car-name-report-trigger").first().click();
     const dialog = page.getByRole("dialog");
     await dialog.getByText(he.carCare.homeProblemTitle).click();
