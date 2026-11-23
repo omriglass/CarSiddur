@@ -143,6 +143,7 @@ export const he = {
   },
   siddurCar: {
     replacementName: "{{name}} (חלופי)",
+    replacementTag: "(חלופי)",
     withCode: "{{name}} · {{code}}",
   },
   /**

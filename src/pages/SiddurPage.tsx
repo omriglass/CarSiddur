@@ -60,7 +60,7 @@ import { CarNowButton } from "@/features/requests/components/CarNowButton";
 import { QuickRequestSheet } from "@/features/requests/components/QuickRequestSheet";
 import { rideDescriptionFields } from "@/lib/ridePublicDetails";
 import { rideCoordinatorNoteLines, rideCoordinatorNoteFields } from "@/lib/rideCoordinatorNotes";
-import { siddurCarName } from "@/lib/siddurCarName";
+import { siddurCarName, siddurCarParts } from "@/lib/siddurCarName";
 import { VolunteerDriverChange } from "@/features/rides/components/VolunteerDriverChange";
 import { VolunteerDriverPanel } from "@/features/rides/components/VolunteerDriverPanel";
 import { isDrivenOnRide, volunteerDriverOf } from "@/features/rides/driverWanted";
@@ -476,6 +476,7 @@ export function SiddurPage() {
     return (carsQuery.data ?? []).map((c) => ({
       id: c.id,
       name: siddurCarName(c),
+      headerParts: siddurCarParts(c),
       group: c.type,
       // R2B14: the away place only on the days the car is actually away (at the selected day's start).
       locationBadge: !(activeDay ?? weekStart) ? undefined : carAwayPlaceAtDayStart({

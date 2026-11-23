@@ -53,6 +53,8 @@ import { peekAnchorOf } from "./peekAnchor";
 export interface WeekGridCar {
   id: string;
   name: string;
+  /** The siddur's header: the name may wrap, the replacement mark and the code keep their own line so a long name never hides them (owner 2026-11-23). */
+  headerParts?: { name: string; replaced: boolean; code: string | null };
   /** Temporary cars are tinted and separated with a stronger divider (UX_FLOWS §4.2). */
   group?: "shared" | "temporary" | "phantom";
   /** e.g. "בבנימינה" while away from its base — shown next to the car name. */
@@ -365,6 +367,25 @@ const DEFAULT_END = 24 * 60;
 /** "23:00" in text-xs (12px) tabular-nums is ~31px wide (5 glyphs of ~6.1px, digits are the widest); +2px slack and 1px each side of padding (`px-px`) plus the 1px end border. Narrower than this clips the label. */
 const HOUR_COL_WIDTH_PX = 36;
 const CAR_COL_WIDTH_PX = 96;
+/** Longer than this, a name steps down a font size on a phone's narrow column. */
+const LONG_CAR_NAME_CHARS = 14;
+
+function CarHeaderName({ car }: { car: WeekGridCar }) {
+  const name = car.headerParts?.name ?? car.name;
+  const code = car.headerParts?.code;
+  const replaced = car.headerParts?.replaced;
+  return (
+    <span className="flex min-w-0 flex-col items-center" title={car.name}>
+      <span className={cn("min-w-0 whitespace-normal break-words line-clamp-2", name.length > LONG_CAR_NAME_CHARS && "text-xs md:text-sm")}>{name}</span>
+      {replaced || code ? (
+        <span className="flex flex-wrap items-center justify-center gap-x-1 text-xs">
+          {replaced ? <span className="whitespace-nowrap" data-testid="week-grid-car-replaced">{he.siddurCar.replacementTag}</span> : null}
+          {code ? <span className="whitespace-nowrap font-semibold" dir="ltr" data-testid="week-grid-car-code">{code}</span> : null}
+        </span>
+      ) : null}
+    </span>
+  );
+}
 const HEADER_ROW_HEIGHT_PX = 48;
 /**
  * Owner 2026-10-10: on a phone the table scrolls with the page too (ONE scroller), exactly like `lg`+:
@@ -1646,14 +1667,14 @@ export function WeekGrid({
                       setMenuCarId((cur) => (cur === car.id ? null : car.id));
                     }}
                   >
-                    <span className="min-w-0 whitespace-normal break-words line-clamp-2" title={car.name}>{car.name}</span>
+                    <CarHeaderName car={car} />
                     <ChevronDown className="size-3 shrink-0 text-muted-foreground" aria-hidden="true" />
                   </button>
                 </CarMenu>
               ) : (
                 <>
                   <CarFront className="size-3.5 shrink-0 text-primary md:size-4" aria-hidden="true" />
-                  <span className="min-w-0 whitespace-normal break-words line-clamp-2" title={car.name}>{car.name}</span>
+                  <CarHeaderName car={car} />
                 </>
               )}
             </span>
