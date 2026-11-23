@@ -1,9 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMemo } from "react";
 
 import { useSession } from "@/features/auth/useSession";
 
 import { useUpdateCarMutation } from "@/features/admin/cars/hooks";
 import type { Car, CarUpdate } from "@/features/admin/cars/api";
+import { privateCarUsersMap, type PrivateCarUsers } from "@/lib/carOwners";
+import type { CarUseScope } from "@/lib/enums";
 
 import {
   fetchCarById,
@@ -20,6 +23,8 @@ import {
   fetchUpcomingCarRides,
   addCarOwner,
   removeCarOwner,
+  setCarUseScope,
+  fetchPrivateCarUsers,
   setCarStatusOnly,
   setOwnPrivateCar,
 } from "./api";
@@ -146,6 +151,33 @@ export function useCarOwnerMutation() {
       queryClient.invalidateQueries({ queryKey: ["fleet"] }),
     ]),
   });
+}
+
+/** PE1 (REQ item 263): an owner sets who else may use the private car. */
+export function useCarUseScopeMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ carId, scope }: { carId: string; scope: CarUseScope }) => setCarUseScope(carId, scope),
+    onSuccess: () => Promise.all([
+      queryClient.invalidateQueries({ queryKey: carKeys.all }),
+      queryClient.invalidateQueries({ queryKey: ["fleet"] }),
+    ]),
+  });
+}
+
+/**
+ * PE1 (REQ item 263): who besides the owners may use each private car of `departmentId` that week (co-parents, named
+ * ride editors, Sadranim or everyone, by the car's level) - for the browser's instant checks (`mayUseCar`); the server
+ * decides for real.
+ */
+export function usePrivateCarUsers(departmentId: string | null | undefined, weekStart: string | null | undefined): PrivateCarUsers {
+  const query = useQuery({
+    queryKey: carKeys.privateCarUsers(departmentId ?? undefined, weekStart ?? null),
+    queryFn: () => fetchPrivateCarUsers(departmentId as string, weekStart ?? null),
+    enabled: !!departmentId,
+    staleTime: 60_000,
+  });
+  return useMemo(() => privateCarUsersMap(query.data ?? []), [query.data]);
 }
 
 /** CR1 (REQ item 257): the open issues of `carIds` (empty = no query). */

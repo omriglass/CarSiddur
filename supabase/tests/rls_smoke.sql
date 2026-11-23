@@ -650,6 +650,7 @@ begin
     ('cars', 'tire_pressure_front_psi', 'public'),
     ('cars', 'tire_pressure_rear_psi', 'public'),
     ('cars', 'model', 'public'),
+    ('cars', 'use_scope', 'public'),
     ('departments', 'id', 'public'),
     ('departments', 'name', 'public'),
     ('departments', 'slug', 'public'),

@@ -32,4 +32,10 @@ describe("private car rule (QB20)", () => {
     expect(privateCarBlocks({ cars, viewerId: "owner" } as never, "priv", "u")).toBe(false);
     expect(privateCarBlocks({ cars, viewerId: "someone" } as never, "priv", "u")).toBe(true);
   });
+  it("privateCarBlocks: PE1 - a requester or viewer the car's level allows counts as an owner", () => {
+    const privateCarUsers = new Map([["priv", new Set(["coparent"])]]);
+    expect(privateCarBlocks({ cars, privateCarUsers } as never, "priv", "coparent")).toBe(false);
+    expect(privateCarBlocks({ cars, privateCarUsers, viewerId: "coparent" } as never, "priv", "u")).toBe(false);
+    expect(privateCarBlocks({ cars, privateCarUsers } as never, "priv", "u")).toBe(true);
+  });
 });

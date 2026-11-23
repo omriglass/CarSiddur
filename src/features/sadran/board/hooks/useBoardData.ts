@@ -20,6 +20,7 @@ import { addedPeopleNames, riderShortNames } from "@/features/rides/ridePeople";
 import { rideCardLabel } from "@/features/rides/rideGridLabel";
 import { useRideSummaries } from "@/features/rides/useRideSummaries";
 import { fetchCarSeatConfigs } from "@/features/fleet/api";
+import { usePrivateCarUsers } from "@/features/cars/hooks";
 import { useDestinations, useRideTypes } from "@/features/fleet/hooks";
 import { buildWeek } from "@/features/solverBridge/buildSolverInput";
 import { useCarLocations, useDepartments } from "@/features/siddur/hooks";
@@ -113,6 +114,8 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
 
   const weekRowQuery = useWeekRow(departmentId, weekStart);
   const carsQuery = useCarsForDepartment(departmentId);
+  // PE1 (REQ item 263): who besides the owners may use each private car this week
+  const privateCarUsers = usePrivateCarUsers(departmentId, weekStart);
   const carLocationsQuery = useCarLocations(departmentId, weekStart);
   const rideTypesQuery = useRideTypes(departmentId);
   const maintenanceQuery = useMaintenanceBlocks(departmentId);
@@ -1046,6 +1049,7 @@ export function useBoardData(departmentId: string, weekStart: string, focusedCon
     turnaroundMinutes: weekSettings.turnaroundMinutes,
     isAdmin,
     viewerId: profileData?.id,
+    privateCarUsers,
     awayByCarId: conflictScan?.awayByCarId,
     weekStartMs,
     // REQUIREMENTS §13.93: each car's own base, already defaulted to the department home.

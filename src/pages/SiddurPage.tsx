@@ -1,5 +1,5 @@
 import { withFreedCarChoice } from "@/lib/appSurface";
-import { carOwnerIds, isCarOwner } from "@/lib/carOwners";
+import { carOwnerIds, carUserIds, mayUseCar } from "@/lib/carOwners";
 import { cancelRidePreview, removeMePreview } from "@/features/rides/freedCarRequests";
 import { FreedCarConfirmDialog } from "@/features/rides/FreedCarConfirmDialog";
 import { seatsShortText, useSeatShortfalls } from "@/features/rides/useSeatShortfalls";
@@ -52,6 +52,7 @@ import { useRideEditorsQuery } from "@/features/member/hooks";
 import { useMyRequests, useCancelRideMutation } from "@/features/requests/hooks";
 import { isSeriesDay, useCancelSeriesDay } from "@/features/requests/useCancelSeriesDay";
 import { canEditRequest } from "@/features/requests/window";
+import { usePrivateCarUsers } from "@/features/cars/hooks";
 import { useCars, useDestinations, useRideTypes, useMaintenanceBlocks } from "@/features/fleet/hooks";
 import { AddRideFab } from "@/features/requests/components/AddRideFab";
 import { RequestDeadlineNote } from "@/features/requests/components/RequestDeadlineNote";
@@ -182,6 +183,8 @@ export function SiddurPage() {
   const boardRidesQuery = useBoardRides(departmentId, weekStart);
   const waitlistGroupsQuery = useWaitlistGroupsQuery(departmentId, weekStart);
   const carsQuery = useCars(departmentId);
+  // PE1 (REQ item 263): who besides the owners may use each private car this week
+  const privateCarUsers = usePrivateCarUsers(departmentId, weekStart);
   const maintenanceQuery = useMaintenanceBlocks(departmentId);
   const carLocationsQuery = useCarLocations(departmentId, weekStart);
   const carStartLocationsQuery = useCarStartLocations(departmentId, weekStart);
@@ -235,7 +238,7 @@ export function SiddurPage() {
   // or the owner of the ride's private car.
   function isMyRide(ride: BoardRide): boolean {
     const car = (carsQuery.data ?? []).find((c) => c.id === ride.car_id);
-    return isRideRelated({ ride, profileId, myRequestIds, carOwnerIds: carOwnerIds(car) });
+    return isRideRelated({ ride, profileId, myRequestIds, carOwnerIds: carUserIds(car, privateCarUsers) });
   }
   // REQ §13.177 (c): painted as mine (purple) only through my own trips — not a ride I only filed for someone else.
   const myOwnRequestIds = ownRequestIds(myRequestsQuery.data ?? [], profileId);
@@ -375,7 +378,7 @@ export function SiddurPage() {
   const dayFreeWindows = useDayFreeWindows(departmentId, isLiveDay ? weekStart : undefined, isLiveDay ? (activeDay ?? undefined) : undefined, now);
 
   const myPrivateCarIds = new Set((carsQuery.data ?? [])
-    .filter((car) => car.type === "temporary" && isCarOwner(car, profileId) && car.status === "active").map((car) => car.id));
+    .filter((car) => car.type === "temporary" && mayUseCar(car, profileId, privateCarUsers) && car.status === "active").map((car) => car.id));
 
   /**
    * Owner 2026-10-11: a two-tap span on an empty part of a car column (first tap = start, second = end) opens the
@@ -591,7 +594,7 @@ export function SiddurPage() {
   ) : null;
 
   const memberRideEditor = selectedRide?.id && ownsEditableRide(selectedRide.id) && !editLinksForRide.length
-    ? <MemberRideEditor key={`${selectedRide.id}:${selectedRide.version}:editor`} ride={selectedRide} cars={carsQuery.data ?? []} viewerId={profileId} saving={rideMoves.saving} onSave={(move) => void saveMove(move)} />
+    ? <MemberRideEditor key={`${selectedRide.id}:${selectedRide.version}:editor`} ride={selectedRide} cars={carsQuery.data ?? []} viewerId={profileId} privateCarUsers={privateCarUsers} saving={rideMoves.saving} onSave={(move) => void saveMove(move)} />
     : null;
 
   return (

@@ -1509,6 +1509,7 @@ export type Database = {
           tire_pressure_rear_psi: number | null
           type: Database["public"]["Enums"]["car_type"]
           updated_at: string
+          use_scope: Database["public"]["Enums"]["car_use_scope"]
         }
         Insert: {
           base_location_id?: string | null
@@ -1532,6 +1533,7 @@ export type Database = {
           tire_pressure_rear_psi?: number | null
           type?: Database["public"]["Enums"]["car_type"]
           updated_at?: string
+          use_scope?: Database["public"]["Enums"]["car_use_scope"]
         }
         Update: {
           base_location_id?: string | null
@@ -1555,6 +1557,7 @@ export type Database = {
           tire_pressure_rear_psi?: number | null
           type?: Database["public"]["Enums"]["car_type"]
           updated_at?: string
+          use_scope?: Database["public"]["Enums"]["car_use_scope"]
         }
         Relationships: [
           {
@@ -8356,6 +8359,10 @@ export type Database = {
         Returns: number
       }
       materialize_templates: { Args: never; Returns: number }
+      may_use_private_car: {
+        Args: { p_car: string; p_person: string; p_week?: string }
+        Returns: boolean
+      }
       maybe_apply_accepted_proposal: {
         Args: { p_proposal_id: string }
         Returns: undefined
@@ -8717,6 +8724,13 @@ export type Database = {
           p_week_start: string
         }
         Returns: Json
+      }
+      private_car_users: {
+        Args: { p_department: string; p_week?: string }
+        Returns: {
+          car_id: string
+          person_id: string
+        }[]
       }
       profile_phones: {
         Args: { p_ids: string[] }
@@ -9308,6 +9322,13 @@ export type Database = {
         Args: { p_car_id: string; p_km: number; p_note?: string }
         Returns: string
       }
+      set_car_use_scope: {
+        Args: {
+          p_car_id: string
+          p_scope: Database["public"]["Enums"]["car_use_scope"]
+        }
+        Returns: undefined
+      }
       set_freed_slot_opt_out: {
         Args: { p_opt_out: boolean; p_request_id: string }
         Returns: undefined
@@ -9879,6 +9900,12 @@ export type Database = {
       car_task_kind: "tire_fill" | "wash" | "kilometrage" | "other"
       car_task_status: "open" | "done" | "withdrawn"
       car_type: "shared" | "temporary"
+      car_use_scope:
+        | "owners"
+        | "co_parents"
+        | "editors"
+        | "sadranim"
+        | "everyone"
       freed_claim_status:
         | "offered"
         | "claimed"
@@ -10135,6 +10162,13 @@ export const Constants = {
       car_task_kind: ["tire_fill", "wash", "kilometrage", "other"],
       car_task_status: ["open", "done", "withdrawn"],
       car_type: ["shared", "temporary"],
+      car_use_scope: [
+        "owners",
+        "co_parents",
+        "editors",
+        "sadranim",
+        "everyone",
+      ],
       freed_claim_status: [
         "offered",
         "claimed",

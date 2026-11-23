@@ -24,6 +24,8 @@ import { useDepartmentMembers } from "@/features/auth/useDepartmentMembers";
 import { useMyDepartments } from "@/features/auth/useMyDepartments";
 import { useProfile } from "@/features/auth/useProfile";
 import { useSession } from "@/features/auth/useSession";
+import { usePrivateCarUsers } from "@/features/cars/hooks";
+import { mayUseCar } from "@/lib/carOwners";
 import { useCars, useCarSeatConfigs, useMyTemporaryCars, useDestinations, useRideTypes, useSuggestDestinationMutation } from "@/features/fleet/hooks";
 import { useDepartmentSettings, useWeekRow } from "@/features/sadran/hooks";
 import { isSlotFree, type CarFreeWindow } from "@/features/siddur/freeWindows";
@@ -354,6 +356,8 @@ export function RequestForm({
   const membersQuery = useDepartmentMembers(departmentId, { includeSelf: editingOthersRequest });
   const profileQuery = useProfile();
   const myPrivateCarsQuery = useMyTemporaryCars(profileQuery.data?.id);
+  // PE1 (REQ item 263): private cars whose level lets me use them (co-parent, named ride editor, Sadran, everyone)
+  const privateCarUsers = usePrivateCarUsers(departmentId, weekStart);
   // REQ §13.93: origin defaults (the member's own `default_origin_id` for this department, the
   // department home) and the non-driver trip-type gate (REQ §13.88).
   const activeDepartmentsQuery = useActiveDepartment();
@@ -818,21 +822,25 @@ export function RequestForm({
   // the borrower drives it), never in ask-to-join. The server places the request straight on that car.
   // REQ §13.206: a one-way trip too (the car is left at the destination); never a drop-off.
   const myPrivateCars = (myPrivateCarsQuery.data ?? []).filter((car) => car.status === "active");
+  // PE1: other private cars I may use - by their own name (they are not "mine")
+  const usablePrivateCars = (carsQuery.data ?? []).filter((car) => car.type === "temporary" && car.status === "active"
+    && !myPrivateCars.some((own) => own.id === car.id) && mayUseCar(car, profileQuery.data?.id, privateCarUsers));
   const offerPrivateCars = (tripType === "round_trip" || tripType === "one_way") && !quickContext;
   const preferredCars = offerPrivateCars
     ? [
         ...sharedPreferredCars,
         ...myPrivateCars.map((car) => ({ id: car.id, name: tv("request.myPrivateCar", { name: car.name }), isPrivate: true })),
+        ...usablePrivateCars.map((car) => ({ id: car.id, name: car.name, isPrivate: true })),
       ]
     : sharedPreferredCars;
   const preferredCarId = values.preferredCarId ?? "";
   useEffect(() => {
     // The private car only applies to a round trip or a one-way trip: clear it on a drop-off.
-    if (!offerPrivateCars && preferredCarId && myPrivateCars.some((car) => car.id === preferredCarId)) {
+    if (!offerPrivateCars && preferredCarId && [...myPrivateCars, ...usablePrivateCars].some((car) => car.id === preferredCarId)) {
       form.setValue("preferredCarId", "", { shouldDirty: true });
       form.setValue("preferSpecificCar", false, { shouldDirty: true });
     }
-  }, [offerPrivateCars, preferredCarId, myPrivateCars, form]);
+  }, [offerPrivateCars, preferredCarId, myPrivateCars, usablePrivateCars, form]);
 
   const seatFitWarning = useMemo(() => {
     if (!carsQuery.data || !seatConfigsQuery.data) return false;

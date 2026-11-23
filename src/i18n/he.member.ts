@@ -8,6 +8,8 @@
  * (CLAUDE.md hard rule 3 — Hebrew lives only in `he.ts`/`he.*.ts`, solver
  * reasons.ts, and seeded DB data).
  */
+import type { CarUseScope } from "@/lib/enums";
+
 export const heMember = {
   /** Glue used by `src/lib/rideLabel.ts` to compose "<who> ל<place>" / "<who> מ<place>" and Hebrew lists. */
   rideLabel: {
@@ -1632,6 +1634,16 @@ export const heMember = {
     ownersLastHint: "נשאר/ה בעלים אחד/ת. כדי להחזיר את הרכב לצי, כבו את ״רכב פרטי (מושאל)״.",
     ownerAdded: "נוסף/ה לבעלי הרכב",
     ownerRemoved: "הוסר/ה מבעלי הרכב",
+    // PE1 (REQ item 263): who else may use the private car (owner-approved wording 2026-11-23)
+    useScopeTitle: "מי עוד יכול/ה להשתמש ברכב",
+    useScopeHelp: "הם יכולים לשבץ את עצמם ברכב ולערוך, להזיז ולבטל נסיעות בו. תקבל/י הודעה על כל שינוי.",
+    useScopeOptions: {
+      owners: "רק בעלי הרכב",
+      co_parents: "הורים משותפים",
+      editors: "+ מי שנתתי לו/ה לערוך את הנסיעות שלי",
+      sadranim: "+ הסדרנים",
+      everyone: "כולם",
+    } satisfies Record<CarUseScope, string>,
     historyReporter: "דיווח/ה",
     historyNote: "הערה",
     exportButton: "ייצוא לאקסל",

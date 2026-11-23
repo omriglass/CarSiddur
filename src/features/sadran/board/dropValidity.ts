@@ -12,7 +12,7 @@
  * re-checks in SQL (`_merge_check`, `rides_before_write`, `assert_*`). Keep the twin no
  * stricter than SQL; where the two differ, SQL is right.
  */
-import { isCarOwner } from "@/lib/carOwners";
+import { mayUseCar, type PrivateCarUsers } from "@/lib/carOwners";
 import { fromZonedTime } from "date-fns-tz";
 
 import { formatMinutes } from "@/components/timeField15Format";
@@ -69,6 +69,8 @@ export interface BoardDropContext {
   isAdmin?: boolean;
   /** The signed-in profile: the owner of a private car may place anything on their own car (REQ §13.129). */
   viewerId?: string;
+  /** PE1 (REQ item 263): who besides the owners may use each private car (`private_car_users`). */
+  privateCarUsers?: PrivateCarUsers;
   /**
    * Per car, windows where the car is away from its base (REQUIREMENTS §13.93;
    * `board/geometry.ts`'s `scanBoardConflicts` — same data the grid's "away" band draws).
@@ -123,16 +125,17 @@ export function carLocationAt(ctx: BoardDropContext, carId: string, atIso: strin
  * REQ §13.99 (QB20/P1): only a private (temporary) car's owner puts requests on it. `true` when
  * `carId` is a temporary car and `requesterId` is not its owner - the Sadran may not drop or
  * merge that request onto it (ask-to-join goes to the owner instead).
+ * PE1 (REQ item 263): "owner" here is anyone the car's level lets use it (`mayUseCar`).
  */
-export function privateCarBlocks(ctx: Pick<BoardDropContext, "cars" | "viewerId">, carId: string, requesterId: string | null | undefined): boolean {
+export function privateCarBlocks(ctx: Pick<BoardDropContext, "cars" | "viewerId" | "privateCarUsers">, carId: string, requesterId: string | null | undefined): boolean {
   const car = ctx.cars.find((c) => c.id === carId);
-  // REQ §13.129 (a): the viewer owns this private car - they may place anyone's request/ride on it (after a confirmation).
-  if (car?.type === "temporary" && isCarOwner(car, ctx.viewerId)) return false;
-  return !!car && car.type === "temporary" && !isCarOwner(car, requesterId);
+  // REQ §13.129 (a): the viewer may use this private car - they may place anyone's request/ride on it (after a confirmation).
+  if (car?.type === "temporary" && mayUseCar(car, ctx.viewerId, ctx.privateCarUsers)) return false;
+  return !!car && car.type === "temporary" && !mayUseCar(car, requesterId, ctx.privateCarUsers);
 }
 
 /** Same rule for a ride moved to another car: its driver must be the car's owner. */
-export function privateCarBlocksRide(ctx: Pick<BoardDropContext, "cars" | "viewerId">, ride: Pick<BoardRide, "car_id" | "driver_id">, carId: string): boolean {
+export function privateCarBlocksRide(ctx: Pick<BoardDropContext, "cars" | "viewerId" | "privateCarUsers">, ride: Pick<BoardRide, "car_id" | "driver_id">, carId: string): boolean {
   return ride.car_id !== carId && privateCarBlocks(ctx, carId, ride.driver_id);
 }
 

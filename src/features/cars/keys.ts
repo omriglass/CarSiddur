@@ -19,5 +19,7 @@ export const carKeys = {
   openIssues: (carIds: readonly string[]) => [...carKeys.openIssuesAll(), [...carIds].sort().join(",")] as const,
   corporations: () => [...carKeys.all, "corporations"] as const,
   models: () => [...carKeys.all, "models"] as const,
+  /** PE1: who besides the owners may use each private car, per department and week. */
+  privateCarUsers: (departmentId: string | undefined, weekStart: string | null) => [...carKeys.all, "privateCarUsers", departmentId, weekStart] as const,
   byIds: (carIds: readonly string[]) => [...carKeys.all, "byIds", [...carIds].sort().join(",")] as const,
 };

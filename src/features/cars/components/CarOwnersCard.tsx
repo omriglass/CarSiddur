@@ -13,9 +13,10 @@ import { useDepartmentMembers } from "@/features/auth/useDepartmentMembers";
 import { useProfile } from "@/features/auth/useProfile";
 import { he, tv } from "@/i18n/he";
 import { carOwnerIds, isCarOwner } from "@/lib/carOwners";
+import { CAR_USE_SCOPES, type CarUseScope } from "@/lib/enums";
 import { showErrorToast } from "@/lib/rpc";
 
-import { useCarOwnerMutation } from "../hooks";
+import { useCarOwnerMutation, useCarUseScopeMutation } from "../hooks";
 
 /**
  * PC1 (REQ item 227 b): the owners of a private car, at the top of its page. Any owner, the department's Sadran or an
@@ -26,6 +27,7 @@ export function CarOwnersCard({ car, canManageOwners }: { car: Car; canManageOwn
   const profile = useProfile().data;
   const membersQuery = useDepartmentMembers(car.department_id, { includeSelf: true });
   const mutation = useCarOwnerMutation();
+  const scopeMutation = useCarUseScopeMutation();
   const [addOpen, setAddOpen] = useState(false);
   const [picked, setPicked] = useState<string | null>(null);
   const [removing, setRemoving] = useState<{ id: string; name: string } | null>(null);
@@ -35,6 +37,7 @@ export function CarOwnersCard({ car, canManageOwners }: { car: Car; canManageOwn
   const nameOf = (id: string) => (membersQuery.data ?? []).find((m) => m.id === id)?.name ?? "";
   const mayManage = canManageOwners || isCarOwner(car, profile?.id);
   const candidates = (membersQuery.data ?? []).filter((m) => !ownerIds.includes(m.id));
+  const isOwner = isCarOwner(car, profile?.id);
   const label = (id: string) => (id === profile?.id ? tv("carPage.ownersMe", { name: nameOf(id) }) : nameOf(id));
 
   async function add() {
@@ -44,6 +47,14 @@ export function CarOwnersCard({ car, canManageOwners }: { car: Car; canManageOwn
       toast.success(he.carPage.ownerAdded);
       setAddOpen(false);
       setPicked(null);
+    } catch (error) {
+      showErrorToast(error);
+    }
+  }
+
+  async function setScope(scope: CarUseScope) {
+    try {
+      await scopeMutation.mutateAsync({ carId: car.id, scope });
     } catch (error) {
       showErrorToast(error);
     }
@@ -94,6 +105,27 @@ export function CarOwnersCard({ car, canManageOwners }: { car: Car; canManageOwn
           </ul>
         )}
         {mayManage && ownerIds.length === 1 ? <p className="text-xs text-muted-foreground">{he.carPage.ownersLastHint}</p> : null}
+        {/* PE1 (REQ item 263): who else may use the car - an owner's setting */}
+        {isOwner ? (
+          <div className="space-y-1 border-t pt-2">
+            <Label htmlFor={`car-use-scope-${car.id}`}>{he.carPage.useScopeTitle}</Label>
+            <Select
+              value={car.use_scope}
+              onValueChange={(value) => void setScope(value as CarUseScope)}
+              disabled={scopeMutation.isPending}
+            >
+              <SelectTrigger id={`car-use-scope-${car.id}`} data-testid="car-use-scope">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {CAR_USE_SCOPES.map((scope) => (
+                  <SelectItem key={scope} value={scope} data-testid={`car-use-scope-${scope}`}>{he.carPage.useScopeOptions[scope]}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">{he.carPage.useScopeHelp}</p>
+          </div>
+        ) : null}
       </CardContent>
 
       <FormDialog

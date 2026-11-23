@@ -270,6 +270,8 @@ begin
   -- PC1 (REQ item 227): owners of department B's car are added/removed only by its owners, its Sadran or an admin
   perform pg_temp.expect_refused('cars.add_car_owner', format('select public.add_car_owner(%L, %L)', car_b, gen_random_uuid()));
   perform pg_temp.expect_refused('cars.remove_car_owner', format('select public.remove_car_owner(%L, %L)', car_b, gen_random_uuid()));
+  -- PE1 (REQ item 263): who else may use department B's private car is set by its owners only
+  perform pg_temp.expect_refused('cars.set_car_use_scope', format('select public.set_car_use_scope(%L, %L)', car_b, 'everyone'));
 
   -- cars / destinations ----------------------------------------------------
   perform pg_temp.expect_refused('cars.log_car_care', format('select public.log_car_care(%L, %L, null, null)', car_b, 'wash'));
@@ -483,7 +485,7 @@ declare
     'planning_month','typical_usage','save_reservation',
     'create_policy_version','set_policy_active','policy_week_alignment','resolve_waitlist_group','cancel_waitlist_group','join_waitlist_discussion','waitlist_group_holds','siddur_waitlist','place_waiting_request',
     'place_travel_for_week','car_start_locations','set_my_default_origin','set_my_preferred_car','route_minutes_preview','route_hops_preview','request_notes','request_history',
-    'my_co_guardians','set_ride_driver','withdraw_duplicate_request','restore_duplicate_request','close_request','restore_closed_request','sadran_cancel_ride','place_on_own_car','set_own_private_car','add_car_owner','remove_car_owner','child_request_overlaps',
+    'my_co_guardians','set_ride_driver','withdraw_duplicate_request','restore_duplicate_request','close_request','restore_closed_request','sadran_cancel_ride','place_on_own_car','set_own_private_car','add_car_owner','remove_car_owner','set_car_use_scope','child_request_overlaps',
     'mark_car_move','shorten_series','split_series','leave_merged_ride','leave_merged_ride_fit','leave_ride_fit_preview','ride_busy_people','cancel_series_day','one_way_partner','place_one_way_pair','join_drop_off_legs','place_series_on_car',
     'create_car_maintenance','update_car_maintenance','delete_car_maintenance','report_car_issue_unsafe_maintenance','update_car_issue'
   ];
@@ -495,7 +497,7 @@ declare
     'freed_car_preview:delegates-rolled-back',
     -- PF1 / DC1: the policies' once-per-query sets — only the caller's own departments, weeks, requests and proposals.
     'my_department_ids:caller_scoped', 'my_sadran_department_ids:caller_scoped', 'my_sadran_weeks:caller_scoped',
-    'my_department_access:caller_scoped', 'my_owned_car_ids:caller_scoped', 'my_guarded_request_ids:caller_scoped', 'my_companion_request_ids:caller_scoped', 'my_proposal_ids:caller_scoped',
+    'my_department_access:caller_scoped', 'my_owned_car_ids:caller_scoped', 'private_car_users:member_of-empty', 'my_guarded_request_ids:caller_scoped', 'my_companion_request_ids:caller_scoped', 'my_proposal_ids:caller_scoped',
     'is_guardian_on_request:read-helper',
     'can_manage_any_open_week:read-helper', 'can_manage_operations:read-helper', 'can_manage_car:read-helper', 'can_define_car_checklist:read-helper', 'is_car_admin:read-helper', 'admin_set_car_admin:admin-only', 'preference_stats:admin-only', 'report_client_preferences:caller_scoped', 'car_base_location:read-helper',
     'can_manage_week:read-helper', 'day_date_label:read-helper', 'is_admin:read-helper',

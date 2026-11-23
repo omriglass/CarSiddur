@@ -1445,7 +1445,9 @@
         "supabase/tests/car_administration.sql",
         "supabase/tests/car_tasks.sql",
         "supabase/tests/car_owners.sql",
+        "supabase/tests/private_car_use_scope.sql",
         "supabase/migrations/**/*car_owner*",
+        "supabase/migrations/**/*private_car_use_scope*",
         "e2e/car-owners.spec.ts",
         "src/lib/carOwners.ts",
         "src/features/admin/members/**",
@@ -1482,6 +1484,7 @@
         "car_tasks.sql",
         "car_checklists.sql",
         "car_owners.sql",
+        "private_car_use_scope.sql",
         "department_isolation.sql",
         "car_guides.sql",
         "car_issue_manage.sql"

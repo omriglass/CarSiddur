@@ -251,6 +251,14 @@ export const carTypeSchema = z.enum(CAR_TYPES);
 assertSameEnum<CarType, Enums<"car_type">>();
 
 // ---------------------------------------------------------------------------
+// car_use_scope (PE1, REQ item 263): who else may use a private car; each level includes the ones before it
+// ---------------------------------------------------------------------------
+export const CAR_USE_SCOPES = ["owners", "co_parents", "editors", "sadranim", "everyone"] as const satisfies readonly Enums<"car_use_scope">[];
+export type CarUseScope = (typeof CAR_USE_SCOPES)[number];
+export const carUseScopeSchema = z.enum(CAR_USE_SCOPES);
+assertSameEnum<CarUseScope, Enums<"car_use_scope">>();
+
+// ---------------------------------------------------------------------------
 // car_status
 // ---------------------------------------------------------------------------
 export const CAR_STATUSES = [

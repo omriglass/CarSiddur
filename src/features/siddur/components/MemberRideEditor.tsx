@@ -1,4 +1,4 @@
-import { isCarOwner } from "@/lib/carOwners";
+import { isCarOwner, mayUseCar, type PrivateCarUsers } from "@/lib/carOwners";
 import { useState } from "react";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Button } from "@/components/ui/button";
@@ -14,15 +14,17 @@ import type { RideMove } from "@/features/rides/api";
 import { ownCarMoveBody } from "@/features/rides/ownCarMove";
 import { moveOnRideDay } from "../rideEditing";
 
-export function MemberRideEditor({ ride, cars, saving, onSave, viewerId }: {
+export function MemberRideEditor({ ride, cars, saving, onSave, viewerId, privateCarUsers }: {
   ride: BoardRide; cars: readonly Car[]; saving: boolean; onSave: (move: RideMove) => void;
   /** REQ §13.129 (a): the viewer's own private cars are a choice too (the owner may put any ride on them). */
   viewerId?: string | null;
+  /** PE1 (REQ item 263): private cars the driver or the viewer may use besides their own are choices too. */
+  privateCarUsers?: PrivateCarUsers;
 }) {
   const [carId, setCarId] = useState(ride.car_id ?? "");
   const [pendingOwnCar, setPendingOwnCar] = useState<RideMove | null>(null);
   const choices = cars.filter((c) => c.status === "active" && !c.retired_at
-    && (c.type === "shared" || isCarOwner(c, ride.driver_id) || isCarOwner(c, viewerId) || c.id === ride.car_id));
+    && (c.type === "shared" || mayUseCar(c, ride.driver_id, privateCarUsers) || mayUseCar(c, viewerId, privateCarUsers) || c.id === ride.car_id));
   const pendingCarName = cars.find((c) => c.id === pendingOwnCar?.carId)?.name ?? "";
   const [start, setStart] = useState(formatTime(new Date(ride.starts_at!)));
   const [end, setEnd] = useState(dateKey(ride.starts_at!) === dateKey(ride.ends_at!)

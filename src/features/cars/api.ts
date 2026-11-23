@@ -5,6 +5,7 @@ import { CARS_WITH_CODES_SELECT, flattenCarCodes } from "@/features/admin/cars/a
 
 import type { CarCodes, Car, CarIssue } from "@/features/admin/cars/api";
 import type { Database } from "@/integrations/supabase/types";
+import type { CarUseScope } from "@/lib/enums";
 
 /**
  * The only file in `features/cars` that calls `supabase.from(...)`. Owns the
@@ -133,6 +134,16 @@ export async function setOwnPrivateCar(carId: string, ownerId: string | null): P
 /** PC1 (REQ item 227): any owner, the department's Sadran or an admin adds an owner (an approved department member). */
 export async function addCarOwner(carId: string, profileId: string): Promise<void> {
   await rpc("add_car_owner", { p_car_id: carId, p_profile_id: profileId });
+}
+
+/** PE1 (REQ item 263): any owner sets who else may use the private car. */
+export async function setCarUseScope(carId: string, scope: CarUseScope): Promise<void> {
+  await rpc("set_car_use_scope", { p_car_id: carId, p_scope: scope });
+}
+
+/** PE1: per private car of the department, who besides its owners may use it that week (server: `may_use_private_car`). */
+export async function fetchPrivateCarUsers(departmentId: string, weekStart: string | null): Promise<{ car_id: string; person_id: string }[]> {
+  return (await rpc("private_car_users", { p_department: departmentId, ...(weekStart ? { p_week: weekStart } : {}) })) ?? [];
 }
 
 /** PC1: removes an owner — never the last one (`car_last_owner`). */
