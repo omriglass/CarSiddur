@@ -38,4 +38,21 @@ describe("CarGlance", () => {
     render(<CarGlance carId="c1" />);
     expect(screen.getByText(he.carPage.glanceNoOwner)).toBeInTheDocument();
   });
+
+  it("a replaced car marks the plate and fuel as the replacement's", () => {
+    mocks.car = { ...mocks.car, owner_id: null, owner_ids: [], fuel_type: "gasoline", is_replaced: true, replacement_plate: "7654321", replacement_fuel_type: "diesel" };
+    render(<CarGlance carId="c1" />);
+    const box = screen.getByTestId("car-glance-replacement");
+    expect(box).toHaveTextContent(he.adminCars.replacedBadge);
+    expect(box).toHaveTextContent("76-543-21");
+    expect(box).toHaveTextContent(he.car.fuel.diesel);
+    expect(box).not.toHaveTextContent(he.car.fuel.gasoline);
+  });
+
+  it("a regular car has no replacement mark", () => {
+    mocks.car = { ...mocks.car, owner_id: null, owner_ids: [] };
+    render(<CarGlance carId="c1" />);
+    expect(screen.queryByTestId("car-glance-replacement")).toBeNull();
+    expect(screen.queryByText(he.adminCars.replacedBadge)).toBeNull();
+  });
 });

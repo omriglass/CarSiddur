@@ -30,7 +30,12 @@ export function CarGlance({ carId }: { carId: string }) {
 
   return (
     <div className="space-y-1 px-2 py-1.5 text-xs" data-testid="car-glance">
-      <div className="flex flex-wrap items-center gap-1.5">
+      {/* Owner 2026-11-23: while replaced, the plate and fuel sit under a clear "רכב חלופי" so nobody reads them as the regular car's. */}
+      <div
+        className={car.is_replaced ? "flex flex-wrap items-center gap-1.5 rounded-md border border-amber-500 bg-amber-100 p-1.5 text-amber-950 dark:bg-amber-950 dark:text-amber-100" : "flex flex-wrap items-center gap-1.5"}
+        data-testid={car.is_replaced ? "car-glance-replacement" : undefined}
+      >
+        {car.is_replaced ? <span className="rounded bg-amber-500 px-1.5 py-0.5 font-semibold text-black">{he.adminCars.replacedBadge}</span> : null}
         <span className="font-medium" dir="ltr">{formatPlate(activeCarPlate(car))}</span>
         <CarFuelChip fuel={activeCarFuel(car)} />
       </div>
