@@ -48,6 +48,11 @@ describe("CarFactsCard", () => {
     expect(screen.queryByTestId("car-details-replacement")).toBeNull();
   });
 
+  it("REQ item 264: a replaced car with no replacement code still says it is replaced", () => {
+    render(<CarFactsCard car={car({ is_replaced: true, replacement_code: null })} {...props} />);
+    expect(screen.getByTestId("car-details-replacement").textContent).toContain(he.adminCars.replacedBadge);
+  });
+
   it("shows the recommended tire pressure", () => {
     render(<CarFactsCard car={car({ tire_pressure_front_psi: 32, tire_pressure_rear_psi: 30 })} {...props} />);
     expect(screen.getByTestId("car-details-tires").textContent).toContain(tv("adminCars.tirePressureValue", { front: "32", rear: "30" }));

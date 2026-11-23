@@ -27,6 +27,8 @@ export interface DayAndTripShapeFieldsProps {
   basePlaceId?: string | null;
   weekStart: string;
   variant: "weekly" | "quick" | "carNow";
+  /** REQ item 265: the sentence quick sheet keeps the tapped day and offers only the return day. */
+  hideDepartDay?: boolean;
   showReturnDayPicker: boolean;
   returnAnotherDay: boolean;
   setReturnAnotherDay: (open: boolean) => void;
@@ -51,6 +53,7 @@ export function DayAndTripShapeFields({
   basePlaceId,
   weekStart,
   variant,
+  hideDepartDay = false,
   showReturnDayPicker,
   returnAnotherDay,
   setReturnAnotherDay,
@@ -68,7 +71,7 @@ export function DayAndTripShapeFields({
 }: DayAndTripShapeFieldsProps) {
   return (
     <>
-      {variant !== "carNow" ? (
+      {variant !== "carNow" && !hideDepartDay ? (
         <FormItem data-field="day">
           <Label>{t("field.day")}</Label>
           <Controller
@@ -102,7 +105,11 @@ export function DayAndTripShapeFields({
           variant="link"
           size="sm"
           className="h-auto self-start px-0 text-xs"
-          onClick={() => setReturnAnotherDay(true)}
+          onClick={() => {
+            // REQ item 265: from a tap on the siddur the usual case is "until tomorrow" (Friday to Saturday morning).
+            if (isQuickContext && (form.getValues("returnDay") ?? day) === day) form.setValue("returnDay", nextDay(day), { shouldDirty: true });
+            setReturnAnotherDay(true);
+          }}
         >
           {t("request.returnAnotherDay")}
         </Button>

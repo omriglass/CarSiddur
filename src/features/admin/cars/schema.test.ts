@@ -7,7 +7,7 @@ import { carSchema } from "./schema";
 const car = {
   name: "Car", license_plate: "1234567", fuel_type: null, department_id: "00000000-0000-0000-0000-000000000001",
   type: "shared", status: "active", features: [], notes: null, built_in_child_seats: 0, built_in_boosters: 0,
-  access_code: "01234", is_replaced: false, replacement_code: null, responsible_id: null, base_location_id: null,
+  access_code: "01234", is_replaced: false, replacement_code: null, replacement_plate: null, responsible_id: null, base_location_id: null,
   corporation: null, model: null, tire_pressure_front_psi: null, tire_pressure_rear_psi: null,
 };
 
@@ -25,16 +25,17 @@ describe("car access codes", () => {
     if (!result.success) expect(result.error.issues[0]?.message).toBe(he.adminCars.departmentRequired);
   });
 
-  it("requires a replacement code only while a replacement is active; it may equal the regular code", () => {
-    expect(carSchema.safeParse({ ...car, is_replaced: true }).success).toBe(false);
+  it("a replacement code is optional (REQ item 264), must be 4-5 digits when given, and may equal the regular code", () => {
+    expect(carSchema.safeParse({ ...car, is_replaced: true }).success).toBe(true);
+    expect(carSchema.safeParse({ ...car, is_replaced: true, replacement_code: "12" }).success).toBe(false);
     expect(carSchema.parse({ ...car, is_replaced: true, replacement_code: "01234" }).replacement_code).toBe("01234");
     expect(carSchema.parse({ ...car, is_replaced: true, replacement_code: "0567" }).replacement_code).toBe("0567");
     expect(carSchema.safeParse(car).success).toBe(true);
   });
 
-  it("allows a car with no code, but not a replacement for it", () => {
+  it("allows a car with no code, and a replacement for it (REQ item 264)", () => {
     expect(carSchema.parse({ ...car, access_code: "" }).access_code).toBe("");
-    expect(carSchema.safeParse({ ...car, access_code: "", is_replaced: true, replacement_code: "0567" }).success).toBe(false);
+    expect(carSchema.safeParse({ ...car, access_code: "", is_replaced: true, replacement_code: "0567" }).success).toBe(true);
   });
 });
 

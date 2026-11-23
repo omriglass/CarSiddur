@@ -692,12 +692,12 @@ export function RequestForm({
     form.setValue("needsCarAtDestination", forced.needsCarAtDestination, { shouldDirty: true });
     form.setValue("oneWayCarMode", forced.oneWayCarMode, { shouldDirty: true });
   }, [canDrive, tripType, dropOffPickup, form]);
-  // Multi-day ("series") request (REQ §13.77, UX_FLOWS.md §3.4): the return-day picker is for a weekly round trip —
-  // a new one, or editing a multi-day request over its whole span (owner 2026-10-22, REQ §13.142); the quick/carNow
-  // variants are always about a single live day.
+  // Multi-day ("series") request (REQ §13.77, UX_FLOWS.md §3.4): the return-day picker is for a round trip — a new
+  // one, or editing a multi-day request over its whole span (owner 2026-10-22, REQ §13.142). REQ item 265: also on the
+  // quick sheet (a tap on the siddur, e.g. Friday to Saturday morning); "car now" stays a single day.
   const seriesEdit = mode === "edit" && !!initial?.seriesId;
   // MD1 (REQ item 232): editing a one-day round trip may also turn it into a multi-day ride.
-  const showReturnDayPicker = variant === "weekly" && (mode === "new" || (mode === "edit" && !isReservation)) && tripShape === "round_trip";
+  const showReturnDayPicker = (variant === "weekly" || variant === "quick") && (mode === "new" || (mode === "edit" && !isReservation)) && tripShape === "round_trip";
   const returnDayValue = values.returnDay ?? day;
   // The return-day picker is collapsed behind a small "return another day" link because
   // multi-day requests are rare; a later return day keeps it expanded (UX_FLOWS.md §3.4). A series edit opens with it.
@@ -900,7 +900,7 @@ export function RequestForm({
   const returnTimeSafe = values.returnTime || "12:00";
   const primaryTime = tripShape === "one_way_from" ? (values.returnTime ?? "") : (values.departTime ?? "");
   const selectedMs = toInstantMs(day, tripShape === "one_way_from" ? returnTimeSafe : departTimeSafe);
-  const roundTripEndMs = toInstantMs(day, returnTimeSafe);
+  const roundTripEndMs = toInstantMs(isMultiDay ? returnDayValue : day, returnTimeSafe);
   const destinationId = values.destination && "presetId" in values.destination ? values.destination.presetId : undefined;
   const travelMinutes = destinationsQuery.data?.find((d) => d.id === destinationId)?.travel_minutes ?? DEFAULT_HOP_MINUTES;
   const dwellMinutes = effectiveWeekSettings(settingsQuery.data, weekRowQuery.data).chauffeurDwellMinutes;
@@ -909,7 +909,8 @@ export function RequestForm({
     : { startMs: 0, endMs: 0 };
   const quickCarId = values.preferredCarId || "";
   const quickCar = quickContext?.cars.find((c) => c.id === quickCarId) ?? null;
-  const carIsFree = !quickContext || isSlotFree(quickContext.freeWindows, quickCarId, startMs, endMs);
+  // REQ item 265: the free windows cover the tapped day only, so for a multi-day ride the server decides and says.
+  const carIsFree = !quickContext || isMultiDay || isSlotFree(quickContext.freeWindows, quickCarId, startMs, endMs);
   const isAway =
     !!quickContext &&
     !carIsFree &&
@@ -922,7 +923,7 @@ export function RequestForm({
   const otherFreeCar =
     quickContext && !carIsFree ? quickContext.cars.find((c) => c.id !== quickCarId && isSlotFree(quickContext.freeWindows, c.id, startMs, endMs)) : undefined;
   const isPast = !!quickContext && selectedMs < quickContext.now.getTime();
-  const outsideDay = !!quickContext && (startMs < toInstantMs(day, "00:00") || endMs > toInstantMs(day, "23:59"));
+  const outsideDay = !!quickContext && (startMs < toInstantMs(day, "00:00") || endMs > toInstantMs(isMultiDay ? returnDayValue : day, "23:59"));
   const invalidTime = !!quickContext && (endMs <= startMs || outsideDay);
 
   // R9U7/R9F1: a child on a new request suggests the childcare ride type while the member has not picked one.
@@ -1397,6 +1398,8 @@ export function RequestForm({
       if ((variant === "quick" || variant === "carNow") && quickContext) {
         queryClient.invalidateQueries({ queryKey: siddurKeys.boardRides(departmentId, weekStart) });
         queryClient.invalidateQueries({ queryKey: siddurKeys.carLocations(departmentId, weekStart) });
+        // REQ item 265: a multi-day ride may reach into the next week.
+        if (isSeriesRequest) queryClient.invalidateQueries({ queryKey: siddurKeys.all });
       }
 
       // One outcome toast for both variants (weekly and quick) — see `toastSubmitOutcome` for

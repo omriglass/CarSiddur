@@ -32519,8 +32519,8 @@ CREATE TABLE IF NOT EXISTS "public"."car_access_codes" (
     "replacement_code" "text",
     "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
     "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "replacement_plate" "text",
     CONSTRAINT "car_access_codes_access_code_format_ck" CHECK ((("access_code" IS NULL) OR ("access_code" ~ '^[0-9]{4,5}$'::"text"))),
-    CONSTRAINT "car_access_codes_replacement_ck" CHECK (((NOT "is_replaced") OR (("access_code" IS NOT NULL) AND ("replacement_code" IS NOT NULL)))),
     CONSTRAINT "car_access_codes_replacement_code_format_ck" CHECK ((("replacement_code" IS NULL) OR ("replacement_code" ~ '^[0-9]{4,5}$'::"text")))
 );
 
@@ -32528,6 +32528,10 @@ ALTER TABLE ONLY "public"."car_access_codes" FORCE ROW LEVEL SECURITY;
 
 
 ALTER TABLE "public"."car_access_codes" OWNER TO "postgres";
+
+
+COMMENT ON COLUMN "public"."car_access_codes"."replacement_plate" IS 'The replacement car''s licence plate while is_replaced; cleared when the replacement ends.';
+
 
 
 CREATE TABLE IF NOT EXISTS "public"."car_care_events" (

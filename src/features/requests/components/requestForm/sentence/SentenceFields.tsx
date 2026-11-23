@@ -516,7 +516,8 @@ export function SentenceFields(props: SentenceFieldsProps) {
                 </SentenceChip>
               </Seg>
             ))}
-            {isWeekly ? (
+            {/* REQ item 265: on the quick sheet the day chip is where "חזרה ביום אחר?" lives (the tapped day itself stays fixed). */}
+            {isWeekly || showReturnDayPicker ? (
               <Seg prefix={he.requestSentence.on}>
                 <SentenceChip field="day" invalid={invalid("day", "returnDay")} onClick={() => setSheet("day")} data-testid="chip-day">{dayText}</SentenceChip>
               </Seg>
@@ -785,6 +786,7 @@ export function SentenceFields(props: SentenceFieldsProps) {
           form={form}
           weekStart={weekStart}
           variant={variant}
+          hideDepartDay={!isWeekly}
           showReturnDayPicker={showReturnDayPicker}
           returnAnotherDay={returnAnotherDay}
           setReturnAnotherDay={setReturnAnotherDay}

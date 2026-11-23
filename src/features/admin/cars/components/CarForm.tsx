@@ -86,6 +86,7 @@ export function CarForm({
       access_code: car?.access_code ?? "",
       is_replaced: car?.is_replaced ?? false,
       replacement_code: car?.replacement_code ?? null,
+      replacement_plate: car?.replacement_plate ?? null,
       department_id: car?.department_id ?? "",
       status: car?.status ?? "active",
       features: car?.features ?? [],
@@ -110,7 +111,7 @@ export function CarForm({
 
   async function onSubmit(values: CarFormValues) {
     try {
-      const payload = { ...values, corporation: values.corporation || null, model: values.model || null, access_code: values.access_code || null, replacement_code: values.is_replaced ? values.replacement_code : null };
+      const payload = { ...values, corporation: values.corporation || null, model: values.model || null, access_code: values.access_code || null, replacement_code: values.is_replaced ? values.replacement_code || null : null, replacement_plate: values.is_replaced ? values.replacement_plate || null : null };
       let carId = car?.id;
       if (car) {
         await updateMutation.mutateAsync({ id: car.id, patch: payload });
@@ -204,6 +205,7 @@ export function CarForm({
                     field.onChange(checked === true);
                     if (checked !== true) {
                       form.setValue("replacement_code", null, { shouldDirty: true });
+                      form.setValue("replacement_plate", null, { shouldDirty: true });
                       form.clearErrors("replacement_code");
                     }
                   }}
@@ -214,6 +216,21 @@ export function CarForm({
             </FormItem>
           )}
         />
+        {isReplaced ? (
+          <FormField
+            control={form.control}
+            name="replacement_plate"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>{he.adminCars.fieldReplacementPlate}</FormLabel>
+                <FormControl>
+                  <Input {...field} value={field.value ?? ""} type="text" dir="ltr" autoComplete="off" />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        ) : null}
         {isReplaced ? (
           <FormField
             control={form.control}

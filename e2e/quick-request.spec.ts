@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { fromZonedTime } from "date-fns-tz";
 
-import { he } from "../src/i18n/he";
+import { he, tv } from "../src/i18n/he";
 
 import { getWeekStart, NEVO_DEPARTMENT_ID, SEEDED_USERS, serviceRoleClient, signIn } from "./helpers";
 import { chooseDestination, setClassicForm } from "./request-form";
@@ -257,6 +257,50 @@ test.describe.serial("quick request from an empty slot (live week)", { tag: ["@q
     } finally {
       await setClassicForm(SEEDED_USERS.member2.email, true);
       await clearOnBehalfRides(liveWeekStart);
+    }
+  });
+
+  test("REQ item 265: a tap books several days - the return defaults to the next day, one booking", async ({ page }) => {
+    const liveWeekStart = await getWeekStart("live");
+    await clearMember2Friday(liveWeekStart);
+    const admin = serviceRoleClient();
+    const { data: cars } = await admin.from("cars").select("id, name").eq("department_id", NEVO_DEPARTMENT_ID).eq("type", "shared");
+    const van = cars?.find((c) => c.name === VAN_NAME);
+    expect(van).toBeTruthy();
+    const startedAt = new Date().toISOString();
+    const myLegs = () => admin.from("requests").select("id, series_id, series_index, status, preferred_car_id").eq("requester_id", MEMBER2_ID)
+      .not("series_id", "is", null).gte("created_at", startedAt).order("series_index");
+    try {
+      await setClassicForm(SEEDED_USERS.member2.email, false); // the sentence layout: the choice is behind the day chip
+      await freezeToWednesdayMorning(page, liveWeekStart);
+      await page.goto(`/siddur/${NEVO_DEPARTMENT_ID}/${liveWeekStart}`);
+      await page.getByRole("radiogroup", { name: "יום" }).last().getByRole("radio").nth(FRIDAY_INDEX).click();
+      const col = page.locator(`[data-car-col-id="${van!.id}"]`);
+      await expect(col).toBeVisible();
+      const box = await col.boundingBox();
+      if (!box) throw new Error("car column not found");
+      await col.dblclick({ position: { x: box.width / 2, y: yForMinutes(20 * 60 + 30, box.height) } });
+      await chooseDestination(page, "עפולה");
+      await page.getByTestId("chip-day").click();
+      await page.getByRole("button", { name: he.request.returnAnotherDay }).click();
+      await expect(page.getByText(tv("request.multiDayBadge", { count: "2" }))).toBeVisible();
+      await page.getByRole("button", { name: he.requestSentence.sheetDone, exact: true }).click();
+      await takeTheCar(page);
+
+      await expect.poll(async () => (await myLegs()).data?.length, { timeout: 10_000 }).toBe(2);
+      const { data: legs } = await myLegs();
+      expect(legs![0]!.series_id).toBeTruthy();
+      expect(legs![1]!.series_id).toBe(legs![0]!.series_id);
+      expect(legs![0]!.preferred_car_id).toBe(van!.id);
+      expect(legs!.map((leg) => leg.status)).toEqual(["assigned", "assigned"]);
+    } finally {
+      await setClassicForm(SEEDED_USERS.member2.email, true);
+      const { data: rows } = await myLegs();
+      for (const row of rows ?? []) {
+        const { data: links } = await admin.from("ride_requests").select("ride_id").eq("request_id", row.id);
+        if (links?.length) await admin.from("rides").update({ status: "cancelled" }).in("id", links.map((l) => l.ride_id));
+        await admin.from("requests").update({ status: "withdrawn" }).eq("id", row.id);
+      }
     }
   });
 });

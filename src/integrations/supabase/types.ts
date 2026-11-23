@@ -418,6 +418,7 @@ export type Database = {
           department_id: string
           is_replaced: boolean
           replacement_code: string | null
+          replacement_plate: string | null
           updated_at: string
         }
         Insert: {
@@ -427,6 +428,7 @@ export type Database = {
           department_id: string
           is_replaced?: boolean
           replacement_code?: string | null
+          replacement_plate?: string | null
           updated_at?: string
         }
         Update: {
@@ -436,6 +438,7 @@ export type Database = {
           department_id?: string
           is_replaced?: boolean
           replacement_code?: string | null
+          replacement_plate?: string | null
           updated_at?: string
         }
         Relationships: [

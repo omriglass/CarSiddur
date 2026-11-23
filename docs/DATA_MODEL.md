@@ -332,7 +332,8 @@ Lockbox codes were readable by any approved member regardless of department, bec
 | department_id | uuid | NN | | set by trigger `car_access_codes_set_department()` from the car, whatever the caller sends |
 | access_code | text | | | Optional legacy-compatible base vehicle code; when present, exactly 4–5 ASCII digits (leading zeroes preserved). CHECK. |
 | is_replaced | boolean | NN | false | Whether a replacement vehicle/code is currently in use. |
-| replacement_code | text | | | Optional code, exactly 4–5 ASCII digits when present. CHECK. Replacement mode requires both codes; the replacement code may equal `access_code` (REQ item 214, `20261113100000`); switching replacement off in the UI clears this field. |
+| replacement_plate | text | | | The replacement car's licence plate while `is_replaced`, optional (REQ item 264, `20261123120100`). |
+| replacement_code | text | | | Optional code, exactly 4–5 ASCII digits when present. CHECK. Replacement mode needs no code on either side (REQ item 264, `20261123120000`); the replacement code may equal `access_code` (REQ item 214, `20261113100000`); switching replacement off in the UI clears this field. |
 | created_at / updated_at | timestamptz | NN | now() | `set_updated_at()` |
 
 Index `(department_id)`. No `audit_row()` trigger — the codes must not land in `audit_log`. `cars` no longer carries any of these three columns; the admin car form writes both rows together.

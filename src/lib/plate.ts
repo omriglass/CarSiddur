@@ -1,3 +1,8 @@
+/** REQ item 264: the plate of the car actually in use - the replacement's while replaced (none when it has none). */
+export function activeCarPlate(car: { license_plate?: string | null; is_replaced?: boolean; replacement_plate?: string | null }): string | null {
+  return (car.is_replaced ? car.replacement_plate : car.license_plate) ?? null;
+}
+
 /**
  * CR1 (owner 2026-11-17, REQ item 257): an Israeli licence plate as people read it — 8 digits `xxx-xx-xxx`,
  * 7 digits `xx-xxx-xx`. The stored value is left as typed; anything else (letters, another length) shows as typed.

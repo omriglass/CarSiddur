@@ -27,7 +27,7 @@ export async function fetchCarsOverviewData(departmentId: string): Promise<{
   const [cars, km, tires, washes] = await Promise.all([
     supabase
       .from("cars")
-      .select("id, name, license_plate, status, type, retired_at, codes:car_access_codes(is_replaced)")
+      .select("id, name, license_plate, status, type, retired_at, codes:car_access_codes(is_replaced, replacement_plate)")
       .eq("department_id", departmentId)
       .eq("type", "shared")
       .neq("status", "retired")

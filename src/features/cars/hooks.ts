@@ -123,6 +123,7 @@ export function useSetCarPrivateMutation() {
           access_code: car.access_code,
           is_replaced: car.is_replaced,
           replacement_code: car.replacement_code,
+          replacement_plate: car.replacement_plate,
         },
       });
     },

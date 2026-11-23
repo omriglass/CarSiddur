@@ -6,7 +6,7 @@ import { formatDayDate } from "@/lib/dayLabels";
 import { useCarCareHistoryQuery, useCarQuery } from "../hooks";
 import { joinNames } from "../lib/ownerNames";
 import { CarFuelChip } from "./CarFuelChip";
-import { formatPlate } from "@/lib/plate";
+import { activeCarPlate, formatPlate } from "@/lib/plate";
 
 /**
  * The car at a glance (owner 2026-11-13), at the top of the siddur's and the board's car-name menu: licence plate,
@@ -31,7 +31,7 @@ export function CarGlance({ carId }: { carId: string }) {
   return (
     <div className="space-y-1 px-2 py-1.5 text-xs" data-testid="car-glance">
       <div className="flex flex-wrap items-center gap-1.5">
-        <span className="font-medium" dir="ltr">{formatPlate(car.license_plate)}</span>
+        <span className="font-medium" dir="ltr">{formatPlate(activeCarPlate(car))}</span>
         <CarFuelChip fuel={car.fuel_type} />
       </div>
       {owners ? <p>{tv("carPage.glanceOwner", { name: owners })}</p>

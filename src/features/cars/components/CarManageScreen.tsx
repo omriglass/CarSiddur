@@ -41,7 +41,7 @@ import { CarRegistrationCard } from "./CarRegistrationCard";
 import { CarReportsSection, type CarReportView } from "./CarReportsSection";
 import { CarStatusSelect } from "./CarStatusSelect";
 import { useCarCareHistoryQuery, useCarCurrentKmQuery, useCarIssueHistoryQuery, useCarOdometerHistoryQuery, useOpenCarIssuesQuery } from "../hooks";
-import { formatPlate } from "@/lib/plate";
+import { activeCarPlate, formatPlate } from "@/lib/plate";
 import { isCarOwner } from "@/lib/carOwners";
 import { useProfile } from "@/features/auth/useProfile";
 import { formatKm } from "../lib/kilometrage";
@@ -256,7 +256,7 @@ export function CarManageScreen({ car, isAdmin, canEdit, canManageCar, canDefine
       />
       {/* FU1 (REQ item 217): licence plate and fuel type are the first facts about a car. */}
       <div className="flex flex-wrap items-center gap-2 text-sm">
-        <span className="font-medium" dir="ltr" data-testid="car-plate">{formatPlate(car.license_plate)}</span>
+        <span className="font-medium" dir="ltr" data-testid="car-plate">{formatPlate(activeCarPlate(car))}</span>
         <CarFuelChip fuel={car.fuel_type} />
         <StatusBadge kind="car" status={car.status} />
         {careEventsQuery.isSuccess ? <CarMoodFace lastWashAt={merged.find((entry) => entry.kind === "wash")?.createdAt ?? null} /> : null}

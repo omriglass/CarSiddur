@@ -8,6 +8,7 @@ import type { ResponsibleOption } from "@/features/admin/cars/components/CarForm
 import { FEATURE_LABEL } from "@/features/admin/cars/components/carFeatureLabels";
 import { CAR_FEATURES } from "@/features/admin/cars/schema";
 import { useDestinations } from "@/features/fleet/hooks";
+import { formatPlate } from "@/lib/plate";
 import { he } from "@/i18n/he";
 
 import { useSaveCarFieldsMutation } from "../hooks";
@@ -57,22 +58,27 @@ export function CarFactsCard({ car, canEdit, canEditResponsible, responsibleOpti
               value={car.access_code ? <span dir="ltr" className="text-lg font-bold tracking-widest">{car.access_code}</span> : muted(he.carPage.codeUnset)}
               editable={canEdit}
               initial={car.access_code ?? ""}
-              validate={(code) => (!CODE_RE.test(code.trim()) ? he.adminCars.codeDigitsRequired : !code.trim() && car.is_replaced ? he.adminCars.replacementNeedsCode : null)}
+              validate={(code) => (!CODE_RE.test(code.trim()) ? he.adminCars.codeDigitsRequired : null)}
               editor={({ draft, setDraft, inputId }) => (
                 <Input id={inputId} dir="ltr" inputMode="numeric" autoFocus value={draft} onChange={(e) => setDraft(e.target.value)} data-testid="car-details-code-input" />
               )}
-              onSave={(code) => patch({ access_code: code.trim() || null, is_replaced: car.is_replaced, replacement_code: car.replacement_code })}
+              onSave={(code) => patch({ access_code: code.trim() || null, is_replaced: car.is_replaced, replacement_code: car.replacement_code, replacement_plate: car.replacement_plate })}
             />
           ) : null}
           {codeVisible && (car.is_replaced || canEdit) ? (
-            <EditableRow<{ replaced: boolean; code: string }>
+            <EditableRow<{ replaced: boolean; code: string; plate: string }>
               label={he.adminCars.fieldIsReplaced}
               testId="car-details-replacement"
-              value={car.is_replaced && car.replacement_code ? <span dir="ltr" className="font-semibold">{car.replacement_code}</span> : muted("—")}
+              value={car.is_replaced ? (
+                <span className="flex flex-wrap items-center gap-2">
+                  {car.replacement_code ? <span dir="ltr" className="font-semibold">{car.replacement_code}</span> : he.adminCars.replacedBadge}
+                  {car.replacement_plate ? <span dir="ltr" data-testid="car-details-replacement-plate">{formatPlate(car.replacement_plate)}</span> : null}
+                </span>
+              ) : muted("—")}
               editable={canEdit}
-              initial={{ replaced: car.is_replaced, code: car.replacement_code ?? "" }}
+              initial={{ replaced: car.is_replaced, code: car.replacement_code ?? "", plate: car.replacement_plate ?? "" }}
               validate={({ replaced, code }) =>
-                !replaced ? null : !car.access_code ? he.adminCars.replacementNeedsCode : !/^[0-9]{4,5}$/.test(code.trim()) ? he.adminCars.codeDigitsRequired : null}
+                replaced && !CODE_RE.test(code.trim()) ? he.adminCars.codeDigitsRequired : null}
               editor={({ draft, setDraft, inputId }) => (
                 <div className="flex flex-col gap-2">
                   <label className="flex items-center gap-2 text-sm">
@@ -80,11 +86,14 @@ export function CarFactsCard({ car, canEdit, canEditResponsible, responsibleOpti
                     {he.adminCars.fieldIsReplaced}
                   </label>
                   {draft.replaced ? (
-                    <Input id={inputId} dir="ltr" inputMode="numeric" autoFocus placeholder={he.adminCars.fieldReplacementCode} value={draft.code} onChange={(e) => setDraft({ ...draft, code: e.target.value })} />
+                    <>
+                      <Input id={inputId} dir="ltr" inputMode="numeric" autoFocus placeholder={he.adminCars.fieldReplacementCode} aria-label={he.adminCars.fieldReplacementCode} value={draft.code} onChange={(e) => setDraft({ ...draft, code: e.target.value })} />
+                      <Input dir="ltr" placeholder={he.adminCars.fieldReplacementPlate} aria-label={he.adminCars.fieldReplacementPlate} value={draft.plate} onChange={(e) => setDraft({ ...draft, plate: e.target.value })} data-testid="car-details-replacement-plate-input" />
+                    </>
                   ) : null}
                 </div>
               )}
-              onSave={({ replaced, code }) => patch({ access_code: car.access_code, is_replaced: replaced, replacement_code: replaced ? code.trim() : null })}
+              onSave={({ replaced, code, plate }) => patch({ access_code: car.access_code, is_replaced: replaced, replacement_code: replaced ? code.trim() || null : null, replacement_plate: replaced ? plate.trim() || null : null })}
             />
           ) : null}
           <EditableRow<string>

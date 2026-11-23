@@ -8,7 +8,7 @@ export interface OverviewCar {
   status: "active" | "maintenance" | "retired";
   type: "shared" | "temporary";
   retired_at: string | null;
-  codes: { is_replaced: boolean } | { is_replaced: boolean }[] | null;
+  codes: { is_replaced: boolean; replacement_plate?: string | null } | { is_replaced: boolean; replacement_plate?: string | null }[] | null;
 }
 
 export interface OverviewKm {
@@ -63,6 +63,12 @@ function isReplaced(codes: OverviewCar["codes"]): boolean {
   return !!flat?.is_replaced;
 }
 
+/** REQ item 264: while replaced, the replacement car's plate. */
+function activePlate(car: OverviewCar): string {
+  const flat = Array.isArray(car.codes) ? car.codes[0] : car.codes;
+  return flat?.is_replaced ? flat.replacement_plate ?? "" : car.license_plate;
+}
+
 /**
  * One row per shared, non-retired car (private/temporary cars are never on the dashboard), sorted by name.
  * `careEvents` may be in any order; the latest event of each kind per car wins.
@@ -89,7 +95,7 @@ export function buildCarOverviewRows(input: {
       return {
         id: car.id,
         name: car.name,
-        licensePlate: car.license_plate,
+        licensePlate: activePlate(car),
         status: car.status,
         isReplacement: isReplaced(car.codes),
         km: reading ? { km: reading.km, at: reading.recorded_at } : null,

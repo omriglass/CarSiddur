@@ -21,6 +21,7 @@ export interface CarCodes {
   access_code: string | null;
   is_replaced: boolean;
   replacement_code: string | null;
+  replacement_plate: string | null;
 }
 /** PC1 (REQ item 227): every owner of a private car (`car_owners`), from the `owners` embed; `owner_id` = the first. */
 export type Car = Database["public"]["Tables"]["cars"]["Row"] & CarCodes & { owner_ids?: string[] };
@@ -30,7 +31,7 @@ export type SeatConfig = Database["public"]["Tables"]["car_seat_configs"]["Row"]
 export type MaintenanceBlock = Database["public"]["Tables"]["car_maintenance_blocks"]["Row"];
 export type CarIssue = Database["public"]["Tables"]["car_issues"]["Row"];
 
-export const CARS_WITH_CODES_SELECT = `*, codes:car_access_codes(access_code, is_replaced, replacement_code), ${CAR_OWNERS_EMBED}`;
+export const CARS_WITH_CODES_SELECT = `*, codes:car_access_codes(access_code, is_replaced, replacement_code, replacement_plate), ${CAR_OWNERS_EMBED}`;
 
 /** Flattens the `codes:car_access_codes(...)` embed onto the row (null/absent → not replaced, no codes). */
 export function flattenCarCodes<T extends { codes?: CarCodes | CarCodes[] | null; owners?: { profile_id: string }[] | null }>(
@@ -44,6 +45,7 @@ export function flattenCarCodes<T extends { codes?: CarCodes | CarCodes[] | null
     access_code: flat?.access_code ?? null,
     is_replaced: flat?.is_replaced ?? false,
     replacement_code: flat?.replacement_code ?? null,
+    replacement_plate: flat?.replacement_plate ?? null,
   } as Omit<T, "codes" | "owners"> & CarCodes & { owner_ids?: string[] };
 }
 
@@ -67,6 +69,7 @@ async function upsertCarCodes(carId: string, departmentId: string, codes: Partia
       access_code: codes.access_code ?? null,
       is_replaced: codes.is_replaced ?? false,
       replacement_code: codes.replacement_code ?? null,
+      replacement_plate: codes.replacement_plate ?? null,
     },
     { onConflict: "car_id" },
   );
@@ -80,11 +83,11 @@ async function upsertCarCodes(carId: string, departmentId: string, codes: Partia
  * owner for `type = 'temporary'` that the admin screen never collects.
  */
 export async function createCar(input: CarInsert): Promise<Car> {
-  const { access_code, is_replaced, replacement_code, ...carInput } = input;
+  const { access_code, is_replaced, replacement_code, replacement_plate, ...carInput } = input;
   const { data, error } = await supabase.from("cars").insert({ ...carInput, type: "shared" }).select().single();
   if (error) throw toAppError(error);
-  await upsertCarCodes(data.id, data.department_id, { access_code, is_replaced, replacement_code });
-  return { ...data, access_code: access_code ?? null, is_replaced: is_replaced ?? false, replacement_code: replacement_code ?? null };
+  await upsertCarCodes(data.id, data.department_id, { access_code, is_replaced, replacement_code, replacement_plate });
+  return { ...data, access_code: access_code ?? null, is_replaced: is_replaced ?? false, replacement_code: replacement_code ?? null, replacement_plate: replacement_plate ?? null };
 }
 
 /**
@@ -92,14 +95,14 @@ export async function createCar(input: CarInsert): Promise<Car> {
  * field at a time — a note must not wipe the code); then all three code keys are written, absent ones as empty.
  */
 export async function updateCar(id: string, patch: CarUpdate): Promise<Car> {
-  const { access_code, is_replaced, replacement_code, ...carPatch } = patch;
-  const touchesCodes = "access_code" in patch || "is_replaced" in patch || "replacement_code" in patch;
+  const { access_code, is_replaced, replacement_code, replacement_plate, ...carPatch } = patch;
+  const touchesCodes = "access_code" in patch || "is_replaced" in patch || "replacement_code" in patch || "replacement_plate" in patch;
   const { data, error } = await supabase.from("cars").update(carPatch).eq("id", id).select(CARS_WITH_CODES_SELECT).single();
   if (error) throw toAppError(error);
   const row = flattenCarCodes(data as unknown as Database["public"]["Tables"]["cars"]["Row"] & { codes: CarCodes | CarCodes[] | null });
   if (!touchesCodes) return row;
-  await upsertCarCodes(id, row.department_id, { access_code, is_replaced, replacement_code });
-  return { ...row, access_code: access_code ?? null, is_replaced: is_replaced ?? false, replacement_code: replacement_code ?? null };
+  await upsertCarCodes(id, row.department_id, { access_code, is_replaced, replacement_code, replacement_plate });
+  return { ...row, access_code: access_code ?? null, is_replaced: is_replaced ?? false, replacement_code: replacement_code ?? null, replacement_plate: replacement_plate ?? null };
 }
 
 export async function fetchSeatConfigs(carId: string): Promise<SeatConfig[]> {

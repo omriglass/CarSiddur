@@ -21,6 +21,7 @@ export type Car = Database["public"]["Tables"]["cars"]["Row"] & {
   access_code?: string | null;
   is_replaced?: boolean;
   replacement_code?: string | null;
+  replacement_plate?: string | null;
   /** PC1 (REQ item 227): every owner of a private car (`car_owners`); `owner_id` = the first. */
   owner_ids?: string[];
 };
@@ -31,12 +32,13 @@ interface CarCodesEmbed {
   access_code: string | null;
   is_replaced: boolean;
   replacement_code: string | null;
+  replacement_plate: string | null;
 }
 
 export async function fetchCars(departmentId: string): Promise<Car[]> {
   const { data, error } = await supabase
     .from("cars")
-    .select(`*, codes:car_access_codes(access_code, is_replaced, replacement_code), ${CAR_OWNERS_EMBED}`)
+    .select(`*, codes:car_access_codes(access_code, is_replaced, replacement_code, replacement_plate), ${CAR_OWNERS_EMBED}`)
     .eq("department_id", departmentId)
     .neq("status", "retired");
   if (error) throw toAppError(error);
@@ -49,6 +51,7 @@ export async function fetchCars(departmentId: string): Promise<Car[]> {
         access_code: flat?.access_code ?? null,
         is_replaced: flat?.is_replaced ?? false,
         replacement_code: flat?.replacement_code ?? null,
+        replacement_plate: flat?.replacement_plate ?? null,
       };
     },
   );
