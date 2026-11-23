@@ -8,6 +8,7 @@ import type { ResponsibleOption } from "@/features/admin/cars/components/CarForm
 import { FEATURE_LABEL } from "@/features/admin/cars/components/carFeatureLabels";
 import { CAR_FEATURES } from "@/features/admin/cars/schema";
 import { useDestinations } from "@/features/fleet/hooks";
+import { CAR_FUEL_TYPES, type CarFuelType } from "@/lib/enums";
 import { formatPlate } from "@/lib/plate";
 import { he } from "@/i18n/he";
 
@@ -62,21 +63,22 @@ export function CarFactsCard({ car, canEdit, canEditResponsible, responsibleOpti
               editor={({ draft, setDraft, inputId }) => (
                 <Input id={inputId} dir="ltr" inputMode="numeric" autoFocus value={draft} onChange={(e) => setDraft(e.target.value)} data-testid="car-details-code-input" />
               )}
-              onSave={(code) => patch({ access_code: code.trim() || null, is_replaced: car.is_replaced, replacement_code: car.replacement_code, replacement_plate: car.replacement_plate })}
+              onSave={(code) => patch({ access_code: code.trim() || null, is_replaced: car.is_replaced, replacement_code: car.replacement_code, replacement_plate: car.replacement_plate, replacement_fuel_type: car.replacement_fuel_type })}
             />
           ) : null}
           {codeVisible && (car.is_replaced || canEdit) ? (
-            <EditableRow<{ replaced: boolean; code: string; plate: string }>
+            <EditableRow<{ replaced: boolean; code: string; plate: string; fuel: string }>
               label={he.adminCars.fieldIsReplaced}
               testId="car-details-replacement"
               value={car.is_replaced ? (
                 <span className="flex flex-wrap items-center gap-2">
                   {car.replacement_code ? <span dir="ltr" className="font-semibold">{car.replacement_code}</span> : he.adminCars.replacedBadge}
                   {car.replacement_plate ? <span dir="ltr" data-testid="car-details-replacement-plate">{formatPlate(car.replacement_plate)}</span> : null}
+                  {car.replacement_fuel_type ? <span data-testid="car-details-replacement-fuel">{he.car.fuel[car.replacement_fuel_type]}</span> : null}
                 </span>
               ) : muted("—")}
               editable={canEdit}
-              initial={{ replaced: car.is_replaced, code: car.replacement_code ?? "", plate: car.replacement_plate ?? "" }}
+              initial={{ replaced: car.is_replaced, code: car.replacement_code ?? "", plate: car.replacement_plate ?? "", fuel: car.replacement_fuel_type ?? NONE }}
               validate={({ replaced, code }) =>
                 replaced && !CODE_RE.test(code.trim()) ? he.adminCars.codeDigitsRequired : null}
               editor={({ draft, setDraft, inputId }) => (
@@ -89,11 +91,18 @@ export function CarFactsCard({ car, canEdit, canEditResponsible, responsibleOpti
                     <>
                       <Input id={inputId} dir="ltr" inputMode="numeric" autoFocus placeholder={he.adminCars.fieldReplacementCode} aria-label={he.adminCars.fieldReplacementCode} value={draft.code} onChange={(e) => setDraft({ ...draft, code: e.target.value })} />
                       <Input dir="ltr" placeholder={he.adminCars.fieldReplacementPlate} aria-label={he.adminCars.fieldReplacementPlate} value={draft.plate} onChange={(e) => setDraft({ ...draft, plate: e.target.value })} data-testid="car-details-replacement-plate-input" />
+                      <Select value={draft.fuel} onValueChange={(fuel) => setDraft({ ...draft, fuel })}>
+                        <SelectTrigger aria-label={he.adminCars.fieldReplacementFuel} data-testid="car-details-replacement-fuel-input"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value={NONE}>{he.car.fuelUnset}</SelectItem>
+                          {CAR_FUEL_TYPES.map((fuel) => <SelectItem key={fuel} value={fuel}>{he.car.fuel[fuel]}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
                     </>
                   ) : null}
                 </div>
               )}
-              onSave={({ replaced, code, plate }) => patch({ access_code: car.access_code, is_replaced: replaced, replacement_code: replaced ? code.trim() || null : null, replacement_plate: replaced ? plate.trim() || null : null })}
+              onSave={({ replaced, code, plate, fuel }) => patch({ access_code: car.access_code, is_replaced: replaced, replacement_code: replaced ? code.trim() || null : null, replacement_plate: replaced ? plate.trim() || null : null, replacement_fuel_type: replaced && fuel !== NONE ? (fuel as CarFuelType) : null })}
             />
           ) : null}
           <EditableRow<string>

@@ -1,3 +1,4 @@
+import type { CarFuelType } from "@/lib/enums";
 import { supabase } from "@/integrations/supabase/client";
 import { CAR_OWNERS_EMBED } from "@/lib/carOwners";
 import { rpc, toAppError } from "@/lib/rpc";
@@ -22,6 +23,7 @@ export type Car = Database["public"]["Tables"]["cars"]["Row"] & {
   is_replaced?: boolean;
   replacement_code?: string | null;
   replacement_plate?: string | null;
+  replacement_fuel_type?: CarFuelType | null;
   /** PC1 (REQ item 227): every owner of a private car (`car_owners`); `owner_id` = the first. */
   owner_ids?: string[];
 };
@@ -33,12 +35,13 @@ interface CarCodesEmbed {
   is_replaced: boolean;
   replacement_code: string | null;
   replacement_plate: string | null;
+  replacement_fuel_type: CarFuelType | null;
 }
 
 export async function fetchCars(departmentId: string): Promise<Car[]> {
   const { data, error } = await supabase
     .from("cars")
-    .select(`*, codes:car_access_codes(access_code, is_replaced, replacement_code, replacement_plate), ${CAR_OWNERS_EMBED}`)
+    .select(`*, codes:car_access_codes(access_code, is_replaced, replacement_code, replacement_plate, replacement_fuel_type), ${CAR_OWNERS_EMBED}`)
     .eq("department_id", departmentId)
     .neq("status", "retired");
   if (error) throw toAppError(error);
@@ -52,6 +55,7 @@ export async function fetchCars(departmentId: string): Promise<Car[]> {
         is_replaced: flat?.is_replaced ?? false,
         replacement_code: flat?.replacement_code ?? null,
         replacement_plate: flat?.replacement_plate ?? null,
+        replacement_fuel_type: flat?.replacement_fuel_type ?? null,
       };
     },
   );

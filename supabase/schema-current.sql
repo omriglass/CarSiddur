@@ -11756,6 +11756,30 @@ $$;
 ALTER FUNCTION "public"."cancel_waitlist_group"("p_group_id" "uuid", "p_expected_version" integer) OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."car_access_codes_log_replacement"() RETURNS "trigger"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+begin
+  if new.is_replaced and (tg_op = 'INSERT' or not old.is_replaced) then
+    insert into public.car_replacement_events (department_id, car_id, kind, plate, actor_id)
+    values (new.department_id, new.car_id, 'started', new.replacement_plate, (select auth.uid()));
+  elsif tg_op = 'UPDATE' and old.is_replaced and not new.is_replaced then
+    insert into public.car_replacement_events (department_id, car_id, kind, actor_id)
+    values (new.department_id, new.car_id, 'ended', (select auth.uid()));
+  elsif tg_op = 'UPDATE' and new.is_replaced and new.replacement_plate is distinct from old.replacement_plate then
+    -- A plate added or corrected during the replacement belongs to the arrival row.
+    update public.car_replacement_events set plate = new.replacement_plate
+    where id = (select e.id from public.car_replacement_events e
+                where e.car_id = new.car_id and e.kind = 'started' order by e.created_at desc, e.id desc limit 1);
+  end if;
+  return null;
+end $$;
+
+
+ALTER FUNCTION "public"."car_access_codes_log_replacement"() OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."car_access_codes_set_department"() RETURNS "trigger"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -11769,6 +11793,19 @@ $$;
 
 
 ALTER FUNCTION "public"."car_access_codes_set_department"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."car_active_fuel"("_car_id" "uuid") RETURNS "public"."car_fuel_type"
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  select case when coalesce(a.is_replaced, false) then a.replacement_fuel_type else c.fuel_type end
+  from public.cars c left join public.car_access_codes a on a.car_id = c.id
+  where c.id = _car_id;
+$$;
+
+
+ALTER FUNCTION "public"."car_active_fuel"("_car_id" "uuid") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."car_base_location"("_car" "uuid") RETURNS "uuid"
@@ -16701,7 +16738,7 @@ begin
   if not public.member_of(v_dept) then
     raise exception 'not_authorized' using errcode = 'P0001';
   end if;
-  if _kind = 'urea_fill' and (select fuel_type from public.cars where id = _car_id) is distinct from 'diesel' then
+  if _kind = 'urea_fill' and public.car_active_fuel(_car_id) is distinct from 'diesel' then
     raise exception 'car_not_diesel' using errcode = 'P0001';
   end if;
 
@@ -22156,7 +22193,7 @@ begin
   if length(trim(coalesce(_description, ''))) = 0 then
     raise exception 'description_required' using errcode = 'P0001';
   end if;
-  if _category = 'urea' and (select fuel_type from public.cars where id = _car_id) is distinct from 'diesel' then
+  if _category = 'urea' and public.car_active_fuel(_car_id) is distinct from 'diesel' then
     raise exception 'car_not_diesel' using errcode = 'P0001';
   end if;
 
@@ -32520,6 +32557,7 @@ CREATE TABLE IF NOT EXISTS "public"."car_access_codes" (
     "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
     "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
     "replacement_plate" "text",
+    "replacement_fuel_type" "public"."car_fuel_type",
     CONSTRAINT "car_access_codes_access_code_format_ck" CHECK ((("access_code" IS NULL) OR ("access_code" ~ '^[0-9]{4,5}$'::"text"))),
     CONSTRAINT "car_access_codes_replacement_code_format_ck" CHECK ((("replacement_code" IS NULL) OR ("replacement_code" ~ '^[0-9]{4,5}$'::"text")))
 );
@@ -32531,6 +32569,10 @@ ALTER TABLE "public"."car_access_codes" OWNER TO "postgres";
 
 
 COMMENT ON COLUMN "public"."car_access_codes"."replacement_plate" IS 'The replacement car''s licence plate while is_replaced; cleared when the replacement ends.';
+
+
+
+COMMENT ON COLUMN "public"."car_access_codes"."replacement_fuel_type" IS 'The replacement car''s fuel while is_replaced; cleared when the replacement ends.';
 
 
 
@@ -32847,6 +32889,24 @@ ALTER TABLE ONLY "public"."car_owners" FORCE ROW LEVEL SECURITY;
 
 
 ALTER TABLE "public"."car_owners" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."car_replacement_events" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "department_id" "uuid" NOT NULL,
+    "car_id" "uuid" NOT NULL,
+    "kind" "text" NOT NULL,
+    "plate" "text",
+    "actor_id" "uuid",
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    CONSTRAINT "car_replacement_events_kind_check" CHECK (("kind" = ANY (ARRAY['started'::"text", 'ended'::"text"])))
+);
+
+ALTER TABLE ONLY "public"."car_replacement_events" FORCE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."car_replacement_events" OWNER TO "postgres";
 
 
 CREATE TABLE IF NOT EXISTS "public"."car_seat_configs" (
@@ -34956,6 +35016,11 @@ ALTER TABLE ONLY "public"."car_owners"
 
 
 
+ALTER TABLE ONLY "public"."car_replacement_events"
+    ADD CONSTRAINT "car_replacement_events_pkey" PRIMARY KEY ("id");
+
+
+
 ALTER TABLE ONLY "public"."car_seat_configs"
     ADD CONSTRAINT "car_seat_configs_pkey" PRIMARY KEY ("id");
 
@@ -35495,6 +35560,18 @@ CREATE INDEX "car_owners_department_idx" ON "public"."car_owners" USING "btree" 
 
 
 CREATE INDEX "car_owners_profile_idx" ON "public"."car_owners" USING "btree" ("profile_id");
+
+
+
+CREATE INDEX "car_replacement_events_actor_idx" ON "public"."car_replacement_events" USING "btree" ("actor_id");
+
+
+
+CREATE INDEX "car_replacement_events_car_idx" ON "public"."car_replacement_events" USING "btree" ("car_id", "created_at" DESC);
+
+
+
+CREATE INDEX "car_replacement_events_department_idx" ON "public"."car_replacement_events" USING "btree" ("department_id");
 
 
 
@@ -36415,6 +36492,10 @@ CREATE OR REPLACE TRIGGER "bump_version" BEFORE UPDATE ON "public"."waitlist_gro
 
 
 
+CREATE OR REPLACE TRIGGER "car_access_codes_log_replacement" AFTER INSERT OR UPDATE ON "public"."car_access_codes" FOR EACH ROW EXECUTE FUNCTION "public"."car_access_codes_log_replacement"();
+
+
+
 CREATE OR REPLACE TRIGGER "car_access_codes_set_department" BEFORE INSERT OR UPDATE OF "car_id" ON "public"."car_access_codes" FOR EACH ROW EXECUTE FUNCTION "public"."car_access_codes_set_department"();
 
 
@@ -36944,6 +37025,10 @@ CREATE OR REPLACE TRIGGER "set_updated_at" BEFORE UPDATE ON "public"."car_odomet
 
 
 CREATE OR REPLACE TRIGGER "set_updated_at" BEFORE UPDATE ON "public"."car_owners" FOR EACH ROW EXECUTE FUNCTION "public"."set_updated_at"();
+
+
+
+CREATE OR REPLACE TRIGGER "set_updated_at" BEFORE UPDATE ON "public"."car_replacement_events" FOR EACH ROW EXECUTE FUNCTION "public"."set_updated_at"();
 
 
 
@@ -37652,6 +37737,21 @@ ALTER TABLE ONLY "public"."car_owners"
 
 ALTER TABLE ONLY "public"."car_owners"
     ADD CONSTRAINT "car_owners_profile_id_fkey" FOREIGN KEY ("profile_id") REFERENCES "public"."profiles"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."car_replacement_events"
+    ADD CONSTRAINT "car_replacement_events_actor_id_fkey" FOREIGN KEY ("actor_id") REFERENCES "public"."profiles"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."car_replacement_events"
+    ADD CONSTRAINT "car_replacement_events_car_id_fkey" FOREIGN KEY ("car_id") REFERENCES "public"."cars"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."car_replacement_events"
+    ADD CONSTRAINT "car_replacement_events_department_id_fkey" FOREIGN KEY ("department_id") REFERENCES "public"."departments"("id");
 
 
 
@@ -38726,6 +38826,15 @@ ALTER TABLE "public"."car_owners" ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "car_owners_select" ON "public"."car_owners" FOR SELECT TO "authenticated" USING ((( SELECT "public"."is_admin"() AS "is_admin") OR ("department_id" IN ( SELECT "d"."d"
    FROM "public"."my_department_ids"() "d"("d")))));
+
+
+
+ALTER TABLE "public"."car_replacement_events" ENABLE ROW LEVEL SECURITY;
+
+
+CREATE POLICY "car_replacement_events_select" ON "public"."car_replacement_events" FOR SELECT TO "authenticated" USING ((( SELECT "public"."is_admin"() AS "is_admin") OR ("department_id" IN ( SELECT "d"."d"
+   FROM "public"."my_department_ids"() "d"("d"))) OR ("department_id" IN ( SELECT "d"."d"
+   FROM "public"."my_sadran_department_ids"() "d"("d")))));
 
 
 
@@ -41249,8 +41358,18 @@ GRANT ALL ON FUNCTION "public"."cancel_waitlist_group"("p_group_id" "uuid", "p_e
 
 
 
+REVOKE ALL ON FUNCTION "public"."car_access_codes_log_replacement"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."car_access_codes_log_replacement"() TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."car_access_codes_set_department"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."car_access_codes_set_department"() TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."car_active_fuel"("_car_id" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."car_active_fuel"("_car_id" "uuid") TO "service_role";
 
 
 
@@ -43904,6 +44023,11 @@ GRANT ALL ON TABLE "public"."car_maintenance_blocks" TO "service_role";
 
 GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE "public"."car_owners" TO "authenticated";
 GRANT ALL ON TABLE "public"."car_owners" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."car_replacement_events" TO "service_role";
+GRANT SELECT ON TABLE "public"."car_replacement_events" TO "authenticated";
 
 
 

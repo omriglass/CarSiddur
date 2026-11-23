@@ -58,6 +58,22 @@ export async function fetchCarCareHistory(carId: string): Promise<CarCareEventWi
   return (data ?? []) as unknown as CarCareEventWithReporter[];
 }
 
+export type CarReplacementEventWithActor = Omit<Database["public"]["Tables"]["car_replacement_events"]["Row"], "kind"> & {
+  kind: "started" | "ended";
+  actor_profile: { full_name: string } | null;
+};
+
+/** REQ item 266: when a replacement car arrived and when the regular car came back. */
+export async function fetchCarReplacementHistory(carId: string): Promise<CarReplacementEventWithActor[]> {
+  const { data, error } = await supabase
+    .from("car_replacement_events")
+    .select("*, actor_profile:profiles!car_replacement_events_actor_id_fkey(full_name)")
+    .eq("car_id", carId)
+    .order("created_at", { ascending: false });
+  if (error) throw toAppError(error);
+  return (data ?? []) as unknown as CarReplacementEventWithActor[];
+}
+
 export async function fetchCarOdometerHistory(carId: string): Promise<CarOdometerReadingWithReporter[]> {
   const { data, error } = await supabase
     .from("car_odometer_readings")

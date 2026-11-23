@@ -1442,6 +1442,7 @@
         "supabase/migrations/**/*car_odometer*",
         "supabase/migrations/**/*car_task*",
         "supabase/tests/car_care_semantics.sql",
+        "supabase/tests/car_replacement_history.sql",
         "supabase/tests/car_administration.sql",
         "supabase/tests/car_tasks.sql",
         "supabase/tests/car_owners.sql",
@@ -1480,6 +1481,7 @@
       ],
       "sql": [
         "car_care_semantics.sql",
+        "car_replacement_history.sql",
         "car_administration.sql",
         "car_tasks.sql",
         "car_checklists.sql",

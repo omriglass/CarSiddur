@@ -389,6 +389,10 @@ Table policies are unchanged (admin / `is_sadran_any` direct writes; the respons
 
 Index `(car_id) where status = 'open'`. Insert-only via `report_car_issue(_car_id, _category, _description, _photo_path)` (SECURITY DEFINER; §6.6) — there is no direct INSERT policy (the pre-portal one, member-own-row, was dropped: `src/` never called it, so nothing regressed). It enqueues `car_care` (variant `issue_<category>`) to `car_care_recipients(_car_id)`.
 
+#### `car_replacement_events` (REQ item 266, 2026-11-23)
+
+One row per replacement arrival (`kind = 'started'`, with `plate`) or return (`'ended'`), with `actor_id`. Written only by the `car_access_codes_log_replacement` trigger, never holds a code. SELECT for department members, Sadranim and admins; no browser writes. `car_access_codes.replacement_fuel_type` is the replacement's optional fuel; `car_active_fuel(car)` (internal) is the fuel in use, and `log_car_care` / `report_car_issue` check urea against it.
+
 #### `car_care_events` (§6.6, new 2026-09-09)
 
 | column | type | null | default | notes |

@@ -17,6 +17,7 @@ export const carSchema = z.object({
   is_replaced: z.boolean(),
   replacement_code: z.string().nullable(),
   replacement_plate: z.string().trim().nullable(),
+  replacement_fuel_type: carFuelTypeSchema.nullable(),
   department_id: z.string().uuid(he.adminCars.departmentRequired),
   // No `type` field: the admin form only ever creates/edits shared cars
   // (owner decision 2026-09-10) — `createCar` always sends `type: "shared"`;

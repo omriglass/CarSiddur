@@ -33,6 +33,7 @@ import { TireFillPanel } from "./TireFillPanel";
 import { UreaCelebration, UreaGame } from "./UreaGame";
 import { WashCelebration, WashGame } from "./WashGame";
 import { useTapLock } from "@/components/useTapLock";
+import { activeCarFuel } from "@/lib/plate";
 
 type View = "home" | "guides" | "problem" | "tires" | "wash" | "urea" | "km" | "tiresDone" | "washDone" | "ureaDone";
 
@@ -60,7 +61,7 @@ export function CarReportDialog({ carId, carName, open, onOpenChange, initialVie
   // FU2 (REQ item 219): urea only on a diesel car (the fuel type is on the car row). Owner 2026-11-13: no "needs urea"
   // report — whoever sees it fills it.
   const carRow = useCarQuery(open ? carId : undefined).data;
-  const isDiesel = carRow?.fuel_type === "diesel";
+  const isDiesel = !!carRow && activeCarFuel(carRow) === "diesel";
   // REQ item 264: a replacement car has its own odometer, so no reading while the car is replaced (also from a car task).
   const isReplaced = !!carRow?.is_replaced;
   const view: View = requestedView === "km" && isReplaced ? "home" : requestedView;

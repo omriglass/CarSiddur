@@ -7,7 +7,7 @@ import { carSchema } from "./schema";
 const car = {
   name: "Car", license_plate: "1234567", fuel_type: null, department_id: "00000000-0000-0000-0000-000000000001",
   type: "shared", status: "active", features: [], notes: null, built_in_child_seats: 0, built_in_boosters: 0,
-  access_code: "01234", is_replaced: false, replacement_code: null, replacement_plate: null, responsible_id: null, base_location_id: null,
+  access_code: "01234", is_replaced: false, replacement_code: null, replacement_plate: null, replacement_fuel_type: null, responsible_id: null, base_location_id: null,
   corporation: null, model: null, tire_pressure_front_psi: null, tire_pressure_rear_psi: null,
 };
 

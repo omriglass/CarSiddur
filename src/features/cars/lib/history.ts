@@ -1,7 +1,7 @@
 import { dateKey } from "@/lib/time";
 
 import type { CarTaskRow } from "@/features/carTasks/api";
-import type { CarCareEventWithReporter, CarIssueWithReporter, CarOdometerReadingWithReporter } from "../api";
+import type { CarCareEventWithReporter, CarIssueWithReporter, CarOdometerReadingWithReporter, CarReplacementEventWithActor } from "../api";
 
 import type { CarIssueCategory, CarIssueStatus, CarOdometerKind, CarTaskKind, CarTaskStatus, TireState } from "@/lib/enums";
 
@@ -29,7 +29,7 @@ export function parseTireStates(value: unknown): TireStates | null {
 }
 
 /** One row of the merged, date-descending car history list (`CarManageScreen`'s History section). */
-export type CarHistoryKind = "issue" | "tire_fill" | "wash" | "urea_fill" | "kilometrage" | "task";
+export type CarHistoryKind = "issue" | "tire_fill" | "wash" | "urea_fill" | "kilometrage" | "task" | "replacement_started" | "replacement_ended";
 
 export interface CarHistoryEntry {
   id: string;
@@ -52,6 +52,8 @@ export interface CarHistoryEntry {
   taskStatus?: CarTaskStatus;
   closedAt?: string | null;
   closedByName?: string | null;
+  /** `replacement_started`: the replacement car's plate (REQ item 266). */
+  plate?: string | null;
 }
 
 /** Merges issues, care events and kilometrage readings into one date-descending list, `id` tie-break for determinism. */
@@ -60,6 +62,7 @@ export function mergeCarHistory(
   careEvents: readonly CarCareEventWithReporter[],
   odometer: readonly CarOdometerReadingWithReporter[] = [],
   tasks: readonly CarTaskRow[] = [],
+  replacements: readonly CarReplacementEventWithActor[] = [],
 ): CarHistoryEntry[] {
   const entries: CarHistoryEntry[] = [
     ...issues.map((issue) => ({
@@ -106,11 +109,19 @@ export function mergeCarHistory(
       closedAt: task.status === "done" ? task.done_at : task.withdrawn_at,
       closedByName: task.done_by_profile?.full_name ?? null,
     })),
+    ...replacements.map((event) => ({
+      id: event.id,
+      kind: event.kind === "started" ? "replacement_started" as const : "replacement_ended" as const,
+      createdAt: event.created_at,
+      reporterId: event.actor_id ?? "",
+      reporterName: event.actor_profile?.full_name ?? null,
+      plate: event.plate,
+    })),
   ];
   return entries.sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id));
 }
 
-export type CarHistoryFilter = "all" | CarHistoryKind;
+export type CarHistoryFilter = "all" | "replacement" | Exclude<CarHistoryKind, "replacement_started" | "replacement_ended">;
 
 export interface CarHistoryDateRange {
   /** Inclusive, local calendar-day comparison against `dateKey(entry.createdAt)` (`src/lib/time.ts`). */
@@ -125,7 +136,8 @@ export function filterCarHistory(
   range: CarHistoryDateRange = {},
 ): CarHistoryEntry[] {
   return entries.filter((entry) => {
-    if (filter !== "all" && entry.kind !== filter) return false;
+    const group = entry.kind === "replacement_started" || entry.kind === "replacement_ended" ? "replacement" : entry.kind;
+    if (filter !== "all" && group !== filter) return false;
     const day = dateKey(entry.createdAt);
     if (range.from && day < range.from) return false;
     if (range.to && day > range.to) return false;

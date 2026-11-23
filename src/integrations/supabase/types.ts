@@ -418,6 +418,9 @@ export type Database = {
           department_id: string
           is_replaced: boolean
           replacement_code: string | null
+          replacement_fuel_type:
+            | Database["public"]["Enums"]["car_fuel_type"]
+            | null
           replacement_plate: string | null
           updated_at: string
         }
@@ -428,6 +431,9 @@ export type Database = {
           department_id: string
           is_replaced?: boolean
           replacement_code?: string | null
+          replacement_fuel_type?:
+            | Database["public"]["Enums"]["car_fuel_type"]
+            | null
           replacement_plate?: string | null
           updated_at?: string
         }
@@ -438,6 +444,9 @@ export type Database = {
           department_id?: string
           is_replaced?: boolean
           replacement_code?: string | null
+          replacement_fuel_type?:
+            | Database["public"]["Enums"]["car_fuel_type"]
+            | null
           replacement_plate?: string | null
           updated_at?: string
         }
@@ -1247,6 +1256,68 @@ export type Database = {
             columns: ["profile_id"]
             isOneToOne: false
             referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      car_replacement_events: {
+        Row: {
+          actor_id: string | null
+          car_id: string
+          created_at: string
+          department_id: string
+          id: string
+          kind: string
+          plate: string | null
+          updated_at: string
+        }
+        Insert: {
+          actor_id?: string | null
+          car_id: string
+          created_at?: string
+          department_id: string
+          id?: string
+          kind: string
+          plate?: string | null
+          updated_at?: string
+        }
+        Update: {
+          actor_id?: string | null
+          car_id?: string
+          created_at?: string
+          department_id?: string
+          id?: string
+          kind?: string
+          plate?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "car_replacement_events_actor_id_fkey"
+            columns: ["actor_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "car_replacement_events_car_id_fkey"
+            columns: ["car_id"]
+            isOneToOne: false
+            referencedRelation: "car_guide_missing"
+            referencedColumns: ["car_id"]
+          },
+          {
+            foreignKeyName: "car_replacement_events_car_id_fkey"
+            columns: ["car_id"]
+            isOneToOne: false
+            referencedRelation: "cars"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "car_replacement_events_department_id_fkey"
+            columns: ["department_id"]
+            isOneToOne: false
+            referencedRelation: "departments"
             referencedColumns: ["id"]
           },
         ]
@@ -7853,6 +7924,10 @@ export type Database = {
       cancel_waitlist_group: {
         Args: { p_expected_version: number; p_group_id: string }
         Returns: Json
+      }
+      car_active_fuel: {
+        Args: { _car_id: string }
+        Returns: Database["public"]["Enums"]["car_fuel_type"]
       }
       car_base_location: { Args: { _car: string }; Returns: string }
       car_care_recipients: { Args: { _car_id: string }; Returns: string[] }

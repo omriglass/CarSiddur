@@ -24,6 +24,9 @@ import type { Car } from "../api";
 
 import type { Passengers } from "@/solver";
 
+/** Radix Select treats "" as "no value", so an unknown replacement fuel needs a real value. */
+const UNSET_FUEL = "__none";
+
 /** R20U9: Radix Select treats "" as "no value" (a blank trigger), so "none" / "home" needs a real value. */
 const NONE = "__none";
 
@@ -87,6 +90,7 @@ export function CarForm({
       is_replaced: car?.is_replaced ?? false,
       replacement_code: car?.replacement_code ?? null,
       replacement_plate: car?.replacement_plate ?? null,
+      replacement_fuel_type: car?.replacement_fuel_type ?? null,
       department_id: car?.department_id ?? "",
       status: car?.status ?? "active",
       features: car?.features ?? [],
@@ -206,6 +210,7 @@ export function CarForm({
                     if (checked !== true) {
                       form.setValue("replacement_code", null, { shouldDirty: true });
                       form.setValue("replacement_plate", null, { shouldDirty: true });
+                      form.setValue("replacement_fuel_type", null, { shouldDirty: true });
                       form.clearErrors("replacement_code");
                     }
                   }}
@@ -226,6 +231,29 @@ export function CarForm({
                 <FormControl>
                   <Input {...field} value={field.value ?? ""} type="text" dir="ltr" autoComplete="off" />
                 </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        ) : null}
+        {isReplaced ? (
+          <FormField
+            control={form.control}
+            name="replacement_fuel_type"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>{he.adminCars.fieldReplacementFuel}</FormLabel>
+                <Select value={field.value ?? UNSET_FUEL} onValueChange={(value) => field.onChange(value === UNSET_FUEL ? null : value)}>
+                  <FormControl>
+                    <SelectTrigger data-testid="car-replacement-fuel">
+                      <SelectValue />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    <SelectItem value={UNSET_FUEL}>{he.car.fuelUnset}</SelectItem>
+                    {CAR_FUEL_TYPES.map((fuel) => <SelectItem key={fuel} value={fuel}>{he.car.fuel[fuel]}</SelectItem>)}
+                  </SelectContent>
+                </Select>
                 <FormMessage />
               </FormItem>
             )}

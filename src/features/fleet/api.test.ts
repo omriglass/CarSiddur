@@ -55,7 +55,7 @@ function makeBuilder(result: { data?: unknown; error?: unknown }) {
 describe("fetchCars", () => {
   it("scopes to the department and excludes retired cars, flattening an embedded codes object", async () => {
     const { builder, calls } = makeBuilder({
-      data: [{ id: "car-1", codes: { access_code: "1234", is_replaced: true, replacement_code: "5678", replacement_plate: null } }],
+      data: [{ id: "car-1", codes: { access_code: "1234", is_replaced: true, replacement_code: "5678", replacement_plate: null, replacement_fuel_type: null } }],
       error: null,
     });
     mocks.from.mockReturnValue(builder);
@@ -63,7 +63,7 @@ describe("fetchCars", () => {
     expect(mocks.from).toHaveBeenCalledWith("cars");
     expect(calls.eq).toEqual([["department_id", "dept-1"]]);
     expect(calls.neq).toEqual([["status", "retired"]]);
-    expect(cars).toEqual([{ id: "car-1", owner_ids: [], access_code: "1234", is_replaced: true, replacement_code: "5678", replacement_plate: null }]);
+    expect(cars).toEqual([{ id: "car-1", owner_ids: [], access_code: "1234", is_replaced: true, replacement_code: "5678", replacement_plate: null, replacement_fuel_type: null }]);
   });
 
   it("PC1: flattens the embedded owners into owner_ids", async () => {
@@ -75,19 +75,19 @@ describe("fetchCars", () => {
 
   it("takes the first element when codes come back as an array", async () => {
     const { builder } = makeBuilder({
-      data: [{ id: "car-1", codes: [{ access_code: "1111", is_replaced: false, replacement_code: null, replacement_plate: null }] }],
+      data: [{ id: "car-1", codes: [{ access_code: "1111", is_replaced: false, replacement_code: null, replacement_plate: null, replacement_fuel_type: null }] }],
       error: null,
     });
     mocks.from.mockReturnValue(builder);
     const [car] = await fetchCars("dept-1");
-    expect(car).toMatchObject({ access_code: "1111", is_replaced: false, replacement_code: null, replacement_plate: null });
+    expect(car).toMatchObject({ access_code: "1111", is_replaced: false, replacement_code: null, replacement_plate: null, replacement_fuel_type: null });
   });
 
   it("defaults codes to null/false when no access-code row exists", async () => {
     const { builder } = makeBuilder({ data: [{ id: "car-1", codes: null }], error: null });
     mocks.from.mockReturnValue(builder);
     const [car] = await fetchCars("dept-1");
-    expect(car).toMatchObject({ access_code: null, is_replaced: false, replacement_code: null, replacement_plate: null });
+    expect(car).toMatchObject({ access_code: null, is_replaced: false, replacement_code: null, replacement_plate: null, replacement_fuel_type: null });
   });
 
   it("returns an empty array when data is null", async () => {

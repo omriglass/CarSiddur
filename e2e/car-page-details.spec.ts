@@ -157,10 +157,18 @@ test("REQ item 264: a replacement car saved from the car page, with no code and 
     await page.getByTestId("car-details-replacement-edit").click();
     await row.getByRole("checkbox").check();
     await page.getByTestId("car-details-replacement-plate-input").fill("1234567");
+    await page.getByTestId("car-details-replacement-fuel-input").click();
+    await page.getByRole("option", { name: he.car.fuel.diesel }).click();
     await page.getByTestId("car-details-replacement-save").click();
     await expect(page.getByTestId("car-plate")).toHaveText("12-345-67");
-    const { data } = await service.from("car_access_codes").select("is_replaced, replacement_code, replacement_plate").eq("car_id", carId).single();
-    expect(data).toEqual({ is_replaced: true, replacement_code: null, replacement_plate: "1234567" });
+    const { data } = await service.from("car_access_codes").select("is_replaced, replacement_code, replacement_plate, replacement_fuel_type").eq("car_id", carId).single();
+    expect(data).toEqual({ is_replaced: true, replacement_code: null, replacement_plate: "1234567", replacement_fuel_type: "diesel" });
+    await expect(page.getByText(`${he.carPage.historyKindReplacementStarted} (12-345-67)`).first()).toBeVisible();
+    // REQ item 266: ending the replacement adds its own history row.
+    await page.getByTestId("car-details-replacement-edit").click();
+    await row.getByRole("checkbox").uncheck();
+    await page.getByTestId("car-details-replacement-save").click();
+    await expect(page.getByText(he.carPage.historyKindReplacementEnded).first()).toBeVisible();
   } finally {
     await context.close();
     if (before) await service.from("car_access_codes").upsert(before, { onConflict: "car_id" });

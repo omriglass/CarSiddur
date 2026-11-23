@@ -14,7 +14,7 @@ import type { CarFuelType } from "@/lib/enums";
 import { CarGuidesDialog } from "../guides/components/CarGuidesBody";
 import { activeCarCode } from "../lib/relevantCars";
 import { CarFuelChip } from "./CarFuelChip";
-import { activeCarPlate, formatPlate } from "@/lib/plate";
+import { activeCarFuel, activeCarPlate, formatPlate } from "@/lib/plate";
 
 /**
  * One car on "my rides" (/my): a car I am responsible for, my own private car, or (MC1) the car of a ride I am on now. Tapping it offers
@@ -30,6 +30,7 @@ export function HomeCarCard({ car, addRideTo, checklistPrompt, hasGuides, missin
     is_replaced?: boolean;
     replacement_code?: string | null;
     replacement_plate?: string | null;
+    replacement_fuel_type?: CarFuelType | null;
   };
   /** `paths.requests.new(...)` with the car; omitted when the member cannot file requests. */
   addRideTo?: string;
@@ -56,7 +57,7 @@ export function HomeCarCard({ car, addRideTo, checklistPrompt, hasGuides, missin
                   <p className="font-medium">{car.is_replaced ? tv("siddurCar.replacementName", { name: car.name }) : car.name}</p>
                   <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
                     <span dir="ltr">{formatPlate(activeCarPlate(car))}</span>
-                    <CarFuelChip fuel={car.fuel_type} />
+                    <CarFuelChip fuel={activeCarFuel(car)} />
                     {code ? (
                       <span className="font-medium text-foreground" data-testid="home-car-code">
                         {he.carPage.homeCarCode} <span dir="ltr">{code}</span>

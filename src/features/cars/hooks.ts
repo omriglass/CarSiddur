@@ -19,6 +19,7 @@ import {
   fetchCarIssueHistory,
   fetchCarsByIds,
   fetchCarOdometerHistory,
+  fetchCarReplacementHistory,
   fetchMyResponsibleCars,
   fetchUpcomingCarRides,
   addCarOwner,
@@ -50,6 +51,14 @@ export function useCarCareHistoryQuery(carId: string | undefined) {
   return useQuery({
     queryKey: carKeys.careEvents(carId),
     queryFn: () => fetchCarCareHistory(carId as string),
+    enabled: !!carId,
+  });
+}
+
+export function useCarReplacementHistoryQuery(carId: string | undefined) {
+  return useQuery({
+    queryKey: [...carKeys.all, "replacements", carId] as const,
+    queryFn: () => fetchCarReplacementHistory(carId as string),
     enabled: !!carId,
   });
 }
@@ -124,6 +133,7 @@ export function useSetCarPrivateMutation() {
           is_replaced: car.is_replaced,
           replacement_code: car.replacement_code,
           replacement_plate: car.replacement_plate,
+          replacement_fuel_type: car.replacement_fuel_type,
         },
       });
     },

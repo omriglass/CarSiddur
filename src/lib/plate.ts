@@ -1,6 +1,13 @@
+import type { CarFuelType } from "@/lib/enums";
+
 /** REQ item 264: the plate of the car actually in use - the replacement's while replaced (none when it has none). */
 export function activeCarPlate(car: { license_plate?: string | null; is_replaced?: boolean; replacement_plate?: string | null }): string | null {
   return (car.is_replaced ? car.replacement_plate : car.license_plate) ?? null;
+}
+
+/** REQ item 266: the fuel of the car actually in use. An empty replacement fuel is unknown, never the regular car's. */
+export function activeCarFuel(car: { fuel_type?: CarFuelType | null; is_replaced?: boolean; replacement_fuel_type?: CarFuelType | null }): CarFuelType | null {
+  return (car.is_replaced ? car.replacement_fuel_type : car.fuel_type) ?? null;
 }
 
 /**

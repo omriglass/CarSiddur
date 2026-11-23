@@ -558,7 +558,7 @@ local replay stack and comparing it with the production solve — scripts/replay
 
 **Automated**:
 - Vitest: `npx vitest run src/features/carCare src/features/cars src/features/carTasks src/features/carsOverview src/lib/plate.test.ts`
-- SQL: `car_care_semantics.sql`, `car_administration.sql`, `car_tasks.sql`, `car_checklists.sql`, `car_guides.sql`, `car_owners.sql`, `private_car_use_scope.sql`, `car_issue_manage.sql`, `department_isolation.sql`
+- SQL: `car_care_semantics.sql`, `car_administration.sql`, `car_tasks.sql`, `car_checklists.sql`, `car_guides.sql`, `car_owners.sql`, `private_car_use_scope.sql`, `car_replacement_history.sql`, `car_issue_manage.sql`, `department_isolation.sql`
 - Playwright: `npx playwright test --grep "@car-care|@car-admin|@car-tasks|@car-checklist|@car-guides|@car-owners|@car-page"`
 
 **QA script**:

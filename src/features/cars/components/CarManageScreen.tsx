@@ -40,8 +40,8 @@ import { CarOpenIssues } from "./CarOpenIssues";
 import { CarRegistrationCard } from "./CarRegistrationCard";
 import { CarReportsSection, type CarReportView } from "./CarReportsSection";
 import { CarStatusSelect } from "./CarStatusSelect";
-import { useCarCareHistoryQuery, useCarCurrentKmQuery, useCarIssueHistoryQuery, useCarOdometerHistoryQuery, useOpenCarIssuesQuery } from "../hooks";
-import { activeCarPlate, formatPlate } from "@/lib/plate";
+import { useCarCareHistoryQuery, useCarCurrentKmQuery, useCarIssueHistoryQuery, useCarOdometerHistoryQuery, useCarReplacementHistoryQuery, useOpenCarIssuesQuery } from "../hooks";
+import { activeCarFuel, activeCarPlate, formatPlate } from "@/lib/plate";
 import { isCarOwner } from "@/lib/carOwners";
 import { useProfile } from "@/features/auth/useProfile";
 import { formatKm } from "../lib/kilometrage";
@@ -83,7 +83,7 @@ function TireDots({ tires }: { tires: NonNullable<CarHistoryEntry["tires"]> }) {
 
 function historyRow(entry: CarHistoryEntry, onIssue?: (entry: CarHistoryEntry) => void) {
   const timestamp = formatInTimeZone(new Date(entry.createdAt), TZ, "dd/MM/yyyy HH:mm");
-  const icon = entry.kind === "issue" ? Wrench : entry.kind === "tire_fill" ? CarFront : entry.kind === "kilometrage" ? Route : entry.kind === "task" ? ClipboardList : entry.kind === "urea_fill" ? Fuel : Droplets;
+  const icon = entry.kind === "issue" ? Wrench : entry.kind === "tire_fill" ? CarFront : entry.kind === "kilometrage" ? Route : entry.kind === "task" ? ClipboardList : entry.kind === "urea_fill" ? Fuel : entry.kind === "replacement_started" || entry.kind === "replacement_ended" ? CarFront : Droplets;
   const Icon = icon;
   return (
     <Card
@@ -102,7 +102,7 @@ function historyRow(entry: CarHistoryEntry, onIssue?: (entry: CarHistoryEntry) =
         <div className="flex-1 space-y-1">
           <div className="flex items-center justify-between gap-2">
             <span className="font-medium">
-              {entry.kind === "task" ? he.carTasks.historyKind : entry.kind === "issue" && entry.category ? he.carCare.category[entry.category] : he.carPage[
+              {entry.kind === "replacement_started" ? <>{he.carPage.historyKindReplacementStarted}{entry.plate ? <> (<span dir="ltr">{formatPlate(entry.plate)}</span>)</> : null}</> : entry.kind === "replacement_ended" ? he.carPage.historyKindReplacementEnded : entry.kind === "task" ? he.carTasks.historyKind : entry.kind === "issue" && entry.category ? he.carCare.category[entry.category] : he.carPage[
                 entry.kind === "issue"
                   ? "historyKindIssue"
                   : entry.kind === "tire_fill"
@@ -147,9 +147,11 @@ function historyRow(entry: CarHistoryEntry, onIssue?: (entry: CarHistoryEntry) =
           ) : null}
           {entry.kind === "tire_fill" && entry.tires ? <TireDots tires={entry.tires} /> : null}
           {entry.note && entry.kind !== "task" ? <p className="text-xs text-muted-foreground">{entry.note}</p> : null}
-          <p className="text-xs text-muted-foreground">
-            {he.carPage.historyReporter} {entry.reporterName ?? entry.reporterId}
-          </p>
+          {entry.reporterName || entry.reporterId ? (
+            <p className="text-xs text-muted-foreground">
+              {he.carPage.historyReporter} {entry.reporterName ?? entry.reporterId}
+            </p>
+          ) : null}
         </div>
       </CardContent>
     </Card>
@@ -186,6 +188,7 @@ export function CarManageScreen({ car, isAdmin, canEdit, canManageCar, canDefine
   const issuesQuery = useCarIssueHistoryQuery(car.id);
   const careEventsQuery = useCarCareHistoryQuery(car.id);
   const odometerQuery = useCarOdometerHistoryQuery(car.id);
+  const replacementsQuery = useCarReplacementHistoryQuery(car.id);
   const currentKmQuery = useCarCurrentKmQuery(car.id);
   const tasksQuery = useCarTasksQuery(car.id, canManageCar);
   // Department-members combobox candidates for the responsible-person picker — only fetched (and only
@@ -215,19 +218,21 @@ export function CarManageScreen({ car, isAdmin, canEdit, canManageCar, canDefine
       .filter((option, index, all) => all.findIndex((o) => o.id === option.id) === index);
   }, [isAdmin, car.responsible_id, car.department_id, deptMembersQuery.data, profilesQuery.data]);
 
-  const merged = mergeCarHistory(issuesQuery.data ?? [], careEventsQuery.data ?? [], odometerQuery.data ?? [], tasksQuery.data ?? []);
+  const merged = mergeCarHistory(issuesQuery.data ?? [], careEventsQuery.data ?? [], odometerQuery.data ?? [], tasksQuery.data ?? [], replacementsQuery.data ?? []);
   const lastUreaAt = merged.find((entry) => entry.kind === "urea_fill")?.createdAt ?? null;
   const filtered = filterCarHistory(merged, filter, { from: dateFrom || undefined, to: dateTo || undefined });
   const historyLoading = issuesQuery.isLoading || careEventsQuery.isLoading || odometerQuery.isLoading;
   const historyError = issuesQuery.isError || careEventsQuery.isError || odometerQuery.isError;
 
+  const activeFuel = activeCarFuel(car);
   const FILTER_CHIPS: { value: CarHistoryFilter; label: string }[] = [
     { value: "all", label: he.carPage.historyFilterAll },
     { value: "issue", label: he.carPage.historyFilterIssue },
     { value: "tire_fill", label: he.carPage.historyFilterTireFill },
     { value: "wash", label: he.carPage.historyFilterWash },
-    ...(car.fuel_type === "diesel" ? [{ value: "urea_fill" as const, label: he.carPage.historyFilterUrea }] : []),
+    ...(activeFuel === "diesel" || merged.some((entry) => entry.kind === "urea_fill") ? [{ value: "urea_fill" as const, label: he.carPage.historyFilterUrea }] : []),
     { value: "kilometrage", label: he.carPage.historyFilterKilometrage },
+    ...(replacementsQuery.data?.length ? [{ value: "replacement" as const, label: he.carPage.historyFilterReplacement }] : []),
     ...(canManageCar ? [{ value: "task" as const, label: he.carTasks.historyFilter }] : []),
   ];
 
@@ -257,11 +262,11 @@ export function CarManageScreen({ car, isAdmin, canEdit, canManageCar, canDefine
       {/* FU1 (REQ item 217): licence plate and fuel type are the first facts about a car. */}
       <div className="flex flex-wrap items-center gap-2 text-sm">
         <span className="font-medium" dir="ltr" data-testid="car-plate">{formatPlate(activeCarPlate(car))}</span>
-        <CarFuelChip fuel={car.fuel_type} />
+        <CarFuelChip fuel={activeFuel} />
         <StatusBadge kind="car" status={car.status} />
         {careEventsQuery.isSuccess ? <CarMoodFace lastWashAt={merged.find((entry) => entry.kind === "wash")?.createdAt ?? null} /> : null}
         {/* Owner 2026-11-13: the last urea fill at a glance on a diesel car. */}
-        {car.fuel_type === "diesel" ? (
+        {activeFuel === "diesel" ? (
           <span className="text-xs text-muted-foreground" data-testid="car-last-urea">
             {lastUreaAt ? tv("carPage.lastUreaFill", { date: formatDayDate(lastUreaAt) }) : he.carPage.lastUreaNever}
           </span>
@@ -294,7 +299,7 @@ export function CarManageScreen({ car, isAdmin, canEdit, canManageCar, canDefine
       <CarMaintenancePanel car={car} />
       {/* REQ item 264: the next passenger's requests, then one collapsible "דיווחים"; the car check is in it for managers only. */}
       {canManageCar ? <CarTasksManagerCard car={car} /> : null}
-      <CarReportsSection carId={car.id} isDiesel={car.fuel_type === "diesel"} onReport={setLogView}>
+      <CarReportsSection carId={car.id} isDiesel={activeFuel === "diesel"} onReport={setLogView}>
         {/* A replacement car has its own odometer: no readings into the regular car's history while it is replaced. */}
         {car.is_replaced ? null : (
           <CarKilometrageCard car={car} current={currentKmQuery.data ?? null} loading={currentKmQuery.isLoading} canCorrect={canManageCar} onLogKm={() => setLogView("km")} />
