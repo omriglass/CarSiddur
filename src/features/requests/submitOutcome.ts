@@ -98,8 +98,17 @@ export function shouldOfferJoinableRides(result: SubmitRequestResult | null | un
  * Same "falls through silently against an open/solving week" shape as `toastSubmitOutcome`
  * above — `status` is only present once `try_auto_approve_series()` actually ran.
  */
-export function toastSeriesSubmitOutcome(result: SubmitSeriesRequestResult | null | undefined): boolean {
+export function toastSeriesSubmitOutcome(
+  result: SubmitSeriesRequestResult | null | undefined,
+  /** REQ item 265: from a tap on a car, say so when the ride landed on another one. */
+  tapped?: { preferredCarId: string | null | undefined; carName: (id: string | null | undefined) => string },
+): boolean {
   if (!result) return false;
+
+  if (result.status === "assigned" && tapped?.preferredCarId && result.car_id && result.car_id !== tapped.preferredCarId) {
+    toast.success(tv("quickRequest.successFallback", { car: tapped.carName(result.car_id), preferredCar: tapped.carName(tapped.preferredCarId) }));
+    return true;
+  }
 
   if (result.status === "assigned") {
     toast.success(t("request.seriesAssigned"));

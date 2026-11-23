@@ -145,3 +145,25 @@ test("car page: formatted plate, open issues on top, in-place edits, the report 
     await service.from("cars").update({ corporation: other!.corporation }).eq("id", other!.id);
   }
 });
+
+test("REQ item 264: a replacement car saved from the car page, with no code and its own plate", { tag: ["@car-page"] }, async ({ browser }) => {
+  const service = serviceRoleClient();
+  const carId = "00000000-0000-0000-0000-000000000042";
+  const { data: before } = await service.from("car_access_codes").select("*").eq("car_id", carId).maybeSingle();
+  const { context, page } = await newSignedInPage(browser, SEEDED_USERS.admin);
+  try {
+    await page.goto(paths.car(carId));
+    const row = page.getByTestId("car-details-replacement");
+    await page.getByTestId("car-details-replacement-edit").click();
+    await row.getByRole("checkbox").check();
+    await page.getByTestId("car-details-replacement-plate-input").fill("1234567");
+    await page.getByTestId("car-details-replacement-save").click();
+    await expect(page.getByTestId("car-plate")).toHaveText("12-345-67");
+    const { data } = await service.from("car_access_codes").select("is_replaced, replacement_code, replacement_plate").eq("car_id", carId).single();
+    expect(data).toEqual({ is_replaced: true, replacement_code: null, replacement_plate: "1234567" });
+  } finally {
+    await context.close();
+    if (before) await service.from("car_access_codes").upsert(before, { onConflict: "car_id" });
+    else await service.from("car_access_codes").delete().eq("car_id", carId);
+  }
+});

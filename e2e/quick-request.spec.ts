@@ -298,7 +298,8 @@ test.describe.serial("quick request from an empty slot (live week)", { tag: ["@q
       const { data: rows } = await myLegs();
       for (const row of rows ?? []) {
         const { data: links } = await admin.from("ride_requests").select("ride_id").eq("request_id", row.id);
-        if (links?.length) await admin.from("rides").update({ status: "cancelled" }).in("id", links.map((l) => l.ride_id));
+        await admin.from("ride_requests").delete().eq("request_id", row.id);
+        if (links?.length) await admin.from("rides").delete().in("id", links.map((l) => l.ride_id));
         await admin.from("requests").update({ status: "withdrawn" }).eq("id", row.id);
       }
     }

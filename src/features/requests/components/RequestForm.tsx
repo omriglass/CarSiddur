@@ -1294,7 +1294,10 @@ export function RequestForm({
         if ("freeText" in formValues.destination && formValues.destination.freeText.trim()) {
           suggestDestinationMutation.mutate({ name: formValues.destination.freeText.trim() });
         }
-        if (!toastSeriesSubmitOutcome(seriesResult)) toast.success(t(seriesEdit ? "request.submitSaved" : "request.submitSent"));
+        const tappedCar = quickContext
+          ? { preferredCarId: formValues.preferredCarId, carName: (id: string | null | undefined) => quickContext.cars.find((c) => c.id === id)?.name ?? "" }
+          : undefined;
+        if (!toastSeriesSubmitOutcome(seriesResult, tappedCar)) toast.success(t(seriesEdit ? "request.submitSaved" : "request.submitSent"));
         if (onDone) onDone(null, form.getValues("day"));
         else navigate(paths.my());
         return;

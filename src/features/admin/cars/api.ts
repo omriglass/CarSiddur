@@ -97,7 +97,10 @@ export async function createCar(input: CarInsert): Promise<Car> {
 export async function updateCar(id: string, patch: CarUpdate): Promise<Car> {
   const { access_code, is_replaced, replacement_code, replacement_plate, ...carPatch } = patch;
   const touchesCodes = "access_code" in patch || "is_replaced" in patch || "replacement_code" in patch || "replacement_plate" in patch;
-  const { data, error } = await supabase.from("cars").update(carPatch).eq("id", id).select(CARS_WITH_CODES_SELECT).single();
+  // A codes-only save leaves nothing to update on `cars`, and an empty PATCH returns no row: read the car instead.
+  const { data, error } = Object.keys(carPatch).length > 0
+    ? await supabase.from("cars").update(carPatch).eq("id", id).select(CARS_WITH_CODES_SELECT).single()
+    : await supabase.from("cars").select(CARS_WITH_CODES_SELECT).eq("id", id).single();
   if (error) throw toAppError(error);
   const row = flattenCarCodes(data as unknown as Database["public"]["Tables"]["cars"]["Row"] & { codes: CarCodes | CarCodes[] | null });
   if (!touchesCodes) return row;

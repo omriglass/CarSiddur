@@ -1,13 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { tv } from "@/i18n/he";
+import { t, tv } from "@/i18n/he";
 
 const mocks = vi.hoisted(() => ({ toast: vi.fn(), success: vi.fn(), warning: vi.fn() }));
 vi.mock("sonner", () => ({ toast: Object.assign(mocks.toast, { success: mocks.success, warning: mocks.warning }) }));
 
 import { affectedNames, editRefusal, releaseConfirmation, shouldOfferJoinableRides, toastSeriesSubmitOutcome, toastSubmitOutcome, seriesCarTaken } from "./submitOutcome";
 import type { SubmitRequestResult, SubmitSeriesRequestResult } from "./api";
-import { t } from "@/i18n/he";
 
 beforeEach(() => {
   mocks.toast.mockClear();
@@ -111,6 +110,12 @@ describe("toastSeriesSubmitOutcome", () => {
     const result: SubmitSeriesRequestResult = { series_id: "s", request_ids: ["a", "b"], warnings: [], status: "assigned", reason: "SERIES_PLACED", car_id: "car" };
     toastSeriesSubmitOutcome(result);
     expect(mocks.success).toHaveBeenCalledWith(t("request.seriesAssigned"));
+  });
+
+  it("REQ item 265: a tapped car that was taken is named, with the car the ride got", () => {
+    const result: SubmitSeriesRequestResult = { series_id: "s", request_ids: ["a", "b"], warnings: [], status: "assigned", car_id: "c2" };
+    toastSeriesSubmitOutcome(result, { preferredCarId: "c1", carName: (id) => (id === "c1" ? "ואן" : "יונדאי") });
+    expect(mocks.success).toHaveBeenCalledWith(tv("quickRequest.successFallback", { car: "יונדאי", preferredCar: "ואן" }));
   });
 
   it("shows the series-waitlisted toast when no car could take the whole span", () => {
