@@ -231,7 +231,7 @@ from (values
   ('claim_approved', 'הרכב שלך 🎉', 'הסדרן/ית אישר/ה: {{car}}, יום {{day}} {{timeRange}}.'),
   ('claim_declined', 'הרכב שהתפנה נמסר לאחר/ת', 'הבקשה {{route}} נשארת ברשימת ההמתנה.'),
   ('claim_contested', '{{count}} חברים מבקשים את הרכב שהתפנה', '{{car}}, יום {{day}} {{timeRange}}.'),
-  ('maintenance_affects', '{{car}} נכנס/ת לטיפול', 'הנסיעה שלך {{route}} ביום {{day}} תשובץ מחדש; נעדכן בהקדם.'),
+  ('maintenance_affects', '{{car}} נכנס/ת לטיפול', 'ייתכן שלא תוכל/י לבצע את הנסיעה שלך {{route}} ביום {{day}}. נא לדבר עם אחראי/ת הרכב או עם הסדרנים על חלופות.'),
   ('late_request', 'בקשה מאוחרת מ{{firstName}}', '{{destination}}, יום {{day}} {{timeRange}} — התקבלה אחרי סגירת החלון.'),
   ('waitlisted_request', 'בקשה חדשה מ{{firstName}} ללא רכב פנוי', '{{destination}}, יום {{day}} {{timeRange}}.'),
   ('auto_approved', 'הבקשה אושרה אוטומטית', '{{car}}, יום {{day}} {{depart}}–{{return}} {{route}}.'),
@@ -583,6 +583,15 @@ cross join (values
    'הבקשה שלך נסגרה',
    '{{byName}} סימן/ה שהנסיעה שלך ביום {{day}} {{route}} כבר לא רלוונטית, והבקשה נסגרה. הבקשה יצאה מרשימת ההמתנה ולא יוצע לה רכב. אם עדיין צריך נסיעה — אפשר להגיש בקשה חדשה.')
 ) as v(variant, title, body)
+on conflict (event,channel,(coalesce(variant,''))) do update set title=excluded.title,body=excluded.body,default_title=excluded.default_title,default_body=excluded.default_body;
+
+-- MT1 (owner 2026-11-23): the Sadranim's own maintenance_affects text. Mirrors 20261123100000_maintenance_notifies_riders.sql.
+insert into public.notification_templates(event,channel,variant,title,body,default_title,default_body)
+select 'maintenance_affects',channel,'sadran',v.title,v.body,v.title,v.body
+from unnest(array['inbox','push']::public.notification_channel[]) channel
+cross join (values
+  ('{{car}} נכנס/ת לטיפול', 'הנסיעה {{route}} ביום {{day}} תשובץ מחדש; נעדכן בהקדם.')
+) as v(title, body)
 on conflict (event,channel,(coalesce(variant,''))) do update set title=excluded.title,body=excluded.body,default_title=excluded.default_title,default_body=excluded.default_body;
 
 -- PS1 (owner 2026-11-22): the closed-request notice when it took the person off someone else's ride.

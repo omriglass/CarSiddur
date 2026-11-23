@@ -83,6 +83,9 @@ begin
   delete from public.car_maintenance_blocks where car_id=car_a and ends_at>day0;
   insert into public.rides(department_id,week_start,car_id,starts_at,ends_at,origin_id,destination_id,driver_id,status,created_by)
     values(dept,w,car_a,day0+interval '9 hours',day0+interval '11 hours',home,home,sadran,'confirmed',sadran) returning id into ride;
+  -- MT1: a "+ נוסעים" passenger on the ride is told too
+  insert into public.ride_passengers(ride_id, department_id, week_start, person_id, display_name, seat_kind, added_by)
+    values(ride, dept, w, other, 'x', 'adult', sadran);
   -- as the responsible (non-admin) member: the flagging trigger's own ride update must not hit the rides_before_write maintenance refusal
   perform set_config('request.jwt.claims',jsonb_build_object('sub',resp,'role','authenticated')::text,true);
   blk:=public.create_car_maintenance(car_a,day0+interval '14 hours',day0+interval '16 hours');
@@ -91,6 +94,11 @@ begin
   assert (res->>'flagged_rides')::int=1 and (select status='flagged' and flag_reason='maintenance' from public.rides where id=ride),'(d) extending over the ride flags it';
   assert exists(select 1 from public.notifications where event='maintenance_affects' and recipient_id=sadran and data->>'ride_id'=ride::text),'(d) the driver is notified';
   assert (select body_he !~ '\s{2}' from public.notifications where event='maintenance_affects' and recipient_id=sadran and data->>'ride_id'=ride::text order by created_at desc limit 1),'(d) R12B2: the notice names the destination (no empty route)';
+  assert (select count(*)=1 and bool_and(data->>'variant' is null) from public.notifications where event='maintenance_affects' and recipient_id=sadran and data->>'ride_id'=ride::text),
+    '(d) MT1: a Sadran who drives the ride gets one notice, the riders'' one';
+  assert (select body_he like 'ייתכן שלא תוכל/י%' from public.notifications where event='maintenance_affects' and recipient_id=other and data->>'ride_id'=ride::text),
+    '(d) MT1: the passenger is notified, owner wording';
+  delete from public.ride_passengers where ride_id=ride and person_id=other;   -- later steps book this member
   perform public.update_car_maintenance(blk,day0+interval '14 hours',null);
   assert (select status='confirmed' and flag_reason is null from public.rides where id=ride),'(d) shrinking back clears the flag';
   perform public.delete_car_maintenance(blk);
