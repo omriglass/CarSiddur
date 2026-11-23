@@ -14957,7 +14957,7 @@ begin
     for v_sadran_id in select * from public.sadranim_of(v_ride.department_id, v_ride.week_start) loop
       continue when v_sadran_id = any(v_riders);
       perform public.enqueue_notification(v_sadran_id, 'maintenance_affects', v_ride.department_id, v_ride.week_start,
-        jsonb_build_object('route', coalesce(v_route, '')), jsonb_build_object('ride_id', v_ride.id, 'variant', 'sadran'),
+        jsonb_build_object('route', coalesce(v_route, '')), jsonb_build_object('ride_id', v_ride.id),
         format('maintenance_affects:%s:%s:%s', v_ride.id, new.id, v_sadran_id));
     end loop;
   end loop;
