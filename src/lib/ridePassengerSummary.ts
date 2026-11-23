@@ -76,8 +76,11 @@ export function ridePassengerParts(
     /** Explicitly named children (`request_children` → `children.full_name`) are known-for-sure children, unlike `named` above (adults/guests, whose overflow past `adults` is only *guessed* to fill a child seat). */
     const namedChildren = (entry.childNames ?? []).map((name) => name?.trim()).filter((name): name is string => !!name);
     named.push(...[...people, ...namedChildren].map((name) => ({ name, leg })));
-    const entryAdults = Math.max(0, entry.adults - people.length);
-    const entryChildren = Math.max(0, entry.child_seats + entry.boosters - Math.max(0, people.length - entry.adults) - namedChildren.length);
+    // R22B6: a named child past the child seats/boosters sits in an adult seat (counted in `adults`), not an extra adult.
+    const seatSlots = Math.max(0, entry.child_seats + entry.boosters - Math.max(0, people.length - entry.adults));
+    const childrenInAdultSeats = Math.max(0, namedChildren.length - seatSlots);
+    const entryAdults = Math.max(0, entry.adults - people.length - childrenInAdultSeats);
+    const entryChildren = Math.max(0, seatSlots - namedChildren.length);
     adults += entryAdults;
     children += entryChildren;
     unnamedByLeg.push({ leg, adults: entryAdults, children: entryChildren });

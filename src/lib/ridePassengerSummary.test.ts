@@ -20,6 +20,13 @@ describe("ride passenger summary", () => {
     expect(result).toContain("ילד/ה 1");
   });
 
+  it("R22B6: a named child in an adult seat is not an extra unnamed adult", () => {
+    const result = ridePassengerSummary([{ requester: "Adi", adults: 2, child_seats: 0, boosters: 0, childNames: ["Noa"] }]);
+    expect(result).toContain("Noa");
+    expect(result).not.toContain("מבוגר/ת 1");
+    expect(result).not.toContain("ילד/ה 1");
+  });
+
   it("lists directly add_ride_passengers()-added names alongside request-derived ones", () => {
     const result = ridePassengerSummary([{ requester: "Adi", adults: 1, child_seats: 0, boosters: 0 }], null, { addedNames: ["Guest One"] });
     expect(result).toContain("Adi");

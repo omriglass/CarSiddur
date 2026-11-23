@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { he } from "@/i18n/he";
 
+import { whoText } from "../../requests/whoLabel";
 import { requestSentenceText, type RequestSentenceInput } from "./requestSentence";
 
 const base = {
@@ -25,6 +26,11 @@ describe("requestSentenceText", () => {
       + ` · גמישות ±½ ש׳ · עדיפות לרכב יונדאי 2 · ${he.requestSentence.carLuggage} · ${he.requestSentence.note}: בבקשה · ${he.requestSentence.description}: פגישה`);
     expect(text).toContain(L("17:00"));
     expect(text).toContain(L("19:00"));
+  });
+
+  it("R22B6: a named child in an adult seat adds no unnamed adult", () => {
+    const named = { ...base, adults: 2, childNames: ["Noa"] } as RequestSentenceInput;
+    expect(requestSentenceText(named)).toContain(whoText([String(base.requester_full_name), "Noa"], 0, 0));
   });
 
   it("uses the arrive-by and leave-there anchors, and the singular verb for one person", () => {

@@ -44,8 +44,11 @@ export function requestSentenceText(row: RequestSentenceInput): string {
   const names = [row.requester_full_name, ...(row.companions ?? []).map((c) => c.name), ...(row.childNames ?? []), ...(row.guest_passenger_names ?? [])]
     .map((n) => n?.trim()).filter((n): n is string => !!n);
   const companionCount = (row.companions ?? []).length + (row.guest_passenger_names ?? []).length;
-  const extraAdults = Math.max(0, row.adults - 1 - companionCount);
-  const unnamedChildren = Math.max(0, row.child_seats + row.boosters - (row.childNames ?? []).length);
+  const namedChildren = (row.childNames ?? []).length;
+  // R22B6: a named child past the child seats/boosters sits in an adult seat (counted in `adults`), not an extra adult.
+  const childrenInAdultSeats = Math.max(0, namedChildren - row.child_seats - row.boosters);
+  const extraAdults = Math.max(0, row.adults - 1 - companionCount - childrenInAdultSeats);
+  const unnamedChildren = Math.max(0, row.child_seats + row.boosters - namedChildren);
   const plural = names.length > 1 || extraAdults > 0 || unnamedChildren > 0;
   const who = whoText(names, extraAdults, unnamedChildren);
 
