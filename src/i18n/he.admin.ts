@@ -210,7 +210,7 @@ export const heAdmin = {
     fieldIsReplaced: "הרכב הוחלף ברכב חלופי",
     fieldReplacementCode: "קוד הרכב החלופי",
     fieldReplacementPlate: "מספר רישוי של הרכב החלופי",
-    replacementCodeHelp: "4 או 5 ספרות. להשאיר ריק אם אין לרכב החלופי קוד.",
+    replacementCodeHelp: "אפשר להשאיר ריק",
     codeDigitsRequired: "יש להזין קוד בן 4 או 5 ספרות",
     departmentRequired: "יש לבחור מחלקה",
     replacedBadge: "רכב חלופי",
