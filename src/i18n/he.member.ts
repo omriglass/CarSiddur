@@ -1529,6 +1529,7 @@ export const heMember = {
   carPage: {
     /** CR1 (REQ item 257, owner 2026-11-19/20): one page ordered by who needs what. */
     reportsTitle: "דיווחים",
+    reportWash: "שטיפת רכב",
     tierEveryone: "לכל מי שנוסע/ת ברכב",
     tierMore: "למי שרוצה לדעת עוד",
     tierManage: "לניהול הרכב",

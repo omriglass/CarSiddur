@@ -29,7 +29,7 @@ import { TZ } from "@/lib/time";
 
 import { CarExcelExportButton } from "./CarExcelExportButton";
 import { CarFuelChip } from "./CarFuelChip";
-import { CarMoodCard } from "./CarMoodCard";
+import { CarMoodFace } from "./CarMoodFace";
 import { CarOwnersCard } from "./CarOwnersCard";
 import { CarKilometrageCard } from "./CarKilometrageCard";
 import { CarChecklistCard } from "../checklist/components/CarChecklistCard";
@@ -38,7 +38,7 @@ import { CarFactsCard } from "./CarFactsCard";
 import { CarIssueSheet, type IssueTarget } from "./CarIssueSheet";
 import { CarOpenIssues } from "./CarOpenIssues";
 import { CarRegistrationCard } from "./CarRegistrationCard";
-import { CarReportsSection } from "./CarReportsSection";
+import { CarReportsSection, type CarReportView } from "./CarReportsSection";
 import { CarStatusSelect } from "./CarStatusSelect";
 import { useCarCareHistoryQuery, useCarCurrentKmQuery, useCarIssueHistoryQuery, useCarOdometerHistoryQuery, useOpenCarIssuesQuery } from "../hooks";
 import { formatPlate } from "@/lib/plate";
@@ -197,7 +197,7 @@ export function CarManageScreen({ car, isAdmin, canEdit, canManageCar, canDefine
   const [filter, setFilter] = useState<CarHistoryFilter>("all");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
-  const [logView, setLogView] = useState<"wash" | "km" | "problem" | "tires" | "urea" | null>(null);
+  const [logView, setLogView] = useState<"km" | CarReportView | null>(null);
   const [historyAll, setHistoryAll] = useState(false);
   const [selectedIssue, setSelectedIssue] = useState<(IssueTarget & { reporterId?: string | null }) | null>(null);
   const openIssuesQuery = useOpenCarIssuesQuery([car.id]);
@@ -259,6 +259,7 @@ export function CarManageScreen({ car, isAdmin, canEdit, canManageCar, canDefine
         <span className="font-medium" dir="ltr" data-testid="car-plate">{formatPlate(car.license_plate)}</span>
         <CarFuelChip fuel={car.fuel_type} />
         <StatusBadge kind="car" status={car.status} />
+        {careEventsQuery.isSuccess ? <CarMoodFace lastWashAt={merged.find((entry) => entry.kind === "wash")?.createdAt ?? null} /> : null}
         {/* Owner 2026-11-13: the last urea fill at a glance on a diesel car. */}
         {car.fuel_type === "diesel" ? (
           <span className="text-xs text-muted-foreground" data-testid="car-last-urea">
@@ -294,10 +295,6 @@ export function CarManageScreen({ car, isAdmin, canEdit, canManageCar, canDefine
       {/* REQ item 264: the next passenger's requests, then one collapsible "דיווחים"; the car check is in it for managers only. */}
       {canManageCar ? <CarTasksManagerCard car={car} /> : null}
       <CarReportsSection carId={car.id} isDiesel={car.fuel_type === "diesel"} onReport={setLogView}>
-        <CarMoodCard
-          lastWashAt={merged.find((entry) => entry.kind === "wash")?.createdAt ?? null}
-          onLogWash={() => setLogView("wash")}
-        />
         {/* A replacement car has its own odometer: no readings into the regular car's history while it is replaced. */}
         {car.is_replaced ? null : (
           <CarKilometrageCard car={car} current={currentKmQuery.data ?? null} loading={currentKmQuery.isLoading} canCorrect={canManageCar} onLogKm={() => setLogView("km")} />

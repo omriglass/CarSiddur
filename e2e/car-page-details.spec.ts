@@ -86,10 +86,10 @@ test("car page: formatted plate, open issues on top, in-place edits, the report 
     await expect(page.getByText(he.carPage.tierManage)).toHaveCount(0);
     // REQ item 264: a plain member gets the collapsible reports, closed, without the car check.
     await expect(page.getByTestId("car-reports-toggle")).toHaveAttribute("aria-expanded", "false");
-    await expect(page.getByTestId("car-mood-card")).toHaveCount(0);
+    await expect(page.getByTestId("car-mood")).toBeVisible(); // the wash status stays in the header
     await openCarReports(page);
     await expect(page.getByTestId("car-report-problem")).toBeVisible();
-    await expect(page.getByTestId("car-mood-card")).toBeVisible();
+    await expect(page.getByTestId("car-report-wash")).toHaveText(he.carPage.reportWash);
     await expect(page.getByTestId("car-checklist-card")).toHaveCount(0);
     await page.getByTestId("car-name-report-trigger").first().click();
     const dialog = page.getByRole("dialog");

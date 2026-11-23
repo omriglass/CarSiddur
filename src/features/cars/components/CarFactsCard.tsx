@@ -66,7 +66,7 @@ export function CarFactsCard({ car, canEdit, canEditResponsible, responsibleOpti
           ) : null}
           {codeVisible && (car.is_replaced || canEdit) ? (
             <EditableRow<{ replaced: boolean; code: string }>
-              label={he.adminCars.fieldReplacementCode}
+              label={he.adminCars.fieldIsReplaced}
               testId="car-details-replacement"
               value={car.is_replaced && car.replacement_code ? <span dir="ltr" className="font-semibold">{car.replacement_code}</span> : muted("—")}
               editable={canEdit}
@@ -80,7 +80,7 @@ export function CarFactsCard({ car, canEdit, canEditResponsible, responsibleOpti
                     {he.adminCars.fieldIsReplaced}
                   </label>
                   {draft.replaced ? (
-                    <Input id={inputId} dir="ltr" inputMode="numeric" autoFocus value={draft.code} onChange={(e) => setDraft({ ...draft, code: e.target.value })} />
+                    <Input id={inputId} dir="ltr" inputMode="numeric" autoFocus placeholder={he.adminCars.fieldReplacementCode} value={draft.code} onChange={(e) => setDraft({ ...draft, code: e.target.value })} />
                   ) : null}
                 </div>
               )}

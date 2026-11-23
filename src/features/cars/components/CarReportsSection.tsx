@@ -1,4 +1,4 @@
-import { AlertTriangle, ChevronDown, Fuel, Gauge } from "lucide-react";
+import { AlertTriangle, ChevronDown, Droplets, Fuel, Gauge } from "lucide-react";
 import type { ReactNode } from "react";
 import { useState } from "react";
 
@@ -7,11 +7,11 @@ import { he } from "@/i18n/he";
 
 import { useMyChecklistPromptsQuery } from "../checklist/hooks";
 
-export type CarReportView = "problem" | "tires" | "urea";
+export type CarReportView = "problem" | "tires" | "wash" | "urea";
 
 /**
- * REQ item 264: the car page's one collapsible "דיווחים" - a problem, tires, urea (diesel), plus the wash and
- * kilometrage cards and, for the car's managers, the car check (`children`). Closed by default; opens by itself
+ * REQ item 264: the car page's one collapsible "דיווחים" - a problem, tires, wash, urea (diesel), plus the
+ * kilometrage card and, for the car's managers, the car check (`children`). Closed by default; opens by itself
  * while the viewer is asked to complete the car check, so that prompt is never hidden.
  */
 export function CarReportsSection({ carId, isDiesel, onReport, children }: {
@@ -30,6 +30,7 @@ export function CarReportsSection({ carId, isDiesel, onReport, children }: {
   const rows: { view: CarReportView; label: string; icon: ReactNode }[] = [
     { view: "problem", label: he.carCare.homeProblemTitle, icon: <AlertTriangle className="size-5 shrink-0 text-destructive" aria-hidden="true" /> },
     { view: "tires", label: he.carCare.homeTireFillTitle, icon: <Gauge className="size-5 shrink-0 text-maintenance" aria-hidden="true" /> },
+    { view: "wash", label: he.carPage.reportWash, icon: <Droplets className="size-5 shrink-0 text-booked" aria-hidden="true" /> },
     ...(isDiesel ? [{ view: "urea" as const, label: he.carCare.homeUreaFillTitle, icon: <Fuel className="size-5 shrink-0 text-booked" aria-hidden="true" /> }] : []),
   ];
 

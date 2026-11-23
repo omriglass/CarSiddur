@@ -41,6 +41,13 @@ describe("CarFactsCard", () => {
     expect(screen.queryByRole("textbox")).toBeNull();
   });
 
+  it("REQ item 264: an editor sees the replacement switch by name; a viewer of a car not replaced does not", () => {
+    const { rerender } = render(<CarFactsCard car={car({ access_code: "1234" })} {...props} canEdit />);
+    expect(screen.getByTestId("car-details-replacement").textContent).toContain(he.adminCars.fieldIsReplaced);
+    rerender(<CarFactsCard car={car({ access_code: "1234" })} {...props} />);
+    expect(screen.queryByTestId("car-details-replacement")).toBeNull();
+  });
+
   it("shows the recommended tire pressure", () => {
     render(<CarFactsCard car={car({ tire_pressure_front_psi: 32, tire_pressure_rear_psi: 30 })} {...props} />);
     expect(screen.getByTestId("car-details-tires").textContent).toContain(tv("adminCars.tirePressureValue", { front: "32", rear: "30" }));
