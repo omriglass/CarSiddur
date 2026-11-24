@@ -759,6 +759,8 @@
         "supabase/tests/merge_skipped_stops.sql",
         "supabase/tests/rider_places_off_route.sql",
         "supabase/migrations/**/*rider_places_off_route*",
+        "supabase/tests/silent_drops_6_7.sql",
+        "supabase/migrations/**/*silent_drops_6_7*",
         "src/features/rides/offRoute.ts",
         "src/features/rides/offRoute.test.ts",
         "src/features/rides/useAskRidersLosingPlaces.tsx",

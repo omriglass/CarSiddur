@@ -4505,7 +4505,7 @@ begin
     'alternative_applied', 'own_car_placed', 'passenger_added_you', 'passenger_joined', 'passenger_left', 'passenger_left_many',
     'passenger_removed_request', 'passenger_removed_you', 'companion_split', 'passengers_added', 'passengers_removed',
     'reservation_added', 'ride_cancelled', 'unassigned_by_sadran', 'child_removed', 'join_ride_cancelled', 'join_asked',
-    'rider_place_off_route'
+    'rider_place_off_route', 'host_route_off'
   ) then
     return false;
   end if;
@@ -5531,11 +5531,30 @@ begin
       || to_char(coalesce(upper(v_span), r.ends_at) at time zone 'Asia/Jerusalem', 'HH24:MI');
   end if;
   return public._frag('publish.ride_line', jsonb_build_object('day', public.day_date_label(r.starts_at),
-    'range', v_range, 'what', concat_ws(' · ', nullif(v_what, ''), nullif(v_car, ''))));
+    'range', v_range, 'what', concat_ws(' · ', nullif(v_what, ''), nullif(v_car, ''),
+      -- silent drops 6: a ride still waiting for a driver says so
+      case when r.driver_id is null then public._frag('publish.no_driver') end)));
 end $$;
 
 
 ALTER FUNCTION "public"."_publish_ride_line_core"("p_request_id" "uuid", "p_ride_id" "uuid", "p_viewer" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."_publish_waiting_leg_line"("p_request_id" "uuid", "p_leg" "text") RETURNS "text"
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  select public._frag(
+    case when q.trip_type = 'drop_off' then case when p_leg = 'out' then 'publish.leg_drop_off' else 'publish.leg_pickup' end
+         else case when p_leg = 'out' then 'publish.leg_out' else 'publish.leg_return' end end,
+    jsonb_build_object('place', coalesce(d.name, q.destination_text, ''),
+      'time', to_char(case when p_leg = 'out' then q.depart_at else q.return_at end at time zone 'Asia/Jerusalem', 'HH24:MI')))
+  from public.requests q left join public.destinations d on d.id = q.destination_id
+  where q.id = p_request_id;
+$$;
+
+
+ALTER FUNCTION "public"."_publish_waiting_leg_line"("p_request_id" "uuid", "p_leg" "text") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."_refresh_car_task_notices"("p_car_id" "uuid") RETURNS "void"
@@ -5570,6 +5589,60 @@ end $$;
 
 
 ALTER FUNCTION "public"."_refresh_car_task_notices"("p_car_id" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."_release_guests_off_route"("p_request_id" "uuid") RETURNS integer
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  g record; v_leg public.ride_leg; v_swap boolean; v_covers boolean; v_board uuid; v_last uuid; v_off uuid;
+  v_n int := 0; v_actor uuid := (select auth.uid()); v_driver text; v_ride public.rides%rowtype;
+begin
+  for g in
+    select r.id as ride_id, gq.id as guest_id, gq.requester_id, gq.origin_id, gq.destination_id,
+           bool_or(gr.covers_out) as c_out, bool_or(gr.covers_return) as c_ret
+    from public.rides r
+    join public.ride_requests gr on gr.ride_id = r.id and gr.request_id <> p_request_id and gr.chain is null and gr.role = 'passenger'
+    join public.requests gq on gq.id = gr.request_id
+    where r.status <> 'cancelled'
+      and (select b.request_id from public.ride_requests b where b.ride_id = r.id
+           order by (b.role = 'driver') desc, b.created_at, b.request_id limit 1) = p_request_id
+    group by r.id, gq.id, gq.requester_id, gq.origin_id, gq.destination_id
+    order by r.id, gq.id
+  loop
+    v_off := null;
+    v_swap := public._merge_guest_swapped(g.ride_id, g.guest_id);
+    foreach v_leg in array array['out', 'return']::public.ride_leg[] loop
+      v_covers := case when v_swap then (v_leg = 'return' and (g.c_out or g.c_ret))
+                       when v_leg = 'out' then g.c_out else g.c_ret end;
+      continue when not coalesce(v_covers, false);
+      v_board := case when v_leg = 'out' or v_swap then g.origin_id else g.destination_id end;
+      select x.place_id into v_last from public._ride_route(g.ride_id) x where x.leg = v_leg order by x."position" desc limit 1;
+      if v_board is not null and v_board = v_last then v_off := v_board; exit; end if;
+    end loop;
+    continue when v_off is null;
+
+    select * into v_ride from public.rides where id = g.ride_id;
+    perform public._unmerge_core(g.ride_id, g.guest_id, 'HOST_EDITED');
+    v_n := v_n + 1;
+    if g.requester_id is distinct from v_actor then
+      select coalesce(pd.full_name, pb.full_name) into v_driver
+      from (select 1) one
+      left join public.profiles pd on pd.id = v_ride.driver_id
+      left join public.profiles pb on pb.id = (select q.requester_id from public.requests q where q.id = p_request_id);
+      perform public.enqueue_notification(g.requester_id, 'outcome_changed', v_ride.department_id, v_ride.week_start,
+        jsonb_build_object('day', public.day_date_label(v_ride.starts_at), 'driver', coalesce(v_driver, ''),
+          'place', coalesce((select d.name from public.destinations d where d.id = v_off), '')),
+        jsonb_build_object('variant', 'host_route_off', 'ride_id', g.ride_id, 'request_id', g.guest_id),
+        format('host_route_off:%s:%s:%s', g.ride_id, g.guest_id, v_ride.version));
+    end if;
+  end loop;
+  return v_n;
+end $$;
+
+
+ALTER FUNCTION "public"."_release_guests_off_route"("p_request_id" "uuid") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."_request_booked_times"("p_request" "uuid") RETURNS TABLE("dep" timestamp with time zone, "ret" timestamp with time zone)
@@ -9795,6 +9868,8 @@ begin
           coalesce(nullif(v_prop.payload ->> 'return_at','')::timestamptz, v_req.return_at) is not null, v_prop.payload -> 'stops');
       end if;
       select * into v_req from public.requests where id = v_prop.request_id;
+      -- silent drops 7 (owner 2026-11-24): a merged guest the new route no longer picks up goes back to waiting, told
+      perform public._release_guests_off_route(v_req.id);
       route_new := (case when v_req.depart_at is not null then coalesce(public.request_leg_route_minutes(v_req.id,'out'),0) else 0 end)
         + (case when v_req.return_at is not null then coalesce(public.request_leg_route_minutes(v_req.id,'return'),0) else 0 end);
     end if;
@@ -21461,6 +21536,21 @@ begin
       where c.event_kind = 'published' and (c.status = 'waitlisted' or c.offer_lapses)
         and not exists (select 1 from public.ride_requests rr join public.rides x on x.id = rr.ride_id
                         where rr.request_id = c.id and x.status <> 'cancelled')
+      union all
+      -- silent drops 6 (owner 2026-11-24): a two-way request with one way on a ride - the way still waiting gets its own
+      -- "on the waiting list" line (the ride line alone read like the whole trip)
+      select c.requester_id, c.id, c.request_day, case when cov.missing = 'out' then q.depart_at else q.return_at end,
+        public._frag('publish.waitlisted', jsonb_build_object('line', public._publish_waiting_leg_line(c.id, cov.missing)))
+      from classified c
+      join public.requests q on q.id = c.id
+      cross join lateral (
+        select case when bool_or(rr.covers_out) and not bool_or(rr.covers_return) then 'return'
+                    when bool_or(rr.covers_return) and not bool_or(rr.covers_out) then 'out' end as missing
+        from public.ride_requests rr join public.rides x on x.id = rr.ride_id
+        where rr.request_id = c.id and x.status <> 'cancelled'
+      ) cov
+      where c.event_kind = 'published' and q.depart_at is not null and q.return_at is not null and q.series_id is null
+        and cov.missing is not null
       union all
       select e.requester_id, e.request_id, e.request_day, e.line_start, e.line from extra_rides e
     ), days_agg as (
@@ -40622,8 +40712,18 @@ GRANT ALL ON FUNCTION "public"."_publish_ride_line_core"("p_request_id" "uuid", 
 
 
 
+REVOKE ALL ON FUNCTION "public"."_publish_waiting_leg_line"("p_request_id" "uuid", "p_leg" "text") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_publish_waiting_leg_line"("p_request_id" "uuid", "p_leg" "text") TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."_refresh_car_task_notices"("p_car_id" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."_refresh_car_task_notices"("p_car_id" "uuid") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."_release_guests_off_route"("p_request_id" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_release_guests_off_route"("p_request_id" "uuid") TO "service_role";
 
 
 

@@ -7143,9 +7143,17 @@ export type Database = {
         Args: { p_request_id: string; p_ride_id: string; p_viewer: string }
         Returns: string
       }
+      _publish_waiting_leg_line: {
+        Args: { p_leg: string; p_request_id: string }
+        Returns: string
+      }
       _refresh_car_task_notices: {
         Args: { p_car_id: string }
         Returns: undefined
+      }
+      _release_guests_off_route: {
+        Args: { p_request_id: string }
+        Returns: number
       }
       _request_booked_times: {
         Args: { p_request: string }
