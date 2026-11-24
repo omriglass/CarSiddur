@@ -3737,7 +3737,10 @@ begin
     'time_kept', v_out_ok and v_ret_ok, 'wait_keeps_time', v_wait_fix and not (v_out_ok and v_ret_ok),
     'direct', v_out_ok and v_ret_ok and v_src_ok and cardinality(v_others) = 0,
     'direct_with_wait', (v_out_ok and v_ret_ok or v_wait_fix) and v_src_ok and cardinality(v_others) = 0,
-    'source_driver_name', v_src_driver, 'other_riders', to_jsonb(v_others));
+    'source_driver_name', v_src_driver, 'other_riders', to_jsonb(v_others),
+    -- REQ item 267: the guest's own stops this ride does not pass (none for my own two trips chained)
+    'skipped_stops', case when jsonb_typeof(v -> 'chain') = 'object' then '[]'::jsonb
+                          else to_jsonb(public._merge_skipped_stops(p_ride_id, p_request_id, v_leg)) end);
 end $$;
 
 
@@ -4388,6 +4391,31 @@ end $$;
 
 
 ALTER FUNCTION "public"."_merge_preview_core"("p_ride_id" "uuid", "p_request_id" "uuid", "p_leg" "public"."ride_leg") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."_merge_skipped_stops"("p_ride_id" "uuid", "p_request_id" "uuid", "p_leg" "public"."ride_leg") RETURNS "text"[]
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  with q as (select id, return_at from public.requests where id = p_request_id),
+  route as (select x.place_id, lower(btrim(x.place_text)) as t
+            from public._ride_route_with(p_ride_id, p_request_id, p_leg) x),
+  s as (
+    select s.leg, s."position", s.place_id, s.place_text, coalesce(d.name, s.place_text) as name
+    from public.request_stops s join q on q.id = s.request_id
+    left join public.destinations d on d.id = s.place_id
+    where (s.leg = 'out' and p_leg in ('out', 'both'))
+       or (s.leg = 'return' and p_leg in ('return', 'both') and q.return_at is not null))
+  select coalesce(array_agg(s.name order by (s.leg = 'return'), s."position"), '{}'::text[])
+  from s
+  where s.name is not null
+    and not exists (select 1 from route r
+                    where (s.place_id is not null and r.place_id = s.place_id)
+                       or (s.place_id is null and r.t = lower(btrim(s.place_text))));
+$$;
+
+
+ALTER FUNCTION "public"."_merge_skipped_stops"("p_ride_id" "uuid", "p_request_id" "uuid", "p_leg" "public"."ride_leg") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."_merge_union_legs"("_old" "jsonb", "_new" "jsonb") RETURNS "jsonb"
@@ -20307,6 +20335,7 @@ declare
   v_jd timestamptz; v_jr timestamptz; v_ride_driver text; v_ride_car text; v_leg_raw text := '';
   v_title_change text := ''; v_added text := ''; v_ret_stops text; v_cont text := ''; v_ride_dest text;
   v_chain jsonb; v_chain_route text := ''; v_chain_window text := '';
+  v_skipped text[] := '{}';
 begin
   select * into pr from public.proposals where id = p_proposal_id;
   if pr.id is null then return null; end if;
@@ -20367,6 +20396,7 @@ begin
         continue when coalesce(v_e ->> 'role', 'passenger') = 'driver';
         select * into r from public.rides where id = (v_e ->> 'ride_id')::uuid;
         v_leg := coalesce(v_e ->> 'leg', 'both');
+        v_skipped := v_skipped || public._merge_skipped_stops(r.id, q.id, v_leg::public.ride_leg);
         select dep, ret into v_jd, v_jr from public._joiner_times(r.id, q.id, v_leg::public.ride_leg);
         v_tc := public._time_change_line(case when v_leg in ('out', 'both') then q.depart_at end,
                                          case when v_leg in ('return', 'both') then q.return_at end, v_jd, v_jr);
@@ -20391,7 +20421,8 @@ begin
       -- R4B6: the joiner's own return-leg stops, and where the ride goes on past their destination.
       select string_agg(coalesce(d.name, s.place_text), ', ' order by s."position") into v_ret_stops
       from public.request_stops s left join public.destinations d on d.id = s.place_id
-      where s.request_id = q.id and s.leg = 'return' and q.return_at is not null;
+      where s.request_id = q.id and s.leg = 'return' and q.return_at is not null
+        and coalesce(d.name, s.place_text) <> all (v_skipped);   -- REQ item 267: only stops the ride passes
       if v_leg_raw in ('out', 'both') and v_ride_id is not null then
         select coalesce(d.name, x.place_text) into v_ride_dest
         from public._ride_route_with(v_ride_id, q.id, v_leg_raw::public.ride_leg) x left join public.destinations d on d.id = x.place_id
@@ -20413,6 +20444,10 @@ begin
         v_join_line := array_to_string(v_parts, public._frag('join.split_sep'));
         v_time_change := array_to_string(v_tc_parts, ' · ');
         v_car := null; v_driver := null;
+        if cardinality(v_skipped) > 0 then
+          v_join_line := v_join_line || ' · ' || public._frag('join.skipped_stops',
+            jsonb_build_object('places', array_to_string(array(select distinct unnest(v_skipped)), ', ')));
+        end if;
       else
         v_variant := case when r.driver_id is null then 'merge_passenger_no_driver' else 'merge_passenger' end;
         v_time_change := array_to_string(v_tc_parts, ' · ');
@@ -20432,6 +20467,11 @@ begin
                            where rr.request_id = q.id and x.status <> 'cancelled' and rr.leg in ('both', 'return')) then
           v_join_line := v_join_line || ' · ' || public._frag('join.return_uncovered',
             jsonb_build_object('time', public._hhmm(q.return_at)));
+        end if;
+        -- REQ item 267 (owner 2026-11-24): a stop of the guest's that the ride does not pass is said, never dropped silently
+        if cardinality(v_skipped) > 0 then
+          v_join_line := v_join_line || ' · ' || public._frag('join.skipped_stops',
+            jsonb_build_object('places', array_to_string(v_skipped, ', ')));
         end if;
       end if;
       -- SH2 (owner 2026-11-22): the same person's two trips chained into one ride (CM1, the driver's own) - "join
@@ -22996,6 +23036,33 @@ $$;
 
 
 ALTER FUNCTION "public"."request_served_by_public_ride"("_request_id" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."request_skipped_stops"("p_request_ids" "uuid"[]) RETURNS TABLE("request_id" "uuid", "ride_id" "uuid", "places" "text"[])
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  select x.request_id, x.ride_id, x.places from (
+    select rr.request_id, rr.ride_id,
+           public._merge_skipped_stops(rr.ride_id, rr.request_id,
+             (case when bool_or(rr.covers_out) and bool_or(rr.covers_return) then 'both'
+                   when bool_or(rr.covers_out) then 'out' else 'return' end)::public.ride_leg) as places
+    from public.ride_requests rr
+    join public.rides r on r.id = rr.ride_id and r.status <> 'cancelled'
+    where rr.request_id = any(p_request_ids)
+      and public.request_related(rr.request_id, (select auth.uid()))
+      and exists (select 1 from public.request_stops s where s.request_id = rr.request_id)
+      -- not the ride's own trip (the base request's stops are its route)
+      and rr.request_id is distinct from (
+        select b.request_id from public.ride_requests b where b.ride_id = rr.ride_id
+        order by (b.role = 'driver') desc, b.created_at, b.request_id limit 1)
+      and rr.chain is null
+    group by rr.request_id, rr.ride_id) x
+  where cardinality(x.places) > 0;
+$$;
+
+
+ALTER FUNCTION "public"."request_skipped_stops"("p_request_ids" "uuid"[]) OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."request_span"("_depart" timestamp with time zone, "_return" timestamp with time zone) RETURNS "tstzrange"
@@ -31918,6 +31985,7 @@ begin
                                  from public.request_children rch where rch.request_id = q.id),
                 'stops', (select coalesce(jsonb_agg(jsonb_build_object(
                                    'leg', s.leg, 'position', s.position, 'place_id', s.place_id, 'place_text', s.place_text,
+                                   'fixed_anchor', s.fixed_anchor, 'fixed_at', s.fixed_at, 'flex_minutes', s.flex_minutes,
                                    'place', (select jsonb_build_object('name', d.name) from public.destinations d where d.id = s.place_id))
                                  order by s.leg, s.position), '[]'::jsonb)
                             from public.request_stops s where s.request_id = q.id),
@@ -40214,6 +40282,11 @@ GRANT ALL ON FUNCTION "public"."_merge_preview_core"("p_ride_id" "uuid", "p_requ
 
 
 
+REVOKE ALL ON FUNCTION "public"."_merge_skipped_stops"("p_ride_id" "uuid", "p_request_id" "uuid", "p_leg" "public"."ride_leg") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_merge_skipped_stops"("p_ride_id" "uuid", "p_request_id" "uuid", "p_leg" "public"."ride_leg") TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."_merge_union_legs"("_old" "jsonb", "_new" "jsonb") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."_merge_union_legs"("_old" "jsonb", "_new" "jsonb") TO "service_role";
 
@@ -42872,6 +42945,12 @@ GRANT ALL ON FUNCTION "public"."request_schedule"("p_request_id" "uuid") TO "ser
 REVOKE ALL ON FUNCTION "public"."request_served_by_public_ride"("_request_id" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."request_served_by_public_ride"("_request_id" "uuid") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."request_served_by_public_ride"("_request_id" "uuid") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."request_skipped_stops"("p_request_ids" "uuid"[]) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."request_skipped_stops"("p_request_ids" "uuid"[]) TO "service_role";
+GRANT ALL ON FUNCTION "public"."request_skipped_stops"("p_request_ids" "uuid"[]) TO "authenticated";
 
 
 

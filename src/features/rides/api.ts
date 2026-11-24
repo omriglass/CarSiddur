@@ -355,6 +355,8 @@ export interface MemberMergePreview {
   directWithWait: boolean;
   sourceDriverName: string | null;
   otherRiders: string[];
+  /** REQ item 267: the guest's own stops this ride does not pass (the member is asked before merging). */
+  skippedStops: string[];
   /** R19B1 (REQ item 220): the merged leg lands on the wrong side of the guest's other leg — asked, never refused. */
   order: { eta: string; wanted: string; leg: "out" | "return" } | null;
   /** CM1 phase 2 (REQ item 260 b): my two trips one after the other join into one ride. */
@@ -381,6 +383,7 @@ export async function memberMergePreview(rideId: string, sourceRideId: string, r
     direct: raw.direct === true, directWithWait: raw.direct_with_wait === true,
     sourceDriverName: isoOr(raw.source_driver_name),
     otherRiders: Array.isArray(raw.other_riders) ? raw.other_riders.filter((name): name is string => typeof name === "string") : [],
+    skippedStops: Array.isArray(raw.skipped_stops) ? raw.skipped_stops.filter((name): name is string => typeof name === "string") : [],
     order: raw.time_far_kind === "order" && typeof raw.time_far_eta === "string" && typeof raw.time_far_wanted === "string"
       ? { eta: raw.time_far_eta, wanted: raw.time_far_wanted, leg: raw.time_far_leg === "out" ? "out" : "return" } : null,
     chain: parseChain(raw.chain),

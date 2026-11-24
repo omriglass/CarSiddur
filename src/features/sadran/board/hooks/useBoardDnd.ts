@@ -60,7 +60,7 @@ import {
 import type { UnmetListItem } from "../components/UnmetList";
 import { describeObstacle, findObstacle, type CarBlock, type RefusalToast } from "../dropRefusal";
 import { isoToDayMinutes, slotToIso, wouldOverlap } from "../geometry";
-import { guestDropQuestion, rideDropAsksMerge, splitOutcome, type DropAnswer, type DropAsk, type DropAskSpec } from "../dropQuestions";
+import { guestDropQuestion, movedPastStopHour, rideDropAsksMerge, splitOutcome, type DropAnswer, type DropAsk, type DropAskSpec } from "../dropQuestions";
 import { planBSwitchPrefill } from "../planBSwitch";
 import { seriesSpanSuggestionPrefill } from "../seriesSpan";
 import { buildDisplacementSteps, checklistRideIds, isDisplacementSuggestion, type ChecklistStep, type DisplacementSuggestion } from "../displacementChecklist";
@@ -1010,6 +1010,12 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
         nextStart: formatTime(new Date(strandedAfterMove.starts_at as string)), nextPlace: strandedAfterMove.origin_name ?? "", partner: null, resolve }));
       return !!answer;
     }
+
+    // Silent drops item 5 (owner 2026-11-24): a move that takes the trip's own stop past its stated hour asks first
+    // (REQ item 246: a warning, never a refusal).
+    const stopBreak = movedPastStopHour(driverRequest, driverEntry?.leg,
+      { startsAt: drafted?.startsAt ?? ride.starts_at, endsAt: drafted?.endsAt ?? ride.ends_at }, { startsAt: newStartsAt, endsAt: newEndsAt });
+    if (stopBreak && (await askDrop({ kind: "stopHour", stop: stopBreak })) !== "yes") return;
 
     if (drafted && draftProposal) {
       // Back inside the request's flexibility on its own car: the draft goes, the ride is moved there as usual.

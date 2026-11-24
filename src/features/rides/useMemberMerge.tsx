@@ -21,7 +21,7 @@ import { memberMergeAgreeNames, memberMergeWaitChoice, type MemberMergeTarget } 
 import { longDetourText } from "./mergeQuestions";
 import { servedOf } from "./servedOf";
 
-type Step = "confirm" | "order" | "wait" | "detour" | "luggage" | "agree";
+type Step = "confirm" | "order" | "wait" | "detour" | "stops" | "luggage" | "agree";
 
 interface Flow {
   host: BoardRide;
@@ -85,11 +85,12 @@ export function useMemberMerge({ departmentId, weekStart, onDone }: {
   }
 
   function next(current: Flow, after: Step) {
-    const order: Step[] = ["confirm", "order", "wait", "detour", "luggage", "agree"];
+    const order: Step[] = ["confirm", "order", "wait", "detour", "stops", "luggage", "agree"];
     for (const step of order.slice(order.indexOf(after) + 1)) {
       if (step === "order" && current.preview.order) return setFlow({ ...current, step });
       if (step === "wait" && memberMergeWaitChoice(current.preview)) return setFlow({ ...current, step });
       if (step === "detour" && current.preview.longDetour) return setFlow({ ...current, step });
+      if (step === "stops" && current.preview.skippedStops.length > 0) return setFlow({ ...current, step });
       if (step === "luggage" && current.preview.luggageProblem) return setFlow({ ...current, step });
       if (step === "agree" && !(current.wait ? current.preview.directWithWait : current.preview.direct)) return setFlow({ ...current, step });
     }
@@ -159,6 +160,10 @@ export function useMemberMerge({ departmentId, weekStart, onDone }: {
           host: viewerName, hostPlace: hostDestinationOf(flow.host), guest, guestPlace: destinationOf(flow.target), leg: flow.preview.leg,
         }) : ""}
         confirmLabel={he.mergedRide.longDetourConfirm} loading={busy} onConfirm={() => { if (flow) next(flow, "detour"); }} />
+      <ConfirmDialog open={flow?.step === "stops"} onOpenChange={(open) => { if (!open) close(); }}
+        title={he.mergedRide.skippedStopsTitle}
+        description={tv("mergedRide.skippedStopsBody", { name: guest, places: (flow?.preview.skippedStops ?? []).join(", ") })}
+        confirmLabel={he.mergedRide.skippedStopsConfirm} loading={busy} onConfirm={() => { if (flow) next(flow, "stops"); }} />
       <ConfirmDialog open={flow?.step === "luggage"} onOpenChange={(open) => { if (!open) close(); }}
         title={smallTrunkConfirmTitle({ requestIds: [], names: [], carId: null, carName: null, needs: flow?.preview.needs ?? [], towTakenBy: null })}
         description={tv(mergeNeedsBody(flow?.preview.needs ?? []), { name: guest })}

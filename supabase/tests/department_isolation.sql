@@ -326,6 +326,8 @@ begin
   -- REQ §13.153: request_notes filters (never raises) — another department's note never comes back
   update public.requests set notes = 'B private note' where id = req_b;
   assert not exists (select 1 from public.request_notes(array[req_b])), 'requests.request_notes: FAILED cross-department note returned';
+  -- REQ item 267: another department's skipped stops never come back (filters, never raises)
+  assert not exists (select 1 from public.request_skipped_stops(array[req_b])), 'requests.request_skipped_stops: FAILED cross-department row returned';
   -- REQ §13.204: another department's request history is refused
   perform pg_temp.expect_refused('requests.request_history', format('select public.request_history(%L)', req_b));
   perform pg_temp.expect_refused('requests.route_minutes_preview_place', format('select public.route_minutes_preview(%L, jsonb_build_array(jsonb_build_object(''place_id'', %L), jsonb_build_object(''place_id'', %L)))', dept_a, home_b, other_dest_b));
@@ -484,7 +486,7 @@ declare
     'publish_scores_fingerprint','solver_state_fingerprint','sadran_contact_of','fairness_stats','department_stats','joinable_rides_for_request',
     'planning_month','typical_usage','save_reservation',
     'create_policy_version','set_policy_active','policy_week_alignment','resolve_waitlist_group','cancel_waitlist_group','join_waitlist_discussion','waitlist_group_holds','siddur_waitlist','place_waiting_request',
-    'place_travel_for_week','car_start_locations','set_my_default_origin','set_my_preferred_car','route_minutes_preview','route_hops_preview','request_notes','request_history',
+    'place_travel_for_week','car_start_locations','set_my_default_origin','set_my_preferred_car','route_minutes_preview','route_hops_preview','request_notes','request_skipped_stops','request_history',
     'my_co_guardians','set_ride_driver','withdraw_duplicate_request','restore_duplicate_request','close_request','restore_closed_request','sadran_cancel_ride','place_on_own_car','set_own_private_car','add_car_owner','remove_car_owner','set_car_use_scope','child_request_overlaps',
     'mark_car_move','shorten_series','split_series','leave_merged_ride','leave_merged_ride_fit','leave_ride_fit_preview','ride_busy_people','cancel_series_day','one_way_partner','place_one_way_pair','join_drop_off_legs','place_series_on_car',
     'create_car_maintenance','update_car_maintenance','delete_car_maintenance','report_car_issue_unsafe_maintenance','update_car_issue'

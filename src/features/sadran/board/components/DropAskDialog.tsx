@@ -90,6 +90,19 @@ export function DropAskDialog({ ask, onAnswer }: DropAskDialogProps) {
           onConfirm={() => onAnswer("yes")}
         />
       );
+    case "stopHour":
+      return (
+        <ConfirmDialog
+          open
+          onOpenChange={close}
+          title={he.dropAsk.stopHour.title}
+          description={tv(ask.stop.anchor === "arrive" ? "dropAsk.stopHour.arriveBody" : "dropAsk.stopHour.leaveBody", {
+            name: ask.stop.name, place: ask.stop.place, time: formatTime(new Date(ask.stop.at)), newTime: formatTime(new Date(ask.stop.newAt)),
+          })}
+          confirmLabel={he.dropAsk.stopHour.confirm}
+          onConfirm={() => onAnswer("yes")}
+        />
+      );
     case "unplace":
       return (
         <ConfirmDialog

@@ -100,7 +100,7 @@ export interface WeekRequestRow extends RequestRow {
    * line (`UnmetList.tsx`, names) and the solver-bridge feeder (`buildSolverInput.ts`). No `active`
    * column on the table: use `isActiveStop(stop, request.return_at != null)`.
    */
-  stops: { leg: "out" | "return"; position: number; active?: boolean; place_id: string | null; place_text?: string | null; place?: { name: string } | null }[];
+  stops: { leg: "out" | "return"; position: number; active?: boolean; place_id: string | null; place_text?: string | null; fixed_anchor?: "arrive" | "leave" | null; fixed_at?: string | null; flex_minutes?: number | null; place?: { name: string } | null }[];
 }
 
 // The board's requests with their embedded names are the `requests` part of `week_parts()` (20261112233000):
@@ -116,7 +116,7 @@ interface WeekRequestJoinRow extends RequestRow {
   origin: { name: string } | null;
   ride_type: { code: string; name_he: string } | null;
   preferred_car: { name: string } | null;
-  stops: { leg: "out" | "return"; position: number; active?: boolean; place_id: string | null; place_text?: string | null; place?: { name: string } | null }[];
+  stops: { leg: "out" | "return"; position: number; active?: boolean; place_id: string | null; place_text?: string | null; fixed_anchor?: "arrive" | "leave" | null; fixed_at?: string | null; flex_minutes?: number | null; place?: { name: string } | null }[];
 }
 
 /** Ids of `companions` whose profile is an eligible driver (`!does_not_drive`), REQ §13.88. */
@@ -176,7 +176,7 @@ export type RequestRowWithDriverFlag = RequestRow & {
   requester_full_name: string | null;
   driving_companion_ids: string[];
   /** REQUIREMENTS §13.93 "Multi-stop rides": -> `buildSolverInput`'s `Request.stops`. */
-  stops?: { leg: "out" | "return"; position: number; active?: boolean; place_id: string | null }[];
+  stops?: { leg: "out" | "return"; position: number; active?: boolean; place_id: string | null; fixed_anchor?: "arrive" | "leave" | null; flex_minutes?: number | null }[];
   /** REQ §13.112 (a): -> `buildSolverInput`'s `Request.alternative`. */
   alternative?: RequestAlternativeEmbed | null;
 };
@@ -187,7 +187,7 @@ export async function fetchWeekRequests(departmentId: string, weekStart: string)
     .select(`${REQUEST_COLUMNS},
       requester:profiles!requests_requester_id_fkey(full_name, does_not_drive),
       companions:request_companions(profile_id, profile:profiles!request_companions_profile_id_fkey(does_not_drive)),
-      stops:request_stops(leg, position, place_id, place_text, place:destinations(name)),
+      stops:request_stops(leg, position, place_id, place_text, fixed_anchor, flex_minutes, place:destinations(name)),
       ${REQUEST_ALTERNATIVE_EMBED}`)
     .eq("department_id", departmentId)
     .eq("week_start", weekStart);
@@ -196,7 +196,7 @@ export async function fetchWeekRequests(departmentId: string, weekStart: string)
   return ((data ?? []) as unknown as (ReadableRequestRow & {
     requester: { full_name: string; does_not_drive: boolean } | null;
     companions: { profile_id: string; profile: { does_not_drive: boolean } | null }[];
-    stops: { leg: "out" | "return"; position: number; active?: boolean; place_id: string | null; place_text?: string | null; place?: { name: string } | null }[];
+    stops: { leg: "out" | "return"; position: number; active?: boolean; place_id: string | null; place_text?: string | null; fixed_anchor?: "arrive" | "leave" | null; fixed_at?: string | null; flex_minutes?: number | null; place?: { name: string } | null }[];
   })[]).map(
     ({ requester, companions, ...rest }) => ({
       ...rest,

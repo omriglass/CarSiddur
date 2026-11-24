@@ -52,6 +52,7 @@ import {
   type SubmitRequestResult,
   fetchMyClosedRequests,
   fetchRequestHistory,
+  fetchSkippedStops,
 } from "./api";
 import { movedRequestPayload, type RequestMove } from "./myWeek/requestMove";
 import { requestsKeys } from "./queryKeys";
@@ -289,6 +290,16 @@ export function useCancelSeriesDayMutation() {
 }
 
 /** A single request for the edit form (`/requests/:id/edit`). */
+/** REQ item 267: the stops a merged ride skips, per request (nothing fetched for no ids). */
+export function useSkippedStopsQuery(requestIds: readonly string[]) {
+  const ids = [...new Set(requestIds)];
+  return useQuery({
+    queryKey: requestsKeys.skippedStops(ids),
+    queryFn: () => fetchSkippedStops(ids),
+    enabled: ids.length > 0,
+  });
+}
+
 export function useRequestQuery(requestId: string | undefined) {
   const { session } = useSession();
   const profileId = session?.user.id;

@@ -71,6 +71,8 @@ export const heMember = {
     waitlistNextWeek: "רשימת המתנה לשבוע הבא",
   },
   request: {
+    /** REQ item 267 (owner-approved 2026-11-24): a merged ride that does not pass the member's own stop. */
+    skippedStops: "⚠ בלי עצירה ב{{places}}",
     legStateLine: "הלוך: {{out}} · חזור: {{ret}}",
     legPlaced: "שובץ",
     legWaiting: "ממתין",

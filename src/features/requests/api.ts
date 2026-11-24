@@ -615,6 +615,15 @@ export async function fetchRequestNotes(requestIds: readonly string[]): Promise<
   return new Map((data ?? []).map((row) => [row.request_id, row.notes]));
 }
 
+/** REQ item 267: per request, the stops of its own that a ride it is merged into does not pass (only rows with some). */
+export async function fetchSkippedStops(requestIds: readonly string[]): Promise<Map<string, string[]>> {
+  if (requestIds.length === 0) return new Map();
+  const data = await rpc("request_skipped_stops", { p_request_ids: [...requestIds] });
+  const byRequest = new Map<string, string[]>();
+  for (const row of data ?? []) byRequest.set(row.request_id, [...new Set([...(byRequest.get(row.request_id) ?? []), ...row.places])]);
+  return byRequest;
+}
+
 /** Exactly this request row (a series leg stays that leg) — for moving one day's request. */
 export async function fetchRequestRowById(requestId: string): Promise<RequestEditRow | null> {
   const { data, error } = await supabase.from("requests").select(EDIT_SELECT).eq("id", requestId).maybeSingle();

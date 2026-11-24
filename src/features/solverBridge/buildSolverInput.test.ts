@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildSolverInput,
+  clampFlexToStops,
   buildWeek,
   FREE_TEXT_DESTINATION_ID,
   parseFlexInterval,
@@ -696,5 +697,22 @@ describe("origins, trip types, cars stay put (REQUIREMENTS §13.93, docs/ORIGINS
       expect(byId.get("a")!.alternative).toMatchObject({ pickupPlaceId: "dest-b" });
       expect(byId.get("s")!.planBSibling).toBe(true);
     });
+  });
+});
+
+describe("clampFlexToStops (REQ item 246, silent drops item 4)", () => {
+  const flex = { earlierMin: 60, laterMin: 60 } as const;
+  it("an arrive-by stop caps only the later side of its own leg", () => {
+    expect(clampFlexToStops(flex, [{ leg: "out", fixed_anchor: "arrive", flex_minutes: 15 }], "out")).toEqual({ earlierMin: 60, laterMin: 15 });
+    expect(clampFlexToStops(flex, [{ leg: "out", fixed_anchor: "arrive", flex_minutes: 15 }], "return")).toEqual(flex);
+  });
+  it("a leave-at stop caps both sides; the tightest stop wins; a whole-day flexibility is capped too", () => {
+    expect(clampFlexToStops({ earlierMin: "day", laterMin: "day" }, [
+      { leg: "return", fixed_anchor: "leave", flex_minutes: 30 },
+      { leg: "return", fixed_anchor: "arrive", flex_minutes: 0 },
+    ], "return")).toEqual({ earlierMin: 30, laterMin: 0 });
+  });
+  it("a stop without a stated hour changes nothing", () => {
+    expect(clampFlexToStops(flex, [{ leg: "out", fixed_anchor: null, flex_minutes: 0 }], "out")).toEqual(flex);
   });
 });

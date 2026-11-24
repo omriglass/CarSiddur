@@ -23,7 +23,7 @@ import { he, t, tv } from "@/i18n/he";
 import { formatTime } from "@/lib/time";
 import type { Car } from "@/features/fleet/api";
 import { RequestTimeline } from "@/features/requests/components/RequestHistoryDialog";
-import { useMyRequests } from "@/features/requests/hooks";
+import { useMyRequests, useSkippedStopsQuery } from "@/features/requests/hooks";
 import { relayPartnerOf, servedOf, type ServedEntry } from "@/features/rides/servedOf";
 
 import type { BoardRide } from "../api";
@@ -143,6 +143,10 @@ export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = 
   // The viewer's own request on this ride (theirs, filed by them, or one they may edit) — its history is theirs to read.
   const myRequestIds = new Set((useMyRequests().data ?? []).map((request) => request.id));
   const historyRequestId = ride ? servedOf(ride).map((entry) => entry.request_id).find((id) => !!id && myRequestIds.has(id)) ?? null : null;
+  // REQ item 267: my own stops this ride (merged into) does not pass - the server answers for my requests only.
+  const myRequestsOnRide = ride ? servedOf(ride).flatMap((entry) => (entry.request_id && myRequestIds.has(entry.request_id) ? [entry.request_id] : [])) : [];
+  const skippedStopsByRequest = useSkippedStopsQuery(myRequestsOnRide).data;
+  const mySkippedStops = [...new Set(myRequestsOnRide.flatMap((id) => skippedStopsByRequest?.get(id) ?? []))];
   const canLeaveDriving = (handOverOptions.length > 0 && !!onHandOver) || !!onLeaveNoDriver;
   const seriesDay = !!onCancelSeriesDay && !!ride?.series_id && (ride.series_count ?? 0) > 1;
   /** The driver's ways out of the ride: hand it to someone on it who drives, or leave it waiting for a driver. */
@@ -228,6 +232,11 @@ export function RideDetailSheet({ ride, car, locationBadge, homeDestinationId = 
                   {seatShort ? (
                     <p className="rounded bg-amber-100 px-2 py-1 text-sm font-medium text-amber-950 dark:bg-amber-900/40 dark:text-amber-100" data-testid="ride-detail-seats-short">
                       {[seatsShortText(seatShort), seatsShortWhere(seatShort)].filter(Boolean).join(" · ")}
+                    </p>
+                  ) : null}
+                  {mySkippedStops.length ? (
+                    <p className="rounded bg-amber-100 px-2 py-1 text-sm font-medium text-amber-950 dark:bg-amber-900/40 dark:text-amber-100" data-testid="ride-detail-skipped-stops">
+                      <bdi>{tv("request.skippedStops", { places: mySkippedStops.join(", ") })}</bdi>
                     </p>
                   ) : null}
                   <RideCarHandover ride={ride} />

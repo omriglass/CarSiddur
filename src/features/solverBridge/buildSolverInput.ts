@@ -133,6 +133,30 @@ function flexOf(early: string | null, late: string | null): Flexibility {
   return { earlierMin: parseFlexInterval(early), laterMin: parseFlexInterval(late) };
 }
 
+/** A request stop's stated hour (REQ item 246): `arrive` = arrive by, `leave` = leave at, widened by `flex_minutes`. */
+export interface StatedStopHour {
+  leg: "out" | "return";
+  fixed_anchor?: "arrive" | "leave" | null;
+  flex_minutes?: number | null;
+}
+
+/**
+ * REQ item 246 (a) / silent drops item 4 (owner 2026-11-24): a stop's stated hour never moves beyond its flexibility, so
+ * the solver may shift that leg only as far as the tightest stated stop on it allows - later for an arrive-by (arriving
+ * early is always fine), either way for a leave-at. Active stops only (the caller filters).
+ */
+export function clampFlexToStops(flex: Flexibility, stops: readonly StatedStopHour[], leg: "out" | "return"): Flexibility {
+  let { earlierMin, laterMin } = flex;
+  const cap = (value: number | "day", limit: number) => (value === "day" ? limit : Math.min(value, limit));
+  for (const stop of stops) {
+    if (stop.leg !== leg || !stop.fixed_anchor) continue;
+    const limit = Math.max(0, stop.flex_minutes ?? 0);
+    laterMin = cap(laterMin, limit);
+    if (stop.fixed_anchor === "leave") earlierMin = cap(earlierMin, limit);
+  }
+  return { earlierMin, laterMin };
+}
+
 export interface BuildSolverInputParams {
   weekStart: string;
   homeDestinationId: string;
@@ -167,7 +191,7 @@ export interface BuildSolverInputParams {
      * §6.1) -> `Request.stops`. Omit (or leave empty) for a request with no stops, exactly as
      * before this field existed.
      */
-    stops?: { leg: "out" | "return"; position: number; active?: boolean; place_id: string | null }[];
+    stops?: { leg: "out" | "return"; position: number; active?: boolean; place_id: string | null; fixed_anchor?: "arrive" | "leave" | null; flex_minutes?: number | null }[];
     /**
      * `request_alternatives` row (REQ §13.112 a: plan B, one per request) -> `Request.alternative`; only read for a
      * `fallback = 'alternative'` round trip / one-way request that is not yet served by it.
@@ -321,6 +345,7 @@ export function buildSolverInput(params: BuildSolverInputParams): SolverInput {
     .map((r) => {
       const oneWayCarMode =
         r.one_way_car_mode === "relay" || r.one_way_car_mode === "passenger" ? r.one_way_car_mode : undefined;
+      const activeStops = (r.stops ?? []).filter((stop) => isActiveStop(stop, r.return_at != null));
       return {
         id: r.id,
         memberId: r.requester_id,
@@ -352,8 +377,8 @@ export function buildSolverInput(params: BuildSolverInputParams): SolverInput {
         drivingCompanionIds: r.driving_companion_ids?.length ? r.driving_companion_ids : undefined,
         departureMs: epochMs(r.depart_at),
         returnMs: epochMs(r.return_at),
-        flexDeparture: flexOf(r.flex_depart_early, r.flex_depart_late),
-        flexReturn: flexOf(r.flex_return_early, r.flex_return_late),
+        flexDeparture: clampFlexToStops(flexOf(r.flex_depart_early, r.flex_depart_late), activeStops, "out"),
+        flexReturn: clampFlexToStops(flexOf(r.flex_return_early, r.flex_return_late), activeStops, "return"),
         // REQ §13.112 (c): a window request ("N hours between A and B") moves as one block.
         durationLocked: r.duration_locked ? true : undefined,
         // REQ §13.112 (a)/(b): only a round trip / one-way (no multi-day series, not already served by its plan B) has an

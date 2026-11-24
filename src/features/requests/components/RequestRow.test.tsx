@@ -33,6 +33,14 @@ function show(row: MyRequestRow, props: Partial<Parameters<typeof RequestRow>[0]
 }
 
 describe("RequestRow", () => {
+  it("REQ item 267: a stop the merged ride skips is said on the card, in orange", () => {
+    show(request(), { skippedStops: ["מכמורת", "מצר"] });
+    expect(screen.getByTestId("request-skipped-stops").textContent).toBe("⚠ בלי עצירה במכמורת, מצר");
+  });
+  it("REQ item 267: nothing when no stop is skipped", () => {
+    show(request(), { skippedStops: [] });
+    expect(screen.queryByTestId("request-skipped-stops")).toBeNull();
+  });
   it("R13M5: a request whose driver cancelled (the ride needs a driver) offers its requester 'I'll drive' / 'another ride'", () => {
     const held = request({
       status: "waitlisted", statusReason: "UNMET_NEEDS_DRIVER", requesterId: "me", tripType: "round_trip",

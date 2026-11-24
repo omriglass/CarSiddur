@@ -77,6 +77,8 @@ interface RequestRowProps {
    */
   rides?: RideCardData[];
   onOpenRide?: (rideId: string) => void;
+  /** REQ item 267: the request's own stops a ride it is merged into does not pass (`request_skipped_stops`). */
+  skippedStops?: string[];
 }
 
 /**
@@ -122,6 +124,7 @@ export function RequestRow({
   handover,
   rides,
   onOpenRide,
+  skippedStops,
 }: RequestRowProps) {
   // REQ §13.202 (j): a request I see only because my child is on it is read-only.
   const viewOnly = readOnly || (!!row.childOf && !row.editorOf);
@@ -188,6 +191,11 @@ export function RequestRow({
       />
       <WindowSummaryLine row={{ durationLocked: row.durationLocked, departAt: row.departAt, returnAt: row.returnAt, flexReturnLate: row.flexReturnLate }} />
       <PlanBLines row={row} />
+      {skippedStops?.length ? (
+        <p className="w-fit rounded bg-amber-100 px-1.5 text-sm font-medium text-amber-950 dark:bg-amber-900/40 dark:text-amber-100" data-testid="request-skipped-stops">
+          <bdi>{tv("request.skippedStops", { places: skippedStops.join(", ") })}</bdi>
+        </p>
+      ) : null}
       {handover && !rides?.length ? <CarHandoverNotice notes={handover.notes} ride={handover.span} /> : null}
       {row.ride?.needsDriver && !rides?.length ? <p className="text-sm font-medium text-destructive">{he.rideCoordination.missingDriver}</p> : null}
       {isKeepCarRow(row) ? (

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { guestDropQuestion, rideDropAsksMerge, splitOutcome } from "./dropQuestions";
+import { guestDropQuestion, movedPastStopHour, rideDropAsksMerge, splitOutcome } from "./dropQuestions";
 
 const host = { id: "h", car_id: "c1", status: "confirmed", driver_id: "d", needs_driver: false };
 const base = { ride: { id: "r", needs_driver: false }, host, droppedOnRideId: "h", carId: "c1", draggedServesRequest: true, hostIsReservation: false, isPlanningChange: false };
@@ -48,5 +48,34 @@ describe("splitOutcome", () => {
   it("never grows the ride", () => {
     const out = splitOutcome(ride, { depart_at: "2042-01-19T05:00:00Z", return_at: "2042-01-19T10:00:00Z" });
     expect(out.afterStart).toBeNull();
+  });
+});
+
+describe("movedPastStopHour (silent drops item 5)", () => {
+  const t = (hhmm: string) => `2042-02-18T${hhmm}:00.000Z`;
+  const request = {
+    requester_full_name: "Noa", depart_at: t("07:00"), return_at: t("17:00"),
+    stops: [
+      { leg: "out" as const, position: 1, fixed_anchor: "arrive" as const, fixed_at: t("08:00"), flex_minutes: 15, place: { name: "Zichron" } },
+      { leg: "return" as const, position: 1, fixed_anchor: "leave" as const, fixed_at: t("16:00"), flex_minutes: 0, place_text: "School" },
+    ],
+  };
+  const ride = { startsAt: t("07:00"), endsAt: t("17:00") };
+
+  it("a later start past the arrive-by flexibility asks, with the estimate after the move", () => {
+    expect(movedPastStopHour(request, "out", ride, { startsAt: t("07:30"), endsAt: t("17:30") }))
+      .toEqual({ name: "Noa", place: "Zichron", anchor: "arrive", at: t("08:00"), newAt: t("08:30") });
+  });
+  it("within the flexibility, or earlier for an arrive-by, does not ask", () => {
+    expect(movedPastStopHour(request, "out", ride, { startsAt: t("07:15"), endsAt: t("17:15") })).toBeNull();
+    expect(movedPastStopHour(request, "out", ride, { startsAt: t("06:00"), endsAt: t("16:00") })).toBeNull();
+  });
+  it("a leave-at breaks either way; only the legs the ride carries count", () => {
+    expect(movedPastStopHour(request, "both", ride, { startsAt: t("07:00"), endsAt: t("16:45") })?.place).toBe("School");
+    expect(movedPastStopHour(request, "out", ride, { startsAt: t("07:00"), endsAt: t("16:45") })).toBeNull();
+  });
+  it("a move that brings a broken hour closer does not ask", () => {
+    const late = { startsAt: t("08:00"), endsAt: t("17:00") };
+    expect(movedPastStopHour(request, "out", late, { startsAt: t("07:45"), endsAt: t("17:00") })).toBeNull();
   });
 });

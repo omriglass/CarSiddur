@@ -1025,6 +1025,13 @@ export const heSadran = {
   },
   /** REQ §13.161 (c), docs/UX_FLOWS.md "Board drag questions": merge and split ask in words first. */
   dropAsk: {
+    /** Silent drops item 5 (owner-approved 2026-11-24): a board move that takes a stop past its stated hour asks first. */
+    stopHour: {
+      title: "לו״ז צפוף",
+      arriveBody: "{{name}} צריך/ה להגיע ל{{place}} עד {{time}} — אחרי ההזזה ~{{newTime}}. להזיז בכל זאת?",
+      leaveBody: "{{name}} צריך/ה לצאת מ{{place}} ב־{{time}} — אחרי ההזזה ~{{newTime}}. להזיז בכל זאת?",
+      confirm: "להזיז בכל זאת",
+    },
     merge: {
       title: "לאחד את הנסיעות?",
       body: "{{guest}} שוחרר/ה על הנסיעה של {{host}} ({{car}}).",

@@ -12,6 +12,8 @@ export const requestsKeys = {
   /** REQ item 246: per-hop minutes of an unsaved route (`route_hops_preview`). */
   routeHops: (departmentId: string | undefined, points: unknown) => ["requests", "routeHops", departmentId, points] as const,
   templateSuggestions: (profileId: string | undefined) => ["requests", "templateSuggestions", profileId] as const,
+  /** REQ item 267: own stops a merged ride does not pass (`request_skipped_stops`). */
+  skippedStops: (requestIds: readonly string[]) => ["requests", "skippedStops", [...requestIds].sort().join(",")] as const,
   /** REQ §13.204: one request's story (`request_history`). */
   history: (requestId: string | undefined) => ["requests", "history", requestId] as const,
   /** REQ §13.204 (d): my withdrawn / cancelled / closed requests (`fromWeek` and later, or all). */

@@ -52,6 +52,7 @@ import {
   useWithdrawAllRequestsMutation,
   useWithdrawFreedSlotClaimMutation,
   useWithdrawRequestMutation,
+  useSkippedStopsQuery,
 } from "@/features/requests/hooks";
 import { isSeriesDay, useCancelSeriesDay } from "@/features/requests/useCancelSeriesDay";
 import type { ClosedRequestRow, MyRequestRow } from "@/features/requests/api";
@@ -298,6 +299,10 @@ export function HomePage() {
     ...(upcomingRidesQuery.data ?? []).flatMap((ride) => (ride.id ? [ride.id] : [])),
   ];
   const serverNeighbours = useCarNeighboursQuery(handoverRideIds).data;
+  // REQ item 267: a stop of my own that a ride I am merged into does not pass (placed requests only).
+  const skippedStopsByRequest = useSkippedStopsQuery((requestsQuery.data ?? [])
+    .filter((row) => row.ride && row.ride.status !== "cancelled" && (!rowDay(row) || isTodayOrLater(rowDay(row)!, now)))
+    .map((row) => row.id)).data;
   // Owner 2026-10-16: on a day the view hides (unpublished, managed by the viewer) the client mirror fills in.
   const neighboursByRide = serverNeighbours ? new Map(serverNeighbours) : undefined;
   if (neighboursByRide) {
@@ -795,6 +800,7 @@ export function HomePage() {
                       rowRef={row.id === focusedId ? highlightedRef : undefined}
                       homeDestinationId={homeDestinationIds[group.departmentId]}
                       handover={rowHandover(row, neighboursByRide, viewerId)}
+                      skippedStops={skippedStopsByRequest?.get(row.id)}
                       rides={rideCardsOf(item.rides)}
                       onOpenRide={openRide}
                       onWithdraw={(target) => setConfirmAction({ kind: "withdraw", row: target })}
@@ -898,6 +904,7 @@ export function HomePage() {
             viewerDrives={!profileQuery.data?.does_not_drive}
             homeDestinationId={homeDestinationIds[selectedWeekRow.departmentId]}
             handover={rowHandover(selectedWeekRow, neighboursByRide, viewerId)}
+            skippedStops={skippedStopsByRequest?.get(selectedWeekRow.id)}
             onWithdraw={(target) => { setSelectedRequestId(null); setConfirmAction({ kind: "withdraw", row: target }); }}
             onCancelRide={(target) => { setSelectedRequestId(null); setConfirmAction({ kind: "cancel", row: target }); }}
             onShorten={(target) => { setSelectedRequestId(null); setShortenRow(target); }}

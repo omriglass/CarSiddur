@@ -6946,6 +6946,14 @@ export type Database = {
         }
         Returns: Json
       }
+      _merge_skipped_stops: {
+        Args: {
+          p_leg: Database["public"]["Enums"]["ride_leg"]
+          p_request_id: string
+          p_ride_id: string
+        }
+        Returns: string[]
+      }
       _merge_union_legs: { Args: { _new: Json; _old: Json }; Returns: Json }
       _merge_window_conflict: {
         Args: { _new_end: string; _new_start: string; _ride_id: string }
@@ -9090,6 +9098,14 @@ export type Database = {
       request_served_by_public_ride: {
         Args: { _request_id: string }
         Returns: boolean
+      }
+      request_skipped_stops: {
+        Args: { p_request_ids: string[] }
+        Returns: {
+          places: string[]
+          request_id: string
+          ride_id: string
+        }[]
       }
       request_span: {
         Args: { _depart: string; _return: string }
