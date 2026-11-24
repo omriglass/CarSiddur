@@ -24,7 +24,12 @@ begin
   perform set_config('app.in_publish','on',true);
   update public.weeks set phase='live', published_days=array[w,w+1,w+2,w+3,w+4,w+5,w+6] where department_id=dept and week_start=w;
   perform set_config('app.in_publish','off',true);
-  select id into car from public.cars where department_id=dept and type='shared' and status='active' order by id limit 1;
+  -- a car free around now (the seeded week has rides at fixed hours; the first car by id collided at some hours of the day)
+  select c.id into car from public.cars c where c.department_id=dept and c.type='shared' and c.status='active'
+    and not exists (select 1 from public.rides r where r.car_id=c.id and r.status<>'cancelled'
+      and tstzrange(r.starts_at, coalesce(r.blocked_until, r.ends_at) + interval '1 hour', '[)') && tstzrange(dep - interval '1 day', dep + interval '2 hours', '[)'))
+    order by c.id limit 1;
+  assert car is not null, 'no shared car free around now in the seed';
 
   -- ---- (A) a one-way leg that left at least fifteen minutes ago ------------------------------------------------------
   perform set_config('app.system_status_transition','on',true);
