@@ -4504,7 +4504,8 @@ begin
     'driver_replaced_you', 'driver_unassigned', 'car_changed', 'time_changed', 'edit_applied', 'edit_waitlisted',
     'alternative_applied', 'own_car_placed', 'passenger_added_you', 'passenger_joined', 'passenger_left', 'passenger_left_many',
     'passenger_removed_request', 'passenger_removed_you', 'companion_split', 'passengers_added', 'passengers_removed',
-    'reservation_added', 'ride_cancelled', 'unassigned_by_sadran', 'child_removed', 'join_ride_cancelled', 'join_asked'
+    'reservation_added', 'ride_cancelled', 'unassigned_by_sadran', 'child_removed', 'join_ride_cancelled', 'join_asked',
+    'rider_place_off_route'
   ) then
     return false;
   end if;
@@ -4588,6 +4589,41 @@ end $$;
 
 
 ALTER FUNCTION "public"."_notify_inbox_only"("p_recipient" "uuid", "p_event" "public"."notification_event", "p_department" "uuid", "p_vars" "jsonb", "p_data" "jsonb", "p_dedupe" "text") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."_notify_off_route_riders"("p_ride_id" "uuid") RETURNS "void"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  v_ride public.rides%rowtype; v_me uuid := (select auth.uid()); o record; v_to uuid; v_dest text;
+begin
+  select * into v_ride from public.rides where id = p_ride_id;
+  if v_ride.id is null or v_ride.status = 'cancelled' then return; end if;
+  if not exists (select 1 from public.ride_passengers rp where rp.ride_id = p_ride_id
+                   and coalesce(rp.board_place_id::text, rp.board_place_text, rp.alight_place_id::text, rp.alight_place_text,
+                                rp.return_board_place_id::text, rp.return_board_place_text, rp.return_alight_place_id::text, rp.return_alight_place_text) is not null)
+     and not exists (select 1 from public.request_rider_stops s join public.ride_requests rr on rr.request_id = s.request_id
+                     where rr.ride_id = p_ride_id and s.rides
+                       and coalesce(s.board_place_id::text, s.board_place_text, s.alight_place_id::text, s.alight_place_text) is not null) then
+    return;
+  end if;
+  select coalesce(d.name, '') into v_dest from public._ride_route(p_ride_id) x left join public.destinations d on d.id = x.place_id
+   where x.leg = 'out' and x.kind = 'destination' limit 1;
+  for o in select * from public._off_route_riders(p_ride_id, '[]'::jsonb) loop
+    foreach v_to in array (select array_agg(distinct u) from unnest(o.recipients) u) loop
+      continue when v_to is null or v_to is not distinct from v_me;
+      perform public.enqueue_notification(v_to, 'outcome_changed', v_ride.department_id, v_ride.week_start,
+        jsonb_build_object('day', public.day_date_label(v_ride.starts_at), 'place', coalesce(o.place, ''),
+                           'destination', coalesce(v_dest, ''), 'names', coalesce(o.name, '')),
+        jsonb_build_object('variant', 'rider_place_off_route', 'ride_id', p_ride_id),
+        format('rider_off_route:%s:%s:%s:%s', p_ride_id, o.rider_key, o.leg, lower(coalesce(o.place, ''))));
+    end loop;
+  end loop;
+end $$;
+
+
+ALTER FUNCTION "public"."_notify_off_route_riders"("p_ride_id" "uuid") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."_notify_private_car_owners"("p_ride" "uuid", "p_car" "uuid") RETURNS "void"
@@ -4870,6 +4906,66 @@ end $$;
 
 
 ALTER FUNCTION "public"."_notify_short_turnaround_before"("p_car" "uuid", "p_start" timestamp with time zone, "p_exclude" "uuid", "p_actor" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."_off_route_riders"("p_ride_id" "uuid", "p_removed" "jsonb" DEFAULT '[]'::"jsonb") RETURNS TABLE("rider_key" "text", "request_id" "uuid", "name" "text", "leg" "public"."ride_leg", "place" "text", "recipients" "uuid"[])
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  with route as (
+    select r.leg, coalesce(r.place_id::text, 't:' || lower(btrim(r.place_text))) as k,
+           row_number() over (partition by r.leg, coalesce(r.place_id::text, 't:' || lower(btrim(r.place_text))) order by r."position") as rn
+    from public._ride_route(p_ride_id) r),
+  removed as (
+    select (e ->> 'leg')::public.ride_leg as leg,
+           coalesce(nullif(e ->> 'place_id', ''), 't:' || lower(btrim(e ->> 'place_text'))) as k, count(*) as n
+    from jsonb_array_elements(coalesce(p_removed, '[]'::jsonb)) e
+    where e ->> 'leg' in ('out', 'return') and coalesce(nullif(e ->> 'place_id', ''), nullif(btrim(e ->> 'place_text'), '')) is not null
+    group by 1, 2),
+  kept as (
+    select r.leg, r.k from route r left join removed x on x.leg = r.leg and x.k = r.k
+    where r.rn > coalesce(x.n, 0)),
+  places as (
+    -- riders added to the ride: a both-ways row keeps the way there's places in board/alight, the way back's in return_*
+    select 'added:' || rp.id as rider_key, null::uuid as request_id, rp.display_name as name, x.leg, x.pid, x.ptext,
+           array_remove(array[rp.person_id, rp.added_by], null)
+             || coalesce((select array_agg(cg.profile_id) from public.child_guardians cg where cg.child_id = rp.child_id), '{}'::uuid[]) as recipients
+    from public.ride_passengers rp
+    cross join lateral (values
+      (case when rp.leg = 'return' then 'return' else 'out' end::public.ride_leg, rp.board_place_id, rp.board_place_text),
+      (case when rp.leg = 'return' then 'return' else 'out' end::public.ride_leg, rp.alight_place_id, rp.alight_place_text),
+      ('return'::public.ride_leg, case when rp.leg = 'both' then rp.return_board_place_id end, case when rp.leg = 'both' then rp.return_board_place_text end),
+      ('return'::public.ride_leg, case when rp.leg = 'both' then rp.return_alight_place_id end, case when rp.leg = 'both' then rp.return_alight_place_text end)
+    ) x(leg, pid, ptext)
+    where rp.ride_id = p_ride_id
+    union all
+    -- a request's own riders (companions, children, named guests) on the directions this ride carries for it
+    select s.rider_key, s.request_id,
+           case split_part(s.rider_key, ':', 1)
+             when 'companion' then (select p.full_name from public.profiles p where p.id::text = split_part(s.rider_key, ':', 2))
+             when 'child' then (select c.full_name from public.children c where c.id::text = split_part(s.rider_key, ':', 2))
+             else q.guest_passenger_names[nullif(split_part(s.rider_key, ':', 2), '')::int] end,
+           s.leg, x.pid, x.ptext,
+           array_remove(array[q.requester_id,
+             case when split_part(s.rider_key, ':', 1) = 'companion' then nullif(split_part(s.rider_key, ':', 2), '')::uuid end], null)
+             || case when split_part(s.rider_key, ':', 1) = 'child'
+                     then coalesce((select array_agg(cg.profile_id) from public.child_guardians cg
+                                    where cg.child_id::text = split_part(s.rider_key, ':', 2)), '{}'::uuid[]) else '{}'::uuid[] end
+    from public.request_rider_stops s
+    join public.requests q on q.id = s.request_id
+    cross join lateral (values (s.board_place_id, s.board_place_text), (s.alight_place_id, s.alight_place_text)) x(pid, ptext)
+    where s.rides
+      and exists (select 1 from public.ride_requests rr where rr.ride_id = p_ride_id and rr.request_id = s.request_id
+                  and ((s.leg = 'out' and rr.covers_out) or (s.leg = 'return' and rr.covers_return))))
+  select p.rider_key, p.request_id, p.name, p.leg, coalesce(d.name, p.ptext), p.recipients
+  from places p left join public.destinations d on d.id = p.pid
+  where coalesce(p.pid::text, nullif(btrim(p.ptext), '')) is not null
+    and not exists (select 1 from kept r where r.leg = p.leg
+                    and r.k = coalesce(p.pid::text, 't:' || lower(btrim(p.ptext))));
+$$;
+
+
+ALTER FUNCTION "public"."_off_route_riders"("p_ride_id" "uuid", "p_removed" "jsonb") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."_offer_freed_after_edit"("p_request" "uuid") RETURNS "void"
@@ -8252,6 +8348,29 @@ end $$;
 
 
 ALTER FUNCTION "public"."_sync_draft_hold"("p_request_id" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."_tg_rider_off_route"() RETURNS "trigger"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare v_ride uuid; v_req uuid;
+begin
+  if tg_table_name = 'rides' then
+    perform public._notify_off_route_riders(new.id);
+  elsif tg_table_name = 'ride_requests' then
+    perform public._notify_off_route_riders(coalesce(new.ride_id, old.ride_id));
+  else
+    v_req := case when tg_op = 'DELETE' then old.request_id else new.request_id end;
+    for v_ride in select distinct rr.ride_id from public.ride_requests rr where rr.request_id = v_req loop
+      perform public._notify_off_route_riders(v_ride);
+    end loop;
+  end if;
+  return null;
+end $$;
+
+
+ALTER FUNCTION "public"."_tg_rider_off_route"() OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."_time_change_line"("_old_start" timestamp with time zone, "_old_end" timestamp with time zone, "_new_start" timestamp with time zone, "_new_end" timestamp with time zone, "_day_level" boolean DEFAULT false) RETURNS "text"
@@ -24441,6 +24560,22 @@ $$;
 ALTER FUNCTION "public"."ride_notice_route"("p_ride_id" "uuid") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."ride_off_route_marks"("p_ride_id" "uuid") RETURNS TABLE("person_key" "text", "leg" "public"."ride_leg", "place" "text")
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  select distinct case when o.request_id is null then o.rider_key
+                       else case split_part(o.rider_key, ':', 1) when 'companion' then 'comp' else split_part(o.rider_key, ':', 1) end
+                            || ':' || o.request_id || ':' || split_part(o.rider_key, ':', 2) end,
+         o.leg, o.place
+  from public._off_route_riders(p_ride_id, '[]'::jsonb) o
+  where public._ride_route_visible(p_ride_id);
+$$;
+
+
+ALTER FUNCTION "public"."ride_off_route_marks"("p_ride_id" "uuid") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."ride_people_notify_private_car_owners"() RETURNS "trigger"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -25185,6 +25320,23 @@ $$;
 
 
 ALTER FUNCTION "public"."ride_stretches"("p_ride_id" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."riders_losing_places"("p_ride_id" "uuid", "p_removed" "jsonb") RETURNS TABLE("name" "text", "place" "text")
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  select distinct a.name, a.place
+  from public._off_route_riders(p_ride_id, p_removed) a
+  join public.rides r on r.id = p_ride_id
+  where (public.ride_related(p_ride_id, (select auth.uid())) or public.can_manage_week(r.department_id, r.week_start))
+    and not exists (select 1 from public._off_route_riders(p_ride_id, '[]'::jsonb) b
+                    where b.rider_key = a.rider_key and b.leg = a.leg and b.place = a.place)
+  order by a.place, a.name;
+$$;
+
+
+ALTER FUNCTION "public"."riders_losing_places"("p_ride_id" "uuid", "p_removed" "jsonb") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."rides_before_write"() RETURNS "trigger"
@@ -36952,6 +37104,18 @@ CREATE CONSTRAINT TRIGGER "ride_seat_fit_on_car_change" AFTER UPDATE OF "car_id"
 
 
 
+CREATE CONSTRAINT TRIGGER "rider_off_route_links" AFTER INSERT OR DELETE OR UPDATE ON "public"."ride_requests" DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION "public"."_tg_rider_off_route"();
+
+
+
+CREATE CONSTRAINT TRIGGER "rider_off_route_rides" AFTER UPDATE OF "origin_id", "destination_id", "starts_at", "ends_at" ON "public"."rides" DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION "public"."_tg_rider_off_route"();
+
+
+
+CREATE CONSTRAINT TRIGGER "rider_off_route_stops" AFTER INSERT OR DELETE OR UPDATE ON "public"."request_stops" DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION "public"."_tg_rider_off_route"();
+
+
+
 CREATE OR REPLACE TRIGGER "rides_at_day_end" BEFORE INSERT OR UPDATE OF "starts_at", "ends_at", "status" ON "public"."rides" FOR EACH ROW EXECUTE FUNCTION "public"."clamp_ride_end_to_day"();
 
 
@@ -40317,6 +40481,11 @@ GRANT ALL ON FUNCTION "public"."_notify_inbox_only"("p_recipient" "uuid", "p_eve
 
 
 
+REVOKE ALL ON FUNCTION "public"."_notify_off_route_riders"("p_ride_id" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_notify_off_route_riders"("p_ride_id" "uuid") TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."_notify_private_car_owners"("p_ride" "uuid", "p_car" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."_notify_private_car_owners"("p_ride" "uuid", "p_car" "uuid") TO "service_role";
 
@@ -40354,6 +40523,11 @@ GRANT ALL ON FUNCTION "public"."_notify_short_turnaround"("p_car" "uuid", "p_end
 
 REVOKE ALL ON FUNCTION "public"."_notify_short_turnaround_before"("p_car" "uuid", "p_start" timestamp with time zone, "p_exclude" "uuid", "p_actor" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."_notify_short_turnaround_before"("p_car" "uuid", "p_start" timestamp with time zone, "p_exclude" "uuid", "p_actor" "uuid") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."_off_route_riders"("p_ride_id" "uuid", "p_removed" "jsonb") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_off_route_riders"("p_ride_id" "uuid", "p_removed" "jsonb") TO "service_role";
 
 
 
@@ -41070,6 +41244,11 @@ GRANT ALL ON FUNCTION "public"."_sync_car_owner_id"("p_car" "uuid") TO "service_
 
 REVOKE ALL ON FUNCTION "public"."_sync_draft_hold"("p_request_id" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."_sync_draft_hold"("p_request_id" "uuid") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."_tg_rider_off_route"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_tg_rider_off_route"() TO "service_role";
 
 
 
@@ -43187,6 +43366,12 @@ GRANT ALL ON FUNCTION "public"."ride_notice_route"("p_ride_id" "uuid") TO "servi
 
 
 
+REVOKE ALL ON FUNCTION "public"."ride_off_route_marks"("p_ride_id" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."ride_off_route_marks"("p_ride_id" "uuid") TO "service_role";
+GRANT ALL ON FUNCTION "public"."ride_off_route_marks"("p_ride_id" "uuid") TO "authenticated";
+
+
+
 REVOKE ALL ON FUNCTION "public"."ride_people_notify_private_car_owners"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."ride_people_notify_private_car_owners"() TO "service_role";
 
@@ -43296,6 +43481,12 @@ GRANT ALL ON FUNCTION "public"."ride_shorten_options_for_request"("p_request_id"
 REVOKE ALL ON FUNCTION "public"."ride_stretches"("p_ride_id" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."ride_stretches"("p_ride_id" "uuid") TO "service_role";
 GRANT ALL ON FUNCTION "public"."ride_stretches"("p_ride_id" "uuid") TO "authenticated";
+
+
+
+REVOKE ALL ON FUNCTION "public"."riders_losing_places"("p_ride_id" "uuid", "p_removed" "jsonb") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."riders_losing_places"("p_ride_id" "uuid", "p_removed" "jsonb") TO "service_role";
+GRANT ALL ON FUNCTION "public"."riders_losing_places"("p_ride_id" "uuid", "p_removed" "jsonb") TO "authenticated";
 
 
 

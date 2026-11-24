@@ -10,6 +10,7 @@ vi.mock("../hooks", () => ({
   useRemoveRidePassengerMutation: () => ({ mutate: vi.fn(), isPending: false }),
   useSetRidePersonPartMutation: () => ({ mutate: vi.fn(), isPending: false }),
   useRideStretchesQuery: () => ({ data: undefined }),
+  useRideOffRouteMarksQuery: () => ({ data: undefined }),
   useLeaveRideAsGuestMutation: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 

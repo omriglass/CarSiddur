@@ -23,6 +23,7 @@ import {
   releaseRideDriver,
   removeRidePerson,
   fetchRideStretches,
+  fetchRideOffRouteMarks,
   leaveRideAsGuest,
   setRidePersonPart,
   requestMakeRoom,
@@ -83,6 +84,15 @@ export function useRideStretchesQuery(rideId: string | null | undefined, version
   return useQuery({
     queryKey: ridesKeys.stretches(rideId ?? "", version),
     queryFn: () => fetchRideStretches(rideId as string),
+    enabled: enabled && !!rideId,
+  });
+}
+
+/** Silent drops item 3: the riders of a ride whose get-on / off place is off its route (the orange mark). */
+export function useRideOffRouteMarksQuery(rideId: string | null | undefined, version: number | null | undefined, enabled: boolean) {
+  return useQuery({
+    queryKey: ridesKeys.offRoute(rideId ?? "", version),
+    queryFn: () => fetchRideOffRouteMarks(rideId as string),
     enabled: enabled && !!rideId,
   });
 }

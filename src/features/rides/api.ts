@@ -267,6 +267,26 @@ export async function fetchRideStretches(rideId: string): Promise<RideStretches>
   return parsed.success ? parsed.data : null;
 }
 
+/** Silent drops item 3: a route point a change would take out (one entry per point). */
+export interface RemovedRoutePoint {
+  leg: "out" | "return";
+  place_id?: string;
+  place_text?: string;
+}
+
+/** Silent drops item 3: who would newly lose the place they get on / off at if these points left the route. */
+export async function fetchRidersLosingPlaces(rideId: string, removed: readonly RemovedRoutePoint[]): Promise<{ name: string; place: string }[]> {
+  if (removed.length === 0) return [];
+  const data = await rpc("riders_losing_places", { p_ride_id: rideId, p_removed: removed as unknown as Json });
+  return (data ?? []).map((row) => ({ name: row.name ?? "", place: row.place ?? "" }));
+}
+
+/** Silent drops item 3: the people-list mark - each rider (people-list key) whose stated place is off the route. */
+export async function fetchRideOffRouteMarks(rideId: string): Promise<{ personKey: string; leg: "out" | "return"; place: string }[]> {
+  const data = await rpc("ride_off_route_marks", { p_ride_id: rideId });
+  return (data ?? []).map((row) => ({ personKey: row.person_key ?? "", leg: row.leg === "return" ? "return" : "out", place: row.place ?? "" }));
+}
+
 /** RP1 (owner 2026-11-21): several rides' stretches in one call (`rides_stretches`, at most 200) - for the ride cards. */
 export async function fetchRidesStretches(rideIds: readonly string[]): Promise<Map<string, RideStretches>> {
   const data = await rpc("rides_stretches", { p_ride_ids: [...rideIds] });

@@ -6989,6 +6989,10 @@ export type Database = {
         }
         Returns: string
       }
+      _notify_off_route_riders: {
+        Args: { p_ride_id: string }
+        Returns: undefined
+      }
       _notify_private_car_owners: {
         Args: { p_car: string; p_ride: string }
         Returns: undefined
@@ -7042,6 +7046,17 @@ export type Database = {
           p_start: string
         }
         Returns: undefined
+      }
+      _off_route_riders: {
+        Args: { p_removed?: Json; p_ride_id: string }
+        Returns: {
+          leg: Database["public"]["Enums"]["ride_leg"]
+          name: string
+          place: string
+          recipients: string[]
+          request_id: string
+          rider_key: string
+        }[]
       }
       _offer_freed_after_edit: {
         Args: { p_request: string }
@@ -9209,6 +9224,14 @@ export type Database = {
       ride_notice_destination: { Args: { p_ride_id: string }; Returns: string }
       ride_notice_request: { Args: { p_ride_id: string }; Returns: string }
       ride_notice_route: { Args: { p_ride_id: string }; Returns: string }
+      ride_off_route_marks: {
+        Args: { p_ride_id: string }
+        Returns: {
+          leg: Database["public"]["Enums"]["ride_leg"]
+          person_key: string
+          place: string
+        }[]
+      }
       ride_related: {
         Args: { p_actor: string; p_ride: string }
         Returns: boolean
@@ -9262,6 +9285,13 @@ export type Database = {
         Returns: Json
       }
       ride_stretches: { Args: { p_ride_id: string }; Returns: Json }
+      riders_losing_places: {
+        Args: { p_removed: Json; p_ride_id: string }
+        Returns: {
+          name: string
+          place: string
+        }[]
+      }
       rides_stretches: { Args: { p_ride_ids: string[] }; Returns: Json }
       rides_with_people: {
         Args: {

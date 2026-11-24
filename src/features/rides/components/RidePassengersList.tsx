@@ -11,7 +11,9 @@ import { formatTime } from "@/lib/time";
 import { canRemoveRidePerson, legMarkedName, type RidePerson } from "../ridePeople";
 import { baseRequestId, personDialogSetup, personWhereParts, rideLegs, rideNeedsStretches, type SummaryWords } from "../rideStretches";
 import type { ServedEntry } from "../servedOf";
-import { useLeaveRideAsGuestMutation, useRemoveRidePassengerMutation, useRideStretchesQuery } from "../hooks";
+import { useLeaveRideAsGuestMutation, useRemoveRidePassengerMutation, useRideOffRouteMarksQuery, useRideStretchesQuery } from "../hooks";
+import { guestRoutePoints } from "../offRoute";
+import { useAskRidersLosingPlaces } from "../useAskRidersLosingPlaces";
 import { RidePersonDialog } from "./RidePersonDialog";
 
 interface RidePassengersListProps {
@@ -69,6 +71,10 @@ export function RidePassengersList({ rideId, expectedVersion, people, served, ca
   const [editing, setEditing] = useState<RidePerson | null>(null);
   const [leaving, setLeaving] = useState<RidePerson | null>(null);
   const leave = useLeaveRideAsGuestMutation();
+  // Silent drops item 3: a rider whose get-on / off place is no longer on the route is marked, and taking out a guest
+  // whose places others get on / off at asks first.
+  const offRoute = useRideOffRouteMarksQuery(rideId, expectedVersion, points.length >= 2).data ?? [];
+  const { confirmRidersLosingPlaces, dialog: losingPlacesDialog } = useAskRidersLosingPlaces();
   if (!people.length) return null;
   // the ride's own (main) request: its people do not "leave" a ride that is theirs
   const mainRequest = baseRequestId(points) ?? served.find((entry) => entry.role === "driver")?.request_id ?? null;
@@ -92,10 +98,16 @@ export function RidePassengersList({ rideId, expectedVersion, people, served, ca
             canRemoveRidePerson(person, { canManagePeople, rideCancelled }) && !locked;
           const where = stretches ? personWhereParts(person, points, stretches, WORDS, time) : [];
           const name = stretches ? person.display_name.trim() : legMarkedName(person, served);
+          const offPlaces = [...new Set(offRoute.filter((mark) => mark.personKey === person.key).map((mark) => mark.place))];
           const label = (
             <span className="min-w-0">
               {name}
               {person.source === "driver" ? ` · ${he.ride.driver}` : ""}
+              {offPlaces.length ? (
+                <span className="ms-1.5 rounded bg-amber-100 px-1 text-xs font-medium text-amber-950 dark:bg-amber-900/40 dark:text-amber-100" data-testid="ride-person-off-route">
+                  {tv("offRoute.mark", { place: offPlaces.join(", ") })}
+                </span>
+              ) : null}
               {where.length ? (
                 <span className="ms-1.5 text-xs text-muted-foreground" data-testid="ride-person-where">
                   {/* Owner 2026-11-17: the same light tint as the stops view - getting on green, getting off reddish. */}
@@ -121,7 +133,10 @@ export function RidePassengersList({ rideId, expectedVersion, people, served, ca
               ) : label}
               {ownGuestRow ? (
                 <Button type="button" variant="outline" size="sm" className="shrink-0 text-destructive" data-testid="ride-guest-leave"
-                  disabled={leave.isPending} onClick={() => setLeaving(person)}>
+                  disabled={leave.isPending} onClick={async () => {
+                    if (person.request_id && !(await confirmRidersLosingPlaces(rideId, guestRoutePoints(points, person.request_id)))) return;
+                    setLeaving(person);
+                  }}>
                   {he.addPassengers.leave}
                 </Button>
               ) : null}
@@ -133,8 +148,11 @@ export function RidePassengersList({ rideId, expectedVersion, people, served, ca
                   className="size-6 shrink-0"
                   aria-label={tv("addPassengers.removeAriaLabel", { name: person.display_name })}
                   disabled={mutation.isPending}
-                  onClick={() => {
+                  onClick={async () => {
                     if (rideId == null || expectedVersion == null) return;
+                    // a merged guest's own places leave the route with them
+                    if (person.source === "requester" && person.request_id && person.request_id !== mainRequest
+                        && !(await confirmRidersLosingPlaces(rideId, guestRoutePoints(points, person.request_id)))) return;
                     mutation.mutate(
                       { rideId, expectedVersion, key: person.key, departmentId: departmentId ?? "", weekStart: weekStart ?? "" },
                       { onSuccess: () => toast.success(he.addPassengers.removed) },
@@ -164,6 +182,7 @@ export function RidePassengersList({ rideId, expectedVersion, people, served, ca
           )}
         />
       ) : null}
+      {losingPlacesDialog}
       {editing && setup && rideId != null && expectedVersion != null ? (
         <RidePersonDialog
           key={`${editing.key}:${expectedVersion}`}

@@ -899,6 +899,7 @@ declare
     'request_waitlist_causes: delegates to waitlist_cause (related people / the week''s Sadran)',
     'ride_route_json: delegates to _ride_route_visible',
     'ride_stretches: delegates to _ride_route_visible',
+    'ride_off_route_marks: delegates to _ride_route_visible',
     'ride_shorten_options_for_request: delegates to _ride_shorten_request',
     'sadranim_of: policy helper, who coordinates a week',
     'leave_merged_ride_fit: delegates to leave_merged_ride',

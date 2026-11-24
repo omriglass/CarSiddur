@@ -70,6 +70,13 @@ export const heMember = {
     preparing: "סידור בהכנה...",
     waitlistNextWeek: "רשימת המתנה לשבוע הבא",
   },
+  /** Silent drops item 3 (owner-approved 2026-11-24): a rider's get-on / off place leaves the ride's route. */
+  offRoute: {
+    mark: "⚠ {{place}} לא במסלול",
+    askTitle: "{{place}} ייצא מהמסלול",
+    askBody: "{{names}} עולה/יורד/ת ב{{place}}. בלי {{place}} במסלול, {{names}} תירשם/יירשם לכל הדרך ותקבל/יקבל הודעה. להמשיך בכל זאת?",
+    askConfirm: "להמשיך בכל זאת",
+  },
   request: {
     /** REQ item 267 (owner-approved 2026-11-24): a merged ride that does not pass the member's own stop. */
     skippedStops: "⚠ בלי עצירה ב{{places}}",

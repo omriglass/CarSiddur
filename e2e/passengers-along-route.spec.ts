@@ -166,6 +166,53 @@ test("'+ נוסע/ת' getting on in the middle; a one-way guest leaves with one 
   }
 });
 
+// Silent drops item 3 (REQ item 267 f, owner 2026-11-24): a guest whose drop-off puts a place on the route leaves; the
+// rider getting off there is asked about first, told once, and marked "⚠ <place> לא במסלול".
+test("a guest leaving takes a rider's place off the route: asked first, the rider told and marked", { tag: ["@ride-passengers"] }, async ({ browser }) => {
+  test.slow();
+  const WEEK = "2041-05-26";
+  const PARDES_HANA = "00000000-0000-0000-0000-000000000017";
+  const { service, ride, base, at, home } = await fixture(WEEK);
+  const { data: place } = await service.from("destinations").select("name").eq("id", PARDES_HANA).single();
+  const placeName = place!.name as string;
+  const { data: guest, error } = await service.from("requests").insert(
+    { ...base, requester_id: MEMBER2, filed_by: MEMBER2, origin_id: home, destination_id: PARDES_HANA, trip_shape: "one_way_to", trip_type: "one_way",
+      one_way_car_mode: "passenger", depart_at: at("07:45"), status: "merged" },
+  ).select("id").single();
+  if (error) throw error;
+  // the guest's drop-off puts פרדס חנה on the way there; the admin rides along and gets off there too
+  await service.from("ride_requests").insert({ ride_id: ride.id, request_id: guest!.id, role: "passenger", leg: "out", car_mode: "passenger" });
+  const { error: riderError } = await service.from("ride_passengers").insert({
+    ride_id: ride.id, department_id: NEVO_DEPARTMENT_ID, week_start: WEEK, person_id: ADMIN, display_name: SEEDED_USERS.admin.fullName,
+    seat_kind: "adult", added_by: MEMBER1, leg: "out", alight_place_id: PARDES_HANA,
+  });
+  if (riderError) throw riderError;
+  const member2 = await newSignedInPage(browser, SEEDED_USERS.member2);
+  const admin = await newSignedInPage(browser, SEEDED_USERS.admin);
+  try {
+    let page = member2.page;
+    await openRide(page, WEEK, ride.id);
+    await page.getByTestId("ride-guest-leave").click();
+    const ask = page.getByRole("dialog").filter({ hasText: tv("offRoute.askTitle", { place: placeName }) });
+    await expect(ask).toContainText(tv("offRoute.askBody", { names: SEEDED_USERS.admin.fullName, place: placeName }));
+    await ask.getByRole("button", { name: he.offRoute.askConfirm }).click();
+    const confirm = page.getByRole("dialog").filter({ hasText: tv("addPassengers.leaveTitle", { driver: SEEDED_USERS.member1.fullName }) });
+    await confirm.getByRole("button", { name: he.addPassengers.leaveConfirm }).click();
+    await expect.poll(async () => (await service.from("ride_requests").select("request_id").eq("ride_id", ride.id).eq("request_id", guest!.id)).data?.length).toBe(0);
+    await expect.poll(async () => (await service.from("notifications").select("id").eq("recipient_id", ADMIN)
+      .eq("data->>variant", "rider_place_off_route").eq("data->>ride_id", ride.id)).data?.length).toBe(1);
+
+    // the rider sees their row marked
+    page = admin.page;
+    await openRide(page, WEEK, ride.id);
+    await expect(page.getByTestId("ride-person-off-route")).toHaveText(tv("offRoute.mark", { place: placeName }));
+  } finally {
+    await member2.context.close().catch(() => undefined);
+    await admin.context.close().catch(() => undefined);
+    await cleanup(WEEK);
+  }
+});
+
 // REQ item 248 (owner 2026-11-17): removing a stop someone gets on / off at asks first (never drops them silently);
 // more people than seats saves and the ride warns.
 test("a removed stop with a rider on it asks first; more people than seats warns", { tag: ["@ride-passengers", "@request-form"] }, async ({ browser }) => {

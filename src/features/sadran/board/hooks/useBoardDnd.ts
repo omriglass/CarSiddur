@@ -60,6 +60,9 @@ import {
 import type { UnmetListItem } from "../components/UnmetList";
 import { describeObstacle, findObstacle, type CarBlock, type RefusalToast } from "../dropRefusal";
 import { isoToDayMinutes, slotToIso, wouldOverlap } from "../geometry";
+import { parseRideRoute } from "@/lib/rideRoute";
+import { guestRoutePoints } from "@/features/rides/offRoute";
+import { useAskRidersLosingPlaces } from "@/features/rides/useAskRidersLosingPlaces";
 import { guestDropQuestion, movedPastStopHour, rideDropAsksMerge, splitOutcome, type DropAnswer, type DropAsk, type DropAskSpec } from "../dropQuestions";
 import { planBSwitchPrefill } from "../planBSwitch";
 import { seriesSpanSuggestionPrefill } from "../seriesSpan";
@@ -119,6 +122,7 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
   const splitIntent = useRef<{ rideId: string; requestId: string; name: string } | null>(null);
   /** The open "לאחד / לפצל / להעביר / להוציא?" question (REQ §13.161 c). */
   const [dropAsk, setDropAsk] = useState<DropAsk | null>(null);
+  const { confirmRidersLosingPlaces, dialog: losingPlacesDialog } = useAskRidersLosingPlaces();
   function setMergePrefill(value: ComposerPrefill | null) {
     if (!value) setPendingSplit(null);
     setMergePrefillState(value);
@@ -475,6 +479,8 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
     const outcome = ride?.starts_at && ride.ends_at ? splitOutcome({ starts_at: ride.starts_at, ends_at: ride.ends_at }, baseRequest) : null;
     const answer = await askDrop({ kind: "split", guest: name, host: rideTitleName(ride), outcome });
     if (answer !== "yes") return false;
+    // Silent drops item 3: someone else gets on / off at the guest's places - asked before they leave the route
+    if (!(await confirmRidersLosingPlaces(rideId, guestRoutePoints(parseRideRoute(ride?.route), requestId)))) return false;
     return removeAddedPerson(rideId, requestId, name);
   }
 
@@ -509,6 +515,7 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
     if (target.kind === "car" && targetHost && guestDropQuestion({ guestRideId: guest.rideId, hostRideId: targetHostId, hostIsLiveRide: true }) === "transfer") {
       const answer = await askDrop({ kind: "transfer", guest: guest.name, host: rideTitleName(targetHost), from: rideTitleName(fromRide), car: carNameOf(targetHost.car_id) });
       if (answer !== "yes") return;
+      if (!(await confirmRidersLosingPlaces(guest.rideId, guestRoutePoints(parseRideRoute(fromRide?.route), guest.requestId)))) return;
       const item = placeItem();
       if (!item) return;
       splitIntent.current = { rideId: guest.rideId, requestId: guest.requestId, name: guest.name };
@@ -1395,6 +1402,7 @@ export function useBoardDnd(departmentId: string, weekStart: string, board: Boar
     handleRideClick,
     handleRideDrop,
     handleRideResize,
+    losingPlacesDialog,
     handleUnmetDecision,
     saveReservation,
     handleUnmetAction,

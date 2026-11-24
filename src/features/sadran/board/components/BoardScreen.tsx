@@ -763,6 +763,7 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
         onChainViaChange={setChainVia}
       />
       <DropAskDialog ask={dnd.dropAsk} onAnswer={dnd.answerDropAsk} />
+      {dnd.losingPlacesDialog}
       {dnd.displacement ? (
         <DisplacementChecklist
           steps={dnd.displacementSteps}
