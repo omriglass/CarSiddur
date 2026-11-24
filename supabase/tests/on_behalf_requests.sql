@@ -345,9 +345,17 @@ begin
     'trip_type','round_trip','depart_at',dep,'return_at',dep+interval '1 hour'));
   rid := (res->>'ride_id')::uuid;
   assert rid is not null, format('TEST 11 FAILED: setup ride, got %s', res);
-  -- the ride started two hours ago (moved back by hand, as if time had passed)
+  -- the ride started two hours ago (moved back by hand, as if time had passed) - onto a shared car free at those
+  -- hours (the car it got may hold a seeded ride then: ride_turnaround_conflict at some hours of the day, CI 2026-11-24)
   reset role;
-  update public.rides set starts_at = starts_at - interval '4 hours', ends_at = ends_at - interval '4 hours',
+  update public.rides set car_id = coalesce((
+      select c.id from public.cars c where c.department_id = dept and c.type = 'shared' and c.status = 'active'
+        and not exists (select 1 from public.rides x where x.car_id = c.id and x.id <> rid and x.status <> 'cancelled'
+          and tstzrange(x.starts_at, coalesce(x.blocked_until, x.ends_at) + interval '1 hour', '[)') && tstzrange(dep - interval '5 hours', dep, '[)'))
+        and not exists (select 1 from public.car_maintenance_blocks b where b.car_id = c.id
+          and tstzrange(b.starts_at, b.ends_at, '[)') && tstzrange(dep - interval '5 hours', dep, '[)'))
+      order by c.id limit 1), car_id),
+    starts_at = starts_at - interval '4 hours', ends_at = ends_at - interval '4 hours',
     blocked_until = blocked_until - interval '4 hours' where id = rid;
   select * into v_ride from public.rides where id = rid;
   assert (v_ride.starts_at at time zone 'Asia/Jerusalem')::date = today and v_ride.starts_at < now(), 'TEST 11 FAILED: setup: started today';
