@@ -898,6 +898,10 @@ export const heSadran = {
     longDetourUnknown: "זמן הנסיעה בין {{from}} ל{{to}} לא ידוע, ולכן נספר כשעה.",
     /** REQ item 246 g: a stop's stated hour the merge would move. */
     longDetourConfirm: "לאחד בכל זאת",
+    /** REQ item 267 (owner 2026-11-24, wording to approve): the guest's own stops on the merged leg are not on the merged ride. */
+    skippedStopsTitle: "עצירות שלא ייכללו",
+    skippedStopsBody: "{{name}} ביקש/ה לעצור ב{{places}}. הנסיעה המאוחדת לא עוצרת שם. לאחד בכל זאת?",
+    skippedStopsConfirm: "לאחד בכל זאת",
     longDetourNote: "העיקוף ארוך מהמותר (עוד {{minutes}} דק׳ נסיעה) — אפשר לאחד בכל זאת",
     /** REQ §13.175 (b): the ride reaches the guest at another time than asked - the Sadran picks which side gives. */
     waitTitle: "{{name}} ביקש/ה {{wanted}}",

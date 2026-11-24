@@ -313,4 +313,12 @@ describe('merge joining at a stop (findMergeHosts, REQUIREMENTS §13.93, ORIGINS
     const freeTextHostNr = hostNr({ stops: [{ leg: 'out' }] }); // free-text out-stop instead of BINYAMINA
     expect(search(guest, freeTextHostNr)).toHaveLength(0);
   });
+
+  it('REQ item 267: a guest whose merged leg has its own stop never joins (the stop would be lost)', () => {
+    const guest = guestNrAt({ originId: BINYAMINA, destinationId: HOME, departureMs: slotMs(HOST_ETA_AT_BINYAMINA), stops: [{ leg: 'out', locationId: HAIFA }] });
+    expect(search(guest)).toHaveLength(0);
+    // a stop on the other leg only does not matter for an out-leg merge
+    const otherLeg = guestNrAt({ originId: BINYAMINA, destinationId: HOME, departureMs: slotMs(HOST_ETA_AT_BINYAMINA), stops: [{ leg: 'return', locationId: HAIFA }] });
+    expect(search(otherLeg)).toHaveLength(1);
+  });
 });

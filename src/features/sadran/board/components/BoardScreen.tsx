@@ -55,7 +55,7 @@ import { addedPeopleNames, peopleNames, peopleOf } from "@/features/rides/ridePe
 import { resolveRideRealDestination } from "../rideLabel";
 import { duplicateChildRuns, groupDuplicateRuns } from "../duplicateChildRuns";
 import { connectedMateOf, unmetItemId } from "../unmetLegs";
-import { applyServerMergeTimes, mergeAffectedParties, mergeInvalidReason, mergeLegOptions, mergePayloadLeg, mergePayloadLegs, mergeVerdict, mergeWaitChoice, previewMerge, timeFarPrompt, timeFarWarning, type MergeLeg, type MergeVerdict } from "../mergeProposal";
+import { applyServerMergeTimes, mergeAffectedParties, mergeInvalidReason, mergeLegOptions, mergePayloadLeg, mergePayloadLegs, mergeVerdict, mergeWaitChoice, previewMerge, skippedGuestStops, timeFarPrompt, timeFarWarning, type MergeLeg, type MergeVerdict } from "../mergeProposal";
 import { longDetourText, type MergeWaitChoice } from "@/features/rides/mergeQuestions";
 import { requestRouteLine } from "../requestRoute";
 import { parseTimeToMinutes } from "@/features/solverBridge/buildSolverInput";
@@ -116,6 +116,7 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
   const [timeFarAsk, setTimeFarAsk] = useState<{ text: string; title: string; confirm: string; resolve: (accepted: boolean) => void } | null>(null);
   // REQ §13.175: "the detour is long — merge anyway?" and "pick the guest up at another time, or stretch the ride?"
   const [detourAsk, setDetourAsk] = useState<{ text: string; resolve: (accepted: boolean) => void } | null>(null);
+  const [skippedStopsAsk, setSkippedStopsAsk] = useState<{ text: string; resolve: (accepted: boolean) => void } | null>(null);
   // CM1 phase 3: the merge popup's answer for a chain's people on one trip only (pass the start place again)
   const [chainViaAnswer, setChainViaAnswer] = useState<{ key: string; via: boolean }>({ key: "", via: false });
   const [waitAsk, setWaitAsk] = useState<{ choice: MergeWaitChoice; resolve: (answer: "extend" | "keep" | null) => void } | null>(null);
@@ -299,6 +300,14 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
       setDetourAsk(null);
       if (!accepted) return;
       prefill = { ...prefill, payload: { ...prefill.payload, allow_long_detour: true } };
+    }
+    // REQ item 267: the guest's own stops on the merged leg that the merged ride does not pass - asked, never silent.
+    const skipped = mergeRequest && mergeHost && !mergePair ? skippedGuestStops(mergeRequest, mergeLeg, mergeHost.route) : [];
+    if (mergeVerdictNow?.status === "ok" && skipped.length > 0) {
+      const text = tv("mergedRide.skippedStopsBody", { name: mergeRequest?.requester_full_name ?? "", places: skipped.join(", ") });
+      const accepted = await new Promise<boolean>((resolve) => setSkippedStopsAsk({ text, resolve }));
+      setSkippedStopsAsk(null);
+      if (!accepted) return;
     }
     if (mergeVerdictNow?.status === "ok" && mergeVerdictNow.waivable) {
       const accepted = await askSmallTrunk({
@@ -864,6 +873,14 @@ export function BoardScreen({ departmentId, weekStart }: BoardScreenProps) {
         description={detourAsk?.text}
         confirmLabel={he.mergedRide.longDetourConfirm}
         onConfirm={() => detourAsk?.resolve(true)}
+      />
+      <ConfirmDialog
+        open={!!skippedStopsAsk}
+        onOpenChange={(open) => { if (!open) skippedStopsAsk?.resolve(false); }}
+        title={he.mergedRide.skippedStopsTitle}
+        description={skippedStopsAsk?.text}
+        confirmLabel={he.mergedRide.skippedStopsConfirm}
+        onConfirm={() => skippedStopsAsk?.resolve(true)}
       />
       {waitAsk ? (
         <MergeWaitDialog choice={waitAsk.choice} guest={mergeRequest?.requester_full_name ?? ""} host={mergeHostName}

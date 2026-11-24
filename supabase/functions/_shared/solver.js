@@ -2212,6 +2212,9 @@ function findMergeHosts(params) {
     const reversed = leg === "out" && guest.request.tripShape === "one_way_to" && host.legSide === "both" && !!guest.originId && !!guest.destinationId && guest.originId === hostOutRoute[hostOutRoute.length - 1]?.locationId && guest.destinationId === hostReturnRoute[hostReturnRoute.length - 1]?.locationId;
     const mergesOut = !reversed && (leg === "out" || leg === "both");
     const mergesReturn = reversed || leg === "return" || leg === "both";
+    const guestStops = guest.request.stops ?? [];
+    const stopsOn = (dir) => guestStops.some((stop) => stop.leg === dir);
+    if (mergesOut && stopsOn("out") || mergesReturn && stopsOn(reversed ? "out" : "return")) continue;
     const out = mergesOut ? sideFor(params, hostRequest, guest, "out") : null;
     const ret = mergesReturn ? sideFor(params, hostRequest, guest, "return", reversed) : null;
     if (mergesOut && !out || mergesReturn && !ret) continue;

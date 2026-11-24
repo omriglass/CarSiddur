@@ -12,6 +12,7 @@ import { servedOf } from "@/features/rides/servedOf";
 import { mergeAffectedRequestIds } from "./mergeAffected";
 
 import type { BoardRide, WeekRequestRow } from "../api";
+import { isActiveStop } from "@/lib/routeStops";
 
 export type MergeLeg = "out" | "return" | "both";
 
@@ -446,4 +447,23 @@ export function mergeWaitChoice(
     }
   }
   return null;
+}
+
+/**
+ * REQ item 267 (owner 2026-11-24): a merge inserts only the guest's two ends, so the guest's own stops on the
+ * merged leg(s) are not visited unless the host's route already passes there. Returns their names (in order),
+ * for the "לאחד בכל זאת?" question; empty = nothing is skipped.
+ */
+export function skippedGuestStops(
+  request: Pick<WeekRequestRow, "stops" | "return_at">,
+  leg: MergeLeg,
+  hostRoute: unknown,
+): string[] {
+  const onRoute = new Set(parseRideRoute(hostRoute).map((point) => point.placeId).filter((id): id is string => !!id));
+  return [...(request.stops ?? [])]
+    .filter((stop) => isActiveStop(stop, request.return_at != null) && (leg === "both" || stop.leg === leg))
+    .sort((a, b) => (a.leg === b.leg ? a.position - b.position : a.leg === "out" ? -1 : 1))
+    .filter((stop) => !stop.place_id || !onRoute.has(stop.place_id))
+    .map((stop) => stop.place?.name ?? stop.place_text ?? "")
+    .filter((name) => name !== "");
 }

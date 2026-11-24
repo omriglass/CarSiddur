@@ -4,7 +4,7 @@ import { makeHop } from "@/lib/rideRoute";
 
 import { chainRouteText } from "@/features/rides/mergeChain";
 
-import { addedGuestsOf, applyServerMergeTimes, combineMergeLegs, mergeWaitChoice, parseServerMergePreview, personOverlapWarning, defaultMergeLeg, mergeLegForCard, mergeLegOptions, mergePayloadFromLegs, mergePayloadLegs, mergePayload, mergePayloadLeg, mergeRefusalText, mergeVerdict, previewMerge, timeFarPrompt, timeFarWarning, type ServerMergePreview } from "./mergeProposal";
+import { addedGuestsOf, applyServerMergeTimes, combineMergeLegs, mergeWaitChoice, parseServerMergePreview, personOverlapWarning, defaultMergeLeg, mergeLegForCard, mergeLegOptions, mergePayloadFromLegs, mergePayloadLegs, mergePayload, mergePayloadLeg, mergeRefusalText, mergeVerdict, previewMerge, skippedGuestStops, timeFarPrompt, timeFarWarning, type ServerMergePreview } from "./mergeProposal";
 import { he, tv } from "@/i18n/he";
 import { longDetourText } from "@/features/rides/mergeQuestions";
 
@@ -299,5 +299,21 @@ describe("long detour and waiting for the guest (REQ §13.175)", () => {
     expect(mergeWaitChoice(parseServerMergePreview({ ...raw, joiner_return_at: "2026-11-03T13:20:00Z" }), guest, "return")).toBeNull();
     expect(mergeWaitChoice(parseServerMergePreview({ ...raw, wait_ends_at: null }), guest, "return")).toBeNull();
     expect(mergeWaitChoice(parseServerMergePreview(raw), guest, "out")).toBeNull();
+  });
+});
+
+describe("skippedGuestStops (REQ item 267)", () => {
+  const stop = (leg: "out" | "return", position: number, id: string | null, name: string) =>
+    ({ leg, position, place_id: id, place_text: id ? null : name, place: id ? { name } : null });
+  const request = { return_at: "2026-11-26T14:45:00Z", stops: [stop("out", 1, "M", "מכמורת"), stop("return", 1, "Z", "מצר")] };
+  const route = [{ leg: "out", position: 0, place_id: "H", name: "בית", kind: "origin" }, { leg: "out", position: 1, place_id: "B", name: "בנימינה", kind: "destination" }];
+  it("names the guest's stops on the merged leg the host does not pass", () => {
+    expect(skippedGuestStops(request, "out", route)).toEqual(["מכמורת"]);
+    expect(skippedGuestStops(request, "return", route)).toEqual(["מצר"]);
+    expect(skippedGuestStops(request, "both", route)).toEqual(["מכמורת", "מצר"]);
+  });
+  it("a stop already on the host's route is not skipped; no stops, nothing asked", () => {
+    expect(skippedGuestStops(request, "out", [...route, { leg: "out", position: 2, place_id: "M", name: "מכמורת", kind: "stop" }])).toEqual([]);
+    expect(skippedGuestStops({ return_at: null, stops: [] }, "both", route)).toEqual([]);
   });
 });

@@ -291,6 +291,11 @@ export function findMergeHosts(params: MergeSearchParams): MergeCandidate[] {
       && guest.destinationId === hostReturnRoute[hostReturnRoute.length - 1]?.locationId;
     const mergesOut = !reversed && (leg === 'out' || leg === 'both');
     const mergesReturn = reversed || leg === 'return' || leg === 'both';
+    // REQ item 267 (owner 2026-11-24): a merge inserts only the guest's two ends, so a guest leg with its own
+    // stops would lose them (production: "to Binyamina via Michmoret" became a drop in Binyamina). Never merge it.
+    const guestStops = guest.request.stops ?? [];
+    const stopsOn = (dir: 'out' | 'return') => guestStops.some((stop) => stop.leg === dir);
+    if ((mergesOut && stopsOn('out')) || (mergesReturn && stopsOn(reversed ? 'out' : 'return'))) continue;
     const out = mergesOut ? sideFor(params, hostRequest, guest, 'out') : null;
     const ret = mergesReturn ? sideFor(params, hostRequest, guest, 'return', reversed) : null;
     if ((mergesOut && !out) || (mergesReturn && !ret)) continue;

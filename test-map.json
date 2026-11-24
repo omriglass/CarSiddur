@@ -753,6 +753,7 @@
         "supabase/migrations/**/*merge_previews*",
         "supabase/migrations/**/*merge_check_read_only*",
         "e2e/merge-long-detour.spec.ts",
+        "e2e/merge-non-driver.spec.ts",
         "supabase/migrations/**/*merge_long_detour_and_wait*",
         "supabase/tests/merge_long_detour.sql",
         "e2e/pilot-p2-trip-type-placement.spec.ts",
