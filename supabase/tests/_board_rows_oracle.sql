@@ -30,6 +30,14 @@ begin
     v_bad := v_bad + 1;
     raise warning 'ride_rows oracle: ride %: % (stored row for a cancelled/missing ride %)', d.id, d.cols, d.extra;
   end loop;
+  -- SW1 step 2 (20261126100000): the stored ride summaries (`ride_stretches`)
+  for d in
+    select s.ride_id as id from public.ride_rows s
+     where s.stretches is distinct from public._ride_stretches_build(s.ride_id)
+  loop
+    v_bad := v_bad + 1;
+    raise warning 'ride_rows oracle: ride %: stored stretches differ from a fresh build', d.id;
+  end loop;
   if v_bad > 0 then raise exception 'ride_rows oracle: % stored ride row(s) differ from a fresh build', v_bad; end if;
 end $sw1$;
 create function pg_temp._oracle_norm(j jsonb) returns jsonb language sql immutable as $f$

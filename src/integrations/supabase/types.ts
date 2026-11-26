@@ -4896,6 +4896,7 @@ export type Database = {
           department_id: string
           ride_id: string
           row: Json
+          stretches: Json | null
           week_start: string
         }
         Insert: {
@@ -4903,6 +4904,7 @@ export type Database = {
           department_id: string
           ride_id: string
           row: Json
+          stretches?: Json | null
           week_start: string
         }
         Update: {
@@ -4910,6 +4912,7 @@ export type Database = {
           department_id?: string
           ride_id?: string
           row?: Json
+          stretches?: Json | null
           week_start?: string
         }
         Relationships: [
@@ -7554,6 +7557,7 @@ export type Database = {
         }
         Returns: undefined
       }
+      _ride_stretches_build: { Args: { p_ride_id: string }; Returns: Json }
       _ride_task_people: { Args: { p_ride_id: string }; Returns: string[] }
       _rider_place_ok: {
         Args: { p_department_id: string; p_id: string; p_text: string }
