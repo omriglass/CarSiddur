@@ -472,6 +472,8 @@
         "supabase/tests/week_board_rides.sql",
         "supabase/migrations/**/*week_parts*",
         "supabase/tests/week_parts.sql",
+        "supabase/tests/ride_rows.sql",
+        "supabase/migrations/**/*ride_rows*",
         "scripts/qa/week-parts-oracle.mjs",
         "src/lib/weekPartsBatcher.ts",
         "src/lib/weekPartsBatcher.test.ts",

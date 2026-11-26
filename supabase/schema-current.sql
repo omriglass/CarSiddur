@@ -7071,7 +7071,9 @@ begin
   if p_department_id is null then return; end if;
   insert into public.ride_rows_dirty (txid, ride_id)
   select txid_current(), r.id from public.rides r
+    left join public.weeks w on w.department_id = r.department_id and w.week_start = r.week_start
    where r.department_id = p_department_id and r.status <> 'cancelled'
+     and w.phase is distinct from 'archived'
   on conflict do nothing;
 end $$;
 
@@ -7141,21 +7143,24 @@ begin
       case when tg_op <> 'DELETE' then new.ride_id end], null));
   when 'children' then
     if tg_op = 'UPDATE' and old.full_name is not distinct from new.full_name then return null; end if;
-    perform public._ride_rows_mark_requests(array(select rc.request_id from public.request_children rc
-                                                    where rc.child_id = coalesce(new.id, old.id)));
+    perform public._ride_rows_mark(public._ride_rows_not_archived(array(
+      select rr.ride_id from public.request_children rc join public.ride_requests rr on rr.request_id = rc.request_id
+       where rc.child_id = coalesce(new.id, old.id))));
   when 'profiles' then
     if old.full_name is not distinct from new.full_name then return null; end if;
-    perform public._ride_rows_mark(array(
+    perform public._ride_rows_mark(public._ride_rows_not_archived(array(
       select r.id from public.rides r where r.driver_id = new.id
       union
       select rr.ride_id from public.requests q join public.ride_requests rr on rr.request_id = q.id
        where q.requester_id = new.id
       union
       select rr.ride_id from public.request_companions rc join public.ride_requests rr on rr.request_id = rc.request_id
-       where rc.profile_id = new.id));
+       where rc.profile_id = new.id)));
   when 'ride_types' then
     if old.code is not distinct from new.code then return null; end if;
-    perform public._ride_rows_mark_requests(array(select q.id from public.requests q where q.ride_type_id = new.id));
+    perform public._ride_rows_mark(public._ride_rows_not_archived(array(
+      select rr.ride_id from public.requests q join public.ride_requests rr on rr.request_id = q.id
+       where q.ride_type_id = new.id)));
   when 'destinations', 'place_distances' then
     if tg_op <> 'INSERT' then perform public._ride_rows_mark_department(old.department_id); end if;
     if tg_op <> 'DELETE' and (tg_op = 'INSERT' or new.department_id is distinct from old.department_id) then
@@ -7182,6 +7187,20 @@ end $$;
 
 
 ALTER FUNCTION "public"."_ride_rows_mark_trg"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."_ride_rows_not_archived"("p_ids" "uuid"[]) RETURNS "uuid"[]
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  select coalesce(array_agg(r.id), '{}'::uuid[])
+    from public.rides r
+    left join public.weeks w on w.department_id = r.department_id and w.week_start = r.week_start
+   where r.id = any(p_ids) and w.phase is distinct from 'archived';
+$$;
+
+
+ALTER FUNCTION "public"."_ride_rows_not_archived"("p_ids" "uuid"[]) OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."_ride_seat_dupes"("p_ride_id" "uuid", "p_leg" "public"."ride_leg", "p_guests" "jsonb" DEFAULT '[]'::"jsonb") RETURNS "jsonb"
@@ -25491,13 +25510,36 @@ declare v_ids uuid[];
 begin
   delete from public.ride_rows rr
    where not exists (select 1 from public.rides r where r.id = rr.ride_id and r.status <> 'cancelled');
-  select array_agg(r.id) into v_ids from public.rides r where r.status <> 'cancelled';
+  -- every ride outside archived weeks, and an archived ride only when it has no row yet
+  select array_agg(r.id) into v_ids
+    from public.rides r
+    left join public.weeks w on w.department_id = r.department_id and w.week_start = r.week_start
+   where r.status <> 'cancelled'
+     and (w.phase is distinct from 'archived'
+          or not exists (select 1 from public.ride_rows s where s.ride_id = r.id));
   perform public._ride_rows_build_into(v_ids);
   return coalesce(cardinality(v_ids), 0);
 end $$;
 
 
 ALTER FUNCTION "public"."ride_rows_rebuild_all"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."ride_rows_rebuild_including_archived"() RETURNS integer
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare v_ids uuid[];
+begin
+  delete from public.ride_rows rr
+   where not exists (select 1 from public.rides r where r.id = rr.ride_id and r.status <> 'cancelled');
+  select array_agg(r.id) into v_ids from public.rides r where r.status <> 'cancelled';
+  perform public._ride_rows_build_into(v_ids);
+  return coalesce(cardinality(v_ids), 0);
+end $$;
+
+
+ALTER FUNCTION "public"."ride_rows_rebuild_including_archived"() OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."ride_seat_fit_check"() RETURNS "trigger"
@@ -41353,6 +41395,11 @@ GRANT ALL ON FUNCTION "public"."_ride_rows_mark_trg"() TO "service_role";
 
 
 
+REVOKE ALL ON FUNCTION "public"."_ride_rows_not_archived"("p_ids" "uuid"[]) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_ride_rows_not_archived"("p_ids" "uuid"[]) TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."_ride_seat_dupes"("p_ride_id" "uuid", "p_leg" "public"."ride_leg", "p_guests" "jsonb") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."_ride_seat_dupes"("p_ride_id" "uuid", "p_leg" "public"."ride_leg", "p_guests" "jsonb") TO "service_role";
 
@@ -44017,6 +44064,11 @@ GRANT ALL ON FUNCTION "public"."ride_routes_json"("p_ride_ids" "uuid"[]) TO "aut
 
 REVOKE ALL ON FUNCTION "public"."ride_rows_rebuild_all"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."ride_rows_rebuild_all"() TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."ride_rows_rebuild_including_archived"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."ride_rows_rebuild_including_archived"() TO "service_role";
 
 
 

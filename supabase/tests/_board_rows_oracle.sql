@@ -26,6 +26,9 @@ begin
                                             (select array_agg(id) from public.departments)) b) f
       full join public.ride_rows s on s.ride_id = f.id
      where f.j is distinct from s."row" and s.ride_id is not null
+       -- archived weeks keep their rides as they were (20261126110000): only a cancelled / deleted ride's row counts
+       and (f.id is null or not exists (select 1 from public.weeks aw where aw.department_id = s.department_id
+                                          and aw.week_start = s.week_start and aw.phase = 'archived'))
   loop
     v_bad := v_bad + 1;
     raise warning 'ride_rows oracle: ride %: % (stored row for a cancelled/missing ride %)', d.id, d.cols, d.extra;
@@ -33,7 +36,9 @@ begin
   -- SW1 step 2 (20261126100000): the stored ride summaries (`ride_stretches`)
   for d in
     select s.ride_id as id from public.ride_rows s
-     where s.stretches is distinct from public._ride_stretches_build(s.ride_id)
+     where not exists (select 1 from public.weeks aw where aw.department_id = s.department_id
+                         and aw.week_start = s.week_start and aw.phase = 'archived')
+       and s.stretches is distinct from public._ride_stretches_build(s.ride_id)
   loop
     v_bad := v_bad + 1;
     raise warning 'ride_rows oracle: ride %: stored stretches differ from a fresh build', d.id;
@@ -56,7 +61,11 @@ declare
   v_all uuid[]; v_bad int := 0; v_checked int := 0; v_viewers uuid[];
 begin
   for w in select r.department_id, r.week_start, array_agg(r.id) as ids
-             from public.rides r group by 1, 2
+             from public.rides r
+            -- archived weeks: board_rows shows the stored history, the view today's names (20261126110000)
+            where not exists (select 1 from public.weeks aw where aw.department_id = r.department_id
+                                and aw.week_start = r.week_start and aw.phase = 'archived')
+            group by 1, 2
   loop
     select array_agg(x.id) into v_viewers from (
       (select p.id from public.department_members dm join public.profiles p on p.id = dm.profile_id

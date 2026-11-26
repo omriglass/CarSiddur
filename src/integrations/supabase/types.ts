@@ -7432,6 +7432,7 @@ export type Database = {
         Args: { p_request_ids: string[] }
         Returns: undefined
       }
+      _ride_rows_not_archived: { Args: { p_ids: string[] }; Returns: string[] }
       _ride_seat_dupes: {
         Args: {
           p_guests?: Json
@@ -9388,6 +9389,7 @@ export type Database = {
         }[]
       }
       ride_rows_rebuild_all: { Args: never; Returns: number }
+      ride_rows_rebuild_including_archived: { Args: never; Returns: number }
       ride_seats_verdict: {
         Args: { p_guests: Json; p_ride_id: string }
         Returns: string
