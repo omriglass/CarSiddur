@@ -2,8 +2,9 @@ import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { he, tv } from "@/i18n/he";
-import { describeStatusReason } from "@/lib/statusReason";
 
+
+import { closedReasonLine } from "../closedReasonLine";
 import { whenLabel } from "../requestTimeline";
 import { RequestHistoryDialog } from "./RequestHistoryDialog";
 
@@ -12,6 +13,7 @@ import type { ClosedRequestRow } from "../api";
 function rowLine(row: ClosedRequestRow): string {
   return [whenLabel(row.departAt, row.returnAt), row.destination].filter(Boolean).join(" · ");
 }
+
 
 /**
  * REQ §13.204 (d): withdrawn / cancelled / closed requests, one light row each — what it was, why it closed, and
@@ -28,7 +30,7 @@ export function ClosedRequestsList({ rows }: { rows: readonly ClosedRequestRow[]
             <div className="min-w-0 space-y-0.5">
               <p className="text-muted-foreground line-through decoration-muted-foreground/50">{rowLine(row)}</p>
               <p className="text-xs">
-                {describeStatusReason(row.statusReason) ?? he.status[row.status]}
+                {closedReasonLine(row)}
                 {row.requesterName ? <> · {tv("request.filedFor", { name: row.requesterName })}</> : null}
               </p>
             </div>

@@ -541,6 +541,8 @@ declare
     'join_other_ride:self-only',
     -- DP1-1b: refuses unless request_related / can_manage_week of the request's own week, and the ride is in its week.
     'join_ride_with_request:inspected',
+    -- DP1-7: who closed each request and when, only for ids the caller may read (request_history's rule); others are left out.
+    'closed_request_closers:read-helper',
     -- REQ §13.129 (b): refused unless the caller drives the ride (so it is the caller's own department's ride).
     'hand_over_own_ride:inspected',
     'claim_freed_slot:self-only', 'register_push_subscription:self-only', 'send_test_notification:self-only', 'deliver_changelog:self-only',

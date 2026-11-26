@@ -13225,6 +13225,29 @@ $$;
 ALTER FUNCTION "public"."close_week_requests"("p_department_id" "uuid", "p_week_start" "date") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."closed_request_closers"("p_ids" "uuid"[]) RETURNS TABLE("request_id" "uuid", "closed_by" "uuid", "closed_by_name" "text", "closed_at" timestamp with time zone)
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  select q.id, a.actor_id, p.full_name, a.at
+  from public.requests q
+  cross join lateral (
+    select l.actor_id, l.at from public.audit_log l
+    where l.table_name = 'requests' and l.row_id = q.id::text and l.action = 'update'
+      and l.before -> 'status' is distinct from l.after -> 'status' and l.after ->> 'status' in ('withdrawn', 'cancelled')
+    order by l.at desc, l.id desc limit 1) a
+  left join public.profiles p on p.id = a.actor_id
+  where q.id = any(coalesce(p_ids, '{}'::uuid[])) and q.status in ('withdrawn', 'cancelled')
+    and ((select auth.uid()) = q.requester_id or (select auth.uid()) = q.filed_by
+         or exists (select 1 from public.request_companions rc where rc.request_id = q.id and rc.profile_id = (select auth.uid()))
+         or public._is_ride_editor(q.department_id, q.requester_id, (select auth.uid()))
+         or public.is_admin() or public.can_manage_week(q.department_id, q.week_start));
+$$;
+
+
+ALTER FUNCTION "public"."closed_request_closers"("p_ids" "uuid"[]) OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."complete_car_task"("p_task_id" "uuid") RETURNS "void"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -30025,6 +30048,42 @@ begin
       or exists(select 1 from unnest(v_companion_ids) candidate(profile_id) where candidate.profile_id=v_requester_id or not exists(
         select 1 from public.profiles p join public.department_members dm on dm.profile_id=p.id where p.id=candidate.profile_id
         and p.approval_status='approved' and dm.department_id=v_department_id and dm.removed_at is null)) then raise exception 'invalid_companions';end if;
+    -- DP1-5 (owner 2026-11-26): a companion taken off in the form hears it, and so does the driver, with the same notices
+    -- as "הוצא" on the ride sheet (remove_ride_person) - unless they still ride the same way through another entry.
+    declare
+      v_gone uuid; v_on record; v_by text; v_route text; v_dest text; v_gone_name text;
+    begin
+      for v_gone in select rc.profile_id from public.request_companions rc
+                    where rc.request_id = v_request_id and not (rc.profile_id = any(coalesce(v_companion_ids, '{}'::uuid[]))) loop
+        select full_name into v_gone_name from public.profiles where id = v_gone;
+        for v_on in select r.id, r.department_id, r.week_start, r.driver_id, r.origin_id, r.destination_id, rr.leg
+                    from public.ride_requests rr join public.rides r on r.id = rr.ride_id
+                    where rr.request_id = v_request_id and r.status <> 'cancelled' loop
+          continue when v_gone is not distinct from v_on.driver_id or exists (
+            select 1 from public.ride_requests o join public.requests oq on oq.id = o.request_id
+            where o.ride_id = v_on.id and o.request_id <> v_request_id and (v_on.leg = 'both' and o.leg = 'both' or v_on.leg <> 'both' and o.leg in ('both', v_on.leg))
+              and (oq.requester_id = v_gone or exists (select 1 from public.request_companions c where c.request_id = oq.id and c.profile_id = v_gone))
+            union all
+            select 1 from public.ride_passengers rp where rp.ride_id = v_on.id and rp.person_id = v_gone
+              and (v_on.leg = 'both' and rp.leg = 'both' or v_on.leg <> 'both' and rp.leg in ('both', v_on.leg)));
+          select full_name into v_by from public.profiles where id = v_actor;
+          select name into v_dest from public.destinations where id = v_on.destination_id;
+          v_route := public.route_label(v_on.department_id, v_on.origin_id, null, v_on.destination_id, null);
+          if v_gone is distinct from v_actor then
+            perform public.enqueue_notification(v_gone, 'outcome_changed', v_on.department_id, v_on.week_start,
+              jsonb_build_object('byName', coalesce(v_by, ''), 'destination', coalesce(v_dest, ''), 'route', coalesce(v_route, '')),
+              jsonb_build_object('variant', 'passenger_removed_you', 'ride_id', v_on.id),
+              format('passenger_removed_you:%s:%s:%s', v_on.id, v_gone, clock_timestamp()));
+          end if;
+          if v_on.driver_id is not null and v_on.driver_id is distinct from v_actor then
+            perform public.enqueue_notification(v_on.driver_id, 'outcome_changed', v_on.department_id, v_on.week_start,
+              jsonb_build_object('byName', coalesce(v_by, ''), 'names', coalesce(v_gone_name, '')),
+              jsonb_build_object('variant', 'passengers_removed', 'ride_id', v_on.id),
+              format('passengers_removed:%s:%s:%s', v_on.id, v_gone, clock_timestamp()));
+          end if;
+        end loop;
+      end loop;
+    end;
     delete from public.request_companions where request_id=v_request_id;
     insert into public.request_companions(request_id,profile_id) select v_request_id,id from unnest(v_companion_ids) id;
   end if;
@@ -42573,6 +42632,12 @@ GRANT ALL ON FUNCTION "public"."close_request"("p_request_id" "uuid", "p_expecte
 REVOKE ALL ON FUNCTION "public"."close_week_requests"("p_department_id" "uuid", "p_week_start" "date") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."close_week_requests"("p_department_id" "uuid", "p_week_start" "date") TO "service_role";
 GRANT ALL ON FUNCTION "public"."close_week_requests"("p_department_id" "uuid", "p_week_start" "date") TO "authenticated";
+
+
+
+REVOKE ALL ON FUNCTION "public"."closed_request_closers"("p_ids" "uuid"[]) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."closed_request_closers"("p_ids" "uuid"[]) TO "service_role";
+GRANT ALL ON FUNCTION "public"."closed_request_closers"("p_ids" "uuid"[]) TO "authenticated";
 
 
 

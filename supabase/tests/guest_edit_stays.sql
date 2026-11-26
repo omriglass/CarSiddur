@@ -92,6 +92,13 @@ begin
      and not exists (select 1 from public.request_companions where request_id = qB), '(G) the companion and the seat are gone';
   assert (select status = 'confirmed' and car_id = car1 and driver_id = m1 and starts_at = d0 from public.rides where id = rA)
      and exists (select 1 from public.ride_requests where ride_id = rA and request_id = qB), '(G) still on רון''s ride, unchanged';
+  -- the same notices as "הוצא": the companion is told they were taken off, and so is the driver (not her: she did it)
+  assert exists (select 1 from public.notifications where recipient_id = '00000000-0000-0000-0000-000000000101'
+                   and data ->> 'variant' = 'passenger_removed_you' and data ->> 'ride_id' = rA::text), '(G) the companion is told';
+  assert exists (select 1 from public.notifications where recipient_id = m1 and data ->> 'variant' = 'passengers_removed'
+                   and data ->> 'ride_id' = rA::text), '(G) the driver is told who left';
+  assert not exists (select 1 from public.notifications where recipient_id = m2 and data ->> 'variant' in ('passenger_removed_you', 'passengers_removed')),
+    '(G) she is not told of her own change';
   -- (H) more people is not "fewer": the ordinary way (it may need another car)
   assert not public._guest_edit_stays(qB, edit || jsonb_build_object('adults', 2, 'companion_ids', jsonb_build_array('00000000-0000-0000-0000-000000000101')),
     'round_trip', 'round_trip', (select needs_car_at_destination from public.requests where id = qB),

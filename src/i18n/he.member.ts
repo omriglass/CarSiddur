@@ -111,6 +111,9 @@ export const heMember = {
     /** REQ §13.127 (d): "my rides" row lines for a request filed by / for someone else. */
     filedBy: "הוגשה ע״י {{name}}",
     filedFor: "הוגשה עבור {{name}}",
+    /** DP1-7 (owner 2026-11-26): a closed request's line names who removed it ("על ידך" = WITHDRAWN_BY_MEMBER's own text) and when. */
+    closedByOther: "הוסרה על ידי {{name}}",
+    closedWhen: "{{reason}} · {{when}}",
     /** REQ §13.202: a request of someone who named me an editor of their rides. */
     editorOf: "הנסיעה של {{name}} (אני יכול/ה לערוך)",
     /** Owner 2026-10-16 (REQ §13.135): /my row of a request that names me as a companion. */

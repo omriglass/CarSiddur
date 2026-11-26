@@ -76,4 +76,48 @@ begin
   raise notice 'request_history.sql: all assertions passed';
 end $$;
 reset role;
+-- DP1-7 (production 30.11): who closed a request and when, for the closed-requests list. Every withdrawal is stored
+-- WITHDRAWN_BY_MEMBER whoever does it; closed_request_closers reads the actor from the change history.
+reset role;
+select set_config('request.jwt.claims', '', true);
+do $$
+declare dept uuid:='00000000-0000-0000-0000-000000000001'; manager uuid:='00000000-0000-0000-0000-000000000102';
+  m1 uuid:='00000000-0000-0000-0000-000000000103'; m2 uuid:='00000000-0000-0000-0000-000000000104';
+  home uuid:='00000000-0000-0000-0000-000000000010'; dest uuid:='00000000-0000-0000-0000-000000000011';
+  typ uuid:='00000000-0000-0000-0000-000000000021';
+  w date:=public.current_week_start()+266; dt timestamptz:=((w+2)+time '09:00') at time zone 'Asia/Jerusalem'; qS uuid; qM uuid;
+begin
+  insert into public.requests(department_id,week_start,requester_id,filed_by,destination_id,origin_id,ride_type_id,trip_shape,trip_type,depart_at,return_at,status)
+    values(dept,w,m1,m1,dest,home,typ,'round_trip','round_trip',dt,dt+interval '3 hours','submitted') returning id into qS;
+  insert into public.requests(department_id,week_start,requester_id,filed_by,destination_id,origin_id,ride_type_id,trip_shape,trip_type,depart_at,return_at,status)
+    values(dept,w,m1,m1,dest,home,typ,'round_trip','round_trip',dt+interval '4 hours',dt+interval '6 hours','submitted') returning id into qM;
+  insert into rh_ids values('qS',qS),('qM',qM);
+  -- the Sadran withdraws one of them, the member the other
+  perform set_config('request.jwt.claims', jsonb_build_object('sub', manager, 'role', 'authenticated')::text, true);
+  perform public.withdraw_request(qS, (select version from public.requests where id = qS));
+  perform set_config('request.jwt.claims', jsonb_build_object('sub', m1, 'role', 'authenticated')::text, true);
+  perform public.withdraw_request(qM, (select version from public.requests where id = qM));
+  assert (select status_reason from public.requests where id = qS) = 'WITHDRAWN_BY_MEMBER', 'fixture: stored as by the member whoever withdrew it';
+end $$;
+set local role authenticated;
+select set_config('request.jwt.claims','{"sub":"00000000-0000-0000-0000-000000000103","role":"authenticated"}',true);
+do $$
+declare r record;
+begin
+  -- the member reads who closed each: the Sadran (by name) for one, themself for the other, each with its time
+  select * into r from public.closed_request_closers(array[(select id from rh_ids where k='qS')]);
+  assert r.closed_by = '00000000-0000-0000-0000-000000000102' and r.closed_by_name = (select full_name from public.profiles where id = r.closed_by)
+     and r.closed_at is not null, format('DP1-7: the Sadran closed it, got %s', r);
+  select * into r from public.closed_request_closers(array[(select id from rh_ids where k='qM')]);
+  assert r.closed_by = '00000000-0000-0000-0000-000000000103', format('DP1-7: the member closed it, got %s', r);
+end $$;
+select set_config('request.jwt.claims','{"sub":"00000000-0000-0000-0000-000000000104","role":"authenticated"}',true);
+do $$
+begin
+  -- another member reads nothing
+  assert not exists (select 1 from public.closed_request_closers(array[(select id from rh_ids where k='qS'), (select id from rh_ids where k='qM')])),
+    'DP1-7: another member must not read who closed someone else''s request';
+  raise notice 'DP1-7 PASSED: who closed a request and when, for its own people only';
+end $$;
+reset role;
 rollback;

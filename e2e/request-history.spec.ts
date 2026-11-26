@@ -1,7 +1,8 @@
 import { expect, test } from "@playwright/test";
+import { createClient } from "@supabase/supabase-js";
 
 import { he, tv } from "../src/i18n/he";
-import { NEVO_DEPARTMENT_ID, newSignedInPage, SEEDED_USERS, serviceRoleClient } from "./helpers";
+import { NEVO_DEPARTMENT_ID, newSignedInPage, SEEDED_USERS, serviceRoleClient, SUPABASE_ANON_KEY, SUPABASE_URL } from "./helpers";
 import { publishedFixtureWeek } from "./published-week";
 
 /**
@@ -58,6 +59,35 @@ test.describe("request history", { tag: ["@request-history"] }, () => {
       const dialog = page.getByTestId("request-history-dialog");
       await expect(dialog.getByTestId("request-timeline-line").first()).toContainText(he.requestHistory.filed.split(":")[0] ?? "");
       await expect(dialog).toContainText(tv("requestHistory.status", { status: he.status.withdrawn }));
+    } finally {
+      await context.close();
+    }
+  });
+
+  test("a request the Sadran withdrew names the Sadran, not \"by you\" (DP1-7)", async ({ browser }) => {
+    // production 30.11: the Sadran's join withdrew a member's request, and the member's list said they removed it
+    const { data: fresh, error } = await service.from("requests").insert({
+      department_id: NEVO_DEPARTMENT_ID, week_start: WEEK, requester_id: MEMBER1_ID, filed_by: MEMBER1_ID,
+      ride_type_id: "00000000-0000-0000-0000-000000000021", destination_text: "E2E withdrawn by Sadran",
+      trip_shape: "round_trip", depart_at: "2041-03-05T09:00:00+02:00", return_at: "2041-03-05T12:00:00+02:00",
+      status: "waitlisted", status_reason: "WAITLISTED_NO_CAR",
+    }).select("id, version").single();
+    if (error) throw error;
+    const sadran = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { auth: { persistSession: false } });
+    const { error: authError } = await sadran.auth.signInWithPassword(SEEDED_USERS.sadran);
+    if (authError) throw authError;
+    const { error: withdrawError } = await sadran.rpc("withdraw_request", { p_request_id: fresh.id, p_expected_version: fresh.version });
+    if (withdrawError) throw withdrawError;
+    await sadran.auth.signOut();
+
+    const { context, page } = await newSignedInPage(browser, SEEDED_USERS.member1);
+    try {
+      await page.goto("/my");
+      const closed = page.locator(`[data-week-start="${WEEK}"]`).getByTestId("my-week-closed");
+      await closed.getByText(tv("requestHistory.closedInWeek", { count: "2" })).click();
+      const row = closed.locator(`[data-closed-request="${fresh.id}"]`);
+      await expect(row).toContainText(tv("request.closedByOther", { name: SEEDED_USERS.sadran.fullName }));
+      await expect(row).not.toContainText(he.statusReason.WITHDRAWN_BY_MEMBER);
     } finally {
       await context.close();
     }

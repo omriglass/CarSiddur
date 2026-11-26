@@ -1677,6 +1677,10 @@ export interface ClosedRequestRow {
   /** Filed by me for someone else, or by someone else for me. */
   requesterName: string | null;
   updatedAt: string;
+  /** DP1-7: who closed it, from the change history (`closed_request_closers`); null = unknown / the system. */
+  closedByMe?: boolean;
+  closedByName?: string | null;
+  closedAt?: string | null;
 }
 
 /**
@@ -1695,7 +1699,16 @@ export async function fetchMyClosedRequests(profileId: string, departmentId: str
   if (fromWeek) query = query.gte("week_start", fromWeek);
   const { data, error } = await query.order("depart_at", { ascending: true, nullsFirst: false });
   if (error) throw toAppError(error);
+  // DP1-7: who closed each and when (a withdrawal is stored as "by the member" whoever did it)
+  const closers = new Map<string, { closed_by: string | null; closed_by_name: string | null; closed_at: string | null }>();
+  if ((data ?? []).length > 0) {
+    const rows = await rpc("closed_request_closers", { p_ids: (data ?? []).map((row) => row.id) });
+    for (const closer of rows ?? []) closers.set(closer.request_id, closer);
+  }
   return (data ?? []).map((row) => ({
+    closedByMe: closers.get(row.id)?.closed_by === profileId,
+    closedByName: closers.get(row.id)?.closed_by_name ?? null,
+    closedAt: closers.get(row.id)?.closed_at ?? null,
     id: row.id,
     departmentId: row.department_id,
     weekStart: row.week_start,

@@ -8201,6 +8201,15 @@ export type Database = {
         Args: { p_department_id: string; p_week_start: string }
         Returns: undefined
       }
+      closed_request_closers: {
+        Args: { p_ids: string[] }
+        Returns: {
+          closed_at: string
+          closed_by: string
+          closed_by_name: string
+          request_id: string
+        }[]
+      }
       complete_car_task: { Args: { p_task_id: string }; Returns: undefined }
       compute_week_stats: {
         Args: { p_department_id: string; p_week_start: string }
