@@ -29,7 +29,6 @@ import { mayUseCar } from "@/lib/carOwners";
 import { useCars, useCarSeatConfigs, useMyTemporaryCars, useDestinations, useRideTypes, useSuggestDestinationMutation } from "@/features/fleet/hooks";
 import { useDepartmentSettings, useWeekRow } from "@/features/sadran/hooks";
 import { isSlotFree, type CarFreeWindow } from "@/features/siddur/freeWindows";
-import { buildAddPassengerInputs } from "@/features/rides/addPassengers";
 import { fetchBoardRideById } from "@/features/siddur/api";
 import type { RidePassengerInput } from "@/features/rides/api";
 import { useAddRidePassengersMutation } from "@/features/rides/hooks";
@@ -60,6 +59,7 @@ import { overlapCancelAction } from "../overlap";
 import { splitWho } from "../onBehalf";
 import { QUICK_REQUEST_DURATION_HOURS, endTimeForDuration } from "../duration";
 import { joinableRideDriverLabel } from "../joinableRides";
+import { joinPeopleInputs } from "../joinPeople";
 import { guestPassengerNames, quickVehicleWindow, resolveQuickOrigin } from "../quickRequest";
 import {
   useJoinableRidesMutation,
@@ -1455,14 +1455,23 @@ export function RequestForm({
         try {
           const rides = await joinableRidesMutation.mutateAsync(requestId);
           if (rides.length > 0) {
-            const selfId = session?.user.id;
             setAfterJoinableDialog(() => proceed);
+            // DP1-1: the request's own riders join — the requester when editing someone else's request, never the editor.
+            const requester = mode === "edit" && initial
+              ? { id: initial.requesterId, name: initial.requesterId === session?.user.id ? profileQuery.data?.full_name ?? ""
+                  : initial.requesterName ?? (membersQuery.data ?? []).find((m) => m.id === initial.requesterId)?.name ?? "" }
+              : session?.user.id ? { id: session.user.id, name: profileQuery.data?.full_name ?? "" } : null;
             setJoinRequestContext({
               requestId,
-              peopleInputs: [
-                ...(selfId && !whoOf(formValues).requesterId ? [{ person_id: selfId, display_name: profileQuery.data?.full_name ?? "", seat_kind: "adult" as const }] : []),
-                ...buildAddPassengerInputs(formValues.companions, formValues.children, formValues.guestNames, membersQuery.data ?? [], childrenQuery.data ?? []),
-              ],
+              peopleInputs: joinPeopleInputs({
+                requester,
+                requesterRides: formValues.includeMe !== false,
+                companionIds: formValues.companions,
+                childIds: formValues.children,
+                guestNames: formValues.guestNames,
+                members: membersQuery.data ?? [],
+                children: childrenQuery.data ?? [],
+              }),
             });
             setJoinableRides(rides);
             return;
@@ -1528,7 +1537,7 @@ export function RequestForm({
   /**
    * "הצטרפות לנסיעה" (item 4, REQ §13.85, owner decision 2026-09-14): joins the chosen
    * joinable ride directly via `add_ride_passengers()` with the just-filed request's own
-   * people (self + companions + children + guests, captured in `joinRequestContext` at
+   * people (its requester + companions + children + guests — DP1-1: never the editor; captured in `joinRequestContext` at
    * submit time), then withdraws that now-redundant waitlisted request. `add_ride_passengers`
    * needs the ride's current `version` — `fetchJoinableRides`'s row carries none, so this
    * re-reads the ride fresh (`fetchBoardRideById`) right before the call; likewise the

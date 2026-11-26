@@ -1,7 +1,7 @@
-import { expect, test } from "@playwright/test";
+import { expect, type Locator, test } from "@playwright/test";
 
 import { paths } from "../src/app/routes";
-import { he } from "../src/i18n/he";
+import { he, tv } from "../src/i18n/he";
 import { NEVO_DEPARTMENT_ID, SEEDED_USERS, serviceRoleClient, signIn } from "./helpers";
 import { publishedFixtureWeek } from "./published-week";
 import {
@@ -98,6 +98,67 @@ test.describe("anyone edits rides", { tag: ["@request-form", "@notifications"] }
     } finally {
       await service.from("department_settings").update({ anyone_edits_rides: false }).eq("department_id", NEVO_DEPARTMENT_ID);
       if (requestId) await service.from("notifications").delete().eq("event", "ride_edited").eq("data->>request_id", requestId);
+      await removeWeek(service, week);
+    }
+  });
+  // DP1-9 (production 26.11): dragging someone else's ride onto a busy car opens "make room" for the mover too — it
+  // used to refuse with "אין לך הרשאה" because only the ride's driver could ask.
+  test("a member drags another member's ride onto a busy car and asks the driver in the way", { tag: ["@siddur"] }, async ({ page }) => {
+    const service = serviceRoleClient();
+    const week = "2041-02-17";
+    const admin = await publishedFixtureWeek(week);
+    await admin.auth.signOut();
+    try {
+      await service.from("department_settings").update({ anyone_edits_rides: true }).eq("department_id", NEVO_DEPARTMENT_ID);
+      const carId = await sharedCarIdByName(service, "יונדאי 1");
+      const rideIds: string[] = [];
+      // member2 10:00–11:00, the Sadran 12:00–17:00, both on the same car; member1 is on neither
+      for (const [driver, from, to] of [[PROFILE_IDS.member2, "10:00", "11:00"], [PROFILE_IDS.sadran, "12:00", "17:00"]] as const) {
+        const requestId = await insertRequest(service, week, { week, requester: driver, depart: from, return: to, destinationId: PLACES.haifa.id, status: "assigned" });
+        const { data: ride, error } = await service.from("rides").insert({
+          department_id: NEVO_DEPARTMENT_ID, week_start: week, car_id: carId, driver_id: driver, created_by: driver,
+          starts_at: winterAt(week, from), ends_at: winterAt(week, to), blocked_until: new Date(Date.parse(winterAt(week, to)) + 30 * 60_000).toISOString(),
+          origin_id: PLACES.home.id, destination_id: PLACES.home.id, status: "confirmed",
+        }).select("id").single();
+        if (error) throw error;
+        rideIds.push(ride.id as string);
+        const { error: linkError } = await service.from("ride_requests").insert({ ride_id: ride.id, request_id: requestId, role: "driver", leg: "both", car_mode: "keep" });
+        if (linkError) throw linkError;
+      }
+
+      await signIn(page, SEEDED_USERS.member1);
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await page.goto(paths.siddur({ dept: NEVO_DEPARTMENT_ID, week }));
+      await page.getByTestId("edit-mode-button").locator("visible=true").click();
+      const moved = page.locator(`[data-ride-id="${rideIds[0]}"]:visible`);
+      await dragUntil(moved, "12:00–13:00");
+      await expect(page.getByRole("heading", { name: he.rideEditing.collisionTitle })).toBeVisible();
+      await expect(page.getByTestId("make-room-party")).toBeVisible();
+      await page.getByRole("button", { name: tv("rideEditing.makeRoom.send", { names: SEEDED_USERS.sadran.fullName }) }).click();
+      await expect.poll(async () => (await service.from("ride_change_requests").select("requester_id, status")
+        .eq("ride_id", rideIds[0])).data).toEqual([{ requester_id: PROFILE_IDS.member1, status: "pending" }]);
+
+      /** Drags from the middle of `handle` downwards until the drag preview reads `preview`, then drops. */
+      async function dragUntil(handle: Locator, preview: string) {
+        await handle.scrollIntoViewIfNeeded();
+        const box = (await handle.boundingBox())!;
+        const x = box.x + box.width / 2;
+        let y = box.y + box.height / 2;
+        await page.mouse.move(x, y);
+        await page.mouse.down();
+        for (let step = 0; step < 400; step += 1) {
+          y += 2;
+          await page.mouse.move(x, y);
+          // never wait for the preview: it only appears once the drag has moved far enough
+          const shown = page.locator("[data-drag-preview]");
+          if ((await shown.count()) && ((await shown.first().textContent()) ?? "").includes(preview)) break;
+        }
+        await expect(page.locator("[data-drag-preview]")).toContainText(preview);
+        await page.mouse.up();
+      }
+    } finally {
+      await service.from("department_settings").update({ anyone_edits_rides: false }).eq("department_id", NEVO_DEPARTMENT_ID);
+      await service.from("ride_change_requests").delete().eq("department_id", NEVO_DEPARTMENT_ID).eq("week_start", week);
       await removeWeek(service, week);
     }
   });

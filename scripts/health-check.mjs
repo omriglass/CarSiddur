@@ -269,6 +269,23 @@ export function buildChecks(opts) {
       order by l.starts_at, l.ride_id`,
     },
     {
+      id: "ride_person_twice",
+      level: "error",
+      title: "one person rides twice on the same way of one ride (e.g. a named companion who also rides on their own request): their seat is counted twice (DP1-2)",
+      sql: `with p as (
+        select v.id as ride_id, v.starts_at, e ->> 'person_id' as pid, e ->> 'child_id' as cid,
+               coalesce(e ->> 'leg', 'both') as leg, e ->> 'key' as k
+        from public.v_board_rides v
+        ${inScope("v")}
+        cross join lateral jsonb_array_elements(v.people) e)
+      select a.ride_id::text, format('%s: %s and %s', ${JT("a.starts_at")}, a.k, b.k), 1
+      from p a join p b on a.ride_id = b.ride_id and a.k < b.k
+        and (a.pid = b.pid or a.cid = b.cid) and (a.leg = 'both' or b.leg = 'both' or a.leg = b.leg)
+        -- a reservation names its driver first among its people (set_ride_passengers): not a second seat
+        and not (split_part(a.k, ':', 1) in ('driver', 'added') and split_part(b.k, ':', 1) in ('driver', 'added') and split_part(a.k, ':', 1) <> split_part(b.k, ':', 1))
+      order by a.starts_at, a.ride_id`,
+    },
+    {
       id: "ride_on_maintenance_car",
       level: "warn",
       title: "upcoming ride on a car whose status is 'maintenance' (admins may override; move or cancel the ride)",

@@ -118,13 +118,13 @@ the sentence layout (REQ §13.110: `requestForm/sentence/**`, `timeAnchors.ts`, 
 **Paths**: `src/features/waitlist/**`, `src/features/requests/joinableRides.ts`(+test),
 `components/JoinableRidesDialog.tsx`, `components/RequestForm.tsx`; `src/i18n/he.member.ts`,
 `he.sadran.ts`; migrations matching `*waitlist*`, `*freed_slot*`, `*joinable_rides*`,
-`*join_radius*`; `e2e/waitlist-groups.spec.ts`, `freed-slot.spec.ts`.
+`*join_radius*`; `e2e/waitlist-groups.spec.ts`, `freed-slot.spec.ts`; `src/features/requests/joinPeople.ts`(+test) and `e2e/join-for-other.spec.ts` (DP1-1: joining from someone else's request puts its own people on the ride, never the editor).
 Siddur waiting list (REQ §13.182/§13.183): migrations `*siddur_waitlist*`, `*place_waiting_request*`, SQL `siddur_waitlist.sql`, `place_waiting_request.sql` (+ `department_isolation.sql`), unit `src/features/waitlist/siddurLanes.test.ts`, shared lane packer `src/components/weekGridLanes.ts`, e2e `siddur-waitlist.spec.ts` (list card + sheet, the button scrolls to the waiting list and hides nothing, the table's "רשימת המתנה" column, the owner's private car row, /my car card "הוספת נסיעה ברכב הזה", dragging a waiting ride onto a car — refused then placed, a private car's owner "שיבוץ ברכב שלי").
 Freed car cause and prompt (REQ item 231, FC1): migrations `*freed_car*` / `*freed_slot*`, solver `src/solver/freedSlotRun.ts` (`__tests__/freedSlotRun.test.ts`), `src/features/rides/freedCar*` / `useFreedCar.ts` (`freedCarPreview.test.ts`), the `on-ride-cancelled` edge function, SQL `freed_car_cause.sql` (preview rolls back, a shortened/moved published ride offers at commit with its cause, the notice to everyone on the request). The third answer "… בלי להעביר את הרכב — אסתדר מחוץ לאפליקציה" (REQ item 237): `withFreedCarChoice` in `src/lib/appSurface.ts` (`appSurface.test.ts`), `useFreedCar.test.tsx`, SQL `freed_car_kept_out.sql`, e2e `freed-slot.spec.ts` (second test).
 Freed car vs plan B (REQ §13.168): migrations `*freed_car*`, `*freed_candidates*`, `*waitlist_groups_plan_b*`, `src/features/sadran/claims/**` (`freedOptions.test.ts`), solver `freedSlotOptions` (`src/solver/__tests__/live.test.ts`), SQL `freed_car_options.sql`, `qa_run17_fixes.sql` (R17B1 own drop-off claim refused, R17U2 riders told who drives, R17B6 leftover ride fits its legs); e2e `freed-car-options.spec.ts` (the real cancel → edge function → options page round trip: a waiting candidate steps out from `/my`, the options with them are blocked, the Sadran gives the car to the plan-B member; skipped without a wired cron secret); QA scenario `scripts/qa/freed-car-scenario.sql` (needs the on-ride-cancelled edge function wired on the stack).
 
 **Automated**:
-- Vitest: `npx vitest run src/features/waitlist src/features/requests/joinableRides.test.ts`
+- Vitest: `npx vitest run src/features/waitlist src/features/requests/joinableRides.test.ts src/features/requests/joinPeople.test.ts`
 - SQL: `waitlist_groups.sql`, `waitlist_group_hold.sql` (R15B10: an open group holds its window against a newcomer), `joinable_rides.sql`, `withdraw_settles.sql`, `waitlist_cause.sql` (R13B17: the member's waiting reason names the blocker — large trunk, child seats, seats, not at the origin)
 - Playwright: `npx playwright test --grep "@waitlist"`
 
@@ -136,6 +136,9 @@ Freed car vs plan B (REQ §13.168): migrations `*freed_car*`, `*freed_candidates
 2. On that dialog, tap "הצטרפות לנסיעה" on an offered ride. Expected: joins that ride directly (via
    `add_ride_passengers`) and withdraws the now-redundant waitlisted request; the driver's ride now
    shows the joiner in its people list.
+   2b. (DP1-1) As the **Sadran**, edit a member's waiting request on that day (any change) → the same dialog →
+   join: the **member** (and their named companions) is on the ride, the Sadran is not; the riders are told the
+   member joined.
 3. Instead tap "להישאר ברשימת ההמתנה". Expected: ordinary waitlisted outcome, unchanged.
 4. As `member1`, cancel an assigned ride on the live week; confirm an overlapping waitlisted
    request from `member2` is auto-assigned to the freed slot (freed-slot matching).

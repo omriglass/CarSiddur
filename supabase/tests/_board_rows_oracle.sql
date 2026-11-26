@@ -45,6 +45,26 @@ begin
   end loop;
   if v_bad > 0 then raise exception 'ride_rows oracle: % stored ride row(s) differ from a fresh build', v_bad; end if;
 end $sw1$;
+-- DP1-2 (production 26.11): one person is on a ride's way at most once (a named companion who also rides on their own
+-- request was counted twice and the car "filled up" with a person missing). Every suite's rides, every viewer.
+do $dp1$
+declare d record; v_bad int := 0;
+begin
+  for d in
+    with p as (
+      select v.id as ride_id, e ->> 'person_id' as pid, e ->> 'child_id' as cid, coalesce(e ->> 'leg', 'both') as leg, e ->> 'key' as k
+      from public.v_board_rides v cross join lateral jsonb_array_elements(v.people) e)
+    select a.ride_id, a.k as k1, b.k as k2
+    from p a join p b on a.ride_id = b.ride_id and a.k < b.k
+      and (a.pid = b.pid or a.cid = b.cid) and (a.leg = 'both' or b.leg = 'both' or a.leg = b.leg)
+        -- a reservation names its driver first among its people (set_ride_passengers): not a second seat
+        and not (split_part(a.k, ':', 1) in ('driver', 'added') and split_part(b.k, ':', 1) in ('driver', 'added') and split_part(a.k, ':', 1) <> split_part(b.k, ':', 1))
+  loop
+    v_bad := v_bad + 1;
+    raise warning 'person-once oracle: ride %: % and % are the same person on the same way', d.ride_id, d.k1, d.k2;
+  end loop;
+  if v_bad > 0 then raise exception 'person-once oracle: % person(s) twice on a ride', v_bad; end if;
+end $dp1$;
 create function pg_temp._oracle_norm(j jsonb) returns jsonb language sql immutable as $f$
   select j || jsonb_build_object(
     'passengers', (select coalesce(jsonb_agg(e order by e::text), '[]'::jsonb) from jsonb_array_elements(j -> 'passengers') e),

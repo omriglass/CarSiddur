@@ -96,6 +96,18 @@ select 'TEMP_CAR_NOT_OWNER', format('ride %s on private car %s is driven by %s, 
 from public.rides r join public.cars c on c.id = r.car_id
 where r.department_id = :'dept' and r.week_start = :'week' and r.status <> 'cancelled' and c.type = 'temporary' and r.driver_id is distinct from c.owner_id;
 
+-- 6. DP1-2: one person is on a ride's way at most once (a companion who also rides on their own request counts twice).
+insert into qa_viol
+with p as (
+  select v.id as ride_id, e ->> 'person_id' as pid, e ->> 'child_id' as cid, coalesce(e ->> 'leg', 'both') as leg, e ->> 'key' as k
+  from public.v_board_rides v cross join lateral jsonb_array_elements(v.people) e
+  where v.department_id = :'dept' and v.week_start = :'week')
+select 'PERSON_TWICE', format('ride %s: %s and %s are the same person on the same way', a.ride_id, a.k, b.k)
+from p a join p b on a.ride_id = b.ride_id and a.k < b.k
+  and (a.pid = b.pid or a.cid = b.cid) and (a.leg = 'both' or b.leg = 'both' or a.leg = b.leg)
+        -- a reservation names its driver first among its people (set_ride_passengers): not a second seat
+        and not (split_part(a.k, ':', 1) in ('driver', 'added') and split_part(b.k, ':', 1) in ('driver', 'added') and split_part(a.k, ':', 1) <> split_part(b.k, ':', 1));
+
 select 'VIOLATION', code, detail from qa_viol order by code, detail;
 select 'STAT', 'rides', count(*) from public.rides where department_id = :'dept' and week_start = :'week' and status <> 'cancelled';
 select 'STAT', 'requests_' || status, count(*) from public.requests where department_id = :'dept' and week_start = :'week' group by status order by status;

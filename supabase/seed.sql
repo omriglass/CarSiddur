@@ -549,6 +549,13 @@ from (values
 cross join unnest(array['inbox','push']::public.notification_channel[]) as ch
 on conflict (event,channel,(coalesce(variant,''))) do nothing;
 
+-- DP1-6 (owner 2026-11-26): the requester hears who was taken off their ride (same rows as 20261126130100_remove_companion_frees_seat.sql).
+insert into public.notification_templates (event, channel, variant, title, body, default_title, default_body)
+select 'outcome_changed'::public.notification_event, ch, 'companion_removed', t.title, t.body, t.title, t.body
+from (values ('הוסרו נוסעים מהנסיעה שלך', '{{byName}} הוציא/ה את {{names}} מהנסיעה שלך {{route}} ביום {{day}}')) as t(title, body)
+cross join unnest(array['inbox','push']::public.notification_channel[]) as ch
+on conflict (event,channel,(coalesce(variant,''))) do nothing;
+
 -- Full ride cancellation: every other served passenger/driver is notified (excluding
 -- whoever cancelled it), before their request is flipped to 'cancelled'.
 insert into public.notification_templates(event,channel,variant,title,body,default_title,default_body)

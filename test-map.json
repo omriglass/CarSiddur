@@ -355,7 +355,10 @@
         "supabase/migrations/**/*place_waiting_request*",
         "supabase/tests/place_waiting_request.sql",
         "e2e/siddur-waitlist.spec.ts",
-        "src/components/weekGridLanes.ts"
+        "src/components/weekGridLanes.ts",
+        "src/features/requests/joinPeople.ts",
+        "src/features/requests/joinPeople.test.ts",
+        "e2e/join-for-other.spec.ts"
       ],
       "vitest": [
         "src/features/waitlist",
@@ -363,7 +366,8 @@
         "src/solver/__tests__/freedSlotRun.test.ts",
         "src/features/rides/freedCarPreview.test.ts",
         "src/features/rides/useFreedCar.test.tsx",
-        "src/lib/appSurface.test.ts"
+        "src/lib/appSurface.test.ts",
+        "src/features/requests/joinPeople.test.ts"
       ],
       "sql": [
         "freed_car_options.sql",
@@ -401,7 +405,8 @@
         "Create two overlapping unresolvable requests; confirm one contested discussion group (REQ §13.75)",
         "Waitlist a large-luggage request while the big-trunk car is busy; /my names the trunk, not 'all cars busy' (REQ §13.143)",
         "Siddur waiting list (REQ §13.182): on a published day with a member waiting, the header's people button shows the count; table view has a 'רשימת המתנה' column (overlaps in a second one), list view a dashed card; tapping opens the details (edit/remove only on your own); the button sits right after the pencil, is not highlighted and only scrolls to the בדיון lane / רשימת המתנה columns (nothing hides); the בדיון lane comes right after the cars, before the רשימת המתנה columns (board too); a הקפצה on a driverless ride is not repeated in the waiting list",
-        "Drag a waiting ride (REQ §13.183): in edit mode drag my waiting round trip from 'רשימת המתנה' onto a free car - placed; onto a car with another ride - refused, nothing changes; onto a car standing elsewhere / with a tight turnaround - 'לשבץ בכל זאת?' lists it and 'לשבץ' places it (from where the car is); a private car's owner drags someone's waiting ride onto their car or presses 'שיבוץ ברכב שלי' on its sheet - the requester drives it and gets 'X נתן/ה לך את הרכב שלו/ה'; an old /requests/new?ride=<id> link opens a plain new request; two taps on a 'רשימת המתנה' column open a new request for those hours; a thick line separates cars from the בדיון/רשימת המתנה lanes and בדיון text is readable"
+        "Drag a waiting ride (REQ §13.183): in edit mode drag my waiting round trip from 'רשימת המתנה' onto a free car - placed; onto a car with another ride - refused, nothing changes; onto a car standing elsewhere / with a tight turnaround - 'לשבץ בכל זאת?' lists it and 'לשבץ' places it (from where the car is); a private car's owner drags someone's waiting ride onto their car or presses 'שיבוץ ברכב שלי' on its sheet - the requester drives it and gets 'X נתן/ה לך את הרכב שלו/ה'; an old /requests/new?ride=<id> link opens a plain new request; two taps on a 'רשימת המתנה' column open a new request for those hours; a thick line separates cars from the בדיון/רשימת המתנה lanes and בדיון text is readable",
+        "Join for someone else (DP1-1): as the Sadran, edit a member's waiting request on a published day with no free car; the offer 'לצרף לנסיעה של…' appears; joining puts the member (and their named companions) on the ride - never the Sadran - and the ride's people are told the member joined"
       ]
     },
     {
@@ -628,7 +633,8 @@
         "Give a ride on a published day a follow-up ride on the same car within the turnaround (min. 30 min): the driver/requester sees an amber \"!\" on /my, the Home card and the ride sheet, the next ride's driver sees the mirror note; an unpublished next day or the member's own next ride shows nothing (REQ §13.108 f)",
         "Ask for another member's slot by dragging your ride onto it, then move either ride on the board: the other driver is no longer asked; once your ride reaches the asked hours the request shows as accepted (REQ §13.166)",
         "In a partly published week, an unpublished day is stamped 'טרם פורסם' all over (phone list, desktop table, /my week column); a member's request for that day is refused (REQ §13.155)",
-        "Own private car (REQ §13.182): its row is on the siddur every day for its owner only; a tap on an empty slot opens the form with that car. On /my, tapping a car card offers 'הוספת נסיעה ברכב הזה' (form with the car chosen) and 'דף הרכב'"
+        "Own private car (REQ §13.182): its row is on the siddur every day for its owner only; a tap on an empty slot opens the form with that car. On /my, tapping a car card offers 'הוספת נסיעה ברכב הזה' (form with the car chosen) and 'דף הרכב'",
+        "Make room as an anyone-edits member (DP1-9): with 'כל אחד/ת יכול/ה לערוך כל נסיעה' on, drag someone else's ride onto a car that is busy at those hours; the make-room dialog opens (not 'אין לך הרשאה') and asks the driver in the way; their yes moves the ride"
       ]
     },
     {
@@ -1020,7 +1026,8 @@
         "src/features/requests/riders.test.ts",
         "src/features/requests/components/requestForm/RequestRidersField.tsx",
         "e2e/passengers-along-route.spec.ts",
-        "e2e/add-passenger-request.spec.ts"
+        "e2e/add-passenger-request.spec.ts",
+        "supabase/migrations/**/*remove_companion*"
       ],
       "vitest": [
         "src/features/rides/rideTimes.test.ts",
@@ -1059,7 +1066,8 @@
         "Cancel a ride with several people; confirm each gets notified individually (REQ §13.68)",
         "On a ride with a stop, add a passenger who gets on midway; confirm the stops view shows ↑ at that stop and the free seats per stretch (REQ item 246 h)",
         "Tap a passenger's name; change them to 'רק הלוך' and to getting off at a stop; confirm the summary text and the seat line (REQ item 246 h)",
-        "On the board, open a merged ride → יעדים; switch לפי אנשים / לפי מסלול, reopen and confirm the view is remembered; give two people clashing leave-at hours and confirm the red ✕ line (REQ item 256)"
+        "On the board, open a merged ride → יעדים; switch לפי אנשים / לפי מסלול, reopen and confirm the view is remembered; give two people clashing leave-at hours and confirm the red ✕ line (REQ item 256)",
+        "Remove a named companion (DP1-4/6): on a ride where X rides with companion Y, remove only Y from the people list; the seat is freed (no nameless adult appears, '+ נוסע/ת' can fill it), Y is told, and X gets 'Z הוציא/ה את Y מהנסיעה שלך ל…'; removing a named child or a free-text guest frees their seat too"
       ]
     },
     {

@@ -196,4 +196,30 @@ begin
     jsonb_build_array(jsonb_build_object('ride_id', theirs, 'cut', 'end'))), 'shared_ride_requires_sadran');
 end $$;
 
+-- (6) DP1-9 (production 26.11): with "anyone edits rides" on, a member may drag someone else's ride onto a busy car —
+-- the make-room step allows them like the siddur move does (it used to allow only the ride's driver).
+do $$
+declare mine uuid := pg_temp.ride('f_mine', '00000000-0000-0000-0000-000000000103', '00000000-0000-0000-0000-000000000040', 6, '15:00', '16:00');
+  theirs uuid := pg_temp.ride('f_theirs', '00000000-0000-0000-0000-000000000101', '00000000-0000-0000-0000-000000000041', 6, '08:00', '12:00');
+  o jsonb; ver int; ch uuid; s timestamptz := pg_temp.at(6, '12:00'); e timestamptz := pg_temp.at(6, '13:00');
+begin
+  select version into ver from public.rides where id = mine;
+  perform pg_temp.as_user('00000000-0000-0000-0000-000000000104');
+  perform pg_temp.expect_err(format('select public.ride_shorten_options(%L, %L, %L, %L)', mine, '00000000-0000-0000-0000-000000000041', s, e),
+    'not_authorized');
+  update public.department_settings set anyone_edits_rides = true where department_id = '00000000-0000-0000-0000-000000000001';
+  o := public.ride_shorten_options(mine, '00000000-0000-0000-0000-000000000041', s, e);
+  assert (o ->> 'askable')::boolean and jsonb_array_length(o -> 'parties') = 1, format('DP1-9: anyone-edits member gets the options: %s', o);
+  ch := public.request_ride_shorten(mine, null, '00000000-0000-0000-0000-000000000041', s, e, ver,
+    jsonb_build_array(jsonb_build_object('ride_id', theirs, 'cut', 'end')), true);
+  assert (select requester_id = '00000000-0000-0000-0000-000000000104' and status = 'pending' from public.ride_change_requests where id = ch),
+    'DP1-9: the member who moved it asks';
+  assert exists (select 1 from public.ride_change_parties where change_id = ch and profile_id = '00000000-0000-0000-0000-000000000101'),
+    'DP1-9: the driver in the way is asked';
+  perform pg_temp.as_user('00000000-0000-0000-0000-000000000101');
+  perform public.respond_ride_change(ch, true);
+  assert (select car_id = '00000000-0000-0000-0000-000000000041' and starts_at = s from public.rides where id = mine), 'DP1-9: accepted, the ride moved';
+  update public.department_settings set anyone_edits_rides = false where department_id = '00000000-0000-0000-0000-000000000001';
+end $$;
+
 rollback;

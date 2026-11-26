@@ -126,7 +126,7 @@ declare
   car_c uuid := '00000000-0000-0000-0000-000000000042';
   wp date := public.current_week_start() + 427;  -- published, days wp..wp+2 only
   wo date := public.current_week_start() + 434;  -- open
-  version_id uuid; kid uuid;
+  version_id uuid; kid uuid; kid2 uuid;
   q_pub uuid; q_filed uuid; q_unpub uuid; q_open uuid; q_relay_out uuid; q_relay_back uuid;
   r_pub uuid; r_unpub uuid; r_draft uuid; r_open uuid; r_relay_out uuid; r_relay_back uuid;
   j jsonb;
@@ -152,6 +152,9 @@ begin
 
   insert into public.children(department_id, full_name) values (dept, 'wbr child') returning id into kid;
   insert into public.child_guardians(child_id, profile_id) values (kid, guardian);
+  -- a second child for ride_passengers: one child on a ride twice is a double-counted seat (DP1-2, person-once oracle)
+  insert into public.children(department_id, full_name) values (dept, 'wbr child 2') returning id into kid2;
+  insert into public.child_guardians(child_id, profile_id) values (kid2, guardian);
 
   -- Weeks: wp published with only its first three days public; wo open.
   insert into public.weeks (department_id, week_start, phase, open_at, close_at, publish_at)
@@ -185,7 +188,7 @@ begin
   insert into public.ride_passengers (ride_id, department_id, week_start, person_id, display_name, seat_kind, added_by)
   values (r_pub, dept, wp, named, 'wbr named', 'adult', sadran);
   insert into public.ride_passengers (ride_id, department_id, week_start, child_id, display_name, seat_kind, added_by)
-  values (r_pub, dept, wp, kid, 'wbr child', 'child_seat', sadran);
+  values (r_pub, dept, wp, kid2, 'wbr child 2', 'child_seat', sadran);
 
   -- Published day wp+2: a relay pair on car_c (out leg leaves the car in Haifa, the return leg brings it back).
   insert into public.requests (department_id, week_start, requester_id, filed_by, destination_id, ride_type_id, trip_shape,

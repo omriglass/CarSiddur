@@ -4505,7 +4505,7 @@ begin
     'alternative_applied', 'own_car_placed', 'passenger_added_you', 'passenger_joined', 'passenger_left', 'passenger_left_many',
     'passenger_removed_request', 'passenger_removed_you', 'companion_split', 'passengers_added', 'passengers_removed',
     'reservation_added', 'ride_cancelled', 'unassigned_by_sadran', 'child_removed', 'join_ride_cancelled', 'join_asked',
-    'rider_place_off_route', 'host_route_off'
+    'rider_place_off_route', 'host_route_off', 'companion_removed'
   ) then
     return false;
   end if;
@@ -6547,6 +6547,24 @@ $$;
 
 
 ALTER FUNCTION "public"."_ride_matching_request"("p_ride_id" "uuid", "p_person_id" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."_ride_member_may_move"("p_ride" "uuid", "p_actor" "uuid") RETURNS boolean
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+  -- Twin of edit_ride_before_planning's mover check (REQ §13.127, §13.169, §13.205 b).
+  select p_actor is not null and exists (
+    select 1 from public.rides r
+    where r.id = p_ride and (
+      r.driver_id = p_actor
+      or public.ride_related(r.id, p_actor)
+      or (exists (select 1 from public.department_settings s where s.department_id = r.department_id and s.anyone_edits_rides)
+          and exists (select 1 from public.ride_requests rr where rr.ride_id = r.id and public.request_related(rr.request_id, p_actor)))));
+$$;
+
+
+ALTER FUNCTION "public"."_ride_member_may_move"("p_ride" "uuid", "p_actor" "uuid") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."_ride_moved_by_member"("p_ride_id" "uuid", "p_before" "jsonb", "p_agreed" boolean) RETURNS "void"
@@ -22473,6 +22491,8 @@ declare
   v_removed_display_name text;
   v_skip_notify boolean := false;
   v_guardian record;
+  v_requester uuid;
+  v_child_adult boolean;
 begin
   select * into v_ride from public.rides where id = p_ride_id for update;
   if not found or v_ride.status = 'cancelled' then raise exception 'ride_not_found' using errcode = 'P0001'; end if;
@@ -22514,9 +22534,13 @@ begin
     then
       raise exception 'ride_not_found' using errcode = 'P0001';
     end if;
+    -- DP1-4: the driver stays (as split_ride_companion); a named companion is one of the request's adults, so the seat goes too
+    if v_profile_id is not distinct from v_ride.driver_id then raise exception 'ride_driver_not_removable' using errcode = 'P0001'; end if;
     select full_name into v_removed_display_name from public.profiles where id = v_profile_id;
     delete from public.request_companions where request_id = v_request_id and profile_id = v_profile_id;
-    update public.requests set updated_at = now() where id = v_request_id;
+    if not found then raise exception 'ride_not_found' using errcode = 'P0001'; end if;
+    update public.requests set adults = greatest(adults - 1, 1), updated_at = now() where id = v_request_id
+    returning requester_id into v_requester;
     v_removed_person_id := v_profile_id;
 
   elsif v_prefix = 'child' then
@@ -22527,9 +22551,18 @@ begin
     then
       raise exception 'ride_not_found' using errcode = 'P0001';
     end if;
-    select full_name into v_removed_display_name from public.children where id = v_child_id;
+    -- DP1-4: the child's seat goes with them, counted as set_request_children counts it (eight and above = an adult seat)
+    select c.full_name, c.birth_year is not null
+           and extract(year from coalesce(q.depart_at, now()) at time zone 'Asia/Jerusalem')::int - c.birth_year >= 8
+      into v_removed_display_name, v_child_adult
+      from public.children c, public.requests q where c.id = v_child_id and q.id = v_request_id;
     delete from public.request_children where request_id = v_request_id and child_id = v_child_id;
-    update public.requests set updated_at = now() where id = v_request_id;
+    if not found then raise exception 'ride_not_found' using errcode = 'P0001'; end if;
+    update public.requests
+      set adults = case when v_child_adult then greatest(adults - 1, 1) else adults end,
+          child_seats = case when v_child_adult then child_seats else greatest(child_seats - 1, 0) end,
+          updated_at = now()
+      where id = v_request_id;
     v_removed_child_id := v_child_id;
 
   elsif v_prefix = 'guest' then
@@ -22541,7 +22574,8 @@ begin
       raise exception 'ride_not_found' using errcode = 'P0001';
     end if;
     update public.requests
-      set guest_passenger_names = guest_passenger_names[1 : v_n - 1] || guest_passenger_names[v_n + 1 : cardinality(guest_passenger_names)]
+      set guest_passenger_names = guest_passenger_names[1 : v_n - 1] || guest_passenger_names[v_n + 1 : cardinality(guest_passenger_names)],
+          adults = greatest(adults - 1, 1)   -- DP1-4: a named guest is one of the request's adults
       where id = v_request_id and v_n <= cardinality(guest_passenger_names);
     if not found then raise exception 'ride_not_found' using errcode = 'P0001'; end if;
     v_skip_notify := true; -- free-text guest: nobody is notified
@@ -22590,6 +22624,16 @@ begin
         jsonb_build_object('byName', coalesce(v_actor_name, ''), 'destination', coalesce(v_destination_name, ''), 'route', coalesce(v_route, '')),
         jsonb_build_object('variant', case when v_prefix = 'req' then 'passenger_removed_request' else 'passenger_removed_you' end, 'ride_id', p_ride_id),
         format('passenger_removed_you:%s:%s:%s', p_ride_id, v_new_version, v_removed_person_id));
+    end if;
+
+    -- DP1-6: the person whose request it is hears who was taken off it (not the driver: told above; not the actor)
+    if v_prefix = 'comp' and v_requester is not null and v_requester is distinct from v_actor
+       and v_requester is distinct from v_ride.driver_id and v_requester is distinct from v_removed_person_id then
+      v_route := public.route_label(v_ride.department_id, v_ride.origin_id, null, v_ride.destination_id, null);
+      perform public.enqueue_notification(v_requester, 'outcome_changed', v_ride.department_id, v_ride.week_start,
+        jsonb_build_object('byName', coalesce(v_actor_name, ''), 'names', coalesce(v_removed_display_name, ''), 'route', coalesce(v_route, '')),
+        jsonb_build_object('variant', 'companion_removed', 'ride_id', p_ride_id, 'request_id', v_request_id),
+        format('companion_removed:%s:%s:%s', p_ride_id, v_new_version, v_requester));
     end if;
 
     if v_removed_child_id is not null then
@@ -23421,10 +23465,10 @@ begin
   if (p_ride_id is null) = (p_request_id is null) then raise exception 'ride_shorten_invalid' using errcode = 'P0001'; end if;
 
   if p_ride_id is not null then
-    -- Same checks as moving one's own ride (request_ride_change before REQ §13.203).
+    -- Same checks as moving a ride on the siddur (edit_ride_before_planning): DP1-9, not only its driver.
     select * into r from public.rides where id = p_ride_id for update;
     if not found then raise exception 'ride_not_found' using errcode = 'P0001'; end if;
-    if not public.is_approved() or r.driver_id is distinct from v_uid or not public.is_week_public(r.department_id, r.week_start) then
+    if not public.is_approved() or not public._ride_member_may_move(r.id, v_uid) or not public.is_week_public(r.department_id, r.week_start) then
       raise exception 'not_authorized' using errcode = 'P0001';
     end if;
     if r.status = 'cancelled' or r.version <> p_expected_version then perform public.raise_stale_version(); end if;
@@ -25678,7 +25722,7 @@ declare r public.rides%rowtype; v_parties jsonb; v_maintenance boolean;
 begin
   select * into r from public.rides where id = p_ride_id;
   if not found then raise exception 'ride_not_found' using errcode = 'P0001'; end if;
-  if not public.is_approved() or r.driver_id is distinct from (select auth.uid()) or not public.is_week_public(r.department_id, r.week_start) then
+  if not public.is_approved() or not public._ride_member_may_move(r.id, (select auth.uid())) or not public.is_week_public(r.department_id, r.week_start) then
     raise exception 'not_authorized' using errcode = 'P0001';
   end if;
   if not exists (select 1 from public.cars where id = p_car_id and department_id = r.department_id) then
@@ -41312,6 +41356,11 @@ GRANT ALL ON FUNCTION "public"."_ride_matching_leg"("p_ride_id" "uuid", "p_reque
 
 REVOKE ALL ON FUNCTION "public"."_ride_matching_request"("p_ride_id" "uuid", "p_person_id" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."_ride_matching_request"("p_ride_id" "uuid", "p_person_id" "uuid") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."_ride_member_may_move"("p_ride" "uuid", "p_actor" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_ride_member_may_move"("p_ride" "uuid", "p_actor" "uuid") TO "service_role";
 
 
 

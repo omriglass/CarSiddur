@@ -7348,6 +7348,10 @@ export type Database = {
         Args: { p_person_id: string; p_ride_id: string }
         Returns: string
       }
+      _ride_member_may_move: {
+        Args: { p_actor: string; p_ride: string }
+        Returns: boolean
+      }
       _ride_moved_by_member: {
         Args: { p_agreed: boolean; p_before: Json; p_ride_id: string }
         Returns: undefined

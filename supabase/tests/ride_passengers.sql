@@ -507,6 +507,27 @@ begin
     select 1 from public.notifications where recipient_id = driver and event = 'outcome_changed'
       and data->>'variant' = 'passengers_removed' and data->>'ride_id' = ride5::text
   ), 'the driver must not receive a passengers_removed notice for their own removal';
+  -- DP1-4: the companion's seat goes with them (3 → 2 adults), so no nameless adult takes their place
+  assert (select adults from public.requests where id = req5) = 2, format('DP1-4: removing a companion frees its seat, adults = %s',
+    (select adults from public.requests where id = req5));
+  assert jsonb_array_length((select v.people from public.v_board_rides v where v.id = ride5)) = 5,
+    format('DP1-4: five people left, no nameless adult: %s', (select v.people from public.v_board_rides v where v.id = ride5));
+  -- DP1-6: the requester hears who was taken off their ride
+  assert exists(
+    select 1 from public.notifications where recipient_id = requesterA and event = 'outcome_changed'
+      and data->>'variant' = 'companion_removed' and data->>'ride_id' = ride5::text
+      and body_he like '01_נהג הוציא/ה את 03_חבר מהנסיעה שלך %'
+  ), format('DP1-6: the requester was not told who was removed: %s', (select string_agg(body_he, ' | ') from public.notifications
+      where recipient_id = requesterA and data->>'ride_id' = ride5::text));
+  -- the ride's driver named as a companion is not removable as one
+  insert into public.request_companions(request_id, profile_id) values (req5, driver);
+  begin
+    perform public.remove_ride_person(ride5, (select version from public.rides where id = ride5), 'comp:' || req5 || ':' || driver);
+    raise exception 'the driver must not be removable as a companion';
+  exception when raise_exception then
+    if sqlerrm <> 'ride_driver_not_removable' then raise; end if;
+  end;
+  delete from public.request_companions where request_id = req5 and profile_id = driver;
 
   -- child: removal — a plain member (week manager? no: this is a published week, so any
   -- member qualifies) removes the named child; the parent (requesterA, via child_guardians)
@@ -522,12 +543,14 @@ begin
     select 1 from public.notifications where recipient_id = driver and event = 'outcome_changed'
       and data->>'variant' = 'passengers_removed' and data->>'ride_id' = ride5::text and body_he like '%04_ילד%'
   ), 'the driver was not told which child was removed from their ride';
+  assert (select (adults, child_seats) = (2, 0) from public.requests where id = req5), 'DP1-4: removing a child under eight frees its child seat';
 
   -- guest: removal — nobody is notified at all (free-text guest), and the name is dropped
   -- from the request's guest_passenger_names array.
   select count(*) into n from public.notifications where data->>'ride_id' = ride5::text;
   perform public.remove_ride_person(ride5, (select version from public.rides where id = ride5), 'guest:' || req5 || ':1');
   assert (select guest_passenger_names from public.requests where id = req5) = '{}'::text[], 'the guest name was not dropped from the array';
+  assert (select adults from public.requests where id = req5) = 1, 'DP1-4: removing a named guest frees their seat';
   assert (select count(*) from public.notifications where data->>'ride_id' = ride5::text) = n,
     'a free-text guest removal must notify nobody at all (not even the driver)';
 
