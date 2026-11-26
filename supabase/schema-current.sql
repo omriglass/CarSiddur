@@ -7032,6 +7032,7 @@ begin
           select n.id
             from public.rides r
             join public.rides n on n.car_id = r.car_id and n.week_start = r.week_start
+                               and n.status <> 'cancelled'
                                and n.department_id = r.department_id and n.id <> r.id
            where r.id = any(p_ids)
              and exists (select 1 from public.ride_requests e
@@ -7053,7 +7054,8 @@ begin
   insert into public.ride_rows_dirty (txid, ride_id)
   select txid_current(), n.id
     from public.rides n
-   where n.car_id = p_car_id and n.week_start = p_week_start and n.department_id = p_department_id
+   where n.car_id = p_car_id and n.week_start = p_week_start and n.status <> 'cancelled'
+     and n.department_id = p_department_id
      and exists (select 1 from public.ride_requests e
                   where e.ride_id = n.id and e.role = 'driver' and e.car_mode = 'relay')
   on conflict do nothing;
@@ -34098,7 +34100,7 @@ CREATE TABLE IF NOT EXISTS "public"."push_subscriptions" (
     "last_used_at" timestamp with time zone,
     "failure_count" smallint DEFAULT 0 NOT NULL
 );
-ALTER TABLE ONLY "public"."push_subscriptions" ALTER COLUMN "p256dh" SET (pg_attver=35925296);
+ALTER TABLE ONLY "public"."push_subscriptions" ALTER COLUMN "p256dh" SET (pg_attver=35735632);
 
 ALTER TABLE ONLY "public"."push_subscriptions" FORCE ROW LEVEL SECURITY;
 
@@ -36491,6 +36493,10 @@ CREATE UNIQUE INDEX "ride_requests_out_unique_idx" ON "public"."ride_requests" U
 
 
 
+CREATE INDEX "ride_requests_request_idx" ON "public"."ride_requests" USING "btree" ("request_id");
+
+
+
 CREATE UNIQUE INDEX "ride_requests_return_unique_idx" ON "public"."ride_requests" USING "btree" ("request_id") WHERE "covers_return";
 
 
@@ -37574,65 +37580,97 @@ CREATE CONSTRAINT TRIGGER "ride_rows_flush" AFTER INSERT ON "public"."ride_rows_
 
 CREATE OR REPLACE TRIGGER "ride_rows_mark" AFTER INSERT OR DELETE OR UPDATE ON "public"."car_seat_configs" FOR EACH ROW EXECUTE FUNCTION "public"."_ride_rows_mark_trg"();
 
+ALTER TABLE "public"."car_seat_configs" DISABLE TRIGGER "ride_rows_mark";
+
 
 
 CREATE OR REPLACE TRIGGER "ride_rows_mark" AFTER DELETE OR UPDATE ON "public"."children" FOR EACH ROW EXECUTE FUNCTION "public"."_ride_rows_mark_trg"();
+
+ALTER TABLE "public"."children" DISABLE TRIGGER "ride_rows_mark";
 
 
 
 CREATE OR REPLACE TRIGGER "ride_rows_mark" AFTER INSERT OR UPDATE ON "public"."department_settings" FOR EACH ROW EXECUTE FUNCTION "public"."_ride_rows_mark_trg"();
 
+ALTER TABLE "public"."department_settings" DISABLE TRIGGER "ride_rows_mark";
+
 
 
 CREATE OR REPLACE TRIGGER "ride_rows_mark" AFTER UPDATE OF "home_destination_id" ON "public"."departments" FOR EACH ROW EXECUTE FUNCTION "public"."_ride_rows_mark_trg"();
+
+ALTER TABLE "public"."departments" DISABLE TRIGGER "ride_rows_mark";
 
 
 
 CREATE OR REPLACE TRIGGER "ride_rows_mark" AFTER INSERT OR DELETE OR UPDATE ON "public"."destinations" FOR EACH ROW EXECUTE FUNCTION "public"."_ride_rows_mark_trg"();
 
+ALTER TABLE "public"."destinations" DISABLE TRIGGER "ride_rows_mark";
+
 
 
 CREATE OR REPLACE TRIGGER "ride_rows_mark" AFTER INSERT OR DELETE OR UPDATE ON "public"."place_distances" FOR EACH ROW EXECUTE FUNCTION "public"."_ride_rows_mark_trg"();
+
+ALTER TABLE "public"."place_distances" DISABLE TRIGGER "ride_rows_mark";
 
 
 
 CREATE OR REPLACE TRIGGER "ride_rows_mark" AFTER UPDATE OF "full_name" ON "public"."profiles" FOR EACH ROW EXECUTE FUNCTION "public"."_ride_rows_mark_trg"();
 
+ALTER TABLE "public"."profiles" DISABLE TRIGGER "ride_rows_mark";
+
 
 
 CREATE OR REPLACE TRIGGER "ride_rows_mark" AFTER INSERT OR DELETE OR UPDATE ON "public"."request_children" FOR EACH ROW EXECUTE FUNCTION "public"."_ride_rows_mark_trg"();
+
+ALTER TABLE "public"."request_children" DISABLE TRIGGER "ride_rows_mark";
 
 
 
 CREATE OR REPLACE TRIGGER "ride_rows_mark" AFTER INSERT OR DELETE OR UPDATE ON "public"."request_companions" FOR EACH ROW EXECUTE FUNCTION "public"."_ride_rows_mark_trg"();
 
+ALTER TABLE "public"."request_companions" DISABLE TRIGGER "ride_rows_mark";
+
 
 
 CREATE OR REPLACE TRIGGER "ride_rows_mark" AFTER INSERT OR DELETE OR UPDATE ON "public"."request_rider_stops" FOR EACH ROW EXECUTE FUNCTION "public"."_ride_rows_mark_trg"();
+
+ALTER TABLE "public"."request_rider_stops" DISABLE TRIGGER "ride_rows_mark";
 
 
 
 CREATE OR REPLACE TRIGGER "ride_rows_mark" AFTER INSERT OR DELETE OR UPDATE ON "public"."request_stops" FOR EACH ROW EXECUTE FUNCTION "public"."_ride_rows_mark_trg"();
 
+ALTER TABLE "public"."request_stops" DISABLE TRIGGER "ride_rows_mark";
+
 
 
 CREATE OR REPLACE TRIGGER "ride_rows_mark" AFTER INSERT OR DELETE OR UPDATE ON "public"."requests" FOR EACH ROW EXECUTE FUNCTION "public"."_ride_rows_mark_trg"();
+
+ALTER TABLE "public"."requests" DISABLE TRIGGER "ride_rows_mark";
 
 
 
 CREATE OR REPLACE TRIGGER "ride_rows_mark" AFTER INSERT OR DELETE OR UPDATE ON "public"."ride_passengers" FOR EACH ROW EXECUTE FUNCTION "public"."_ride_rows_mark_trg"();
 
+ALTER TABLE "public"."ride_passengers" DISABLE TRIGGER "ride_rows_mark";
+
 
 
 CREATE OR REPLACE TRIGGER "ride_rows_mark" AFTER INSERT OR DELETE OR UPDATE ON "public"."ride_requests" FOR EACH ROW EXECUTE FUNCTION "public"."_ride_rows_mark_trg"();
+
+ALTER TABLE "public"."ride_requests" DISABLE TRIGGER "ride_rows_mark";
 
 
 
 CREATE OR REPLACE TRIGGER "ride_rows_mark" AFTER UPDATE OF "code" ON "public"."ride_types" FOR EACH ROW EXECUTE FUNCTION "public"."_ride_rows_mark_trg"();
 
+ALTER TABLE "public"."ride_types" DISABLE TRIGGER "ride_rows_mark";
+
 
 
 CREATE OR REPLACE TRIGGER "ride_rows_mark" AFTER INSERT OR DELETE OR UPDATE ON "public"."rides" FOR EACH ROW EXECUTE FUNCTION "public"."_ride_rows_mark_trg"();
+
+ALTER TABLE "public"."rides" DISABLE TRIGGER "ride_rows_mark";
 
 
 
