@@ -15,6 +15,7 @@ import {
   cancelRideChange,
   claimRideDriver,
   joinOtherRide,
+  joinRideWithRequest,
   fetchCarNeighbours,
   fetchRideChanges,
   handOverOwnRide,
@@ -201,6 +202,19 @@ export function useVolunteerDriverChangeMutation() {
       for (const key of [siddurKeys.all, sadranKeys.all, requestsKeys.all, inboxKeys.all])
         void client.invalidateQueries({ queryKey: key });
       if (action === "takeOver") void askDriverReminder();
+    },
+    onError: showErrorToast,
+  });
+}
+
+export function useJoinRideWithRequestMutation() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ requestId, rideId, expectedVersion }: { requestId: string; rideId: string; expectedVersion: number }) =>
+      joinRideWithRequest(requestId, rideId, expectedVersion),
+    onSuccess: () => {
+      for (const key of [siddurKeys.all, sadranKeys.all, requestsKeys.all, inboxKeys.all])
+        void client.invalidateQueries({ queryKey: key });
     },
     onError: showErrorToast,
   });

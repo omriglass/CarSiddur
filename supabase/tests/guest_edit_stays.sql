@@ -81,6 +81,23 @@ begin
     (select one_way_car_mode from public.requests where id = qB), bin, null, d0 + interval '5 hours 30 minutes', d0 + interval '10 hours'),
     '(F) 12:00 is far from the 06:30 departure: the ordinary way';
 
+  -- (G) DP1-5 (production 30.11): she rides with a companion and takes them off (two travellers → one). She stays in
+  -- the ride as it is; the companion and the seat go. Before, the save asked about the very ride she was on.
+  insert into public.request_companions(request_id, profile_id) values (qB, '00000000-0000-0000-0000-000000000101');
+  update public.requests set adults = 2 where id = qB;
+  res := public.submit_request(edit || jsonb_build_object('expected_version', (select version from public.requests where id = qB),
+    'depart_at', d0 + interval '30 minutes', 'return_at', d0 + interval '10 hours', 'adults', 1, 'companion_ids', '[]'::jsonb));
+  assert res ->> 'reason' = 'GUEST_STAYS' and (res ->> 'ride_id')::uuid = rA, format('(G) fewer people stays, got %s', res);
+  assert (select adults = 1 and status = 'merged' from public.requests where id = qB)
+     and not exists (select 1 from public.request_companions where request_id = qB), '(G) the companion and the seat are gone';
+  assert (select status = 'confirmed' and car_id = car1 and driver_id = m1 and starts_at = d0 from public.rides where id = rA)
+     and exists (select 1 from public.ride_requests where ride_id = rA and request_id = qB), '(G) still on רון''s ride, unchanged';
+  -- (H) more people is not "fewer": the ordinary way (it may need another car)
+  assert not public._guest_edit_stays(qB, edit || jsonb_build_object('adults', 2, 'companion_ids', jsonb_build_array('00000000-0000-0000-0000-000000000101')),
+    'round_trip', 'round_trip', (select needs_car_at_destination from public.requests where id = qB),
+    (select one_way_car_mode from public.requests where id = qB), bin, null, d0 + interval '30 minutes', d0 + interval '10 hours'),
+    '(H) adding a companion goes the ordinary way';
+
   -- (D) another change with the hours (a different destination): the ordinary way, never GUEST_STAYS
   res := public.submit_request(edit || jsonb_build_object('expected_version', (select version from public.requests where id = qB),
     'destination_id', home, 'depart_at', d0 + interval '1 hour', 'return_at', d0 + interval '8 hours 30 minutes'));

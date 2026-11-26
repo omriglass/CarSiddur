@@ -8482,6 +8482,14 @@ export type Database = {
         }
         Returns: undefined
       }
+      join_ride_with_request: {
+        Args: {
+          p_expected_version: number
+          p_request_id: string
+          p_ride_id: string
+        }
+        Returns: undefined
+      }
       join_waitlist_discussion: {
         Args: { p_request_id: string }
         Returns: Json

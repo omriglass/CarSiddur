@@ -3169,11 +3169,35 @@ begin
   select * into e from public.requests where id = p_request_id;
   if e.id is null or e.status not in ('assigned', 'merged') or e.series_id is not null then return false; end if;
 
-  -- the edit changes nothing but the hours (and how they were entered / their flexibility): the same check as an
+  -- DP1-5 (production 30.11): fewer people keep the seat too. אלי rode in אביב's ride and took עומר off her request;
+  -- the save was handled as a new trip and asked about the very ride she was on. Seats may only go down, companions
+  -- and named guests only leave, and who gets on where (`riders`) only loses rows; more of anything is the ordinary way.
+  if coalesce((payload ->> 'adults')::int, e.adults) > e.adults
+     or coalesce((payload ->> 'child_seats')::int, e.child_seats) > e.child_seats
+     or coalesce((payload ->> 'boosters')::int, e.boosters) > e.boosters then
+    return false;
+  end if;
+  if payload ? 'companion_ids' and jsonb_typeof(payload -> 'companion_ids') = 'array' and not (
+       array(select v::uuid from jsonb_array_elements_text(payload -> 'companion_ids') v)
+       <@ array(select rc.profile_id from public.request_companions rc where rc.request_id = e.id)) then
+    return false;
+  end if;
+  if payload ? 'guest_passenger_names' and jsonb_typeof(payload -> 'guest_passenger_names') = 'array'
+     and (jsonb_array_length(payload -> 'guest_passenger_names') > cardinality(coalesce(e.guest_passenger_names, '{}'::text[]))
+          or not (array(select jsonb_array_elements_text(payload -> 'guest_passenger_names')) <@ coalesce(e.guest_passenger_names, '{}'::text[]))) then
+    return false;
+  end if;
+  if payload ? 'riders' and jsonb_typeof(payload -> 'riders') = 'array'
+     and not (public._riders_canon(payload -> 'riders') <@ coalesce(public._request_riders_json(e.id), '[]'::jsonb)) then
+    return false;
+  end if;
+
+  -- the edit changes nothing else but the hours (and how they were entered / their flexibility): the same check as an
   -- unchanged save, with the time fields taken as stored
   if not public._request_save_unchanged(p_request_id,
        payload - array['flex_depart_early', 'flex_depart_late', 'flex_return_early', 'flex_return_late',
-                       'depart_anchor', 'arrive_by', 'return_anchor', 'leave_dest_at', 'duration_locked', 'guest_ride_return'],
+                       'depart_anchor', 'arrive_by', 'return_anchor', 'leave_dest_at', 'duration_locked', 'guest_ride_return',
+                       'adults', 'child_seats', 'boosters', 'companion_ids', 'guest_passenger_names', 'riders'],
        p_trip_type, p_trip_shape, p_needs_car, p_one_way_mode, p_origin_id, p_origin_text,
        e.depart_at, case when p_trip_shape = 'one_way_to' then e.kept_return_at else e.return_at end, true) then
     return false;
@@ -9538,11 +9562,21 @@ begin
     if v_person_id is not null then
       select q.* into v_match from public.requests q where q.id = public._ride_matching_request(p_ride_id, v_person_id);
     end if;
+    -- DP1-1b: joining from the request form's offer names its own request (join_ride_with_request): that one joins,
+    -- even when it is not the one the hours-and-place match would pick (the offer is by distance, not by place)
+    if v_merge_id is not null and v_person_id is not null
+       and v_merge_id::text = coalesce(nullif(current_setting('app.join_from_request', true), ''), '-') then
+      select q.* into v_match from public.requests q
+      where q.id = v_merge_id and q.requester_id = v_person_id and q.status in ('submitted', 'waitlisted', 'proposed');
+    end if;
     if v_merge_id is not null then
       if v_match.id is distinct from v_merge_id then
         raise exception 'invalid_ride_passenger' using errcode = 'P0001';
       end if;
-      v_leg := public._ride_matching_leg(p_ride_id, v_merge_id);
+      -- DP1-1b: joining from the offer takes the ride's hours (offered within ±2 h): a round trip rides both ways
+      v_leg := case when v_merge_id::text = coalesce(nullif(current_setting('app.join_from_request', true), ''), '-')
+                     and v_match.trip_shape = 'round_trip' and v_match.return_at is not null then 'both'::public.ride_leg
+                    else public._ride_matching_leg(p_ride_id, v_merge_id) end;
       v_check := public._merge_check(p_ride_id, v_merge_id, v_leg);
       if not coalesce((v_check ->> 'ok')::boolean, false) then
         raise exception 'merge_refused' using errcode = 'P0001',
@@ -16756,6 +16790,45 @@ end $$;
 
 
 ALTER FUNCTION "public"."join_other_ride"("p_request_id" "uuid", "p_ride_id" "uuid", "p_expected_version" integer) OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."join_ride_with_request"("p_request_id" "uuid", "p_ride_id" "uuid", "p_expected_version" integer) RETURNS "void"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  q public.requests%rowtype;
+  v_actor uuid := (select auth.uid());
+begin
+  select * into q from public.requests where id = p_request_id for update;
+  if not found then raise exception 'request_not_found' using errcode = 'P0001'; end if;
+  -- whoever may edit the request (its people, a filer, anyone-edits) or the week's Sadran - as the form that offers it
+  if not (public.request_related(q.id, v_actor) or public.can_manage_week(q.department_id, q.week_start)) then
+    raise exception 'not_authorized' using errcode = 'P0001';
+  end if;
+  if q.status not in ('submitted', 'waitlisted', 'proposed') or q.series_id is not null or q.requester_id is null then
+    raise exception 'request_not_joinable' using errcode = 'P0001';
+  end if;
+  if not exists (select 1 from public.rides where id = p_ride_id and department_id = q.department_id and week_start = q.week_start) then
+    raise exception 'ride_not_found' using errcode = 'P0001';
+  end if;
+  if exists (select 1 from public.ride_requests rr join public.rides r on r.id = rr.ride_id
+             where rr.request_id = q.id and r.status <> 'cancelled') then
+    raise exception 'request_has_ride' using errcode = 'P0001';
+  end if;
+
+  perform set_config('app.join_from_request', q.id::text, true);
+  perform public.add_ride_passengers(p_ride_id, p_expected_version, jsonb_build_array(jsonb_build_object(
+    'person_id', q.requester_id, 'display_name', (select full_name from public.profiles where id = q.requester_id),
+    'seat_kind', 'adult', 'merge_request_id', q.id)));
+  perform set_config('app.join_from_request', '', true);
+  if not exists (select 1 from public.ride_requests where ride_id = p_ride_id and request_id = q.id) then
+    raise exception 'merge_refused' using errcode = 'P0001';
+  end if;
+end $$;
+
+
+ALTER FUNCTION "public"."join_ride_with_request"("p_request_id" "uuid", "p_ride_id" "uuid", "p_expected_version" integer) OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."join_waitlist_discussion"("p_request_id" "uuid") RETURNS "jsonb"
@@ -42961,6 +43034,12 @@ GRANT ALL ON FUNCTION "public"."join_drop_off_legs"("p_request_id" "uuid", "p_ri
 REVOKE ALL ON FUNCTION "public"."join_other_ride"("p_request_id" "uuid", "p_ride_id" "uuid", "p_expected_version" integer) FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."join_other_ride"("p_request_id" "uuid", "p_ride_id" "uuid", "p_expected_version" integer) TO "service_role";
 GRANT ALL ON FUNCTION "public"."join_other_ride"("p_request_id" "uuid", "p_ride_id" "uuid", "p_expected_version" integer) TO "authenticated";
+
+
+
+REVOKE ALL ON FUNCTION "public"."join_ride_with_request"("p_request_id" "uuid", "p_ride_id" "uuid", "p_expected_version" integer) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."join_ride_with_request"("p_request_id" "uuid", "p_ride_id" "uuid", "p_expected_version" integer) TO "service_role";
+GRANT ALL ON FUNCTION "public"."join_ride_with_request"("p_request_id" "uuid", "p_ride_id" "uuid", "p_expected_version" integer) TO "authenticated";
 
 
 

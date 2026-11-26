@@ -356,9 +356,9 @@
         "supabase/tests/place_waiting_request.sql",
         "e2e/siddur-waitlist.spec.ts",
         "src/components/weekGridLanes.ts",
-        "src/features/requests/joinPeople.ts",
-        "src/features/requests/joinPeople.test.ts",
-        "e2e/join-for-other.spec.ts"
+        "e2e/join-for-other.spec.ts",
+        "supabase/migrations/**/*join_ride_with_request*",
+        "supabase/tests/joinable_rides.sql"
       ],
       "vitest": [
         "src/features/waitlist",
@@ -366,8 +366,7 @@
         "src/solver/__tests__/freedSlotRun.test.ts",
         "src/features/rides/freedCarPreview.test.ts",
         "src/features/rides/useFreedCar.test.tsx",
-        "src/lib/appSurface.test.ts",
-        "src/features/requests/joinPeople.test.ts"
+        "src/lib/appSurface.test.ts"
       ],
       "sql": [
         "freed_car_options.sql",

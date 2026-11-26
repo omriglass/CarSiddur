@@ -30,8 +30,7 @@ import { useCars, useCarSeatConfigs, useMyTemporaryCars, useDestinations, useRid
 import { useDepartmentSettings, useWeekRow } from "@/features/sadran/hooks";
 import { isSlotFree, type CarFreeWindow } from "@/features/siddur/freeWindows";
 import { fetchBoardRideById } from "@/features/siddur/api";
-import type { RidePassengerInput } from "@/features/rides/api";
-import { useAddRidePassengersMutation } from "@/features/rides/hooks";
+import { useJoinRideWithRequestMutation } from "@/features/rides/hooks";
 import { siddurKeys } from "@/features/siddur/queryKeys";
 import { paths } from "@/app/routes";
 import { useSaveReservationMutation } from "@/features/planning/hooks";
@@ -59,7 +58,6 @@ import { overlapCancelAction } from "../overlap";
 import { splitWho } from "../onBehalf";
 import { QUICK_REQUEST_DURATION_HOURS, endTimeForDuration } from "../duration";
 import { joinableRideDriverLabel } from "../joinableRides";
-import { joinPeopleInputs } from "../joinPeople";
 import { guestPassengerNames, quickVehicleWindow, resolveQuickOrigin } from "../quickRequest";
 import {
   useJoinableRidesMutation,
@@ -382,10 +380,9 @@ export function RequestForm({
   const saveTemplateMutation = useSaveRequestTemplateMutation({ deferInvalidation: true });
   const saveReservationMutation = useSaveReservationMutation();
   const stopTemplateMutation = useStopTemplateMutation();
-  // Joinable-rides dialog "הצטרפות לנסיעה" (REQ §13.85, owner decision 2026-09-14): joins the
-  // chosen ride directly via `add_ride_passengers()` with the just-filed request's own people,
-  // then withdraws that now-redundant waitlisted request — see `performSubmit`/`joinNow` below.
-  const addRidePassengersMutation = useAddRidePassengersMutation();
+  // Joinable-rides dialog "הצטרפות לנסיעה" (REQ §13.85; DP1-1b): merges the just-saved request into the chosen ride
+  // (`join_ride_with_request`) — see `performSubmit`/`joinNow` below.
+  const joinRideMutation = useJoinRideWithRequestMutation();
   // REQ §13.203: "make room" after a waitlisted round trip; `afterMakeRoomRef` resumes the normal outcome on close.
   const afterMakeRoomRef = useRef<() => void>(() => {});
   const makeRoom = useMakeRoom({ onClose: () => { const next = afterMakeRoomRef.current; afterMakeRoomRef.current = () => {}; next(); } });
@@ -982,7 +979,7 @@ export function RequestForm({
   // The just-filed (now waitlisted) request's own people, captured at submit time so
   // "הצטרפות לנסיעה" can add them straight onto the chosen ride (item 4, REQ §13.85) without
   // re-deriving them from form state a second time later.
-  const [joinRequestContext, setJoinRequestContext] = useState<{ requestId: string; peopleInputs: RidePassengerInput[] } | null>(null);
+  const [joinRequestContext, setJoinRequestContext] = useState<{ requestId: string } | null>(null);
 
   /** REQ item 258 (f): tell the conversation what was finally sent (once) and how it differs from what was understood. */
   function reportAskDone(sent: RequestFormValues, requestId: string | null | undefined) {
@@ -1123,6 +1120,12 @@ export function RequestForm({
       // insert branch is the only place it reads `template_id`); an edit's own template link,
       // if any, is managed separately below via save/stop, never touched by this payload.
       ...(mode === "new" && templateSuggestion ? { template_id: templateSuggestion.templateId } : {}),
+      // DP1-5: an edit that takes a companion off lowers `adults` in this save, so the companion must leave in the same
+      // save (the server checks names ≤ seats at commit). Only those staying are sent here; newly named ones are added by
+      // `set_request_companions` right after, which tells them.
+      ...(mode === "edit" && companionsQuery.data
+        ? { companion_ids: companionsQuery.data.filter((id) => whoOf(formValues).companions.includes(id)) }
+        : {}),
     };
   }
 
@@ -1456,23 +1459,8 @@ export function RequestForm({
           const rides = await joinableRidesMutation.mutateAsync(requestId);
           if (rides.length > 0) {
             setAfterJoinableDialog(() => proceed);
-            // DP1-1: the request's own riders join — the requester when editing someone else's request, never the editor.
-            const requester = mode === "edit" && initial
-              ? { id: initial.requesterId, name: initial.requesterId === session?.user.id ? profileQuery.data?.full_name ?? ""
-                  : initial.requesterName ?? (membersQuery.data ?? []).find((m) => m.id === initial.requesterId)?.name ?? "" }
-              : session?.user.id ? { id: session.user.id, name: profileQuery.data?.full_name ?? "" } : null;
-            setJoinRequestContext({
-              requestId,
-              peopleInputs: joinPeopleInputs({
-                requester,
-                requesterRides: formValues.includeMe !== false,
-                companionIds: formValues.companions,
-                childIds: formValues.children,
-                guestNames: formValues.guestNames,
-                members: membersQuery.data ?? [],
-                children: childrenQuery.data ?? [],
-              }),
-            });
+            // DP1-1: the request itself joins (its requester and everyone named on it), never the person editing it
+            setJoinRequestContext({ requestId });
             setJoinableRides(rides);
             return;
           }
@@ -1535,16 +1523,11 @@ export function RequestForm({
   }
 
   /**
-   * "הצטרפות לנסיעה" (item 4, REQ §13.85, owner decision 2026-09-14): joins the chosen
-   * joinable ride directly via `add_ride_passengers()` with the just-filed request's own
-   * people (its requester + companions + children + guests — DP1-1: never the editor; captured in `joinRequestContext` at
-   * submit time), then withdraws that now-redundant waitlisted request. `add_ride_passengers`
-   * needs the ride's current `version` — `fetchJoinableRides`'s row carries none, so this
-   * re-reads the ride fresh (`fetchBoardRideById`) right before the call; likewise the
-   * request's version is re-read (`fetchRequestVersion`) rather than assumed, since it may
-   * have been edited since `submit_request` returned. On `ride_seats_exceeded` (or any other
-   * failure) the mutation's own `onError` already toasted it — the dialog stays open and the
-   * waitlisted request is left untouched (withdraw never runs unless the add succeeded).
+   * "הצטרפות לנסיעה" (REQ §13.83; DP1-1b, owner 2026-11-26): merges the just-saved request itself into the chosen ride
+   * (`join_ride_with_request`, under the merge's own checks) — its requester, companions, children and guests ride as that
+   * request, which keeps its notes and history; it is never withdrawn, and the person editing it is never added. The ride's
+   * current `version` is re-read right before the call (`fetchJoinableRides` carries none). A refusal toasts and keeps the
+   * dialog open with the request untouched.
    */
   async function joinNow(rideId: string) {
     const context = joinRequestContext;
@@ -1552,12 +1535,7 @@ export function RequestForm({
     try {
       const ride = await fetchBoardRideById(rideId);
       if (!ride?.id || ride.version == null) throw new Error("ride_not_found");
-      await addRidePassengersMutation.mutateAsync({ rideId: ride.id, expectedVersion: ride.version, passengers: context.peopleInputs });
-
-      const requestVersion = await fetchRequestVersion(context.requestId);
-      if (requestVersion != null) {
-        await withdrawMutation.mutateAsync({ requestId: context.requestId, expectedVersion: requestVersion });
-      }
+      await joinRideMutation.mutateAsync({ requestId: context.requestId, rideId: ride.id, expectedVersion: ride.version });
 
       const joined = joinableRides?.find((r) => r.rideId === rideId);
       toast.success(tv("joinableRides.joined", { driver: joined ? joinableRideDriverLabel(joined) : "" }));
@@ -1565,8 +1543,7 @@ export function RequestForm({
       setJoinRequestContext(null);
       afterJoinableDialog();
     } catch {
-      /* add_ride_passengers/withdraw already toasted its own error — keep the dialog open and
-         the waitlisted request untouched. */
+      /* the mutation already toasted its error — keep the dialog open; the request is untouched */
     }
   }
 

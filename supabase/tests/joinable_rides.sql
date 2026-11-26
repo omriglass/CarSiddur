@@ -185,4 +185,85 @@ begin
 end $$;
 
 reset role;
+-- DP1-1b (production 30.11): "אין רכב — לצרף לנסיעה של…" merges the request itself into the ride (join_ride_with_request)
+-- instead of adding its people as loose passengers and withdrawing it. The Sadran joins a member's waiting request
+-- (with a companion and a note); the member's other waiting request at the same hours stays waiting; someone with no
+-- tie to the request is refused; a request that does not fit is refused with nothing written.
+do $$
+declare
+  dept uuid := '00000000-0000-0000-0000-000000000001';
+  adminP uuid := '00000000-0000-0000-0000-000000000101';  -- the companion
+  sadran uuid := '00000000-0000-0000-0000-000000000102';
+  member1 uuid := '00000000-0000-0000-0000-000000000103'; -- whose request it is
+  member2 uuid := '00000000-0000-0000-0000-000000000104'; -- drives the ride
+  home uuid := '00000000-0000-0000-0000-000000000010';
+  haifa uuid := '00000000-0000-0000-0000-000000000011';
+  typ uuid := '00000000-0000-0000-0000-000000000021';
+  car uuid := '00000000-0000-0000-0000-000000000040';    -- five seats
+  w date := public.current_week_start() + 413;
+  t0 timestamptz; t1 timestamptz; pub uuid;
+  ride uuid; reqHost uuid; reqJoin uuid; reqOther uuid; reqBig uuid;
+  people jsonb;
+begin
+  update public.department_settings set anyone_edits_rides = false where department_id = dept;
+  insert into public.weeks (department_id, week_start, phase, open_at, close_at, publish_at)
+  values (dept, w, 'open', now() - interval '10 days', now() - interval '8 days', now() - interval '7 days');
+  insert into public.siddur_versions (department_id, week_start, version_no, snapshot, published_by)
+  values (dept, w, 1, '{}'::jsonb, sadran) returning id into pub;
+  perform set_config('app.in_publish', 'on', true);
+  update public.weeks set phase = 'published', published_version_id = pub, published_days = array[w + 1] where department_id = dept and week_start = w;
+  perform set_config('app.in_publish', 'off', true);
+
+  t0 := ((w + 1) + time '09:00') at time zone 'Asia/Jerusalem'; t1 := ((w + 1) + time '17:00') at time zone 'Asia/Jerusalem';
+  insert into public.requests (department_id, week_start, requester_id, filed_by, origin_id, destination_id, ride_type_id, trip_shape, trip_type, depart_at, return_at, adults, submitted_at, status)
+  values (dept, w, member2, member2, home, haifa, typ, 'round_trip', 'round_trip', t0, t1, 1, now(), 'assigned') returning id into reqHost;
+  insert into public.rides (department_id, week_start, car_id, starts_at, ends_at, origin_id, destination_id, driver_id, status, created_by)
+  values (dept, w, car, t0, t1, home, home, member2, 'confirmed', sadran) returning id into ride;
+  insert into public.ride_requests (ride_id, request_id, role, leg, car_mode) values (ride, reqHost, 'driver', 'both', 'keep');
+  -- member1's earlier waiting request at the same hours: the hours-and-place match would pick this one
+  insert into public.requests (department_id, week_start, requester_id, filed_by, origin_id, destination_id, ride_type_id, trip_shape, trip_type, depart_at, return_at, adults, submitted_at, status)
+  values (dept, w, member1, member1, home, haifa, typ, 'round_trip', 'round_trip', t0, t1, 1, now(), 'waitlisted') returning id into reqOther;
+  insert into public.requests (department_id, week_start, requester_id, filed_by, origin_id, destination_id, ride_type_id, trip_shape, trip_type, depart_at, return_at, adults, notes, submitted_at, status)
+  values (dept, w, member1, member1, home, haifa, typ, 'round_trip', 'round_trip', t0 - interval '45 minutes', t1, 2, 'dp1 note', now(), 'waitlisted') returning id into reqJoin;
+  insert into public.request_companions (request_id, profile_id) values (reqJoin, adminP);
+
+  -- someone with no tie to the request (the ride's driver, anyone-edits off) is refused
+  perform set_config('request.jwt.claims', jsonb_build_object('sub', member2, 'role', 'authenticated')::text, true);
+  begin
+    perform public.join_ride_with_request(reqJoin, ride, (select version from public.rides where id = ride));
+    raise exception 'DP1-1b: an unrelated member joined someone else''s request';
+  exception when raise_exception then
+    if sqlerrm <> 'not_authorized' then raise; end if;
+  end;
+
+  -- the Sadran joins it: the request rides as itself, with its companion and note; nobody is added loose, nothing withdrawn
+  perform set_config('request.jwt.claims', jsonb_build_object('sub', sadran, 'role', 'authenticated')::text, true);
+  perform public.join_ride_with_request(reqJoin, ride, (select version from public.rides where id = ride));
+  -- it asked to leave 45 minutes before the ride; joining takes the ride's hours both ways
+  assert exists (select 1 from public.ride_requests where ride_id = ride and request_id = reqJoin and role = 'passenger' and leg = 'both'),
+    'DP1-1b: the request rides in the ride, both ways';
+  -- placed (the status trigger decides merged / assigned, as PS1), never withdrawn or left waiting
+  assert (select status::text in ('merged', 'assigned') and notes = 'dp1 note' and adults = 2 from public.requests where id = reqJoin),
+    format('DP1-1b: placed, its note and seats kept: %s', (select row(status, notes, adults) from public.requests where id = reqJoin));
+  assert not exists (select 1 from public.ride_passengers where ride_id = ride), 'DP1-1b: nobody added as a loose passenger';
+  people := (select v.people from public.v_board_rides v where v.id = ride);
+  assert (select array_agg(e ->> 'person_id' order by e ->> 'person_id') from jsonb_array_elements(people) e)
+         = array[adminP::text, member1::text, member2::text],
+    format('DP1-1b: driver, requester and companion ride; the Sadran does not: %s', people);
+  assert (select status from public.requests where id = reqOther) = 'waitlisted', 'DP1-1b: the other waiting request is untouched';
+
+  -- a request that does not fit (the Sadran's own, five adults on a car with two seats left): refused, nothing written
+  insert into public.requests (department_id, week_start, requester_id, filed_by, origin_id, destination_id, ride_type_id, trip_shape, trip_type, depart_at, return_at, adults, submitted_at, status)
+  values (dept, w, sadran, sadran, home, haifa, typ, 'round_trip', 'round_trip', t0, t1, 5, now(), 'waitlisted') returning id into reqBig;
+  begin
+    perform public.join_ride_with_request(reqBig, ride, (select version from public.rides where id = ride));
+    raise exception 'DP1-1b: a request that does not fit joined';
+  exception when raise_exception then
+    if sqlerrm not in ('merge_refused', 'ride_seats_exceeded') then raise; end if;
+  end;
+  assert (select status from public.requests where id = reqBig) = 'waitlisted'
+     and not exists (select 1 from public.ride_requests where request_id = reqBig), 'DP1-1b: a refused join writes nothing';
+  raise notice 'DP1-1b PASSED: joining from the offer merges the request itself, never withdraws it';
+end $$;
+
 rollback;

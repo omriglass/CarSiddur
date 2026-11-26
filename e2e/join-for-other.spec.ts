@@ -10,7 +10,8 @@ import {
 } from "./request-form";
 
 // DP1-1 (production 26.11): the Sadran edits a member's waiting request, no car is free, and the form offers
-// "לצרף לנסיעה של…". Joining puts the request's own people on that ride — the member, never the Sadran who pressed it.
+// "לצרף לנסיעה של…". Joining puts the request itself on that ride (DP1-1b: merged, never withdrawn) — the member, never
+// the Sadran who pressed it.
 test.use({ viewport: { width: 390, height: 844 } });
 
 test.describe("joining a ride from someone else's request", { tag: ["@request-form", "@waitlist"] }, () => {
@@ -60,11 +61,15 @@ test.describe("joining a ride from someone else's request", { tag: ["@request-fo
         await expect(page.getByRole("dialog").filter({ hasText: he.joinableRides.title })).toBeVisible();
       });
 
-      await test.step("joining puts the member on the ride, not the Sadran", async () => {
+      await test.step("joining puts the member's request on the ride, not the Sadran", async () => {
         await page.getByRole("dialog").filter({ hasText: he.joinableRides.title })
           .getByRole("button", { name: he.joinableRides.askToJoin, exact: true }).click();
-        await expect.poll(async () => (await service.from("ride_passengers").select("person_id").eq("ride_id", ride.id as string)).data
-          ?.map((p) => p.person_id)).toEqual([PROFILE_IDS.member1]);
+        // DP1-1b: the request itself rides (merged), never withdrawn; nobody is added as a loose passenger
+        await expect.poll(async () => (await service.from("ride_requests").select("request_id").eq("ride_id", ride.id as string)).data
+          ?.map((link) => link.request_id).sort()).toEqual([hostRequest, requestId].sort());
+        const { data: request } = await service.from("requests").select("status").eq("id", requestId).single();
+        expect(["merged", "assigned"]).toContain(request?.status);
+        expect((await service.from("ride_passengers").select("id").eq("ride_id", ride.id as string)).data).toEqual([]);
       });
     } finally {
       await removeWeek(service, week);

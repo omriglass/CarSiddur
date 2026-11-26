@@ -62,6 +62,11 @@ export interface RideMove {
 }
 
 /** R13M5: moves my request's people onto another ride (`joinable_rides_for_request`) and releases my seat on the held one. */
+/** DP1-1b: the request form's "לצרף לנסיעה של…" merges the request itself into the ride (never withdraws it). */
+export async function joinRideWithRequest(requestId: string, rideId: string, expectedVersion: number): Promise<void> {
+  await rpc("join_ride_with_request", { p_request_id: requestId, p_ride_id: rideId, p_expected_version: expectedVersion });
+}
+
 export async function joinOtherRide(requestId: string, rideId: string, expectedVersion: number): Promise<void> {
   await rpc("join_other_ride", { p_request_id: requestId, p_ride_id: rideId, p_expected_version: expectedVersion });
 }
