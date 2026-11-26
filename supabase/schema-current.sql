@@ -6945,6 +6945,236 @@ $$;
 ALTER FUNCTION "public"."_ride_route_with"("p_ride_id" "uuid", "p_extra_request" "uuid", "p_extra_leg" "public"."ride_leg", "p_chain" "jsonb") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."_ride_rows_build_into"("p_ids" "uuid"[]) RETURNS "void"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  v_claims text := current_setting('request.jwt.claims', true);
+  v_sub text := current_setting('request.jwt.claim.sub', true);
+begin
+  if p_ids is null or cardinality(p_ids) = 0 then return; end if;
+  -- Built as the service caller: the builder's helpers then skip their per-viewer visibility, so the stored row is
+  -- the full one. board_rows() decides who may see which ride, exactly as before.
+  perform set_config('request.jwt.claims', '', true);
+  perform set_config('request.jwt.claim.sub', '', true);
+
+  insert into public.ride_rows as rr (ride_id, department_id, week_start, "row", built_at)
+  select b.id, b.department_id, b.week_start, to_jsonb(b), now()
+    from public._board_rows_build(p_ids, (select array_agg(distinct r.department_id) from public.rides r
+                                           where r.id = any(p_ids))) b
+  on conflict (ride_id) do update
+     set department_id = excluded.department_id, week_start = excluded.week_start,
+         "row" = excluded."row", built_at = excluded.built_at
+   where rr."row" is distinct from excluded."row"
+      or rr.department_id is distinct from excluded.department_id
+      or rr.week_start is distinct from excluded.week_start;
+
+  delete from public.ride_rows rr
+   where rr.ride_id = any(p_ids)
+     and not exists (select 1 from public.rides r where r.id = rr.ride_id and r.status <> 'cancelled');
+
+  perform set_config('request.jwt.claims', coalesce(v_claims, ''), true);
+  perform set_config('request.jwt.claim.sub', coalesce(v_sub, ''), true);
+end $$;
+
+
+ALTER FUNCTION "public"."_ride_rows_build_into"("p_ids" "uuid"[]) OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."_ride_rows_flush"() RETURNS "void"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare
+  v_tx bigint := txid_current_if_assigned();
+  v_ids uuid[];
+begin
+  if v_tx is null then return; end if;
+  with d as (delete from public.ride_rows_dirty where txid = v_tx returning ride_id)
+  select array_agg(distinct d.ride_id) into v_ids from d;
+  if v_ids is null then return; end if;
+  -- Two transactions rebuilding the same ride: the second waits for the first to commit, then builds from what the
+  -- first committed (each statement below takes a fresh snapshot), so the last writer never stores an older row.
+  perform pg_advisory_xact_lock(73010, k.h)
+     from (select distinct hashtext(x::text) as h from unnest(v_ids) x order by 1) k;
+  perform public._ride_rows_build_into(v_ids);
+end $$;
+
+
+ALTER FUNCTION "public"."_ride_rows_flush"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."_ride_rows_flush_trg"() RETURNS "trigger"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+begin
+  perform public._ride_rows_flush();
+  return null;
+end $$;
+
+
+ALTER FUNCTION "public"."_ride_rows_flush_trg"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."_ride_rows_mark"("p_ids" "uuid"[]) RETURNS "void"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+begin
+  if p_ids is null or cardinality(p_ids) = 0 then return; end if;
+  insert into public.ride_rows_dirty (txid, ride_id)
+  select txid_current(), x.id
+    from (select unnest(p_ids) as id
+          union
+          select n.id
+            from public.rides r
+            join public.rides n on n.car_id = r.car_id and n.week_start = r.week_start
+                               and n.department_id = r.department_id and n.id <> r.id
+           where r.id = any(p_ids)
+             and exists (select 1 from public.ride_requests e
+                          where e.ride_id = n.id and e.role = 'driver' and e.car_mode = 'relay')) x
+   where x.id is not null
+  on conflict do nothing;
+end $$;
+
+
+ALTER FUNCTION "public"."_ride_rows_mark"("p_ids" "uuid"[]) OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."_ride_rows_mark_car_week"("p_department_id" "uuid", "p_car_id" "uuid", "p_week_start" "date") RETURNS "void"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+begin
+  if p_car_id is null then return; end if;
+  insert into public.ride_rows_dirty (txid, ride_id)
+  select txid_current(), n.id
+    from public.rides n
+   where n.car_id = p_car_id and n.week_start = p_week_start and n.department_id = p_department_id
+     and exists (select 1 from public.ride_requests e
+                  where e.ride_id = n.id and e.role = 'driver' and e.car_mode = 'relay')
+  on conflict do nothing;
+end $$;
+
+
+ALTER FUNCTION "public"."_ride_rows_mark_car_week"("p_department_id" "uuid", "p_car_id" "uuid", "p_week_start" "date") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."_ride_rows_mark_department"("p_department_id" "uuid") RETURNS "void"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+begin
+  if p_department_id is null then return; end if;
+  insert into public.ride_rows_dirty (txid, ride_id)
+  select txid_current(), r.id from public.rides r
+   where r.department_id = p_department_id and r.status <> 'cancelled'
+  on conflict do nothing;
+end $$;
+
+
+ALTER FUNCTION "public"."_ride_rows_mark_department"("p_department_id" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."_ride_rows_mark_requests"("p_request_ids" "uuid"[]) RETURNS "void"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+begin
+  if p_request_ids is null or cardinality(p_request_ids) = 0 then return; end if;
+  perform public._ride_rows_mark(array(select distinct rr.ride_id from public.ride_requests rr
+                                         where rr.request_id = any(p_request_ids)));
+end $$;
+
+
+ALTER FUNCTION "public"."_ride_rows_mark_requests"("p_request_ids" "uuid"[]) OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."_ride_rows_mark_trg"() RETURNS "trigger"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+begin
+  case tg_table_name
+  when 'rides' then
+    if tg_op in ('UPDATE', 'DELETE') then
+      perform public._ride_rows_mark(array[old.id]);
+      perform public._ride_rows_mark_car_week(old.department_id, old.car_id, old.week_start);
+    end if;
+    if tg_op in ('INSERT', 'UPDATE') then
+      perform public._ride_rows_mark(array[new.id]);
+      if tg_op = 'INSERT' or (old.car_id, old.week_start) is distinct from (new.car_id, new.week_start) then
+        perform public._ride_rows_mark_car_week(new.department_id, new.car_id, new.week_start);
+      end if;
+    end if;
+  when 'ride_requests' then
+    -- the ride itself, and every other ride of the request (a request's leg / route on one ride reads its others)
+    if tg_op in ('UPDATE', 'DELETE') then
+      perform public._ride_rows_mark(array[old.ride_id]);
+      perform public._ride_rows_mark_requests(array[old.request_id]);
+    end if;
+    if tg_op in ('INSERT', 'UPDATE') then
+      perform public._ride_rows_mark(array[new.ride_id]);
+      perform public._ride_rows_mark_requests(array[new.request_id]);
+    end if;
+  when 'requests' then
+    if tg_op = 'UPDATE' and old is not distinct from new then return null; end if;
+    perform public._ride_rows_mark_requests(array[coalesce(new.id, old.id)]);
+  when 'request_stops', 'request_companions', 'request_children' then
+    perform public._ride_rows_mark_requests(array_remove(array[
+      case when tg_op <> 'INSERT' then old.request_id end,
+      case when tg_op <> 'DELETE' then new.request_id end], null));
+  when 'ride_passengers' then
+    perform public._ride_rows_mark(array_remove(array[
+      case when tg_op <> 'INSERT' then old.ride_id end,
+      case when tg_op <> 'DELETE' then new.ride_id end], null));
+  when 'children' then
+    if tg_op = 'UPDATE' and old.full_name is not distinct from new.full_name then return null; end if;
+    perform public._ride_rows_mark_requests(array(select rc.request_id from public.request_children rc
+                                                    where rc.child_id = coalesce(new.id, old.id)));
+  when 'profiles' then
+    if old.full_name is not distinct from new.full_name then return null; end if;
+    perform public._ride_rows_mark(array(
+      select r.id from public.rides r where r.driver_id = new.id
+      union
+      select rr.ride_id from public.requests q join public.ride_requests rr on rr.request_id = q.id
+       where q.requester_id = new.id
+      union
+      select rr.ride_id from public.request_companions rc join public.ride_requests rr on rr.request_id = rc.request_id
+       where rc.profile_id = new.id));
+  when 'ride_types' then
+    if old.code is not distinct from new.code then return null; end if;
+    perform public._ride_rows_mark_requests(array(select q.id from public.requests q where q.ride_type_id = new.id));
+  when 'destinations', 'place_distances' then
+    if tg_op <> 'INSERT' then perform public._ride_rows_mark_department(old.department_id); end if;
+    if tg_op <> 'DELETE' and (tg_op = 'INSERT' or new.department_id is distinct from old.department_id) then
+      perform public._ride_rows_mark_department(new.department_id);
+    end if;
+  when 'departments' then
+    if old.home_destination_id is not distinct from new.home_destination_id then return null; end if;
+    perform public._ride_rows_mark_department(new.id);
+  when 'department_settings' then
+    if tg_op = 'UPDATE'
+       and (old.stop_minutes, old.travel_margin_percent,
+            old.rush_morning_start, old.rush_morning_end, old.rush_morning_percent,
+            old.rush_afternoon_start, old.rush_afternoon_end, old.rush_afternoon_percent)
+           is not distinct from
+           (new.stop_minutes, new.travel_margin_percent,
+            new.rush_morning_start, new.rush_morning_end, new.rush_morning_percent,
+            new.rush_afternoon_start, new.rush_afternoon_end, new.rush_afternoon_percent) then
+      return null;
+    end if;
+    perform public._ride_rows_mark_department(coalesce(new.department_id, old.department_id));
+  end case;
+  return null;
+end $$;
+
+
+ALTER FUNCTION "public"."_ride_rows_mark_trg"() OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."_ride_seat_dupes"("p_ride_id" "uuid", "p_leg" "public"."ride_leg", "p_guests" "jsonb" DEFAULT '[]'::"jsonb") RETURNS "jsonb"
     LANGUAGE "plpgsql" STABLE SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -11297,8 +11527,9 @@ CREATE OR REPLACE FUNCTION "public"."board_rows"("p_ride_ids" "uuid"[]) RETURNS 
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
 declare
-  v_ids uuid[]; v_leg_depts uuid[];
+  v_ids uuid[]; v_leg_depts uuid[]; v_build uuid[];
   v_service boolean := (select auth.uid()) is null;
+  v_tx bigint := txid_current_if_assigned();
 begin
   if p_ride_ids is null or cardinality(p_ride_ids) = 0 then return; end if;
 
@@ -11320,7 +11551,21 @@ begin
               and public.is_day_public(r.department_id, r.week_start, (r.starts_at at time zone 'Asia/Jerusalem')::date)));
   if v_ids is null then return; end if;
 
-  return query select * from public._board_rows_build(v_ids, v_leg_depts);
+  -- SW1: the stored row, unless the ride has none yet or this transaction changed it (not rebuilt before commit)
+  select array_agg(x.id) into v_build
+    from unnest(v_ids) x(id)
+   where not exists (select 1 from public.ride_rows s where s.ride_id = x.id)
+      or (v_tx is not null and exists (select 1 from public.ride_rows_dirty dd where dd.txid = v_tx and dd.ride_id = x.id));
+
+  -- lateral, not `(jsonb_populate_record(…)).*` — that form calls the function once per column
+  return query
+  select p.*
+    from public.ride_rows s
+    cross join lateral jsonb_populate_record(null::public.v_board_rides, s."row") p
+   where s.ride_id = any(v_ids) and (v_build is null or not (s.ride_id = any(v_build)));
+  if v_build is not null then
+    return query select * from public._board_rows_build(v_build, v_leg_depts);
+  end if;
 end $$;
 
 
@@ -25140,6 +25385,23 @@ $$;
 ALTER FUNCTION "public"."ride_routes_json"("p_ride_ids" "uuid"[]) OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."ride_rows_rebuild_all"() RETURNS integer
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public', 'pg_temp'
+    AS $$
+declare v_ids uuid[];
+begin
+  delete from public.ride_rows rr
+   where not exists (select 1 from public.rides r where r.id = rr.ride_id and r.status <> 'cancelled');
+  select array_agg(r.id) into v_ids from public.rides r where r.status <> 'cancelled';
+  perform public._ride_rows_build_into(v_ids);
+  return coalesce(cardinality(v_ids), 0);
+end $$;
+
+
+ALTER FUNCTION "public"."ride_rows_rebuild_all"() OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."ride_seat_fit_check"() RETURNS "trigger"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -33765,6 +34027,7 @@ CREATE TABLE IF NOT EXISTS "public"."push_subscriptions" (
     "last_used_at" timestamp with time zone,
     "failure_count" smallint DEFAULT 0 NOT NULL
 );
+ALTER TABLE ONLY "public"."push_subscriptions" ALTER COLUMN "p256dh" SET (pg_attver=40096680);
 
 ALTER TABLE ONLY "public"."push_subscriptions" FORCE ROW LEVEL SECURITY;
 
@@ -34118,6 +34381,39 @@ ALTER TABLE "public"."ride_requests" OWNER TO "postgres";
 
 
 COMMENT ON COLUMN "public"."ride_requests"."chain" IS 'CM1 (REQ item 260 b): this request is chained to the ride''s base trip - before (rides first, its way back dropped) or after (rides last, its way out dropped); _via = passes the shared start place again (phase 3). Null = an ordinary row.';
+
+
+
+CREATE TABLE IF NOT EXISTS "public"."ride_rows" (
+    "ride_id" "uuid" NOT NULL,
+    "department_id" "uuid" NOT NULL,
+    "week_start" "date" NOT NULL,
+    "row" "jsonb" NOT NULL,
+    "built_at" timestamp with time zone DEFAULT "now"() NOT NULL
+);
+
+ALTER TABLE ONLY "public"."ride_rows" FORCE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."ride_rows" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."ride_rows" IS 'SW1: stored v_board_rides row per non-cancelled ride (built as service), rebuilt at commit from ride_rows_dirty. Read only through board_rows(). No browser access.';
+
+
+
+CREATE TABLE IF NOT EXISTS "public"."ride_rows_dirty" (
+    "txid" bigint NOT NULL,
+    "ride_id" "uuid" NOT NULL
+);
+
+ALTER TABLE ONLY "public"."ride_rows_dirty" FORCE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."ride_rows_dirty" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."ride_rows_dirty" IS 'SW1: rides changed by the current transaction (txid). Emptied by _ride_rows_flush() at commit; never holds rows between transactions.';
 
 
 
@@ -35651,6 +35947,16 @@ ALTER TABLE ONLY "public"."ride_requests"
 
 
 
+ALTER TABLE ONLY "public"."ride_rows_dirty"
+    ADD CONSTRAINT "ride_rows_dirty_pkey" PRIMARY KEY ("txid", "ride_id");
+
+
+
+ALTER TABLE ONLY "public"."ride_rows"
+    ADD CONSTRAINT "ride_rows_pkey" PRIMARY KEY ("ride_id");
+
+
+
 ALTER TABLE ONLY "public"."ride_types"
     ADD CONSTRAINT "ride_types_department_code_key" UNIQUE ("department_id", "code");
 
@@ -36114,6 +36420,10 @@ CREATE UNIQUE INDEX "ride_requests_out_unique_idx" ON "public"."ride_requests" U
 
 
 CREATE UNIQUE INDEX "ride_requests_return_unique_idx" ON "public"."ride_requests" USING "btree" ("request_id") WHERE "covers_return";
+
+
+
+CREATE INDEX "ride_rows_department_week" ON "public"."ride_rows" USING "btree" ("department_id", "week_start");
 
 
 
@@ -37183,6 +37493,66 @@ CREATE OR REPLACE TRIGGER "ride_requests_sync_series" AFTER INSERT ON "public"."
 
 
 CREATE OR REPLACE TRIGGER "ride_requests_withdraw_external" AFTER INSERT ON "public"."ride_requests" FOR EACH ROW EXECUTE FUNCTION "public"."withdraw_open_external_proposals"();
+
+
+
+CREATE CONSTRAINT TRIGGER "ride_rows_flush" AFTER INSERT ON "public"."ride_rows_dirty" DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION "public"."_ride_rows_flush_trg"();
+
+
+
+CREATE OR REPLACE TRIGGER "ride_rows_mark" AFTER DELETE OR UPDATE ON "public"."children" FOR EACH ROW EXECUTE FUNCTION "public"."_ride_rows_mark_trg"();
+
+
+
+CREATE OR REPLACE TRIGGER "ride_rows_mark" AFTER INSERT OR UPDATE ON "public"."department_settings" FOR EACH ROW EXECUTE FUNCTION "public"."_ride_rows_mark_trg"();
+
+
+
+CREATE OR REPLACE TRIGGER "ride_rows_mark" AFTER UPDATE OF "home_destination_id" ON "public"."departments" FOR EACH ROW EXECUTE FUNCTION "public"."_ride_rows_mark_trg"();
+
+
+
+CREATE OR REPLACE TRIGGER "ride_rows_mark" AFTER INSERT OR DELETE OR UPDATE ON "public"."destinations" FOR EACH ROW EXECUTE FUNCTION "public"."_ride_rows_mark_trg"();
+
+
+
+CREATE OR REPLACE TRIGGER "ride_rows_mark" AFTER INSERT OR DELETE OR UPDATE ON "public"."place_distances" FOR EACH ROW EXECUTE FUNCTION "public"."_ride_rows_mark_trg"();
+
+
+
+CREATE OR REPLACE TRIGGER "ride_rows_mark" AFTER UPDATE OF "full_name" ON "public"."profiles" FOR EACH ROW EXECUTE FUNCTION "public"."_ride_rows_mark_trg"();
+
+
+
+CREATE OR REPLACE TRIGGER "ride_rows_mark" AFTER INSERT OR DELETE OR UPDATE ON "public"."request_children" FOR EACH ROW EXECUTE FUNCTION "public"."_ride_rows_mark_trg"();
+
+
+
+CREATE OR REPLACE TRIGGER "ride_rows_mark" AFTER INSERT OR DELETE OR UPDATE ON "public"."request_companions" FOR EACH ROW EXECUTE FUNCTION "public"."_ride_rows_mark_trg"();
+
+
+
+CREATE OR REPLACE TRIGGER "ride_rows_mark" AFTER INSERT OR DELETE OR UPDATE ON "public"."request_stops" FOR EACH ROW EXECUTE FUNCTION "public"."_ride_rows_mark_trg"();
+
+
+
+CREATE OR REPLACE TRIGGER "ride_rows_mark" AFTER INSERT OR DELETE OR UPDATE ON "public"."requests" FOR EACH ROW EXECUTE FUNCTION "public"."_ride_rows_mark_trg"();
+
+
+
+CREATE OR REPLACE TRIGGER "ride_rows_mark" AFTER INSERT OR DELETE OR UPDATE ON "public"."ride_passengers" FOR EACH ROW EXECUTE FUNCTION "public"."_ride_rows_mark_trg"();
+
+
+
+CREATE OR REPLACE TRIGGER "ride_rows_mark" AFTER INSERT OR DELETE OR UPDATE ON "public"."ride_requests" FOR EACH ROW EXECUTE FUNCTION "public"."_ride_rows_mark_trg"();
+
+
+
+CREATE OR REPLACE TRIGGER "ride_rows_mark" AFTER UPDATE OF "code" ON "public"."ride_types" FOR EACH ROW EXECUTE FUNCTION "public"."_ride_rows_mark_trg"();
+
+
+
+CREATE OR REPLACE TRIGGER "ride_rows_mark" AFTER INSERT OR DELETE OR UPDATE ON "public"."rides" FOR EACH ROW EXECUTE FUNCTION "public"."_ride_rows_mark_trg"();
 
 
 
@@ -38747,6 +39117,11 @@ ALTER TABLE ONLY "public"."ride_requests"
 
 
 
+ALTER TABLE ONLY "public"."ride_rows"
+    ADD CONSTRAINT "ride_rows_ride_id_fkey" FOREIGN KEY ("ride_id") REFERENCES "public"."rides"("id") ON DELETE CASCADE;
+
+
+
 ALTER TABLE ONLY "public"."ride_types"
     ADD CONSTRAINT "ride_types_department_id_fkey" FOREIGN KEY ("department_id") REFERENCES "public"."departments"("id") ON DELETE RESTRICT;
 
@@ -39882,6 +40257,12 @@ CREATE POLICY "ride_requests_select" ON "public"."ride_requests" FOR SELECT TO "
 
 
 
+ALTER TABLE "public"."ride_rows" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."ride_rows_dirty" ENABLE ROW LEVEL SECURITY;
+
+
 ALTER TABLE "public"."ride_types" ENABLE ROW LEVEL SECURITY;
 
 
@@ -40891,6 +41272,46 @@ GRANT ALL ON FUNCTION "public"."_ride_route_with"("p_ride_id" "uuid", "p_extra_r
 
 REVOKE ALL ON FUNCTION "public"."_ride_route_with"("p_ride_id" "uuid", "p_extra_request" "uuid", "p_extra_leg" "public"."ride_leg", "p_chain" "jsonb") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."_ride_route_with"("p_ride_id" "uuid", "p_extra_request" "uuid", "p_extra_leg" "public"."ride_leg", "p_chain" "jsonb") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."_ride_rows_build_into"("p_ids" "uuid"[]) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_ride_rows_build_into"("p_ids" "uuid"[]) TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."_ride_rows_flush"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_ride_rows_flush"() TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."_ride_rows_flush_trg"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_ride_rows_flush_trg"() TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."_ride_rows_mark"("p_ids" "uuid"[]) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_ride_rows_mark"("p_ids" "uuid"[]) TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."_ride_rows_mark_car_week"("p_department_id" "uuid", "p_car_id" "uuid", "p_week_start" "date") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_ride_rows_mark_car_week"("p_department_id" "uuid", "p_car_id" "uuid", "p_week_start" "date") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."_ride_rows_mark_department"("p_department_id" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_ride_rows_mark_department"("p_department_id" "uuid") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."_ride_rows_mark_requests"("p_request_ids" "uuid"[]) FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_ride_rows_mark_requests"("p_request_ids" "uuid"[]) TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."_ride_rows_mark_trg"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."_ride_rows_mark_trg"() TO "service_role";
 
 
 
@@ -43551,6 +43972,11 @@ GRANT ALL ON FUNCTION "public"."ride_routes_json"("p_ride_ids" "uuid"[]) TO "aut
 
 
 
+REVOKE ALL ON FUNCTION "public"."ride_rows_rebuild_all"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."ride_rows_rebuild_all"() TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."ride_seat_fit_check"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."ride_seat_fit_check"() TO "service_role";
 
@@ -44710,6 +45136,14 @@ GRANT SELECT("return_alight_place_text") ON TABLE "public"."ride_passengers" TO 
 
 GRANT SELECT,INSERT,DELETE,MAINTAIN,UPDATE ON TABLE "public"."ride_requests" TO "authenticated";
 GRANT ALL ON TABLE "public"."ride_requests" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."ride_rows" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."ride_rows_dirty" TO "service_role";
 
 
 

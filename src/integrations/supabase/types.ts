@@ -4890,6 +4890,95 @@ export type Database = {
           },
         ]
       }
+      ride_rows: {
+        Row: {
+          built_at: string
+          department_id: string
+          ride_id: string
+          row: Json
+          week_start: string
+        }
+        Insert: {
+          built_at?: string
+          department_id: string
+          ride_id: string
+          row: Json
+          week_start: string
+        }
+        Update: {
+          built_at?: string
+          department_id?: string
+          ride_id?: string
+          row?: Json
+          week_start?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ride_rows_ride_id_fkey"
+            columns: ["ride_id"]
+            isOneToOne: true
+            referencedRelation: "rides"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ride_rows_ride_id_fkey"
+            columns: ["ride_id"]
+            isOneToOne: true
+            referencedRelation: "v_board_rides"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ride_rows_ride_id_fkey"
+            columns: ["ride_id"]
+            isOneToOne: true
+            referencedRelation: "v_car_locations"
+            referencedColumns: ["leaving_ride_id"]
+          },
+          {
+            foreignKeyName: "ride_rows_ride_id_fkey"
+            columns: ["ride_id"]
+            isOneToOne: true
+            referencedRelation: "v_my_requests"
+            referencedColumns: ["ride_id"]
+          },
+          {
+            foreignKeyName: "ride_rows_ride_id_fkey"
+            columns: ["ride_id"]
+            isOneToOne: true
+            referencedRelation: "v_ride_car_neighbours"
+            referencedColumns: ["next_ride_id"]
+          },
+          {
+            foreignKeyName: "ride_rows_ride_id_fkey"
+            columns: ["ride_id"]
+            isOneToOne: true
+            referencedRelation: "v_ride_car_neighbours"
+            referencedColumns: ["prev_ride_id"]
+          },
+          {
+            foreignKeyName: "ride_rows_ride_id_fkey"
+            columns: ["ride_id"]
+            isOneToOne: true
+            referencedRelation: "v_ride_car_neighbours"
+            referencedColumns: ["ride_id"]
+          },
+        ]
+      }
+      ride_rows_dirty: {
+        Row: {
+          ride_id: string
+          txid: number
+        }
+        Insert: {
+          ride_id: string
+          txid: number
+        }
+        Update: {
+          ride_id?: string
+          txid?: number
+        }
+        Relationships: []
+      }
       ride_types: {
         Row: {
           code: string
@@ -7321,6 +7410,25 @@ export type Database = {
               request_id: string
             }[]
           }
+      _ride_rows_build_into: { Args: { p_ids: string[] }; Returns: undefined }
+      _ride_rows_flush: { Args: never; Returns: undefined }
+      _ride_rows_mark: { Args: { p_ids: string[] }; Returns: undefined }
+      _ride_rows_mark_car_week: {
+        Args: {
+          p_car_id: string
+          p_department_id: string
+          p_week_start: string
+        }
+        Returns: undefined
+      }
+      _ride_rows_mark_department: {
+        Args: { p_department_id: string }
+        Returns: undefined
+      }
+      _ride_rows_mark_requests: {
+        Args: { p_request_ids: string[] }
+        Returns: undefined
+      }
       _ride_seat_dupes: {
         Args: {
           p_guests?: Json
@@ -9275,6 +9383,7 @@ export type Database = {
           route: Json
         }[]
       }
+      ride_rows_rebuild_all: { Args: never; Returns: number }
       ride_seats_verdict: {
         Args: { p_guests: Json; p_ride_id: string }
         Returns: string

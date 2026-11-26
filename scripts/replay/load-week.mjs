@@ -366,6 +366,8 @@ async function main() {
   sql += authUsersSql(rebuilt.profiles ?? []);
   for (const table of LOAD_ORDER) sql += insertSql(table, rebuilt[table] ?? [], columns[table]);
   sql += "set session_replication_role = origin;\n";
+  // SW1: stored ride rows (20261126090000) — loaded with triggers off, so rebuild them.
+  sql += "do $rr$ begin if to_regprocedure('public.ride_rows_rebuild_all()') is not null then execute 'select public.ride_rows_rebuild_all()'; end if; end $rr$;\n";
   // Keep the replayed week still: no phase advance, reminders, expiries or housekeeping.
   if (!args.ownerStack) sql += "select cron.alter_job(jobid, active := false) from cron.job where active;\n";
   sql += "commit;\n";

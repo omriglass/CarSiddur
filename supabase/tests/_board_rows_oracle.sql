@@ -7,6 +7,31 @@
 -- everything in one transaction, so `created_at` ties everywhere) are compared as sets.
 reset role;
 select set_config('request.jwt.claims', '', true), set_config('request.jwt.claim.sub', '', true);
+-- SW1 (20261126090000): the stored ride rows. The suite rolls back, so its writes never reached the commit-time
+-- rebuild: flush them now, then every stored row must equal a fresh build and no cancelled / deleted ride may have
+-- one. A write path whose table is not marked (`ride_rows_mark` triggers) leaves a stale row and fails here. A ride
+-- with no stored row is fine (board_rows builds it on the spot) — only fixtures written with triggers off
+-- (session_replication_role = replica) leave one. The board_rows check below then reads the stored rows.
+select public._ride_rows_flush();
+do $sw1$
+declare d record; v_bad int := 0;
+begin
+  for d in
+    select coalesce(f.id, s.ride_id) as id,
+           (select string_agg(k, ', ') from jsonb_object_keys(coalesce(f.j, s."row")) k
+             where (f.j -> k) is distinct from (s."row" -> k)) as cols,
+           s.ride_id is null as missing, f.id is null as extra
+      from (select b.id, to_jsonb(b) as j
+              from public._board_rows_build((select array_agg(id) from public.rides),
+                                            (select array_agg(id) from public.departments)) b) f
+      full join public.ride_rows s on s.ride_id = f.id
+     where f.j is distinct from s."row" and s.ride_id is not null
+  loop
+    v_bad := v_bad + 1;
+    raise warning 'ride_rows oracle: ride %: % (stored row for a cancelled/missing ride %)', d.id, d.cols, d.extra;
+  end loop;
+  if v_bad > 0 then raise exception 'ride_rows oracle: % stored ride row(s) differ from a fresh build', v_bad; end if;
+end $sw1$;
 create function pg_temp._oracle_norm(j jsonb) returns jsonb language sql immutable as $f$
   select j || jsonb_build_object(
     'passengers', (select coalesce(jsonb_agg(e order by e::text), '[]'::jsonb) from jsonb_array_elements(j -> 'passengers') e),

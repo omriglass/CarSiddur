@@ -251,6 +251,8 @@ function load(args) {
     "set session_replication_role = replica;",
     afterLoadSql(weeks),
     "set session_replication_role = origin;",
+    // SW1: stored ride rows (20261126090000) — the load ran with triggers off, so rebuild them from the loaded rows.
+    "do $rr$ begin if to_regprocedure('public.ride_rows_rebuild_all()') is not null then execute 'select public.ride_rows_rebuild_all()'; end if; end $rr$;",
     // Keep the copy still: no phase advance, reminders, expiries, pushes or housekeeping.
     "select cron.alter_job(jobid, active := false) from cron.job where active;",
     "commit;",
