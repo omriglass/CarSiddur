@@ -22493,6 +22493,8 @@ declare
   v_guardian record;
   v_requester uuid;
   v_child_adult boolean;
+  v_leg public.ride_leg;
+  v_still_rides boolean := false;
 begin
   select * into v_ride from public.rides where id = p_ride_id for update;
   if not found or v_ride.status = 'cancelled' then raise exception 'ride_not_found' using errcode = 'P0001'; end if;
@@ -22523,6 +22525,7 @@ begin
     select person_id, child_id, display_name into v_removed_person_id, v_removed_child_id, v_removed_display_name
     from public.ride_passengers where id = v_ride_passenger_id and ride_id = p_ride_id;
     if not found then raise exception 'ride_not_found' using errcode = 'P0001'; end if;
+    select leg into v_leg from public.ride_passengers where id = v_ride_passenger_id;
     delete from public.ride_passengers where id = v_ride_passenger_id;
     v_skip_notify := v_removed_person_id is null and v_removed_child_id is null; -- free-text guest
 
@@ -22542,6 +22545,7 @@ begin
     update public.requests set adults = greatest(adults - 1, 1), updated_at = now() where id = v_request_id
     returning requester_id into v_requester;
     v_removed_person_id := v_profile_id;
+    select leg into v_leg from public.ride_requests where ride_id = p_ride_id and request_id = v_request_id;
 
   elsif v_prefix = 'child' then
     v_request_id := nullif(split_part(p_key, ':', 2), '')::uuid;
@@ -22564,6 +22568,7 @@ begin
           updated_at = now()
       where id = v_request_id;
     v_removed_child_id := v_child_id;
+    select leg into v_leg from public.ride_requests where ride_id = p_ride_id and request_id = v_request_id;
 
   elsif v_prefix = 'guest' then
     v_request_id := nullif(split_part(p_key, ':', 2), '')::uuid;
@@ -22593,6 +22598,7 @@ begin
       raise exception 'ride_driver_not_removable' using errcode = 'P0001';
     end if;
     select full_name into v_removed_display_name from public.profiles where id = v_profile_id;
+    select leg into v_leg from public.ride_requests where ride_id = p_ride_id and request_id = v_request_id;
     delete from public.ride_requests where ride_id = p_ride_id and request_id = v_request_id;
     perform set_config('app.system_status_transition', 'on', true);
     update public.requests set status = 'withdrawn', status_reason = 'WITHDRAWN_BY_MEMBER' where id = v_request_id;
@@ -22606,18 +22612,36 @@ begin
   update public.rides set updated_at = now() where id = p_ride_id
   returning version into v_new_version;
 
+  -- DP1-4 (production 30.11): the person removed may still ride on the same way through another of the ride's entries
+  -- (עומר, named on אלי's request and on his own). Then they never left the ride: no "you were removed" for them and no
+  -- "X was removed" for the driver. The requester whose request lost them is still told (below).
+  if v_removed_person_id is not null or v_removed_child_id is not null then
+    v_still_rides := exists (
+      select 1
+      from public.ride_requests rr join public.requests q on q.id = rr.request_id
+      where rr.ride_id = p_ride_id and (v_leg is null or v_leg = 'both' and rr.leg = 'both' or v_leg <> 'both' and rr.leg in ('both', v_leg))
+        and ((v_removed_person_id is not null and (q.requester_id = v_removed_person_id
+               or exists (select 1 from public.request_companions c where c.request_id = q.id and c.profile_id = v_removed_person_id)))
+          or (v_removed_child_id is not null
+               and exists (select 1 from public.request_children c where c.request_id = q.id and c.child_id = v_removed_child_id)))
+      union all
+      select 1 from public.ride_passengers rp
+      where rp.ride_id = p_ride_id and (v_leg is null or v_leg = 'both' and rp.leg = 'both' or v_leg <> 'both' and rp.leg in ('both', v_leg))
+        and (rp.person_id = v_removed_person_id or rp.child_id = v_removed_child_id));
+  end if;
+
   if not v_skip_notify then
     select full_name into v_actor_name from public.profiles where id = v_actor;
 
     -- The driver is always told who was removed, unless the driver is the one removing them.
-    if v_ride.driver_id is not null and v_ride.driver_id is distinct from v_actor then
+    if v_ride.driver_id is not null and v_ride.driver_id is distinct from v_actor and not v_still_rides then
       perform public.enqueue_notification(v_ride.driver_id, 'outcome_changed', v_ride.department_id, v_ride.week_start,
         jsonb_build_object('byName', coalesce(v_actor_name, ''), 'names', coalesce(v_removed_display_name, '')),
         jsonb_build_object('variant', 'passengers_removed', 'ride_id', p_ride_id),
         format('passengers_removed:%s:%s:%s', p_ride_id, v_new_version, v_ride.driver_id));
     end if;
 
-    if v_removed_person_id is not null and v_removed_person_id is distinct from v_actor then
+    if v_removed_person_id is not null and v_removed_person_id is distinct from v_actor and not v_still_rides then
       select name into v_destination_name from public.destinations where id = v_ride.destination_id;
       v_route := public.route_label(v_ride.department_id, v_ride.origin_id, null, v_ride.destination_id, null);
       perform public.enqueue_notification(v_removed_person_id, 'outcome_changed', v_ride.department_id, v_ride.week_start,
@@ -22636,7 +22660,7 @@ begin
         format('companion_removed:%s:%s:%s', p_ride_id, v_new_version, v_requester));
     end if;
 
-    if v_removed_child_id is not null then
+    if v_removed_child_id is not null and not v_still_rides then
       select name into v_destination_name from public.destinations where id = v_ride.destination_id;
       v_route := public.route_label(v_ride.department_id, v_ride.origin_id, null, v_ride.destination_id, null);
       for v_guardian in select cg.profile_id from public.child_guardians cg where cg.child_id = v_removed_child_id loop

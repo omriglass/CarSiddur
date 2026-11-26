@@ -655,4 +655,99 @@ begin
   perform set_config('request.headers', '', true);
 end $$;
 
+-- ---------------------------------------------------------------------------
+-- DP1-4 on the production shape (ride 17139e16, 30.11): עומר rides on his own request AND is named as a companion on
+-- אלי's request, so the request counts five seats for four people. The Sadran opens
+-- "הוצא את אלי" → "remove only עומר" (`comp:` key). עומר must stay on the ride (his own request, untouched, counted
+-- once), אלי's request drops to her alone, the seat is free for a fifth person, and nobody is told עומר left a ride
+-- he is still on: not עומר, not the driver. אלי hears who was taken off her request.
+-- ---------------------------------------------------------------------------
+do $$
+declare
+  dept uuid := '00000000-0000-0000-0000-000000000001';
+  sadran uuid := '00000000-0000-0000-0000-000000000102';
+  driverP uuid := '00000000-0000-0000-0000-000000000103';   -- אביב, the ride's driver (own request)
+  eliP uuid := '00000000-0000-0000-0000-000000000104';      -- אלי, merged in with עומר as her companion
+  omerP uuid := 'eeeeeeee-3333-3333-3333-333333333333';     -- עומר, also on his own request
+  katyaP uuid := 'eeeeeeee-4444-4444-4444-444444444444';    -- קטיה, the way out only
+  fifthP uuid := 'eeeeeeee-5555-5555-5555-555555555555';    -- סרבי, the fifth person
+  home uuid := '00000000-0000-0000-0000-000000000010';
+  car uuid := '00000000-0000-0000-0000-000000000040';       -- five seats
+  w date := public.current_week_start() + 147;
+  rt uuid := (select id from public.ride_types where department_id = dept limit 1);
+  t0 timestamptz; t1 timestamptz;
+  version_id uuid; ride uuid; reqDriver uuid; reqEli uuid; reqOmer uuid; reqKatya uuid;
+  omer_ver int;
+  people jsonb;
+begin
+  insert into auth.users(id, email) values
+    (omerP, 'test-dp1-omer@example.invalid'), (katyaP, 'test-dp1-katya@example.invalid'), (fifthP, 'test-dp1-fifth@example.invalid');
+  perform set_config('request.jwt.claims', jsonb_build_object('sub', '00000000-0000-0000-0000-000000000101', 'role', 'authenticated')::text, true);
+  update public.profiles set full_name = 'עומר', approval_status = 'approved' where id = omerP;
+  update public.profiles set full_name = 'קטיה', approval_status = 'approved' where id = katyaP;
+  update public.profiles set full_name = 'סרבי', approval_status = 'approved' where id = fifthP;
+  insert into public.department_members(department_id, profile_id, role) values (dept, omerP, 'member'), (dept, katyaP, 'member'), (dept, fifthP, 'member');
+
+  insert into public.weeks(department_id,week_start,phase,open_at,close_at,publish_at)
+  values(dept, w, 'open', now()-interval '9 days', now()-interval '2 days', now()-interval '1 days');
+  insert into public.siddur_versions(department_id,week_start,version_no,snapshot,published_by)
+  values(dept, w, 1, '{}'::jsonb, sadran) returning id into version_id;
+  perform set_config('app.in_publish', 'on', true);
+  update public.weeks set phase = 'published', published_version_id = version_id, published_days = array[w + 1]
+    where department_id = dept and week_start = w;
+  perform set_config('app.in_publish', 'off', true);
+
+  t0 := (w+1+time '08:00') at time zone 'Asia/Jerusalem'; t1 := (w+1+time '16:00') at time zone 'Asia/Jerusalem';
+  insert into public.rides(department_id,week_start,car_id,starts_at,ends_at,origin_id,destination_id,driver_id,status,created_by)
+  values(dept, w, car, t0, t1, home, home, driverP, 'confirmed', sadran) returning id into ride;
+  insert into public.requests (id, department_id, week_start, requester_id, filed_by, destination_id, ride_type_id, trip_shape, depart_at, return_at, adults, submitted_at, status)
+  values (gen_random_uuid(), dept, w, driverP, driverP, home, rt, 'round_trip', t0, t1, 1, now(), 'assigned') returning id into reqDriver;
+  insert into public.requests (id, department_id, week_start, requester_id, filed_by, destination_id, ride_type_id, trip_shape, depart_at, return_at, adults, submitted_at, status)
+  values (gen_random_uuid(), dept, w, eliP, eliP, home, rt, 'round_trip', t0, t1, 2, now(), 'merged') returning id into reqEli;
+  insert into public.requests (id, department_id, week_start, requester_id, filed_by, destination_id, ride_type_id, trip_shape, depart_at, return_at, adults, submitted_at, status)
+  values (gen_random_uuid(), dept, w, omerP, omerP, home, rt, 'round_trip', t0, t1, 1, now(), 'merged') returning id into reqOmer;
+  insert into public.requests (id, department_id, week_start, requester_id, filed_by, destination_id, ride_type_id, trip_shape, depart_at, return_at, adults, submitted_at, status)
+  values (gen_random_uuid(), dept, w, katyaP, katyaP, home, rt, 'round_trip', t0, t1, 1, now(), 'merged') returning id into reqKatya;
+  insert into public.ride_requests(ride_id, request_id, role, leg, car_mode) values
+    (ride, reqDriver, 'driver', 'both', 'keep'), (ride, reqEli, 'passenger', 'both', 'passenger'),
+    (ride, reqOmer, 'passenger', 'both', 'passenger'), (ride, reqKatya, 'passenger', 'out', 'passenger');
+  insert into public.request_companions(request_id, profile_id) values (reqEli, omerP);
+
+  perform set_config('request.jwt.claims', jsonb_build_object('sub', sadran, 'role', 'authenticated')::text, true);
+
+  -- the Sadran: "הוצא את אלי" → "remove only עומר"
+  select version into omer_ver from public.requests where id = reqOmer;
+  perform public.remove_ride_person(ride, (select version from public.rides where id = ride), 'comp:' || reqEli || ':' || omerP);
+
+  people := (select v.people from public.v_board_rides v where v.id = ride);
+  assert (select count(*) from jsonb_array_elements(people) e where e ->> 'person_id' = omerP::text) = 1
+     and exists (select 1 from jsonb_array_elements(people) e where e ->> 'key' = 'req:' || reqOmer),
+    format('DP1-4: עומר is still on the ride once, on his own request: %s', people);
+  assert jsonb_array_length(people) = 4, format('DP1-4: four people, no nameless adult in עומר''s place: %s', people);
+  assert (select adults from public.requests where id = reqEli) = 1, 'DP1-4: אלי''s request is now her alone';
+  assert (select (adults, status::text, version) = (1, 'merged', omer_ver) from public.requests where id = reqOmer),
+    'DP1-4: עומר''s own request is untouched';
+  assert exists (select 1 from public.ride_requests where ride_id = ride and request_id = reqEli),
+    'DP1-4: אלי stays on the ride';
+  -- the seat is free: seats taken = people on the ride, and the fifth person fits now
+  assert (select sum(q.adults) from public.ride_requests rr join public.requests q on q.id = rr.request_id where rr.ride_id = ride) = 4,
+    'DP1-4: four seats for four people';
+  perform public.add_ride_passengers(ride, (select version from public.rides where id = ride),
+    jsonb_build_array(jsonb_build_object('person_id', fifthP, 'display_name', 'סרבי', 'seat_kind', 'adult', 'leg', 'out')));
+  assert exists (select 1 from public.ride_passengers where ride_id = ride and person_id = fifthP), 'DP1-4: the fifth person fits';
+
+  -- notices: אלי hears who was taken off her request; עומר and the driver hear nothing (עומר never left the ride)
+  assert exists (select 1 from public.notifications where recipient_id = eliP and data ->> 'variant' = 'companion_removed'
+                   and data ->> 'ride_id' = ride::text and body_he like '% הוציא/ה את עומר מהנסיעה שלך %'),
+    format('DP1-6: אלי was not told עומר was taken off her request: %s',
+      (select string_agg(body_he, ' | ') from public.notifications where recipient_id = eliP and data ->> 'ride_id' = ride::text));
+  assert not exists (select 1 from public.notifications where recipient_id = omerP and data ->> 'variant' = 'passenger_removed_you'),
+    format('DP1-4: עומר still rides, yet was told he was removed: %s',
+      (select string_agg(body_he, ' | ') from public.notifications where recipient_id = omerP and data ->> 'ride_id' = ride::text));
+  assert not exists (select 1 from public.notifications where recipient_id = driverP and data ->> 'variant' = 'passengers_removed' and data ->> 'ride_id' = ride::text),
+    format('DP1-4: the driver was told עומר was removed although he still rides: %s',
+      (select string_agg(body_he, ' | ') from public.notifications where recipient_id = driverP and data ->> 'ride_id' = ride::text));
+  raise notice 'DP1-4 PASSED: removing a companion who also rides on their own request keeps them on once, frees the seat, and tells only the requester';
+end $$;
+
 rollback;
