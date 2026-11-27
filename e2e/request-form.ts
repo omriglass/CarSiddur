@@ -47,7 +47,7 @@ export const FIXTURE_WEEKS = {
   multiDayEdit: "2045-03-12",
   liveEvents: "2045-03-19",
   joinForOther: "2045-03-26",
-  guestFewerPeople: "2045-04-02",
+  guestFewerPeople: "2045-04-09", // 2045-04-02 is publish-driverless-conflicts.spec.ts's week
 } as const;
 
 /** `yyyy-MM-dd` of the `index`-th day (0 = Sunday) of a week. */
