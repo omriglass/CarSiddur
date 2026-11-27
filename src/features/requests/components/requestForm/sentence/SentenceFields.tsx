@@ -4,7 +4,7 @@
 // modifiers that are not in it. Everything shares the classic layout's form state, schema and
 // submit pipeline; only the field arrangement differs.
 import { ArrowLeftRight, ChevronDown, Plus } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Controller, useWatch, type FieldErrors, type UseFormReturn } from "react-hook-form";
 
 import { CharCount } from "@/components/CharCount";
@@ -246,7 +246,7 @@ export function SentenceFields(props: SentenceFieldsProps) {
 
   const invalid = (...fields: string[]) => fields.some((field) => field in errors);
 
-  // The guided start of a new request (owner 2026-10-11): the first missing step opens on mount (adjusted during render).
+  // The guided start of a new request (owner 2026-10-11): the first missing step opens right after mount (an effect, see below).
   const dropOffStart = useDropOffSwitch({ form, variant, departmentId, destinations, anchored: anchorsEnabled });
   const dropOffFirst = !!opensOnDropOff && variant !== "carNow";
   const allGuideSteps = guide
@@ -260,11 +260,19 @@ export function SentenceFields(props: SentenceFieldsProps) {
     setGuideActive(false);
     if (dropOffFirst) dropOffStart.openStart(nonDriverStart(form.getValues("departTime") ?? "08:00", form.getValues("returnTime")));
   }
-  if (guide && !guideStarted && opensOnDropOff !== undefined) {
-    setGuideStarted(true);
-    setSheet(currentGuideSteps[0] ?? null);
-    if (!currentGuideSteps.length) finishGuide();
-  }
+  // Opened after the first commit, not during render: a sheet or dialog that mounts together with the request
+  // overlay registers its Radix layer before the overlay does, so the overlay counted as the top layer and Escape
+  // closed the whole form instead of the step (e2e ND1 "✕ returns to the form", 2026-11-27).
+  useEffect(() => {
+    if (!guide || guideStarted || opensOnDropOff === undefined) return;
+    const frame = requestAnimationFrame(() => {
+      setGuideStarted(true);
+      setSheet(currentGuideSteps[0] ?? null);
+      if (!currentGuideSteps.length) finishGuide();
+    });
+    return () => cancelAnimationFrame(frame);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once, when the profile is known
+  }, [guide, guideStarted, opensOnDropOff]);
   /** "אישור" on a guided step: open the next missing one, or close. */
   function advanceGuide(step: GuideStep) {
     const next = guideActive ? nextGuideStep(currentGuideSteps, step) : null;

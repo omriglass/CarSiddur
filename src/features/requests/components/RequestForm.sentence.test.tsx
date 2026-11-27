@@ -104,10 +104,10 @@ beforeEach(() => {
 });
 
 describe("RequestForm sentence layout (REQ §13.110)", () => {
-  it("renders the sentence with chips that carry their rhf field name, and the first-visit hint once", () => {
+  it("renders the sentence with chips that carry their rhf field name, and the first-visit hint once", async () => {
     show();
-    // A new request opens on its day (owner 2026-10-16); dismissing it stops the guide.
-    expect(openSheetTitle()).toBe(he.requestSentence.sheet.day);
+    // A new request opens on its day (owner 2026-10-16), a frame after mount; dismissing it stops the guide.
+    await waitFor(() => expect(openSheetTitle()).toBe(he.requestSentence.sheet.day));
     fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
     expect(openSheetTitle()).toBeNull();
     expect(screen.getByTestId("request-sentence")).toBeVisible();
@@ -119,9 +119,9 @@ describe("RequestForm sentence layout (REQ §13.110)", () => {
     expect(screen.queryByText(he.requestSentence.hint)).not.toBeInTheDocument();
   });
 
-  it("a new request leads through day → start time → end time → destination; 'אישור' moves on (owner 2026-10-11/16)", () => {
+  it("a new request leads through day → start time → end time → destination; 'אישור' moves on (owner 2026-10-11/16)", async () => {
     show();
-    expect(openSheetTitle()).toBe(he.requestSentence.sheet.day);
+    await waitFor(() => expect(openSheetTitle()).toBe(he.requestSentence.sheet.day));
     fireEvent.click(screen.getByRole("button", { name: he.requestSentence.sheetDone }));
     expect(openSheetTitle()).toBe(he.requestSentence.sheet.outTime);
     fireEvent.click(screen.getByRole("button", { name: he.requestSentence.sheetDone }));
@@ -133,12 +133,12 @@ describe("RequestForm sentence layout (REQ §13.110)", () => {
     expect(screen.getByTestId("chip-destination")).toHaveTextContent("Destination");
   });
 
-  it("skips what a grid tap already gave: start only → end time first; both times → destination", () => {
+  it("skips what a grid tap already gave: start only → end time first; both times → destination", async () => {
     const first = show({ day: "2044-01-05", departTime: "08:00" });
-    expect(openSheetTitle()).toBe(he.requestSentence.sheet.returnTime);
+    await waitFor(() => expect(openSheetTitle()).toBe(he.requestSentence.sheet.returnTime));
     first.unmount();
     show({ day: "2044-01-05", departTime: "08:00", returnTime: "10:00" });
-    expect(openSheetTitle()).toBe(he.requestSentence.sheet.destination);
+    await waitFor(() => expect(openSheetTitle()).toBe(he.requestSentence.sheet.destination));
   });
 
   it("the profile switch 'no automatic windows' opens nothing", () => {
